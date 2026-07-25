@@ -71,22 +71,40 @@ scan-time string-interpolation desugaring, implicit-EOL suppression).
 The compiler needs `Value`/`Chunk`/the object model to exist before it can
 emit anything — pull this forward rather than leaving it until "VM phase."
 
-- [ ] `Value` struct (16-byte tagged union) — `ARCHITECTURE.md` §
+- [x] `Value` struct (16-byte tagged union, confirmed by
+      `test_value_is_sixteen_bytes`) — `ARCHITECTURE.md` §
       [Value representation](docs/ARCHITECTURE.md#value-representation).
-- [ ] `Obj` base struct + `Object_Type` enum + one concrete struct per
-      kind (`String_Object` through `Vec4_Object`) — §
-      [Object model](docs/ARCHITECTURE.md#object-model).
-- [ ] String interning table (`map[string]^String_Object`, no lock).
-- [ ] `Chunk`/opcodes (`Op_Code` enum, `Chunk` struct with
+- [x] `Obj` base struct + `Object_Type` enum + one concrete struct per
+      kind (`String_Object` through `Vec4_Object`, plus `Native_Object`
+      and the three iterator kinds) — §
+      [Object model](docs/ARCHITECTURE.md#object-model). Note one
+      deviation from the original plan, documented in `obj_native.odin`:
+      `Builtin_Fn`'s `vm` parameter is `rawptr`, not `^VM` — `core` can't
+      import `vm` (package-graph direction), so this is a plain opaque-
+      pointer boundary rather than glox's Go interface trick, which Odin
+      has no equivalent of.
+- [x] String interning table (`map[string]^String_Object`, no lock) —
+      and, since interning now gives every name a canonical pointer, every
+      other name-keyed map in the object model (`Class.methods/statics`,
+      `Instance.fields`, `Dict.items`, `Environment.vars`) is keyed
+      directly by `^String_Object` rather than glox's separate
+      intern-to-an-int step.
+- [x] `Chunk`/opcodes (`Op_Code` enum, `Chunk` struct with
       `code`/`constants`/`lines`/`global_names`) — §
       [Chunk, opcodes, bytecode](docs/ARCHITECTURE.md#chunk-opcodes-bytecode).
-- [ ] `Environment` (slot-indexed globals + name-keyed `vars` map, no
+- [x] `Environment` (slot-indexed globals + name-keyed `vars` map, no
       mutex) — § [Environment & globals](docs/ARCHITECTURE.md#environment--globals).
-- [ ] `Value` equality/comparison/`to_string` procs (pointer-equality fast
-      path for interned strings; **note the deliberate deviation**: give
-      lists/dicts real structural equality instead of porting glox's
-      stringify-and-compare fallback — flag this explicitly in the PR/
-      commit description since it's a behavior change, not just a port).
+- [x] `Value` equality/comparison/`to_string` procs (pointer-equality fast
+      path for interned strings; **deliberate deviation from glox,
+      implemented**: lists/dicts get real recursive structural equality
+      instead of glox's stringify-and-compare fallback — see
+      `value.odin`'s `objects_equal` doc comment).
+- [x] Core package unit tests (`src/core/*_test.odin`,
+      `odin test src/core`) — 41 cases covering Value layout/equality,
+      Chunk constant dedup (including the "never dedup a
+      Closure/Function/Bound_Method constant" rule), Environment slot
+      growth, string interning, list/dict/class operations, and the
+      self-referential-container recursion guard.
 
 ## Phase 3 — Compiler
 

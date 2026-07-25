@@ -114,20 +114,35 @@ Glox's `src/core/object.go` defines a `VMContext` interface (`Stack`,
 native functions — `type BuiltInFn func(argCount, arg_stackptr int, vm
 VMContext) Value` — **without importing `src/vm`**, breaking what would
 otherwise be an import cycle (`vm` would need `builtin`'s native
-registration, `builtin` needs to call back into the VM).
+registration, `builtin` needs to call back into the VM). This same
+`BuiltInFn` type is also what `core.BuiltInObject` (a heap object in the
+core object model) carries as its callable field — so in Go, `core`
+itself never needs to import `vm` either, for the same interface reason.
 
-**Odin has no structural interfaces**, so this exact trick isn't available
-— but it also isn't needed, because the fix is to invert the dependency
-instead of papering over it: `natives` imports `vm` directly and takes a
-concrete `^vm.VM`, not an abstract context. `vm` exposes plain procs
-(`vm_stack`, `vm_peek`, `vm_runtime_error`, `vm_gc_link`, ...) operating on
-`^VM`, and a registration entry point (`vm.register_native :: proc(module,
-name: string, fn: Builtin_Fn)`) that `main.odin` calls after constructing
-the VM, once for core builtins (defined inside `vm` itself, same as glox's
-`src/vm/builtin.go`) and once for `natives`' raylib-backed ones. `vm` never
-imports `natives`, so there's no cycle — the interface indirection glox
-needed in Go simply isn't necessary in Odin once the dependency points one
-way.
+**Odin has no structural interfaces**, so this needs two separate fixes,
+not one — discovered in practice while implementing `core`'s object model
+(Phase 2), where the first-pass plan below turned out to only solve half
+of it:
+
+1. **`natives` importing `vm` directly**, taking a concrete `^vm.VM`
+   rather than an abstract context, with `vm` exposing plain procs
+   (`vm_stack`, `vm_peek`, `vm_runtime_error`, `vm_gc_link`, ...) and a
+   registration entry point (`vm.register_native :: proc(module, name:
+   string, fn: Builtin_Fn)`) that `main.odin` calls after constructing the
+   VM. This part of the original plan holds up fine — `vm` never imports
+   `natives`, so there's no cycle on that side.
+2. **What it doesn't fix**: `core.Native_Object` (see `obj_native.odin`)
+   still needs a field typed as "a callable that takes the VM" — and
+   `core` sits *below* both `compiler` and `vm` in the package graph
+   (`vm` depends on `compiler` for module-import recompilation, and both
+   depend on `core` for `Value`/`Chunk`), so `core` cannot import `vm` to
+   spell that field as `^vm.VM` any more than it could in the interface
+   case. The actual fix: `Builtin_Fn`'s `vm` parameter is `rawptr`, and
+   every native function's first line casts it back to the concrete
+   `^vm.VM` — a plain opaque-pointer boundary, the same shape Odin's own
+   `context.user_ptr` uses to solve this exact "lower layer must call
+   back into a higher one" problem. `vm`/`natives` provide typed wrapper
+   procs so call sites never write that cast themselves.
 
 ---
 
@@ -275,7 +290,14 @@ an enum tag and a type switch on the concrete pointer.
 Object_Type :: enum u8 {
     String, Function, Closure, Upvalue, Native,
     List, Dict, Class, Instance, Bound_Method,
-    Module, File, Iterator, Vec2, Vec3, Vec4,
+    Module, File,
+    // Three separate tags where glox shares one ("Iterator") across
+    // three different Go structs, distinguishing them via a type switch
+    // on the concrete type instead of the tag (Go's blackenObject can do
+    // that; Odin's tag-then-cast dispatch convention needs the tag
+    // itself to already be enough).
+    List_Iterator, Int_Iterator, String_Iterator,
+    Vec2, Vec3, Vec4,
 }
 
 Obj :: struct {
