@@ -18,9 +18,11 @@ glox that exists solely to support them. See `ARCHITECTURE.md`'s
 
 ## Phase 0 — Project scaffolding
 
-- [ ] Create the package skeleton: `core/`, `compiler/`, `vm/`, `natives/`,
-      `debug/`, `main.odin` (see `ARCHITECTURE.md` §
-      [Package layout](docs/ARCHITECTURE.md#package-layout)).
+- [x] Create the package skeleton under `src/`: `src/core/`, `src/compiler/`,
+      `src/vm/`, `src/natives/`, `src/debug/`, `src/main.odin` (see
+      `ARCHITECTURE.md` § [Package layout](docs/ARCHITECTURE.md#package-layout)).
+      `compiler/` and `main.odin` exist as of Phase 1; the rest are created
+      as their phases start.
 - [ ] Decide and record the Odin build flags for debug vs. release
       (`-debug`, `-vet`, `-strict-style` for dev; `-o:speed
       -disable-assert -no-bounds-check` for a release/benchmark build) —
@@ -39,24 +41,30 @@ Port `src/compiler/scanner.go`. See `ARCHITECTURE.md` §
 preserved exactly (full up-front tokenization, separate int/float tokens,
 scan-time string-interpolation desugaring, implicit-EOL suppression).
 
-- [ ] `Token`/`Token_Type` (full enum: punctuation, `Int`/`Float` split,
+- [x] `Token`/`Token_Type` (full enum: punctuation, `Int`/`Float` split,
       all keywords including `func`/`fun` alias, `Error`/`Eof`).
-- [ ] `Scanner` struct + `scan_token` covering every lexeme class.
-- [ ] Number scanning (int vs. float distinction, no hex/exponent support —
+- [x] `Scanner` struct + `scan_token` covering every lexeme class.
+- [x] Number scanning (int vs. float distinction, no hex/exponent support —
       matches glox, not a gap to "fix").
-- [ ] String scanning + `${...}` interpolation desugaring (recursive
+- [x] String scanning + `${...}` interpolation desugaring (recursive
       sub-scan of the interpolated expression's source).
-- [ ] Implicit-semicolon (`skip_eol`) suppression rules.
-- [ ] Full up-front tokenization into a stable, indexable token list +
+- [x] Implicit-semicolon (`skip_eol`-equivalent) suppression rules —
+      implemented as a two-pass filter (see `keep_eol` in `scanner.odin`)
+      rather than a single-token-lookback rule: dropping an Eol needs to
+      see both the token before it (opener/operator → continues) and the
+      token after it (closing bracket/Eof → statement isn't over either,
+      no matter what preceded it) — a pure look-behind rule can't express
+      "still inside an open `[`".
+- [x] Full up-front tokenization into a stable, indexable token list +
       `next_token`/`check_next` lookahead. **Do not scan lazily** — the
       compiler's `finally`-replay design (Phase 3) requires the whole
       stream to already exist.
-- [ ] Panic-safe error tokens (`Token_Type.Error` carrying a message).
-- [ ] `print_tokens` debug dump (for a `--print-tokens` CLI flag later).
-- [ ] Standalone scanner unit tests (tokenize a handful of `.lox` fixtures,
-      compare token-kind sequences) — the ported pytest suite can't
-      exercise the scanner in isolation, so this phase needs its own
-      throwaway checks before the compiler exists to consume it.
+- [x] Panic-safe error tokens (`Token_Type.Error` carrying a message).
+- [x] `print_tokens` debug dump, wired to `odlox --print-tokens <file>`.
+- [x] Standalone scanner unit tests (`src/compiler/scanner_test.odin`,
+      `odin test src/compiler`) — 17 cases covering punctuation, int/float,
+      keywords, EOL suppression (including the bracket-lookahead case),
+      plain/interpolated/escaped strings, and error tokens. All green.
 
 ## Phase 2 — Core data types (prerequisite for the compiler)
 

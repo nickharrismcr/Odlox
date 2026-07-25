@@ -87,16 +87,20 @@ know about the one below it.
 
 ```
 odlox/
-├── main.odin              package main    — CLI arg parsing, REPL loop, wires native registration
-├── core/                  package core    — Value, Object model, Chunk/opcodes, Environment, interning
-├── compiler/               package compiler — Scanner, Parser/Pratt compiler   (imports core)
-├── vm/                     package vm      — VM struct, dispatch loop, GC, core builtins, module import
-│                                              (imports core, compiler)
-├── natives/                package natives — raylib-backed native objects/functions, Phase 6+
-│                                              (imports core, vm)
-├── debug/                  package debug   — disassembler, execution tracer   (imports core)
+├── src/
+│   ├── main.odin           package main    — CLI arg parsing, REPL loop, wires native registration
+│   ├── core/                package core    — Value, Object model, Chunk/opcodes, Environment, interning
+│   ├── compiler/             package compiler — Scanner, Parser/Pratt compiler   (imports core)
+│   ├── vm/                   package vm      — VM struct, dispatch loop, GC, core builtins, module import
+│   │                                            (imports core, compiler)
+│   ├── natives/              package natives — raylib-backed native objects/functions, Phase 6+
+│   │                                            (imports core, vm)
+│   └── debug/                package debug   — disassembler, execution tracer   (imports core)
 └── docs/
 ```
+
+(All Odin sources live under `src/` — `odin build src`/`odin test src/compiler` etc.
+— keeping the repo root free for `README.md`/`ROADMAP.md`/`docs/`.)
 
 Dependency direction is a strict DAG, same as glox's:
 `core ← compiler ← vm ← natives`, with `debug` hanging off `core` alone and
