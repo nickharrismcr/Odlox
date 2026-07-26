@@ -32,6 +32,7 @@ interpret :: proc(vm: ^VM, source: string) -> (Interpret_Result, string) {
 	// rather than a fresh init, so a REPL line's globals survive into
 	// the next one instead of being wiped out here.
 	core.env_grow_globals(vm.environment, fn.chunk.global_count)
+	seed_builtin_globals(vm, fn)
 
 	closure := core.make_closure_object(fn)
 	gc_track(vm, &closure.obj)

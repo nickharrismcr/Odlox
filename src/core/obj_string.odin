@@ -53,3 +53,15 @@ string_get :: proc(s: ^String_Object) -> string {
 string_length :: proc(s: ^String_Object) -> int {
 	return len(s.chars)
 }
+
+// string_replace replaces every occurrence of from with to in s.chars.
+// from/to must both already be strings -- checked by the caller (see
+// vm/call.odin's invoke_builtin_string), matching glox's own
+// StringObject.Replace, which assumes the same.
+string_replace :: proc(s: ^String_Object, from, to: ^String_Object) -> Value {
+	result, was_allocation := strings.replace_all(s.chars, from.chars, to.chars)
+	defer if was_allocation {
+		delete(result)
+	}
+	return make_string_value(result)
+}

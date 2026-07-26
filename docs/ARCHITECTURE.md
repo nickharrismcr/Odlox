@@ -877,11 +877,20 @@ the same place glox does.
 compile to `OP_IMPORT`/`OP_IMPORT_FROM` respectively; both resolve at
 runtime through `import_module`, which:
 
-1. Resolves a `.lox` path (search order: `LOX_PATH` env var's module
-   directory, the running script's own directory, then a recursive
-   subdirectory search) and checks a **process-wide** module cache
+1. Resolves a `.lox` path and checks a **process-wide** module cache
    (`name → Module_Object`) first — since threads are out of scope, this
    cache needs no mutex in odlox, unlike glox's `moduleCacheMu`.
+   **Correction, Phase 6**: this originally described glox's own search
+   order (`LOX_PATH`'s `src/modules/` subdirectory first, then the
+   running script's own directory, then a recursive subdirectory
+   search) as the plan to implement — `module.odin`'s
+   `read_module_source`, as actually built in Phase 4, checks the
+   script's own directory *first* and a bare `$LOX_PATH/<name>.lox`
+   second, with no `src/modules` convention and no recursive search at
+   all. This wasn't caught until Phase 6 needed `import math` to
+   actually find a copied-over `.lox` standard library module and
+   couldn't — see `ROADMAP.md`'s Phase 6 checklist for the fix, not yet
+   done.
 2. On a cache miss, spins up a **fresh, nested VM instance** to compile-and-
    run the module's top-level code in isolation, then harvests its
    resulting `Environment` into a `Module_Object`. This nested-VM pattern
@@ -965,32 +974,82 @@ flag fails informatively instead of silently doing nothing.
 
 ## Native/builtin functions
 
+**Status: core builtins implemented (Phase 6a)** — `len`/`type`/`append`/
+`range`/`rand`/`float`/`int`/`replace`/`format`/`vec2`/`vec3`/`vec4`/the
+underscore-prefixed math floor, `sys.*`, `os.*`, and the `replace`/`join`
+string methods. Raylib-backed natives, `re`/`pickle`/`process`,
+`colour_utils`, and glox's own `src/modules/*.lox` Lox-source standard
+library are all still unimplemented — see `ROADMAP.md`'s Phase 6 section
+for the exact boundary and what each still needs.
+
 glox's `src/vm/builtin.go` registers built-ins via a **flat, hand-written
 call sequence** — no reflection, no table-driven registry, just repeated
 calls to a `define_builtin(vm, module, name, fn)` helper, once per native
-function. Built-in *modules* (`sys`, `gfx`, `os`, `re`, ...) are themselves
-just `Module_Object`s wrapping an ordinary `Environment`
-(`make_builtin_module`), populated programmatically instead of by running
-Lox source — and deliberately **not** auto-imported into the global scope;
-a script must `import sys` explicitly, same as any other module.
+function. This ported directly (`vm/builtins.odin`'s `define_builtin`).
+Built-in *modules* (`sys`, `os`, ...) are themselves just `Module_Object`s
+wrapping an ordinary `Environment` (`make_builtin_module`), populated
+programmatically instead of by running Lox source — and deliberately
+**not** auto-imported into the global scope; a script must `import sys`
+explicitly, same as any other module. Confirmed working exactly as
+planned, once two gaps the original plan didn't anticipate were closed:
+
+- **Free functions need an explicit seeding step to be reachable at
+  all.** The compiler assigns every referenced name a global slot
+  purely from source text (`global_slot`'s "first mention wins" — see
+  [Compiler](#compiler)), with no notion that some names are builtins;
+  a bare `type(1)` compiles to an ordinary `Op_Get_Global` on a slot
+  nothing has called `Define_Global` for. `Op_Get_Global` has no
+  map-fallback path of its own — a direct slice index by design, the
+  whole point of slot-indexed globals over glox's earlier map-backed
+  one (see [Environment & globals](#environment--globals)). glox
+  solves this with its own `initGlobals`: after every compile, walk
+  the slots the top-level chunk's `GlobalNames` actually names and
+  seed any still-undefined slot whose name matches a registered
+  builtin or built-in module — this port's `interpret.odin` calls the
+  equivalent `seed_builtin_globals` right after `core.env_grow_globals`,
+  for the same reason and at the same point in the pipeline. Missed
+  initially (the free functions were registered into `vm.builtins` but
+  nothing ever consulted that map for ordinary global resolution) —
+  found immediately by the first `type(1)` smoke test failing.
+- **`module.fn(args)` needs its own `Op_Invoke` case.** `.name(args)`
+  always compiles through `Op_Invoke` (the fast path for *every* call
+  of that shape — see [VM dispatch loop](#vm-dispatch-loop--calling-convention)),
+  and `call.odin`'s `invoke` had a branch for every receiver kind that
+  can have "methods" except `Module`, so every built-in module
+  function call fell through to "Undefined method" — not a Phase 6
+  regression so much as a latent gap since Phase 4 first wired module
+  property *access* up (`get_property`'s `.Module` case existed;
+  `invoke`'s never did, since nothing had called a module function
+  before this phase). Fixed with an `Module` case mirroring glox's own
+  `invokeFromModule`: resolve the member by name through the module's
+  `Environment`, then delegate to the same `call_value` an ordinary
+  `Op_Call` would use.
 
 One detail worth carrying forward exactly: glox defines its **base
 exception class hierarchy** (`Exception`, `RunTimeError`, `EOFError`, etc.)
 by compiling and running a small embedded *Lox source string* through a
 disposable sub-VM at startup, then harvesting the result into
 `vm.BuiltIns` — rather than hand-writing `Class_Object`/`Closure_Object`
-graphs directly in Odin. This is worth keeping: it's far less code, and
-the exception hierarchy is guaranteed to behave exactly like any other Lox
-class (inheritance, `toString`, etc.) because it *is* one, compiled by the
-same compiler as user code.
+graphs directly in Odin. This landed in Phase 4, not Phase 6 (the VM
+needed *a* working exception hierarchy to run anything at all, long
+before native functions existed) — see
+[Exceptions](#exceptions)/`exceptions.odin`'s `bootstrap_exceptions`.
+Only three of glox's seven exception classes are bootstrapped
+(`Exception`/`RunTimeError`/`EOFError`); `PickleError`/`ProcessError`/
+`ThreadError`/`SyncError` belong to modules that either aren't
+implemented yet (`pickle`/`process`) or are permanently out of scope
+(`thread`/`sync` — see [Scope](#scope)), so adding their exception
+classes now would be dead code. Add each alongside its own module.
 
 Given the [package layout](#package-layout) decision above, core builtins
-(`len`, `type`, `append`, `range`, `rand`, core `sys`/`os` functions) live
-inside the `vm` package itself, same as glox's own split between
-`src/vm/builtin.go` (core) and `src/builtin/*.go` (raylib-heavy) — the
-latter becomes odlox's `natives` package, wired in by `main.odin` calling
-`natives.register_all(vm)` after core builtin registration, entirely a
-Phase-6+ concern.
+live inside the `vm` package itself (`builtins.odin`, plus
+`builtins_math.odin`/`builtins_sys.odin`/`builtins_os.odin` — split by
+glox's own module grouping, not by any Odin-level necessity), same as
+glox's own split between `src/vm/builtin.go` (core) and `src/builtin/*.go`
+(raylib-heavy) — the latter still becomes odlox's `natives` package once
+Phase 6b starts; not created yet, since an empty package with a no-op
+registration call would be scaffolding with no purpose (see
+`ROADMAP.md`'s Phase 6 checklist).
 
 ---
 

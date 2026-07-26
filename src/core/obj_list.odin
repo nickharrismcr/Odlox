@@ -40,6 +40,29 @@ list_append :: proc(l: ^List_Object, v: Value) {
 	append(&l.items, v)
 }
 
+// list_join concatenates l's items (which must all be strings) with sep
+// between them, mirroring glox's ListObject.Join -- the underlying
+// logic for the `sep.join(list)` string method (vm/call.odin), named
+// for the list here since the joining itself only touches list items.
+list_join :: proc(l: ^List_Object, sep: string) -> (Value, bool) {
+	if len(l.items) == 0 {
+		return make_string_value(""), true
+	}
+	b: strings.Builder
+	strings.builder_init(&b)
+	defer strings.builder_destroy(&b)
+	for item, i in l.items {
+		if !is_string(item) {
+			return NIL_VALUE, false
+		}
+		if i > 0 {
+			strings.write_string(&b, sep)
+		}
+		strings.write_string(&b, string_get(as_string(item)))
+	}
+	return make_string_value(strings.to_string(b)), true
+}
+
 list_remove :: proc(l: ^List_Object, ix: int) {
 	if ix < 0 || ix >= len(l.items) {
 		return

@@ -29,8 +29,20 @@ main :: proc() {
 	opts: Options
 	mode := ""
 	file_path := ""
+	script_args: [dynamic]string
 
-	for a in args {
+	// Everything up to and including the script path is odlox's own
+	// flags/positional argument; everything *after* it is passed
+	// through verbatim as the script's own argv (sys.args(), see
+	// builtins_sys.odin) rather than parsed as more odlox flags --
+	// standard CLI convention (`odlox script.lox --foo` should hand
+	// `--foo` to the script, not try to interpret it as odlox's own).
+	for i := 0; i < len(args); i += 1 {
+		a := args[i]
+		if file_path != "" {
+			append(&script_args, a)
+			continue
+		}
 		switch a {
 		case "-h", "--help":
 			usage()
@@ -78,7 +90,7 @@ main :: proc() {
 		info_file(file_path)
 	case:
 		require_file(file_path)
-		run_file(file_path, opts)
+		run_file(file_path, opts, script_args[:])
 	}
 }
 
@@ -89,7 +101,7 @@ require_file :: proc(path: string) {
 	}
 }
 
-run_file :: proc(path: string, opts: Options) {
+run_file :: proc(path: string, opts: Options, script_args: []string) {
 	data, err := os.read_entire_file_from_path(path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("odlox: could not read %q: %v", path, err)
@@ -98,6 +110,8 @@ run_file :: proc(path: string, opts: Options) {
 	defer delete(data)
 
 	vm_instance := vm.new_vm(path)
+	vm_instance.script_args = script_args
+	vm.define_builtins(vm_instance)
 	if opts.trace {
 		vm_instance.debug_hook = debug.Trace_Hook
 	} else if opts.instrument {
@@ -211,6 +225,7 @@ compile_file :: proc(path: string) -> (^core.Function_Object, bool) {
 repl :: proc() {
 	fmt.println("odlox:")
 	vm_instance := vm.new_vm("__repl__")
+	vm.define_builtins(vm_instance)
 	vm.set_repl(vm_instance, true)
 
 	reader: bufio.Reader

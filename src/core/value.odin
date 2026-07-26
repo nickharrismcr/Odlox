@@ -177,6 +177,9 @@ as_bound_method :: proc(v: Value) -> ^Bound_Method_Object {
 as_native :: proc(v: Value) -> ^Native_Object {
 	return cast(^Native_Object)v.obj
 }
+as_file :: proc(v: Value) -> ^File_Object {
+	return cast(^File_Object)v.obj
+}
 as_vec2 :: proc(v: Value) -> ^Vec2_Object {
 	return cast(^Vec2_Object)v.obj
 }

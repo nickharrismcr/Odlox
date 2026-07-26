@@ -3,6 +3,7 @@ package vm
 import "../compiler"
 import "../core"
 import "core:fmt"
+import "core:time"
 
 // The VM: fixed-size value stack and call-frame array (matching clox's
 // own arrays -- no heap indirection on the hot path), one intrusive GC
@@ -88,6 +89,14 @@ VM :: struct {
 	repl:        bool,
 	repl_state:  compiler.Repl_State,
 
+	// sys.clock()/sys.args() support (builtins.odin/builtins_sys.odin):
+	// start_time is captured once at construction so `sys.clock()` can
+	// report elapsed seconds the same way glox's `time.Since(vm.StartTime())`
+	// does; script_args is empty unless main.odin's CLI parsing populates
+	// it with argv entries after the script path.
+	start_time:  time.Time,
+	script_args: []string,
+
 	// GC (see gc.odin) -- an intrusive singly-linked list of every
 	// collectible allocation this VM has made, mirroring clox's own
 	// vm.objects.
@@ -110,6 +119,7 @@ new_vm_raw :: proc(script: string) -> ^VM {
 	vm := new(VM)
 	vm.script = script
 	vm.environment = core.make_environment(script)
+	vm.start_time = time.now()
 	vm.next_gc = INITIAL_GC_THRESHOLD
 	vm.builtins = make(map[^core.String_Object]core.Value)
 	vm.builtin_modules = make(map[^core.String_Object]^core.Module_Object)

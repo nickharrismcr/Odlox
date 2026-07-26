@@ -143,6 +143,25 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 		return invoke_builtin_dict(vm, core.as_dict(receiver), name, arg_count)
 	case .String:
 		return invoke_builtin_string(vm, core.as_string(receiver), name, arg_count)
+	case .Module:
+		// `mod.fn(args)` -- a module has no "methods" of its own, just
+		// name-keyed members (native functions, for a built-in module;
+		// whatever the module's top-level code exported, for an
+		// imported *.lox file). Found missing via the first real
+		// smoke test of any built-in module function (`sys.clock()`):
+		// `.name(args)` always compiles through Op_Invoke (see
+		// expr.odin's dot), never a separate Get_Property+Call, so
+		// without this case every built-in module call fell through
+		// to "Undefined method" regardless of whether the member
+		// existed.
+		mod := core.as_module(receiver)
+		fn, found := core.env_get_var(mod.environment, core.intern_string(name))
+		if !found {
+			runtime_error(vm, "Undefined module property '%s'.", name)
+			return false
+		}
+		vm.stack[vm.stack_top - arg_count - 1] = fn
+		return call_value(vm, fn, arg_count)
 	}
 	runtime_error(vm, "Undefined method '%s'.", name)
 	return false
@@ -289,12 +308,43 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 invoke_builtin_string :: proc(vm: ^VM, s: ^core.String_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
+	// "length" isn't one of glox's real string methods (glox strings
+	// only have replace/join -- string length goes through the free
+	// `len(s)` function instead, see builtins.odin's len_builtin) --
+	// kept anyway as a harmless, documented superset addition from
+	// Phase 4 rather than removed as part of this phase's "match
+	// glox's real method tables" pass, since nothing in the ported
+	// test suite depends on its absence and it's a reasonable
+	// convenience.
 	case "length":
 		if arg_count != 0 {
 			runtime_error(vm, "length takes no arguments.")
 			return false
 		}
 		result = core.make_int_value(core.string_length(s))
+	case "replace":
+		if arg_count != 2 {
+			runtime_error(vm, "replace takes two arguments.")
+			return false
+		}
+		from_val := peek(vm, 1)
+		to_val := peek(vm, 0)
+		if !core.is_string(from_val) || !core.is_string(to_val) {
+			runtime_error(vm, "replace arguments must be strings.")
+			return false
+		}
+		result = core.string_replace(s, core.as_string(from_val), core.as_string(to_val))
+	case "join":
+		if arg_count != 1 || !core.is_obj(peek(vm, 0)) || peek(vm, 0).obj_type != .List {
+			runtime_error(vm, "join takes one list argument.")
+			return false
+		}
+		joined, ok := core.list_join(core.as_list(peek(vm, 0)), core.string_get(s))
+		if !ok {
+			runtime_error(vm, "join: list contains a non-string item.")
+			return false
+		}
+		result = joined
 	case:
 		runtime_error(vm, "Undefined string method '%s'.", name)
 		return false

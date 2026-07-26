@@ -591,24 +591,152 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
 (raylib-backed, much larger) as a distinct sub-phase. See `ARCHITECTURE.md`
 § [Native/builtin functions](docs/ARCHITECTURE.md#nativebuiltin-functions).
 
-- [ ] Core builtins: `len`, `type`, `append`, `range`, `rand`, `sys.*`,
-      basic `os.*` (file open/read/write/close), string/list/dict method
-      tables (package-level, shared — port the already-fixed
-      shared-method-table design, not the earlier per-instance-map one).
-- [ ] Exception class hierarchy via embedded-Lox-source bootstrap
-      (`Exception`, `RunTimeError`, `EOFError`, ...) — compile-and-harvest
-      through a disposable sub-VM, not hand-built object graphs.
+- [x] Core builtins (`src/vm/builtins.odin`/`builtins_math.odin`/
+      `builtins_sys.odin`/`builtins_os.odin`): `len`, `type`, `append`,
+      `range`, `rand`, `float`, `int`, `replace`, `format`, `vec2`/`vec3`/
+      `vec4` constructors, the underscore-prefixed math floor (`_sin`/
+      `_cos`/`_tan`/`_sqrt`/`_pow`/`_atan2` — the Lox-source `math`
+      module that wraps these into `sin`/`cos`/... isn't ported yet, see
+      below), `sys.*` (`args`/`clock`/`sleep`/`today`/`now`), `os.*`
+      (`open`/`close`/`readln`/`write`/`read_all`/`listdir`/`isdir`/
+      `isfile`/`exists`/`mkdir`/`rmdir`/`remove`/`getcwd`/`chdir`/`join`/
+      `dirname`/`basename`/`splitext`). String method table
+      (`call.odin`'s `invoke_builtin_string`) extended with `replace`/
+      `join`, glox's actual two real string methods (list/dict's method
+      tables already matched glox exactly since Phase 4 — see that
+      phase's pull-forward note). `File_Object` (Phase 2's minimal
+      shape) filled in with real buffered `file_read_line`/`file_write`
+      (`core/obj_file.odin`), same `bufio.Reader` pattern `main.odin`'s
+      REPL already used.
+- [x] Exception class hierarchy via embedded-Lox-source bootstrap — this
+      was already done in Phase 4 (`exceptions.odin`'s
+      `bootstrap_exceptions`/`EXCEPTION_SOURCE`), pulled forward because
+      the VM needed *a* working exception hierarchy to run anything.
+      Only `Exception`/`RunTimeError`/`EOFError` are bootstrapped, not
+      glox's full set (`PickleError`/`ProcessError`/`ThreadError`/
+      `SyncError`) — those belong to modules this phase doesn't
+      implement (`pickle`/`process`, and `thread`/`sync` are
+      permanently out of scope), so adding their exception classes now
+      would be dead code; add each alongside its own module instead.
 - [ ] `natives` package skeleton + registration hook wired from
-      `main.odin` (see `ARCHITECTURE.md`'s `VMContext` note — this is
-      where the dependency-inversion decision actually gets exercised).
+      `main.odin` — **not created**. There's nothing to put in it until
+      Phase 6b (raylib) has actual content; an empty package with a
+      no-op registration call is scaffolding with no purpose, not
+      infrastructure. Revisit when Phase 6b starts.
 - [ ] Raylib-backed natives: window/2D drawing first (smallest surface,
       most test coverage via `_ns`-paired tests can validate the non-
       graphics logic before graphics itself is wired up), then
       texture/shader/batch/camera/render_texture/image/physics_world.
-- [ ] `float_array`, `vec2`/`vec3`/`vec4` methods beyond basic arithmetic.
-- [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only if
-      the target use case needs them.
-- [ ] `colour_utils`, other small utility modules.
+      **Not started.**
+- [ ] `float_array`, `vec2`/`vec3`/`vec4` methods beyond basic
+      arithmetic. **Not started** — this phase only added the bare
+      constructors (`vec2(x,y)` etc.), which were needed regardless
+      (`core_functions.go` registers them as ordinary free functions,
+      no raylib dependency); swizzle-beyond-`.x/.y/.z/.w` and
+      vector-specific methods are still open.
+- [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only
+      if the target use case needs them. **Not started.**
+- [ ] `colour_utils`, other small utility modules. **Not started.**
+- [ ] Port `src/modules/*.lox` (glox's own Lox-source standard library —
+      `math.lox`, `string.lox`, `functools.lox`, `itertools.lox`,
+      `random.lox`, `json.lox`, `logging.lox`, plus several raylib-
+      dependent ones) and fix `module.odin`'s `read_module_source` to
+      actually find them (glox's own resolution checks
+      `$LOX_PATH/src/modules/<name>.lox` *first*, before the running
+      script's own directory — odlox's currently checks the script's
+      directory first and `$LOX_PATH/<name>.lox` second, with no
+      `src/modules` subdirectory convention at all). **Not started**:
+      the free-function floor these `.lox` modules are built on now
+      exists (this phase), but the modules themselves and the path-
+      resolution fix they need are real, separate work — `import math`
+      still reports "not found" until this lands.
+
+**Real bugs found and fixed while building this** (kept here, not just in
+commit history, for the same reason as every other phase's list):
+
+- **The single highest-value bug this phase found**: built-in module
+  member calls (`sys.clock()`, `os.open(...)`, any `module.fn(args)`)
+  failed with `Undefined method 'clock'` regardless of whether the
+  member existed. Root cause: `.name(args)` always compiles through
+  `Op_Invoke` (the fast-path used for *every* call of that shape, not
+  just real methods — see `expr.odin`'s `dot`), and `call.odin`'s
+  `invoke` had a case for every receiver kind that can have "methods"
+  (`Instance`/`Class`/`List`/`Dict`/`String`) but none for `Module` --
+  so it fell straight through to the generic "Undefined method" error.
+  This didn't just make the *new* builtins in this phase unreachable —
+  it meant no built-in module could ever have worked, from the moment
+  Phase 4 first wired module property access up. Fixed by adding a
+  `Module` case that resolves the member by name through the module's
+  `Environment` and delegates to the same `call_value` an ordinary
+  `Op_Call` would use (mirrors glox's own `invokeFromModule`).
+- `format()`'s first implementation boxed converted Lox values into
+  Odin's `any` by returning `any` *from a helper proc* — `any` only
+  ever stores a pointer to its underlying value, and that return
+  statement silently took the address of the helper's own return
+  temporary, which is invalid the instant the proc returns (the stack
+  space gets reused by the next call). A real, reproduced segfault on
+  the very first `format(...)` smoke test, not a hypothetical — fixed
+  by heap-boxing each converted value inline (`new(T)`, freed after
+  `fmt.aprintf` runs) instead of returning `any` from anywhere.
+- `file_write` initially didn't unescape a literal `\n` (the two
+  characters backslash-n) into a real newline before writing, on the
+  wrong assumption that odlox's scanner already resolves `\n` escapes
+  at scan time the way a C-family language would. It doesn't: this
+  language's string literals (both glox's and this port's — see
+  `scanner.odin`'s `scan_string`) have no general backslash-escape
+  mechanism at all, only `$$` for a literal `$` next to string
+  interpolation. `"hello\n"` in Lox source is literally the six
+  characters `h-e-l-l-o-\-n`, and glox's own `os.write` specifically
+  un-escapes that one sequence as the way multi-line text gets into a
+  written file at all. Missing it silently wrote literal backslash-n
+  into every file, breaking `os.readln`'s line splitting on the very
+  next read. Caught by an actual write-then-read-back round trip
+  smoke test, not by reasoning about the scanner in isolation — worth
+  remembering as a lesson for this whole port: "the scanner probably
+  already handles X" is exactly the kind of assumption that needs a
+  real round-trip test, not just re-reading the scanner code more
+  carefully.
+- Two smaller, narrower fixes needed to make the ported test suite's
+  free functions behave identically to glox's: `builtins.odin`'s
+  `format` pre-processes a bare `%f` (no explicit precision) into
+  `%.6f` before handing the template to Odin's `fmt.aprintf` — Odin's
+  own default float precision is 3 decimal places, Go's is 6, and the
+  ported test suite's `test_format.py` checks the exact string.
+  Deliberately narrow (only touches an un-precisioned `%f`), not a
+  general printf reimplementation.
+
+**Found but explicitly out of this phase's scope** (compiler-level, not
+native/builtin-functions — flagged here because Phase 6 testing is what
+surfaced them, not because fixing them belongs in this phase): a good
+fraction of the ported suite's remaining failures trace back to
+parenthesized control-flow headers this parser doesn't accept —
+`for ( var i = 0; i < n; i = i+1 ) { ... }`, `foreach (x in y) { ... }`,
+and (noted back in Phase 5's own test-suite wiring) unbraced
+`if (cond) break`. Whether glox's grammar genuinely makes the
+parentheses optional sugar around these headers, or whether some of
+these fixtures use a syntax variant this port was never meant to
+accept, needs real investigation against glox's actual grammar before
+touching `compiler/stmt.odin` — not assumed and patched reactively here.
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — baseline
+after Phase 5's infinite-loop fix was 40 passed / 190 failed / 14
+skipped; after this phase, **62 passed / 168 failed / 14 skipped**.
+Real, verified progress (every new builtin manually smoke-tested end to
+end against the compiled binary, not just trusted from unit tests — see
+the bugs list above, all three of which a unit-test-only pass would
+likely have missed), not the finish line: most of the remaining 168 are
+either genuinely out of this phase's scope (raylib/`re`/`pickle`/
+`process`/`thread`/`sync`/`colour_utils`, the `src/modules/*.lox`
+standard library, the parenthesized-header parsing gap above) or
+depend on those. `src/vm/builtins_test.odin` (15 new cases) covers
+every free function and module added — verified to pass individually
+and as a batch under `-define:ODIN_TEST_THREADS=1`; running them
+combined with `vm_test.odin` in one default (multithreaded)
+`odin test src/vm` invocation reproduces the same pre-existing
+toolchain-level test-infrastructure crash Phase 4 already documented
+at length (now triggered at a lower test count, simply because there
+are more tests in the same binary) — not a new issue, see that
+section.
 
 ## Phase 7 — Performance pass
 

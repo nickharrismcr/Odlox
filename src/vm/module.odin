@@ -75,6 +75,15 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	defer delete(data)
 
 	sub := new_vm_raw(path)
+	// Share (not copy) the parent's builtin registrations -- an
+	// imported module's own top-level code should be able to call
+	// `type()`/`len()`/... and `import sys` itself, same as the
+	// script that imported it. Safe to alias these two maps directly:
+	// both are populated once by define_builtins and never mutated
+	// afterward (see builtins.odin), so there's no shared-mutable-state
+	// hazard despite every sub-VM pointing at the same underlying map.
+	sub.builtins = vm.builtins
+	sub.builtin_modules = vm.builtin_modules
 	status, _ := interpret(sub, string(data))
 	if status != .Ok {
 		runtime_error(vm, "Failed to import module '%s'.", name)
