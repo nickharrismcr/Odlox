@@ -81,7 +81,18 @@ main :: proc() {
 			// the flag is the correct behavior, not a stopgap.
 			continue
 		case:
+			// glox's own sys.args() (ArgsBuiltIn, core_functions.go) includes
+			// the script's own path as args()[0] -- main.go passes os.Args[1:]
+			// straight through to SetArgs, unfiltered, and args[0] there is
+			// the same "first non-flag argument" this file_path is. This port
+			// previously only appended args seen *after* file_path was set,
+			// so sys.args() here was always one element short (missing the
+			// script path itself) -- found via logging_file_writer.lox, which
+			// does `os.dirname(sys.args()[0])` to build an output path
+			// alongside the running script and got "List index out of range"
+			// against an empty list.
 			file_path = a
+			append(&script_args, a)
 		}
 	}
 

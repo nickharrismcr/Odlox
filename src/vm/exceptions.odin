@@ -31,6 +31,14 @@ import "core:fmt"
 // Class_Object graphs, and the hierarchy behaves exactly like any other
 // Lox class (inheritance, toString, ...) because it *is* one, compiled
 // by this same compiler.
+// Real bug, found via except.lox/except_fn.lox/except_two_handlers.lox
+// (each does `str(e)` on a caught exception and expects just the bare
+// message): toString() here used to return `this.name & ": " & this.msg`,
+// prefixing the class name -- glox's own exceptionSource (builtin.go)
+// returns `this.msg` alone, with no prefix at all. This port's version
+// wasn't a deliberate improvement, just drifted from glox's exact
+// wording at some point without anyone noticing the mismatch (nothing
+// in ROADMAP.md/ARCHITECTURE.md documents it as intentional).
 @(private = "file")
 EXCEPTION_SOURCE :: `
 class Exception {
@@ -39,7 +47,7 @@ class Exception {
 		this.name = "Exception"
 	}
 	toString() {
-		return this.name & ": " & this.msg
+		return this.msg
 	}
 }
 class RunTimeError < Exception {

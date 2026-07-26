@@ -47,6 +47,23 @@ file_close :: proc(f: ^File_Object) {
 // to return -- a final line with no trailing newline still comes back
 // as ok=true (matching glox: a non-empty partial read on EOF is still
 // a real line, only the *next* call after that reports EOF).
+//
+// Real bug, found via except_native_raise.lox (which reads itself line
+// by line until EOFError and asserts the exact resulting line count):
+// glox's own ReadLine (obj_file.go) has the same "err != nil but len(line)
+// > 0 still returns a real line" fallthrough this doc comment describes,
+// but its *shape* means that fallthrough is also reached when err != nil
+// AND len(line) == 0 -- i.e. a file whose last byte is the final '\n',
+// with nothing left after it -- since Go's `if len(line) > 0 { return
+// ... }` only returns *early* in that inner branch; every other path,
+// including "err != nil, line empty", falls through to the same final
+// `return MakeStringObjectValue(line, false)` and comes back as a
+// *successful* read of an empty string. Only the *following* call (with
+// f.Eof now true) reports real EOF. This port's version returned
+// ok=false immediately in that exact case instead, one read short of
+// glox's own behaviour for any file that ends with a trailing newline
+// (the overwhelmingly common case) -- confirmed against glox's actual
+// binary on this exact fixture (27 successful reads, not 26).
 file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 	if f.eof {
 		return "", false
@@ -58,9 +75,6 @@ file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 	raw, err := bufio.reader_read_string(&f.reader, '\n')
 	if err != nil {
 		f.eof = true
-		if len(raw) == 0 {
-			return "", false
-		}
 	}
 	return strings.trim_right(raw, "\r\n"), true
 }

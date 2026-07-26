@@ -143,6 +143,8 @@ binary :: proc(p: ^Parser, can_assign: bool) {
 	case .Less_Equal:
 		emit_op(p, .Greater)
 		emit_op(p, .Not)
+	case .In:
+		emit_op(p, .In)
 	}
 }
 

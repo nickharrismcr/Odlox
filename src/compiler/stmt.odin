@@ -220,6 +220,24 @@ finish_declare :: proc(p: ^Parser, name_tok: Token, is_const: bool) {
 // already consumed by statement()'s dispatch.
 @(private = "file")
 implicit_assignment_statement :: proc(p: ^Parser) {
+	implicit_assignment_core(p)
+	consume_eol(p, "Expect newline after assignment.")
+}
+
+// implicit_assignment_core is implicit_assignment_statement's body minus
+// the trailing terminator, shared with for_statement's own bare
+// (non-`var`) init clause -- `for (i = 0; ...)` needs this exact same
+// "first mention creates a binding rather than emitting a Set_Global
+// against a slot nothing ever Defined" semantics, but ends in `;` rather
+// than an Eol/newline, so it can't call implicit_assignment_statement
+// directly. Real bug, found via break_unbraced.lox: for_statement's own
+// init-clause "else" branch called plain expression(p) unconditionally,
+// which routes `i = 0` through expr.odin's named_variable -- a bare
+// Set_Global with no preceding Define_Global, since global_slot alone
+// doesn't mark a slot defined -- and failed at runtime with "Undefined
+// variable 'i'." on the very first iteration.
+@(private = "file")
+implicit_assignment_core :: proc(p: ^Parser) {
 	name_tok := p.previous
 	name := lexeme(name_tok)
 	c := p.current_compiler
@@ -289,7 +307,6 @@ implicit_assignment_statement :: proc(p: ^Parser) {
 		expression(p)
 		emit_op_byte(p, .Define_Global, u8(slot))
 	}
-	consume_eol(p, "Expect newline after assignment.")
 }
 
 // looks_like_destructuring probes ahead (using snapshot/restore, see
@@ -526,6 +543,15 @@ for_statement :: proc(p: ^Parser) {
 		}
 		finish_declare(p, name_tok, false)
 		consume(p, .Semicolon, "Expect ';' after loop initializer.")
+	} else if check(p, .Identifier) && check_next(p, .Equal) {
+		// Bare `i = 0` (no `var`) as the init clause -- same
+		// first-mention-creates-a-binding handling statement()'s own
+		// .Identifier dispatch case gives this at ordinary statement
+		// level (implicit_assignment_core's own doc comment has the
+		// full story on why plain expression(p) below isn't enough).
+		advance(p)
+		implicit_assignment_core(p)
+		consume(p, .Semicolon, "Expect ';' after loop initializer.")
 	} else {
 		expression(p)
 		emit_op(p, .Pop)
@@ -557,6 +583,12 @@ for_statement :: proc(p: ^Parser) {
 	if has_paren {
 		consume(p, .Right_Paren, "Expect ')' after for clauses.")
 	}
+	// `for (...)\n{` -- same Eol-before-brace tolerance as if/while/foreach
+	// and every clause boundary in try/except/finally. Found via
+	// closure_list.lox, which places the body's `{` on the line after a
+	// parenthesized for-header; this proc's own doc comment previously
+	// (wrongly) claimed no fixture in the suite needed this.
+	match(p, .Eol)
 	consume(p, .Left_Brace, "Expect '{' before for body.")
 	begin_scope(p)
 	block(p)
@@ -689,7 +721,7 @@ pop_loop :: proc(p: ^Parser) {
 break_statement :: proc(p: ^Parser) {
 	loop := p.current_compiler.loop
 	if loop == nil {
-		error(p, "Can't use 'break' outside of a loop.")
+		error(p, "Cannot use break outside loop.") // matches glox's own wording (compile.go)
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
@@ -700,7 +732,7 @@ break_statement :: proc(p: ^Parser) {
 continue_statement :: proc(p: ^Parser) {
 	loop := p.current_compiler.loop
 	if loop == nil {
-		error(p, "Can't use 'continue' outside of a loop.")
+		error(p, "Cannot use continue outside loop.") // matches glox's own wording (compile.go)
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
@@ -718,7 +750,16 @@ return_statement :: proc(p: ^Parser) {
 		error(p, "Can't return from top-level code.")
 	}
 
-	if check(p, .Eol) || check(p, .Eof) || check(p, .Semicolon) {
+	// Right_Brace included alongside Eol/Eof/Semicolon -- a bare `return`
+	// as a one-line block's last statement (`func g() { return }`, no `;`
+	// separating it from the `}`) has nothing after it but the block's
+	// own closing brace, which consume_eol below already treats as an
+	// implied terminator (matching glox's checkStatementEnd exactly);
+	// this check just needed to agree with it. Without Right_Brace here,
+	// this fell into the "has a value" branch below and tried to parse
+	// `}` as the start of an expression -- "Expect expression." -- found
+	// via oneline_blocks.lox.
+	if check(p, .Eol) || check(p, .Eof) || check(p, .Semicolon) || check(p, .Right_Brace) {
 		if p.current_compiler.type == .Initializer {
 			emit_op_byte(p, .Get_Local, 0) // implicit `return this`
 		} else {

@@ -91,6 +91,21 @@ push_vec4 :: proc(vm: ^VM, x, y, z, w: f64) {
 	push(vm, core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj})
 }
 
+// string_multiply mirrors glox's own stringMultiply (vm.go) exactly,
+// including its behavior for count <= 0 (an empty string, since its own
+// `for i := 0; i < x; i++` loop simply never executes) -- core:strings'
+// own repeat() panics on a negative count instead, which would crash the
+// whole process on `"x" * -1` rather than reporting a Lox-level error or
+// producing glox's own (silently accepted) empty-string result.
+@(private = "file")
+string_multiply :: proc(s: string, count: int) -> string {
+	if count <= 0 {
+		return ""
+	}
+	result, _ := strings.repeat(s, count)
+	return result
+}
+
 // numeric_binop implements Subtract/Multiply/Divide/Modulus -- Add has
 // its own proc (add_numeric) since it's hot enough to warrant the
 // compile-time peephole fusion (Add_Nn/Incr_Const_N) that specifically
@@ -98,6 +113,22 @@ push_vec4 :: proc(vm: ^VM, x, y, z, w: f64) {
 numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 	b := pop(vm)
 	a := pop(vm)
+	// String*int / int*string repetition -- glox's own binaryMultiply
+	// (vm.go) special-cases this before its own "operands must be
+	// numbers" check, same as here. Found via list_slice.lox's `"-"*50`
+	// separator line, which this proc previously rejected outright since
+	// it required both operands to be numeric unconditionally, with no
+	// Multiply-specific carve-out at all.
+	if op == .Multiply {
+		if core.is_string(a) && b.type == .Int {
+			push(vm, core.make_string_value(string_multiply(core.string_get(core.as_string(a)), core.as_int(b))))
+			return true
+		}
+		if a.type == .Int && core.is_string(b) {
+			push(vm, core.make_string_value(string_multiply(core.string_get(core.as_string(b)), core.as_int(a))))
+			return true
+		}
+	}
 	if !core.is_number(a) || !core.is_number(b) {
 		runtime_error(vm, "Operands must be numbers.")
 		return false
@@ -117,7 +148,11 @@ numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 			push(vm, core.make_int_value(ai / bi))
 		case .Modulus:
 			if bi == 0 {
-				runtime_error(vm, "Modulus by zero.")
+				// Matches glox's own wording exactly (vm.go): glox uses the
+				// same "Division by zero" message for both int / and %
+				// by zero, rather than a separate "Modulus by zero" --
+				// found via test_crash_guards.py's mod_by_zero.lox case.
+				runtime_error(vm, "Division by zero.")
 				return false
 			}
 			push(vm, core.make_int_value(ai % bi))

@@ -1287,6 +1287,160 @@ handling); and a construct followed immediately by another statement with
 *no* newline at all between them on the same source line (`if (true) { ... }
 print "after"`, all one line) still fails to parse.
 
+### Phase 6e: clearing the non-module-dependent pytest backlog
+
+Follow-up to Phase 6d: asked to fix every remaining pytest failure that
+*isn't* blocked on a not-yet-implemented native module (`process`/`pool`/
+`re`/`pickle`/`json`/`colour_utils`/`inspect`/`gfx` all stay out of scope,
+same as always). Ten separate, unrelated real bugs, each found by tracing
+one specific failing fixture to its actual root cause:
+
+1. **`for (...)\n{` didn't parse** -- the same Eol-before-brace class fixed
+   for if/while/foreach/try/except/finally in Phase 6d, but `for_statement`'s
+   doc comment specifically (and wrongly) claimed no fixture needed it,
+   since its body is parsed via a hardcoded `consume(.Left_Brace)` rather
+   than `statement(p)`. `closure_list.lox` needed exactly this. Fixed the
+   same way: `match(p, .Eol)` before that consume call.
+
+2. **Crash-guard message wording didn't match glox's exact text**:
+   `break`/`continue` outside a loop said "Can't use 'break' outside of a
+   loop." where glox says "Cannot use break outside loop."; int `%` by
+   zero said "Modulus by zero." where glox uses the same "Division by
+   zero" wording for both `/` and `%`. Both changed to match glox's own
+   compile.go/vm.go text exactly -- confirmed nothing else in this port
+   depended on the old wording first.
+
+3. **Exception `toString()` prefixed the class name**: `class Exception {
+   toString() { return this.name & ": " & this.msg } }` (in
+   `exceptions.odin`'s embedded `EXCEPTION_SOURCE`) returned
+   `"MyException: something happened"` where glox's own exceptionSource
+   (builtin.go) returns just `this.msg`, no prefix at all. Wasn't a
+   documented deliberate improvement, just untracked drift -- fixed to
+   match glox exactly. Fixed `except.lox`/`except_fn.lox`/`except_fn2.lox`/
+   `except_two_handlers.lox`/`nested_try_two_handlers.lox` all at once.
+
+4. **`os.readln`'s EOF detection was one read short of glox's own
+   behavior**, for any file ending in a trailing newline (the overwhelmingly
+   common case): `core.file_read_line` returned `ok=false` immediately when
+   the read that discovered EOF also returned zero bytes, but glox's own
+   `FileObject.ReadLine` (obj_file.go) has a fallthrough shape where that
+   *exact* case still returns a successful (empty-string) read, and only
+   the *following* call reports real EOF -- confirmed against glox's actual
+   binary on `except_native_raise.lox` (which counts total lines read from
+   itself until EOFError): glox reports 27, this port reported 26 for the
+   identical 26-line file. Fixed to match glox's fallthrough exactly.
+
+5. **`in` was never wired up as an expression operator at all** --
+   `Op_Code.In` and its VM implementation (`do_in`, collections.odin)
+   already existed and were already correct, but the compiler's rule table
+   had no entry for the `.In` token and `binary()`'s dispatch had no case
+   for it either, so `"hello" in s` fell through to `variable`'s bare-
+   identifier-read dispatch and failed to parse (`foreach`'s own
+   `consume(p, .In, ...)` never goes through the Pratt parser, so that use
+   was unaffected and always worked). Added the rule table entry
+   (`{nil, binary, .Equality}`, matching glox's own `PREC_EQUALITY` exactly)
+   and the `.In: emit_op(p, .In)` case in `binary()`.
+
+6. **`for (i = 0; ...)` (bare, no `var`) hit "Undefined variable" at
+   runtime** -- `for_statement`'s non-`var` init-clause branch called plain
+   `expression(p)`, which routes a bare `i = 0` through `named_variable`'s
+   ordinary assignment path: a `Set_Global` with no preceding
+   `Define_Global`, since first mention alone doesn't mark a global slot
+   defined. Statement-level bare assignment already has exactly this
+   handling (`implicit_assignment_statement`, added at some earlier phase
+   for exactly this reason) but `for_statement`'s init clause never routed
+   through it. Fixed by extracting `implicit_assignment_statement`'s body
+   (minus its trailing `consume_eol`) into a shared
+   `implicit_assignment_core`, used by both the original statement-level
+   caller and a new check in `for_statement`'s init clause
+   (`check(p, .Identifier) && check_next(p, .Equal)`). Confirmed against
+   real glox (`bin/glox.exe` on the identical fixture) that this should
+   declare `i` as a *local* scoped to the for-loop's own block, not a
+   global -- true automatically here too, since `for_statement`'s own
+   `begin_scope()` already put `scope_depth > 0` by the time the init
+   clause compiles, so `implicit_assignment_core`'s existing "declare a
+   local" branch fires without any further change. Fixed
+   `break_unbraced.lox`.
+
+7. **Bare `return` immediately before a one-line block's own `}` didn't
+   parse** (`func g() { return }`, no `;`/newline separating `return` from
+   the block's closing brace): `return_statement`'s "does a value
+   expression follow" check only recognized `.Eol`/`.Eof`/`.Semicolon` as
+   "no value", not `.Right_Brace` -- inconsistent with `consume_eol`
+   (parser.odin) treating `Right_Brace` as an equally-valid implied
+   terminator, matching glox's own `checkStatementEnd`/`consumeStatementEnd`
+   (compile.go), which explicitly lists `TOKEN_RIGHT_BRACE` alongside
+   `TOKEN_EOL`/`TOKEN_SEMICOLON`/`TOKEN_EOF`. Fixed by adding
+   `check(p, .Right_Brace)` to that check. `oneline_blocks.lox`'s apparent
+   *second* failure (a statement immediately following `}` with no newline
+   between them at all) turned out to be a pure cascading artifact of this
+   same bug's parse error, not an independent gap -- fixed for free once
+   this one was.
+
+8. **String repetition (`"-" * 50`) wasn't supported at all** --
+   `numeric_binop` (arithmetic.odin, handles Subtract/Multiply/Divide/
+   Modulus) required both operands to be numeric unconditionally, with no
+   per-op carve-out, where glox's own `binaryMultiply` (vm.go) special-cases
+   `string * int` / `int * string` (repeats the string) before its own
+   "must be numbers" check. Added the same carve-out, backed by a
+   `string_multiply` helper matching glox's `stringMultiply` exactly
+   *including* its behavior for a non-positive count (an empty string --
+   glox's own `for i := 0; i < x; i++` loop simply never executes; Odin's
+   `core:strings.repeat` panics on a negative count instead, which would
+   have crashed the whole process on `"x" * -1` rather than matching
+   glox's silent empty-string result, so `string_multiply` guards that case
+   itself before ever calling `strings.repeat`). Fixed
+   `list_slice.lox`/`for_break_nested.lox` (the latter's own comment
+   explains its `break` regression coverage, unrelated to the string-repeat
+   bug it also happened to trip over via a `"-" * 50` separator line).
+
+9. **`sys.args()` was always one element short of glox's own** -- glox's
+   `ArgsBuiltIn` (core_functions.go) returns `vm.Args()` verbatim, and
+   `main.go` passes `os.Args[1:]` (script path *and* every argument after
+   it, unfiltered) straight to `SetArgs`. This port's own CLI parsing
+   (`main.odin`) only appended arguments seen *after* `file_path` was set,
+   so `sys.args()` here never included the script's own path at all --
+   `sys.args()[0]` always pointed at whatever the *first* extra argument
+   was (or panicked, if there were none). Fixed by also appending the
+   argument that sets `file_path` itself, so `script_args[0] ==` the
+   script's own path, matching glox exactly. Fixed
+   `logging_file_writer.lox`, which does `os.dirname(sys.args()[0])` to
+   build an output path alongside the running script.
+
+**One crash noticed, deliberately not fixed this pass**: `colour_utils.lox`
+segfaults (a genuine native stack overflow, confirmed via PowerShell's
+`$LASTEXITCODE` reporting `STATUS_STACK_OVERFLOW`) rather than reporting a
+clean "module not found" error. Root cause: `colour_utils` is a *native*
+built-in module in real glox (`makeBuiltInModule`/`defineBuiltIn`,
+builtin.go), checked before any file search ever runs there, so it never
+falls through to `findModuleInSubdirs` -- which has an identical latent
+self-import footgun in *both* glox and this port (no exclusion for the
+currently-running script's own path, and no "currently being imported"
+cycle guard at all). Since the fixture's script happens to be named
+`colour_utils.lox` and the module of the same name doesn't exist as a real
+file, `find_module_in_subdirs` (module.odin) matches the *running script's
+own path* and re-imports/re-interprets it as "the module", which itself
+imports `colour_utils` again, unboundedly. This is entirely gated behind
+`colour_utils` not yet existing as a native module here (Phase 6b,
+explicitly out of scope for this pass) -- once it's added as a builtin the
+same way glox has it, `load_module`'s builtin-check short-circuits before
+the file search ever runs, same as glox, and this crash path stops being
+reachable. Left as-is rather than adding untested general cycle-detection
+with no real fixture to validate it against.
+
+**Regression coverage**: all 67 `compiler`-package, 62 `vm`-package, and 41
+`core`-package tests reverified individually (`-define:ODIN_TEST_NAMES=
+<pkg>.<test>`), not just a batched run, per this project's standing
+"isolate first" testing discipline.
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — 171 passed /
+59 failed / 14 skipped before this work, **203 passed / 27 failed / 14
+skipped** after, confirmed stable across three repeated full-suite runs.
+Every one of the 27 remaining failures is gated on a native module this
+port hasn't built yet (`process`/`pool`/`re` (`regex`)/`pickle`/`json`
+(needs `pickle`/`re`)/`colour_utils`/`inspect`/`gfx` (needed by
+`rgb_encode.lox`)) -- none are compiler/VM-core gaps as of this section.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See
