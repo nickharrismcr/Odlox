@@ -1826,6 +1826,8 @@ Only after Phases 1–6 are correct and green against the test suite. See
 `ARCHITECTURE.md` § [Performance](docs/ARCHITECTURE.md#performance-what-odin-allows-that-go-didnt)
 for the full reasoning behind each item; this is the checklist form.
 
+- [x] Runtime self-patching arithmetic specialization (`Add_Ii`/`Add_Ff`/
+      `Incr_Const_I`/`Incr_Const_F`) — see Phase 7a below.
 - [ ] Port `benchmarks/lox/*.lox` (from the glox reference repo)
       unmodified; establish a baseline odlox vs. glox vs. CPython
       comparison, same shape as glox's own `bin/benchmarks.sh` table.
@@ -1833,9 +1835,9 @@ for the full reasoning behind each item; this is the checklist form.
       `-cpuprofile`/`-memprofile` workflow (`core:prof`, or manual
       `time.now()` bracketing plus an allocation counter) against `trees`/
       `method_call`/`fib`/`loop`-equivalent benchmarks.
-- [ ] Confirm the raw-pointer `ip`/stack-top change (Phase 4) actually
-      measures as a win; it's a real clox-parity change but should still
-      be verified, not assumed.
+- [ ] Build the raw-pointer `ip`/stack-top change (Phase 4 always
+      documented this as done; it never actually was — see Phase 7a
+      below), then measure it.
 - [ ] Attempt compile-time-baked instance field slots
       (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — glox's own roadmap
       concluded a runtime-only slot table (no compiler changes) is a net
@@ -1853,6 +1855,72 @@ for the full reasoning behind each item; this is the checklist form.
 - [ ] Re-run the full benchmark suite after each change; keep a results
       table the same way glox's own `docs/performance-roadmap.md` does, so
       regressions are visible immediately rather than discovered later.
+
+### Phase 7a: mandel investigation and the arithmetic self-patching fix
+
+**Trigger**: an informal release-build comparison (`mandel.lox`, both
+interpreters' `-o:speed`-equivalent build) found odlox running ~1.25–1.3×
+*slower* than glox on a mostly-numeric, function-call-light benchmark —
+surprising, since odlox's `Value` is 16 bytes (raw union, no Go-interface
+tax) against glox's own documented 32-byte `Value`, and odlox already has
+tag-byte object discrimination glox had to add by hand
+(`docs/performance-roadmap.md`'s "Option 1"). Structurally odlox should
+have *started ahead* on exactly this benchmark shape, not behind.
+
+**Compiler vs. design.** Pulling the per-instruction debug-hook check and
+`maybe_collect_garbage` out of the dispatch loop as a quick experiment made
+no measurable difference — notably *unlike* glox, where the equivalent
+`DebugHook != nil` check cost a measured 25% on `loop.lox` by disturbing
+Go's codegen for the switch (`glox_reference/docs/performance-roadmap.md`
+Step 1). That result argues against "the compiler" (Odin/LLVM under
+`-o:speed`) being the culprit here.
+
+**What was actually found, by reading code against `docs/ARCHITECTURE.md`'s
+own stated design, not by trusting it:** two real, verifiable gaps between
+documented intent and what `run.odin`/`vm.odin` actually do:
+
+1. `docs/ARCHITECTURE.md`'s "[The one further step Go couldn't take: raw
+   pointers for `ip` and stack top](docs/ARCHITECTURE.md#the-one-further-step-go-couldnt-take-raw-pointers-for-ip-and-stack-top)"
+   section documents hoisting `ip`/`stack_top` as true register-resident
+   pointer locals as the design — but `run.odin` still reads/advances
+   `fl.f.ip` (a pointer-chased `int` field on `Call_Frame`) and
+   `vm.stack_top` is a plain `int` field on `VM`. Never built. Still open
+   — tracked above, not fixed by this entry.
+2. `Op_Code` declared `Add_Ii`/`Add_Ff`/`Incr_Const_I`/`Incr_Const_F` (the
+   self-patching, type-specialized children of `Add_Nn`/`Incr_Const_N`
+   glox's own peephole optimiser actually emits and uses in production —
+   `glox_reference/src/vm/vm.go`'s `OP_ADD_NN`/`OP_ADD_II`/`OP_ADD_FF`/
+   `OP_INCR_CONST_*` cases) but they were pure vestigial dead enum
+   entries: no compiler pass ever emitted them, and `run.odin`'s switch
+   had no case for them at all — every `Add_Nn`/`Incr_Const_N` execution
+   re-paid the int/float branch on every single hit, forever. **Fixed by
+   this entry.**
+
+**The fix** (`run.odin`'s `Add_Nn`/`Add_Ii`/`Add_Ff`/`Incr_Const_N`/
+`Incr_Const_I`/`Incr_Const_F` cases): mirrors glox's `vm.go` mechanism
+exactly. On a monomorphic int/int or float/float hit, the generic
+`Add_Nn`/`Incr_Const_N` case patches its own opcode byte in place (`fl.code`
+aliases the chunk's backing `[dynamic]u8`, so the rewrite is real and
+persistent, not a per-call cache) to the `_Ii`/`_Ff` child, which on every
+later execution skips the type check entirely. A mixed-type site is *not*
+patched — it just computes the generic float result and stays
+`Add_Nn`/`Incr_Const_N` forever, same as glox (glox's own code doesn't
+re-verify the type on `OP_ADD_II`/`OP_ADD_FF` either; a specialized site is
+trusted once patched, matching the reference implementation's actual
+behavior rather than adding extra safety it doesn't have).
+
+**Verification**: full `pytest` regression unchanged at 218 passed / 0
+failed / 26 skipped; `test_mandel.py` (6/6) confirms the specialized
+opcodes produce identical output to the generic path. No wall-clock
+before/after number recorded here — the fixture in `tests/new_tests/lox/`
+is too small (~70ms, dominated by process startup) to isolate the effect;
+a real before/after needs the Phase 7 benchmark port above.
+
+**Net effect on the original question**: of the two documented-but-
+unrealized Phase 4 optimizations the mandel investigation surfaced, one is
+now actually built (this entry); the raw-pointer `ip`/stack-top change
+remains open and is probably the larger of the two, since it taxes *every*
+opcode's operand read, not just the arithmetic family.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 

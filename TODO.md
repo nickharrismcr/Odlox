@@ -32,11 +32,14 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 Only after Phases 1–6 are correct and green against the test suite.
 
+- [ ] Confirm the raw-pointer `ip`/stack-top change (Phase 4) actually measures as a win. **Correction: this
+      was never implemented, not just unconfirmed** — `docs/ARCHITECTURE.md` documents it as the design intent
+      but `run.odin`/`vm.odin` still use plain `int` index fields (`fl.f.ip`, `vm.stack_top`), not raw pointer
+      locals. Needs to actually be built, then measured.
 - [ ] Port `benchmarks/lox/*.lox` (from the glox reference repo) unmodified; establish an odlox vs. glox vs.
       CPython baseline.
 - [ ] Profile before optimizing (Odin equivalent of glox's `-cpuprofile`/`-memprofile` workflow) against
       `trees`/`method_call`/`fib`/`loop`-equivalent benchmarks.
-- [ ] Confirm the raw-pointer `ip`/stack-top change (Phase 4) actually measures as a win.
 - [ ] Attempt compile-time-baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it
       properly or skip it; a runtime-only slot table was a net regression in glox's own roadmap.
 - [ ] Consider a monomorphic inline cache on `OP_GET_PROPERTY`/`OP_INVOKE`.

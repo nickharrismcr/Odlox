@@ -136,33 +136,76 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// --- self-specializing peephole family ---
 		// Add_Nn/Incr_Const_N are always local-slot-indexed by
 		// construction (see compiler/compiler_state.odin's
-		// peephole_optimise) -- read both operands, compute, done. No
-		// runtime type-specialization into _Ii/_Ff variants yet (that
-		// second-stage inline-cache optimization is a Phase 7 concern,
-		// not required for correctness); Add_Nn/Incr_Const_N just do the
-		// int/float dispatch directly every time for now.
+		// peephole_optimise). On a monomorphic int/int or float/float
+		// hit, patch this call site's opcode byte in place to the
+		// _Ii/_Ff child so every later execution skips the type check
+		// entirely -- a minimal inline cache, mirroring glox's own
+		// OP_ADD_NN/OP_INCR_CONST_N (vm.go) exactly, including *not*
+		// patching a mixed-type site (it just computes the generic
+		// float result and stays Add_Nn/Incr_Const_N forever, same as
+		// glox). fl.code aliases the chunk's own backing array (see
+		// refresh_frame), so the patch is a real, persistent bytecode
+		// rewrite, not a per-call cache.
 		case .Add_Nn:
+			op_ip := fl.f.ip - 1
 			slot_a := fl.code[fl.f.ip]
 			slot_b := fl.code[fl.f.ip + 1]
 			fl.f.ip += 2
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Add_Ii)
 				vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) + core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Add_Ff)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			} else {
 				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
+		case .Add_Ii:
+			slot_a := fl.code[fl.f.ip]
+			slot_b := fl.code[fl.f.ip + 1]
+			fl.f.ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) + core.as_int(b))
+		case .Add_Ff:
+			slot_a := fl.code[fl.f.ip]
+			slot_b := fl.code[fl.f.ip + 1]
+			fl.f.ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 		case .Incr_Const_N:
+			op_ip := fl.f.ip - 1
 			slot := fl.code[fl.f.ip]
 			const_idx := fl.code[fl.f.ip + 1]
 			fl.f.ip += 2
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Incr_Const_I)
 				vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) + core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Incr_Const_F)
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			} else {
 				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
+		case .Incr_Const_I:
+			slot := fl.code[fl.f.ip]
+			const_idx := fl.code[fl.f.ip + 1]
+			fl.f.ip += 2
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) + core.as_int(b))
+		case .Incr_Const_F:
+			slot := fl.code[fl.f.ip]
+			const_idx := fl.code[fl.f.ip + 1]
+			fl.f.ip += 2
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 		case .Inc_Local:
 			// Not currently emitted by the compiler (see
 			// compiler/rules.odin's note on Plus_Plus meaning vector
