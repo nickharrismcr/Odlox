@@ -184,10 +184,6 @@ peek_token :: proc(s: ^Scanner) -> Token {
 	return s.tokens[s.token_idx]
 }
 
-check_next :: proc(s: ^Scanner, type: Token_Type) -> bool {
-	return peek_token(s).type == type
-}
-
 print_tokens :: proc(s: ^Scanner) {
 	for t in s.tokens {
 		fmt.printf("%4d  %-14v  %q\n", t.line, t.type, lexeme(t))
@@ -324,7 +320,10 @@ error_token :: proc(s: ^Scanner, msg: string) -> Token {
 	return Token{type = .Error, source = msg, start = 0, length = len(msg), line = s.line}
 }
 
-@(private = "file")
+// synthetic_token is package-visible (not file-private): the compiler
+// (Phase 3) also needs it, to fabricate the implicit `this`/unnamed slot
+// at the head of every function's local table.
+@(private)
 synthetic_token :: proc(type: Token_Type, text: string, line: int) -> Token {
 	return Token{type = type, source = text, start = 0, length = len(text), line = line}
 }
@@ -582,7 +581,13 @@ scan_string :: proc(s: ^Scanner, quote: u8) -> Token {
 		}
 		first = false
 		if part.is_expr {
-			append(&s.pending, synthetic_token(.Identifier, "str", start_line))
+			// `str` is the reserved keyword (Token_Type.Str) whose
+			// prefix parse rule compiles `str(expr)` straight to
+			// Op_Code.Str -- not a call to some assumed-to-exist global
+			// function named "str". Using the keyword token here (not
+			// Identifier) keeps interpolation and hand-written
+			// `str(...)` going through the exact same compiled path.
+			append(&s.pending, synthetic_token(.Str, "str", start_line))
 			append(&s.pending, synthetic_token(.Left_Paren, "(", start_line))
 			for t in scan_expr_fragment(part.text, start_line) {
 				append(&s.pending, t)

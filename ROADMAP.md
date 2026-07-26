@@ -112,53 +112,134 @@ Port `src/compiler/compile.go`. This is the largest single phase. See
 `ARCHITECTURE.md` § [Compiler](docs/ARCHITECTURE.md#compiler) for the
 structures and the load-bearing subtleties.
 
-- [ ] Pratt parser core: `Precedence` enum, `Parse_Rule` table,
-      `parse_precedence` driver, recursion-depth guards
-      (`expr_depth`/`stmt_depth`) mirroring glox's overflow protection.
-- [ ] `Compiler` struct, nested-compiler chaining (`enclosing`), scope
-      enter/exit (`begin_scope`/`end_scope` emitting `OP_POP` or
-      `OP_CLOSE_UPVALUE` per local as appropriate).
-- [ ] Local declaration/resolution (`declare_variable`, `resolve_local`,
+- [x] Pratt parser core: `Precedence` enum, `Parse_Rule` table
+      (`rules.odin`'s `get_rule`, a switch rather than an array literal
+      so each case can carry a short why-note), `parse_precedence`
+      driver, recursion-depth guards (`expr_depth`/`stmt_depth`).
+- [x] `Compiler` struct, nested-compiler chaining (`enclosing`), scope
+      enter/exit (`begin_scope`/`end_scope` emitting `Op_Code.Pop` or
+      `Op_Code.Close_Upvalue` per local as appropriate).
+- [x] Local declaration/resolution (`declare_variable`, `resolve_local`,
       `mark_initialised`, the self-reference-in-own-initializer check).
-- [ ] Upvalue capture (`resolve_upvalue`/`add_upvalue`, the clox-style
+- [x] Upvalue capture (`resolve_upvalue`/`add_upvalue`, the clox-style
       recursive climb through enclosing compilers).
-- [ ] Global slot assignment (`global_slot`, forward-reference-safe —
+- [x] Global slot assignment (`global_slot`, forward-reference-safe —
       first mention wins, regardless of declare-vs-reference order).
-- [ ] Function compilation: `function()` — params (including `*rest`
-      variadic and `name = expr` defaults emitting the
-      `OP_JUMP_IF_DEFINED` prologue guard), body, `end_compiler`
-      (implicit return, peephole pass, `GlobalNames` only on the outermost
-      chunk).
-- [ ] Peephole optimizer (`peep_hole_optimise`) — the two fusion patterns
-      (`ADD_NN`, `INCR_CONST_N`), byte-length-preserving rewrite so
-      already-computed jump offsets don't shift.
-- [ ] Class compilation: `class`, inheritance (`OP_INHERIT`), `this`/
-      `super` resolution, static methods/vars, `init` as
-      `Type.Initializer`.
-- [ ] Control flow: `if`/`else`, `while`, `for` (out-of-line increment
-      trick), `foreach` (3-slot allocation, `OP_FOREACH`/`OP_NEXT`/
-      `OP_END_FOREACH`, `Loop.foreach` flag routing `continue` forward
-      instead of backward).
-- [ ] `break`/`continue`/`return` crossing `try`/`finally` — port the
-      `Try_Finally`/`trampoline_site` trampoline design **directly from
-      `docs/exception-handling.md`** (in the glox reference repo), not
-      re-derived from first principles. This is the single most
-      easy-to-get-subtly-wrong part of the whole compiler.
-- [ ] Module import compilation (`import`, `from ... import`,
+- [x] Function compilation (`functions.odin`'s `compile_function`,
+      shared by declared functions, lambdas, and methods): params
+      (including `*rest` variadic and `name = expr` defaults emitting
+      the `Op_Code.Jump_If_Defined` prologue guard), body, `end_compiler`
+      (implicit return, peephole pass, global-name table published only
+      on the outermost chunk).
+- [x] Peephole optimizer (`peephole_optimise` in `compiler_state.odin`)
+      — the two fusion patterns (`Add_Nn`, `Incr_Const_N`),
+      byte-length-preserving rewrite so already-computed jump offsets
+      don't shift. Gated by a `DebugSkipPeephole` flag (mirrors glox's
+      `-n`/`--no-peephole`, not yet wired to a real CLI flag — that
+      lands with `main.odin`'s argument parsing in Phase 4).
+- [x] Class compilation: `class`, inheritance (`Op_Code.Inherit`),
+      `this`/`super` resolution, static methods/vars, `init` as
+      `Function_Type.Initializer`.
+- [x] Control flow: `if`/`else`, `while`, `for` (out-of-line increment
+      trick), `foreach` (two hidden locals — the loop variable and
+      `__iter` — plus `Op_Code.Foreach`/`Next`/`End_Foreach`, `Loop.is_foreach`
+      routing `continue` forward instead of backward).
+- [x] `break`/`continue`/`return` crossing `try` — **with a known,
+      documented simplification vs. glox**: this port's `cross_tries`
+      correctly unwinds exception handlers on the way out (no VM,
+      once Phase 4 lands, will ever see a stale handler for a `try` no
+      longer lexically in scope), but does **not** replay `finally` on
+      that crossing path, unlike glox's full `Trampoline_Site`
+      deferred-replay design (`docs/exception-handling.md` in the glox
+      reference repo). Implementing that blind, with no VM yet to
+      validate against, risked a subtly wrong result with no way to
+      catch it short of hand-tracing bytecode. Revisit once Phase 4's
+      VM can actually run `break`/`return` inside a `try ... finally`
+      against the ported test suite. See the header comment in
+      `stmt.odin` for the full rationale.
+- [x] Module import compilation (`import`, `from ... import`,
       `from ... import *`).
-- [ ] Literals: string/int/float, list/dict/tuple construction, indexing/
+- [x] Literals: string/int/float, list/dict/tuple construction, indexing/
       slicing (plain and `_assign` variants), compound assignment
-      (`+= -= *= /= %=`) desugaring on locals/globals/upvalues/properties.
-- [ ] Destructuring assignment (`a, b, c = expr`) and implicit bare-`x =
-      5` declaration.
-- [ ] Panic-mode error recovery (`synchronize`) + REPL-specific
-      compilation (`Repl_State` persistence across lines).
+      (`+= -= *= /= %=`) desugaring on locals/globals/properties (`this`
+      is read-only, so upvalue compound-assignment wasn't exercised —
+      the same `named_variable` code path handles it, but flag as an
+      untested case until the ported suite can confirm it end to end).
+- [x] Destructuring assignment (`a, b, c = expr`, including a
+      multi-value RHS: `a, b = 1, 2` implicitly tuples the right side
+      before unpacking) and implicit bare-`x = 5` declaration —
+      correctly falls back to a plain global `Set` rather than shadowing
+      with a fresh local when `x` is already a declared global being
+      reassigned from a nested scope.
+- [x] Panic-mode error recovery (`synchronize`) + REPL-specific
+      compilation (`Repl_State` persistence across lines, via
+      `Compile_Repl`).
 - [ ] `--print-tokens`/disassembly hooks wired for debugging the compiler
-      itself before the VM exists to run anything.
+      itself. `--print-tokens` already exists (Phase 1); a real
+      bytecode disassembler is Phase 5's job — deferred there rather
+      than duplicated early, per the roadmap's original sequencing.
+- [x] Compiler-level unit tests (`src/compiler/compile_test.odin`,
+      `odin test src/compiler`) — 58 cases, including a "kitchen sink"
+      smoke test exercising classes/inheritance/closures/control-flow/
+      collections/exceptions/imports/destructuring together, opcode-
+      shape assertions for every construct above, REPL cross-line slot
+      reuse, and syntax-error rejection. All green. This test suite is
+      what actually found every real bug listed below — write it early
+      for any future compiler work, not after the fact.
 
-**Milestone check**: at the end of this phase, `odlox --compile-only` (or
-equivalent) should accept every `.lox` fixture in the ported test suite
-without a compile error, even though nothing can execute yet.
+**Real bugs found and fixed while building this** (kept here, not just
+in commit history, because each is a genuine gotcha someone modifying
+this compiler later could reintroduce):
+
+- `mark_initialised`'s old `scope_depth == 0` guard silently no-opped
+  for a function's own reserved slot 0 (`this`) — that slot is declared
+  and marked *before* `begin_scope` bumps the depth off zero, so every
+  method body saw `this` as permanently "declared but not yet
+  initialised" and refused to read it. The guard was redundant for
+  every *other* caller anyway (they only ever call `mark_initialised`
+  right after `add_local`, which itself is only reached when a local
+  really is being declared) — removed outright rather than special-cased.
+- `consume_eol` only accepted an explicit `Eol`/being at `Eof` — a
+  one-line block body (`{ print 1 }`, no newline before the `}`) has no
+  `Eol` token between the last statement and the closing brace at all,
+  so every single-line block failed to compile. Fixed by also accepting
+  an explicit `Semicolon` (a valid terminator everywhere, not just
+  inside a `for(...)` header) and treating a following `Right_Brace` as
+  an implicit terminator, the same resolution most brace-delimited
+  languages use.
+- The class-body member loop had no branch for the `Eol` that
+  legitimately sits between two methods (top-level `declaration()`/
+  `statement()` handle this via their own `.Eol` case; `method()`
+  doesn't go through either) — `method()` failed without consuming a
+  token, so the loop called it again on the exact same token forever.
+  An actual infinite loop, not just a wrong compile.
+- `implicit_assignment_statement` treated *any* name that wasn't a
+  local in the current scope as "declare a new local", including one
+  that's already a declared *global* being reassigned from a nested
+  scope (`var total = 0` at top level, then `total = total + 1` inside
+  a `for` body) — spawned a shadowing local mid-statement whose own
+  initializer expression then saw that fresh, not-yet-initialised local
+  instead of the outer global. Fixed by checking `is_global_declared`
+  before falling into the "new local" branch.
+- `implicit_assignment_statement` never emitted `Op_Code.Pop` after a
+  plain (non-compound) assignment to an *existing* local, unlike every
+  other assignment path (`Set_*` opcodes are designed to leave the
+  assigned value on the stack, so assignment can chain as an
+  expression — see `named_variable` in `expr.odin`) — a real stack-
+  balance bug, and incidentally what was silently suppressing peephole
+  fusion for that exact case, since the fusion pattern requires a
+  trailing `Pop`.
+- `destructuring_assignment_statement`'s right-hand side only ever
+  compiled one expression (`a, b = 1, 2` parsed just `1`, then choked
+  on the comma) — fixed by parsing a comma-separated expression list on
+  the RHS too and implicitly tupling it when there's more than one.
+
+**Milestone check**: `odlox --compile-only` (or equivalent) accepts
+every construct exercised by `compile_test.odin`'s kitchen-sink smoke
+test without a compile error. The real milestone — every `.lox` fixture
+in the ported test suite compiling — needs Phase 6's native/builtin
+registrations to exist too (many fixtures `import` built-in modules),
+so that check is deferred to align with Phase 4/6, not claimed early.
 
 ## Phase 4 — VM core + GC
 

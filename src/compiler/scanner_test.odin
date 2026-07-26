@@ -301,10 +301,15 @@ test_dollar_dollar_escape :: proc(t: ^testing.T) {
 // trusted.
 @(test)
 test_string_interpolation_desugars_to_call_expression :: proc(t: ^testing.T) {
+	// The "str" here is Token_Type.Str (the reserved keyword, compiled
+	// straight to Op_Code.Str), not a plain Identifier -- interpolation
+	// deliberately reuses str(expr)'s own compiled form rather than
+	// assuming a global function named "str" exists at runtime. See the
+	// comment at this synthetic token's construction in scanner.odin.
 	expect_types(t, `"a${x}b"`, []Token_Type{
 		.Left_Paren,
 		.String, .Ampersand,
-		.Identifier, .Left_Paren, .Identifier, .Right_Paren,
+		.Str, .Left_Paren, .Identifier, .Right_Paren,
 		.Ampersand, .String,
 		.Right_Paren,
 		.Eof,
@@ -321,7 +326,7 @@ test_string_interpolation_desugars_to_call_expression :: proc(t: ^testing.T) {
 test_string_interpolation_drops_empty_literal_parts :: proc(t: ^testing.T) {
 	expect_types(t, `"${x}"`, []Token_Type{
 		.Left_Paren,
-		.Identifier, .Left_Paren, .Identifier, .Right_Paren,
+		.Str, .Left_Paren, .Identifier, .Right_Paren,
 		.Right_Paren,
 		.Eof,
 	})
