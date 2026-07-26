@@ -378,15 +378,18 @@ for reverse id→name lookup where still needed for debug output.
 
 ## Garbage collector
 
-glox's `src/vm/gc.go` is explicitly a **design blueprint for this exact
-port** — its doc comment says so directly: "modeled on clox's design...
-and cross-checked against a reference Odin port (OrigamiDev-Pete/odinLox)
+**Status: implemented (Phase 4), in `vm/gc.odin`.** glox's
+`src/vm/gc.go` is explicitly a **design blueprint for this exact port** —
+its doc comment says so directly: "modeled on clox's design... and
+cross-checked against a reference Odin port (OrigamiDev-Pete/odinLox)
 during design... it exists purely to validate root enumeration and object-
 graph traversal against glox's real object model, and to serve as the
 design blueprint for a future Odin port." This section is that blueprint,
-carried over — with two deliberate simplifications the Go version couldn't
-make, both because it had to coexist with Go's own runtime GC as an
-ultimate backstop, and odlox doesn't have one.
+carried over — with real refinements found while actually building it, not
+just the two anticipated ahead of time. All of them are explained in full,
+with the "found the hard way" detail, in `vm/gc.odin`'s own header comment
+and the per-section comments below; read the code comments as the primary
+source and this section as the summary.
 
 ### The mark-sweep cycle (ports directly)
 
@@ -424,70 +427,76 @@ collect_garbage :: proc(vm: ^VM) {
   [GCFreer equivalent](#gcfreer-equivalent) below.
 
 `gc_track` (allocation-site hook, called from every constructor of a
-collectible type): links the new object at the registry head, **pre-marked**
-— glox's comment on why is worth preserving exactly, since it documents a
-real bug found the hard way: an allocation made by a builtin (e.g.
-`os.open` constructing a `FileObject`) happens *before* the resulting value
-is pushed anywhere a root scan would find it; if `bytesAllocated` crosses
-the threshold and triggers a collection in that gap, an unmarked new object
-would be swept by the very cycle it triggered. Pre-marking means the next
-sweep always spares it once linked; a later cycle collects it normally if
-it never becomes reachable.
+collectible type): links the new object at the registry head. **Not
+pre-marked, unlike glox's version** — see the next section for why that
+whole mechanism turned out to be unnecessary here.
 
-### Simplification 1: no "permanent object" exemption
+### No mid-opcode collection, so no "pre-mark on link" trick
+
+glox's `gcTrack` pre-marks a just-linked object, and its comment explains
+a real bug this works around: a builtin (e.g. `os.open` constructing a
+`FileObject`) allocates the object *before* the resulting value is pushed
+anywhere a root scan would find it; if `bytesAllocated` crosses the
+threshold and triggers a collection in that exact gap, an unmarked new
+object would be swept by the very cycle it triggered.
+
+odlox's `run()` dispatch loop only ever calls `maybe_collect_garbage`
+**between** opcodes (top of the `for` loop, before decoding the next
+instruction) — never from inside a single opcode's own handler. Every
+opcode that builds a compound value out of several already-on-the-stack
+pieces (`Op_Create_List` popping N items before combining them, `Op_Call`
+shaping arguments, ...) does that whole sequence atomically with respect to
+collection: nothing can run a cycle partway through. That means the value
+stack is *always* exactly what source-level semantics say it should be —
+including every intermediate expression result — at the one point a
+collection is ever allowed to happen, so there's no window where a
+just-allocated, not-yet-reachable-from-anywhere object needs artificial
+protection at all. This removed a whole mechanism glox needed, not just
+simplified it.
+
+### "No permanent-object exemption" — landed for two of four kinds, for a structural reason
 
 glox deliberately **never sweeps** `ClassObject`, `ModuleObject`,
 `FunctionObject`, or `StringObject` — its own doc comment
-(`src/core/gc_registry.go`) calls this out as a scope decision: "small in
-number and long-lived, so there's no real cost to it," still fully traced
-(so anything reachable only through a class's static field stays correctly
-alive) but never freed. This requires a side-registry
-(`LiveClasses`/`LiveModules`, mutex-guarded slices) specifically so
-`markRoots` has *some* way to keep tracing through objects that are exempt
-from the normal reachability test.
+(`src/core/gc_registry.go`) calls this a scope decision ("small in number
+and long-lived, so there's no real cost to it"), leaning on Go's own GC as
+the real backstop for actually reclaiming them eventually. odlox has no
+such backstop, so the original plan here was to make all four ordinary
+sweepable `Obj`s.
 
-This exemption exists because **Go's own GC is the real backstop** — glox
-never frees these because it doesn't have to; the process-wide Go heap
-reclaims them on exit (or whenever Go's own collector notices, for a
-long-running process) regardless of what this experimental collector does.
-**odlox has no such backstop.** A long-running REPL session or an
-image/script pipeline that defines many transient classes (e.g. one per
-loaded asset/plugin) would genuinely leak forever under glox's exemption
-policy, ported as-is.
+**What actually happened, discovered while wiring this up**: `Class_Object`
+and `Module_Object` *are* ordinary sweepable objects now — both are
+constructed entirely by `vm`-package code (`Op_Class`'s handler,
+`module.odin`'s `load_module`), so `gc_track` is always reachable right at
+their construction site, and the `LiveClasses`/`LiveModules` side-registry
+glox needed is gone entirely; a class is alive exactly when something
+really points to it. `Function_Object` and `String_Object`, though, are
+built by code that **cannot** call `gc_track` at all: `Function_Object` is
+constructed by the *compiler* (`compiler/functions.odin`, `compile_function`),
+and `String_Object` by `core.intern_string`, called from both the compiler
+and the VM — neither has a `^VM` in scope, for the same package-graph
+reason `core.Native_Object`'s `Builtin_Fn` needed a `rawptr` boundary in
+Phase 2 (`core` sits below both `compiler` and `vm`; see
+[Package layout](#package-layout)). Both remain structurally permanent —
+still fully traced (a closure stashed in a class static, or a string held
+only by an interned-but-unlinked pointer, stays correctly reachable), just
+never freed. Not a change of plan so much as discovering that "no VM in
+scope" is a real constraint two of the four kinds run into and two don't.
 
-**Fix, not just a port**: make classes, modules, and functions ordinary
-sweepable `Obj`s, exactly like everything else. They already have to be
-fully traced today (glox does this regardless of the sweep exemption), so
-`blacken_object`'s cases for them don't change at all — the only thing that
-changes is deleting the exemption in `sweep` and, with it, the entire
-`LiveClasses`/`LiveModules` side-registry: once a class is only kept alive
-by *actually being reachable* (from a global slot, a closure's captured
-class reference, an instance's `.class` field, etc. — all of which
-`blacken_object` already walks), there's no need for a second, independent
-"is it registered as permanently live" channel. This is strictly less
-machinery than glox's Go version, made possible by writing a GC that has to
-be *complete* rather than merely *good enough alongside a real one*.
+### String weak-table sweeping: deferred, not implemented
 
-### Simplification 2: strings as weak-table sweepable objects
-
-Similarly, glox's intern table (`string_intern.go`) **never removes
-entries** — every interned string is immortal for the process's life,
-again leaning on Go's GC to eventually reclaim the backing bytes
-regardless (the `StringObject.GetGCHeader()` doc comment says this
-explicitly: "this experimental GC treats any StringObject it encounters as
-an immortal leaf and never marks/traces/sweeps it").
-
-odlox instead follows clox's (and odinLox's) actual answer to this problem,
-already validated in Odin by odinLox's `tableRemoveWhite`: strings are
-**normal sweepable `Obj`s**, and the intern table holds *weak* references
-— between `trace_references` and `sweep`, walk the intern table and delete
-any entry whose `String_Object` didn't get marked this cycle (i.e. nothing
-live still points at it), then `sweep` frees it along with everything else
-unmarked. A transient string built for one `str(x)` call and never stored
-anywhere is reclaimed on the next cycle instead of living forever — real
-memory hygiene for a script/REPL session that runs indefinitely, which
-matters for odlox precisely because there's no secondary GC to paper over
-skipping this.
+The follow-on idea from the original plan — treat the intern table as a
+*weak* set, removing an entry once its `String_Object` goes unmarked for a
+cycle (clox's and odinLox's actual answer, `tableRemoveWhite`) — needs
+`String_Object` to be a normal sweepable object first, which the section
+above explains it structurally can't be without moving where interning
+happens (likely into the `vm` package itself, sacrificing "the compiler
+can intern constants with no VM in scope at all"). Not attempted this
+phase; interned strings are permanent for now, matching glox's actual
+behavior (though arrived at for a different reason) rather than the
+originally-planned improvement. Worth revisiting if a long-running
+REPL/script session's intern-table growth ever actually matters in
+practice — there's no evidence yet that it does.
 
 ### GCFreer equivalent
 
@@ -509,6 +518,34 @@ thread-module VMs could touch shared state concurrently. With threads out
 of scope (see [Scope](#scope)), all of it becomes a plain field —
 `string_depth: int`, no registry mutexes, no `sync.RWMutex` on the intern
 table.
+
+One place this assumption surfaced an open issue rather than just a
+theoretical risk, found while writing Phase 2's and Phase 4's own test
+suites rather than in the interpreter itself: running many `@(test)`
+procs together in one `odin test` binary against `core`'s one
+package-level, deliberately unsynchronized string-intern table
+occasionally produces wrong results or crashes that do **not** reproduce
+running the same test alone. This isn't fully explained by Odin's test
+runner defaulting to multiple *OS threads* (the first, natural
+hypothesis, since many independent tests genuinely do touch the shared
+table concurrently that way) -- it still reproduces with
+`-define:ODIN_TEST_THREADS=1`, and shows up in `src/core`'s own test
+binary too, which never constructs a `VM` at all, only plain `core`-level
+values. The common factor across every occurrence is simply *many tests,
+one process, one shared table* -- consistent with either a real data race
+that single-threading doesn't fully rule out (e.g. the OS thread pool a
+`-define:ODIN_TEST_THREADS=1` run still uses under the hood for other
+runtime bookkeeping) or a toolchain-level issue in this project's
+installed compiler, an active `dev-2026-07` build rather than a numbered
+release. Every single test passes running alone, and the compiled
+`odlox` binary itself has produced correct output for every hand-written
+smoke-test script exercised against it (see `ROADMAP.md`'s Phase 4
+section for specifics) -- so this reads as a test-execution artifact
+tied to this specific toolchain build running many tests in one process,
+not a correctness bug in the interpreter's actual logic, but it is
+**not fully root-caused**. Documented honestly rather than hidden or
+worked around silently; re-evaluate after any Odin compiler update
+before assuming it's this project's code again.
 
 ---
 

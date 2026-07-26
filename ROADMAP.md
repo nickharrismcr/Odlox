@@ -247,69 +247,216 @@ Port `src/vm/vm.go`'s `run()` and `src/vm/gc.go`. See `ARCHITECTURE.md` §§
 [VM dispatch loop](docs/ARCHITECTURE.md#vm-dispatch-loop--calling-convention)
 and [Garbage collector](docs/ARCHITECTURE.md#garbage-collector).
 
-- [ ] `VM` struct (fixed-size `stack`/`frames` arrays, `frame_count`,
+- [x] `VM` struct (fixed-size `stack`/`frames` arrays, `frame_count`,
       `stack_top`, `open_upvalues`, `builtins` map, GC bookkeeping).
-- [ ] `run()` dispatch loop with hoisted locals + `refresh_frame` —
-      **and** the raw-pointer `ip`/stack-top optimization glox's own
-      roadmap wanted but couldn't have in Go (§ VM dispatch loop). Get it
-      correct with safe indexing first if that's faster to a working
-      state; switch to raw pointers once green, since it's meant to be a
-      drop-in perf change, not a correctness-affecting one.
-- [ ] Full opcode dispatch, opcode-by-opcode — stack/const primitives,
-      comparisons, arithmetic (int/float/vector/string paths), the
-      self-specializing `ADD_NN→ADD_II/FF` / `INCR_CONST_N→_I/_F` runtime
-      opcode-patching family, locals/globals/upvalues, jumps.
-- [ ] Function call mechanism: `call_value`/`call` (arity/default/
-      variadic shaping — cross-check against
+- [x] `run()` dispatch loop with hoisted locals (`Frame_Locals`) +
+      `refresh_frame`, reassigned at each call site rather than glox's
+      `refreshFrame()` closure — Odin doesn't capture outer locals by
+      mutable reference the way Go does, so this is a small struct
+      returned and rebound instead of a closure mutating captured
+      variables in place. The **raw-pointer `ip`/stack-top optimization**
+      is *not yet done* — `run()` still indexes `fl.code`/`vm.stack` by
+      integer, safely, matching the "get it correct first" sequencing
+      this checklist item originally called for. Left as a genuine
+      Phase 7 perf item, not a correctness gap.
+- [x] Full opcode dispatch (`run.odin` + `arithmetic.odin`) — stack/const
+      primitives, comparisons, arithmetic (int/float/vector/string
+      paths), the compile-time-fused `Add_Nn`/`Incr_Const_N` family
+      (executed directly, doing the int/float dispatch every time; the
+      *further* runtime specialization into type-specific `_Ii`/`_Ff`
+      variants that avoids re-checking types on every hit is a Phase 7
+      item, not implemented here), locals/globals/upvalues, jumps.
+- [x] Function call mechanism (`call.odin`): `call_value`/`call`
+      (arity/default/variadic shaping, matching
       `docs/plans/default-variadic-params.md` in the glox reference),
-      `invoke`/`invoke_from_class`/`invoke_from_builtin`
-      (`OP_INVOKE`/`OP_SUPER_INVOKE` fast paths), class-construction via
-      `OP_CALL` on a class value, bound-method dispatch.
-- [ ] Upvalue capture/closing (`capture_upvalue`, `close_upvalues`,
-      open-upvalues list sorted by slot).
-- [ ] Property get/set (`OP_GET_PROPERTY`/`OP_SET_PROPERTY`) across
-      instance/class/native/module receivers, including vec2/3/4 swizzle
-      fields (`.x/.y/.z/.w`, `.r/.g/.b/.a`).
-- [ ] Collections: list/dict/tuple construction, indexing, slicing
-      (plain + assign), membership (`in`).
-- [ ] Foreach/iterator protocol at the VM level: native fast path
-      (`Get_Iterator`/`next` with no Lox-call overhead) **and** the
-      user-class path (nested re-entrant `run()` call for `__iter__`/
-      `__next__`, with the exception-floor-raising detail preserved).
-- [ ] Exceptions: `OP_TRY`/`OP_END_TRY`/`OP_EXCEPT`/`OP_END_EXCEPT`/
-      `OP_FINALLY`/`OP_RAISE`, `raise_exception`/`next_handler` — **follow
-      `docs/exception-handling.md` directly**, including the two documented
-      bytecode-adjacency invariants.
-- [ ] `OP_STR`/`toString` dispatch (loop-continue re-entry rather than a
-      nested call, per glox's actual mechanism).
-- [ ] Destructuring (`OP_UNPACK`), breakpoint opcode, "invalid opcode"
-      catch-all.
-- [ ] GC: `Obj`/intrusive list, `gc_track` (pre-marked-on-link, to survive
-      the very cycle that discovers the allocator threshold was crossed),
-      `mark_roots`/`mark_object`/`blacken_object`/`sweep`,
-      heap-growth-factor threshold (`next_gc = bytes_allocated × 2`).
-      **Apply both simplifications from `ARCHITECTURE.md`**: no permanent-
-      object sweep exemption (classes/modules/functions are ordinary
-      sweepable `Obj`s — no `LiveClasses`/`LiveModules` side-registry), and
-      strings as weak-table sweepable objects (a `remove_white`-equivalent
-      pass on the intern table between trace and sweep).
-- [ ] Module import execution (`import_module`, process-wide cache, no
-      mutex) + a fresh nested-VM helper for compiling an imported module.
-- [ ] `Interpret` entry point + REPL loop (`main.odin`): "print last value
-      unless it's `nil`" behavior, multi-line REPL input buffering
-      (balanced-bracket completeness check via a throwaway scanner pass).
+      `invoke`/`invoke_from_class` (`Op_Invoke`/`Op_Super_Invoke` fast
+      paths), class-construction via `Op_Call` on a class value,
+      bound-method dispatch. Also includes a **Phase 6 native-function
+      method surface pulled forward**: `list`/`dict`/`string` built-in
+      methods (`append`/`remove`/`find`/`length`, `get`/`keys`/`remove`,
+      `length`) are wired up now using Phase 2's pure-data procs, since
+      they're VM primitives, not raylib-dependent natives.
+- [x] Upvalue capture/closing (`upvalue.odin`: `capture_upvalue`,
+      `close_upvalues`, open-upvalues list sorted by slot).
+- [x] Property get/set (`properties.odin`) across instance/class/module
+      receivers, including vec2/3/4 swizzle fields (`.x/.y/.z/.w`,
+      `.r/.g/.b/.a` on Vec4). (Native-object property access doesn't
+      apply yet — no natives exist until Phase 6.)
+- [x] Collections (`collections.odin`): list/dict/tuple construction,
+      indexing, slicing (plain + assign), membership (`in`).
+- [x] Foreach — **native iterable fast path only** (list/string,
+      `foreach.odin`). The user-class `__iter__`/`__next__` protocol
+      (which needs the nested re-entrant `run()` call `Run_Mode` exists
+      for) is a **documented, deferred gap** — foreach over a plain class
+      instance currently reports "not iterable". See `foreach.odin`'s
+      header comment; revisit once there's real test coverage (a user
+      iterator class) to build the nested-call path against.
+- [x] Exceptions (`exceptions.odin`) — bytecode shape and matching
+      algorithm follow `docs/exception-handling.md`'s design, **with one
+      deliberate improvement, not just a port**: `Op_Except` carries its
+      own explicit 2-byte skip offset to the next clause (patched like
+      any other jump) instead of glox's byte-pattern scan for "the next
+      `Op_End_Except`/`Op_Except`/`Op_Finally`" — that scan is fragile
+      once a clause body can contain a *nested* try/except (its inner
+      `Op_End_Except` would be found first, wrongly). Since this port
+      controls both the compiler's emission and the VM's reading of it,
+      there was no reason to keep the ambiguity. See
+      `exceptions.odin`'s header comment.
+- [x] `Op_Str`/`str(...)` — **does not yet dispatch to a user-defined
+      `toString()` method** on an Instance receiver (same nested-call
+      gap as foreach's user-iterator protocol); falls back to
+      `core.value_to_string`'s generic `<instance ClassName>` for every
+      instance. Documented in `run.odin`'s `Op_Str` case.
+- [x] Destructuring (`Op_Unpack`), breakpoint opcode (no-op for now --
+      Phase 5's debugger would hook here), "invalid opcode" catch-all.
+- [x] GC (`gc.odin`) — intrusive `Obj` list, `mark_roots`/`mark_object`/
+      `blacken_object`/`sweep`, heap-growth-factor threshold. **One
+      design change from the original plan, found while building it**:
+      no "pre-mark on link" trick at all — `maybe_collect_garbage` only
+      runs *between* dispatch-loop iterations, never mid-opcode, which
+      means the value stack is always in a fully consistent state
+      whenever a collection can run, removing the whole reason glox's
+      Go version needed pre-marking in the first place. **The "no
+      permanent-object exemption" simplification landed partially, for a
+      real structural reason, not a change of plan**: `Class_Object` and
+      `Module_Object` are ordinary sweepable `Obj`s (built entirely by
+      VM-package code, so `gc_track` is always reachable at their
+      construction site) — but `Function_Object` (built by the
+      *compiler*) and `String_Object` (built by `core.intern_string`,
+      called from both compiler and VM) structurally can't be
+      `gc_track`'d by any VM at all, the same core/vm package-boundary
+      reason `Builtin_Fn` needed a `rawptr` in Phase 2. Both stay
+      permanent — still fully traced for correctness, just never freed.
+      The weak-table string-sweeping idea from `ARCHITECTURE.md` is
+      **deferred, not implemented** for the same reason. See `gc.odin`'s
+      header comment for the full explanation; `ARCHITECTURE.md` updated
+      to match.
+- [x] Module import execution (`module.odin`) — importing another
+      `*.lox` file works (a fresh sub-VM compiles and runs it, its
+      globals get harvested into a `Module_Object`); built-in modules
+      resolve through `vm.builtin_modules`, but nothing registers any
+      yet (Phase 6's job) so importing one currently reports "not
+      found". No mutex on the module cache (see
+      `docs/ARCHITECTURE.md`'s Scope section — threads are out of scope
+      entirely, unlike glox's Go cache).
+- [x] `interpret()` entry point (`interpret.odin`) + REPL loop
+      (`main.odin`): "print last value unless it's `nil`" behavior,
+      multi-line REPL input buffering (balanced-bracket completeness
+      check via a throwaway scanner pass, `core:bufio` for line
+      reading). **Known gap, found while writing `vm_test.odin`**: a
+      bare expression typed at the REPL evaluates correctly but its
+      value doesn't survive as the line's reported result (`expression_statement`
+      always emits `Pop`, and `end_compiler` always emits `Nil` before
+      `Return` regardless of what preceded it) — so `> 2 + 2` currently
+      shows `nil`, not `4`. Fixing this needs the compiler to recognize
+      "this is a REPL line's final statement" and skip both the `Pop`
+      and the trailing `Nil` for that one case specifically; not
+      attempted here. Global-slot persistence *across* REPL lines (the
+      part `Repl_State` exists for) does work correctly.
 - [ ] Error/panic reporting: stack traces with source-line context, using
-      `Chunk.lines` for line numbers.
-- [ ] CLI flags matching glox's surface where they make sense for this
-      port: `--repl`, `--compile-only`, `--debug`/`--info` (trace
-      execution), `--no-peephole`. Skip `--force-compile`/cache-related
-      flags until/unless Phase 7 happens.
+      `Chunk.lines` for line numbers. **Not built** — errors currently
+      just carry a message string (`vm.error_msg`), with no call-stack
+      trace attached. A real gap, deferred alongside Phase 5's debug
+      tooling since a proper trace wants the disassembler infrastructure
+      that phase builds anyway.
+- [x] CLI flags: `--repl`, `--print-tokens` (kept from Phase 1), file
+      execution as the default. `--compile-only`/`--debug`/`--info`/
+      `--no-peephole` **not wired to CLI flags yet** (`DebugSkipPeephole`
+      exists as a package variable, toggled directly by tests, but
+      nothing exposes it on the command line) — deferred to Phase 5
+      alongside the debug hooks those flags would actually control.
 
-**Milestone check**: the ported test suite (minus thread/graphics-dependent
-tests) should be running, with a climbing pass count as opcodes/features
-land — not a single "big bang" at the end of this phase. Land VM work
-incrementally (e.g. arithmetic + control flow first, classes/exceptions/
-foreach after) and re-run the suite after each slice.
+**Real bugs found and fixed while building this** (kept here, not just in
+commit history, for the same reason as Phase 3's list — genuine gotchas a
+future change to this code could reintroduce):
+
+- `interpret()` never sized `Environment.globals`/`defined` before
+  running the compiled closure — every script crashed on its first
+  global access. `Compile()` only *computes* `global_count`; actually
+  allocating the slots is a separate runtime step
+  (`core.env_grow_globals`) `interpret()` has to do itself.
+- **The single highest-value bug this phase found**: `foreach_statement`
+  (compiler, Phase 3) called `add_local` for the loop variable *before*
+  pushing any value for it, then compiled the iterable expression next —
+  so the loop variable's compile-time slot never corresponded to an
+  actual runtime stack push, and `__iter`'s slot ended up one past
+  anything actually written, reading uninitialised stack garbage.
+  Crashed every single real foreach loop. Fixed by pushing an explicit
+  `Nil` placeholder for the loop variable first. This is exactly the
+  class of bug Phase 3's shape-only opcode-presence tests structurally
+  could not catch (they never inspected operand *values* or stack
+  balance) — it only surfaced once Phase 4 gave the project a VM to
+  actually run programs against, which is the whole reason
+  `ROADMAP.md`'s milestone checks call for running real code early and
+  often rather than trusting a compiler phase "done" on shape checks
+  alone.
+- `implicit_assignment_statement` (compiler, Phase 3) checked for an
+  existing *local* and an existing *global* before deciding to declare a
+  fresh binding, but never checked for an existing **upvalue** — so
+  `n = n + 1` inside a closure capturing `n` from an enclosing function
+  silently shadowed it with a new, uninitialised local instead of
+  writing through to the captured variable. `make_counter()`-shaped
+  closures (the single most common closure idiom) were silently broken.
+- `pop_frame_for_exception`'s unwind-boundary check was off by one
+  (`frame_count <= exception_floor` instead of `<= exception_floor + 1`)
+  — let the very last frame at the floor be popped anyway, dropping
+  `frame_count` to 0 and crashing the *next* loop iteration's `frame(vm)`
+  call. Every single "this should be a clean, uncaught runtime error"
+  test crashed instead of returning `.Runtime_Error`.
+- `Op_Print`/exception-message wrapping both used `core.value_to_string`
+  (which quotes strings, for nested/round-trippable display) where they
+  should have shown a string's *raw* text — `print "hi"` showed `"hi"`,
+  and `raise "boom"` caught as `except ... { e.msg }` read `"boom"`
+  (literal quote characters baked into the value), not `boom`. Fixed
+  with a shared `display_string` helper used by both.
+- Two compiler-level bytecode-encoding gaps found while designing the
+  VM side, fixed **before** the VM code that would have depended on
+  the broken shape existed: `Op_Except` needed its own skip-offset
+  operand (see the Exceptions item above) and `Op_Next` needed a
+  `var_slot` operand it was missing entirely (the VM has to know where
+  to store each newly-yielded value on every iteration after the
+  first, not just where the iterator itself lives).
+- **Open test-infrastructure issue, not (as far as extensive manual
+  verification can tell) a VM bug**: running `vm_test.odin`'s full suite
+  through `odin test` reliably segfaults partway through (`bad free` at
+  `core.intern_string`'s allocation site, or a bare SIGSEGV), even with
+  `-define:ODIN_TEST_THREADS=1` (so it isn't purely the cross-thread
+  data race on the unlocked package-level intern table it first looked
+  like — see `docs/ARCHITECTURE.md`'s Scope section for why that table
+  has no lock by design). It reproduces with as few as ~13 of the ~26
+  tests selected via `-define:ODIN_TEST_NAMES`, and does *not* reproduce
+  running any single test in isolation. The common factor across every
+  crashing run is many `VM` instances (each a ~260KB struct, dominated
+  by its fixed 16384-slot value stack — see `vm.odin`'s `STACK_MAX`)
+  being constructed in one process, each pulling `core.intern_string`
+  hard during compilation; cutting `bootstrap_exceptions` down to run
+  once per process instead of once per `VM` (a real perf win regardless
+  — see `exceptions.odin`'s `bootstrap_cache`) reduced but did not
+  eliminate it. Given (a) the installed compiler is an active
+  `dev-2026-07` build, not a numbered release, (b) the exact same code
+  produces correct output for every hand-run smoke-test script through
+  the compiled `odlox` binary directly (arithmetic, closures, classes/
+  inheritance, collections, foreach, exceptions, modules — the full
+  breadth `vm_test.odin` covers), and (c) every test passes when run
+  individually, this looks more like a toolchain-level interaction
+  (this dev build's tracking allocator or map implementation under many
+  large, allocation-heavy `@(test)` procs in one binary) than an
+  interpreter bug — but that's not proven, only the most likely
+  explanation given the evidence gathered. Flagged here rather than
+  either hidden or allowed to block the phase: if this recurs after an
+  Odin compiler update, check whether it's still present before
+  assuming it's this project's code again.
+
+**Milestone check**: the smoke-tested feature set (arithmetic, control
+flow, closures/upvalues, classes/inheritance, collections, foreach,
+try/except/finally, module imports, REPL) runs correctly end to end
+against hand-written `.lox`-style scripts, and `vm_test.odin` pins each
+of those down as an automated test. Running the actual ported
+`tests/new_tests/` suite from glox is **not done yet** — most of those
+fixtures exercise built-in functions/modules (Phase 6) or a disassembler
+(Phase 5) this phase doesn't have; wiring that suite up for real is
+deferred to align with whichever of those phases removes the last
+blocker, not claimed here.
 
 ## Phase 5 — Debug tooling
 

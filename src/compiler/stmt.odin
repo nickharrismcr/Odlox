@@ -217,6 +217,18 @@ implicit_assignment_statement :: proc(p: ^Parser) {
 	// (`total + 1`) would then see that fresh, not-yet-initialised
 	// local instead of the outer global it was actually meant to read.
 	already_global := is_global_declared(p, name)
+	// Same reasoning again, one tier further out: a name captured from
+	// an *enclosing* function (`n = n + 1` inside a closure returned by
+	// make_counter()) is an upvalue, not a local of *this* function --
+	// resolve_local alone can't see it (only resolve_upvalue walks the
+	// enclosing-compiler chain). Checked only when existing_local
+	// missed, since resolve_upvalue would otherwise needlessly capture
+	// a same-named outer variable that a local of this scope already
+	// shadows.
+	existing_upvalue := -1
+	if existing_local == -1 {
+		existing_upvalue = resolve_upvalue(p, c, name_tok)
+	}
 
 	consume(p, .Equal, "Expect '=' in assignment.")
 
@@ -231,6 +243,10 @@ implicit_assignment_statement :: proc(p: ^Parser) {
 		expression(p)
 		emit_op_byte(p, .Set_Local, u8(existing_local))
 		emit_op(p, .Pop)
+	} else if existing_upvalue != -1 {
+		expression(p)
+		emit_op_byte(p, .Set_Upvalue, u8(existing_upvalue))
+		emit_op(p, .Pop) // Set_Upvalue leaves a value too, same reasoning as Set_Local above
 	} else if already_global {
 		slot := global_slot(p, name)
 		expression(p)
@@ -492,6 +508,17 @@ for_statement :: proc(p: ^Parser) {
 foreach_statement :: proc(p: ^Parser) {
 	begin_scope(p)
 	consume(p, .Identifier, "Expect loop variable name.")
+	// A local's compile-time slot must correspond to an actual runtime
+	// stack push (see add_local/finish_declare elsewhere) -- but the
+	// loop variable has no initializer expression of its own (Op_Foreach/
+	// Op_Next fill it in directly, every iteration); without this
+	// explicit Nil push, its slot would silently alias whatever
+	// `expression(p)` (the iterable, below) pushes instead, and __iter's
+	// own slot would end up one past the end of anything actually
+	// written -- reading uninitialised stack garbage at runtime. Found
+	// the hard way: this exact bug crashed every real foreach loop
+	// during Phase 4's first end-to-end test run.
+	emit_op(p, .Nil)
 	add_local(p, p.previous)
 	mark_initialised(p)
 	var_slot := u8(p.current_compiler.local_count - 1)
@@ -528,18 +555,22 @@ foreach_statement :: proc(p: ^Parser) {
 	}
 
 	// Op_Next operands: 2-byte back-jump (to loop.start, taken when
-	// another value is available), then 1-byte iter_slot -- computed the
-	// same way emit_loop computes its own back-jump, but "+3" rather
-	// than "+2" since Op_Next has one more trailing operand byte
-	// (iter_slot) after the jump pair that's still part of this same
-	// instruction's total width.
+	// another value is available), then var_slot and iter_slot -- the
+	// VM needs both here, not just iter_slot, since Op_Next is what
+	// actually stores each newly-yielded value into the loop variable
+	// on every iteration after the first (Op_Foreach only handles the
+	// very first one). Computed the same way emit_loop computes its own
+	// back-jump, but "+4" rather than "+2" since Op_Next has two more
+	// trailing operand bytes (var_slot, iter_slot) after the jump pair
+	// that are still part of this same instruction's total width.
 	emit_op(p, .Next)
-	back_offset := len(current_chunk(p).code) - loop.start + 3
+	back_offset := len(current_chunk(p).code) - loop.start + 4
 	if back_offset > 0xffff {
 		error(p, "Loop body too large.")
 	}
 	emit_byte(p, u8((back_offset >> 8) & 0xff))
 	emit_byte(p, u8(back_offset & 0xff))
+	emit_byte(p, var_slot)
 	emit_byte(p, iter_slot)
 
 	emit_op(p, .End_Foreach)
@@ -688,7 +719,18 @@ try_except_statement :: proc(p: ^Parser) {
 		advance(p)
 		consume(p, .Identifier, "Expect exception type name.")
 		type_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
-		emit_op_byte(p, .Except, type_const)
+		emit_op(p, .Except)
+		emit_byte(p, type_const)
+		// Except's own 2-byte skip offset -- a deliberate improvement
+		// over glox's byte-pattern scan for "the next clause" (see
+		// vm/exceptions.odin's header comment for why that's fragile
+		// once a clause body can itself contain a nested try): this
+		// port's Op_Except is self-describing, so the VM never has to
+		// scan bytecode looking for End_Except at all. Patched below,
+		// after the clause body, exactly like any other jump.
+		skip_jump := len(current_chunk(p).code)
+		emit_byte(p, 0xff)
+		emit_byte(p, 0xff)
 
 		begin_scope(p)
 		if match(p, .As) {
@@ -701,7 +743,8 @@ try_except_statement :: proc(p: ^Parser) {
 		end_scope(p)
 
 		append(&clause_exit_jumps, emit_jump(p, .Jump))
-		emit_op(p, .End_Except) // must be immediately followed by Except/Finally -- see docs/exception-handling.md
+		emit_op(p, .End_Except)
+		patch_jump(p, skip_jump)
 	}
 
 	if !saw_except && !check(p, .Finally) {
