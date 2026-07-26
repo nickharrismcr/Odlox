@@ -1911,16 +1911,26 @@ behavior rather than adding extra safety it doesn't have).
 
 **Verification**: full `pytest` regression unchanged at 218 passed / 0
 failed / 26 skipped; `test_mandel.py` (6/6) confirms the specialized
-opcodes produce identical output to the generic path. No wall-clock
-before/after number recorded here — the fixture in `tests/new_tests/lox/`
-is too small (~70ms, dominated by process startup) to isolate the effect;
-a real before/after needs the Phase 7 benchmark port above.
+opcodes produce identical output to the generic path.
+
+**Wall-clock, same `tests/new_tests/lox/mandel.lox` fixture, both release
+builds, 3 runs each**: glox 0.149s/0.154s/0.138s vs. odlox (post-fix)
+0.090s/0.067s/0.086s — odlox now runs *ahead* of glox on this benchmark,
+roughly 1.8–2x, a full reversal of the ~1.25x-slower reading that started
+this investigation. Take the exact multiplier with a grain of salt — this
+fixture is small enough (~70–90ms total) that process-startup overhead is
+a real fraction of each run, so 3 short runs isn't a rigorous benchmark;
+the direction is unambiguous, but a real number needs the Phase 7
+benchmark port above (larger, steady-state workloads, more repetitions).
 
 **Net effect on the original question**: of the two documented-but-
 unrealized Phase 4 optimizations the mandel investigation surfaced, one is
-now actually built (this entry); the raw-pointer `ip`/stack-top change
-remains open and is probably the larger of the two, since it taxes *every*
-opcode's operand read, not just the arithmetic family.
+now actually built and measurably reverses the regression (this entry);
+the raw-pointer `ip`/stack-top change remains open, and — since this one
+opcode-family fix alone flipped a 1.25x deficit into a ~2x lead — is now
+lower urgency than it looked at the start of this investigation, though
+still worth doing since it taxes *every* opcode's operand read, not just
+the arithmetic family.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 
