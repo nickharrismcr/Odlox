@@ -9,4 +9,4 @@ if ! command -v "$ODIN" >/dev/null 2>&1; then
 fi
 
 set -x
-"$ODIN" build src -out:bin/odlox.exe
+"$ODIN" build src -o:speed -disable-assert -no-bounds-check -out:bin/odlox.exe

@@ -1,6 +1,8 @@
 package vm
 
 import "../core"
+import "core:os"
+import "core:text/regex"
 
 // Mark-and-sweep collector -- the design blueprint is
 // docs/ARCHITECTURE.md's Garbage collector section, itself carried over
@@ -37,6 +39,41 @@ gc_track :: proc(vm: ^VM, obj: ^core.Obj) {
 	obj.next = vm.objects
 	vm.objects = obj
 	vm.bytes_allocated += object_size(obj)
+}
+
+// gc_adopt recursively gc_tracks every collectible object reachable from
+// v -- used for a value tree built with no VM in scope to register
+// objects with as they were allocated (core.pickle_decode, which can run
+// from a background pipe-reader for the "process" module with no VM
+// existing yet at all; see that proc's own doc comment). Strings are
+// never tracked at all (structurally permanent -- see this file's header
+// comment), so this only ever recurses into List/Dict/Instance/Vec2/3/4.
+gc_adopt :: proc(vm: ^VM, v: core.Value) {
+	#partial switch v.type {
+	case .Vec2, .Vec3, .Vec4:
+		gc_track(vm, v.obj)
+	case .Obj:
+		#partial switch v.obj_type {
+		case .List:
+			l := core.as_list(v)
+			gc_track(vm, &l.obj)
+			for item in l.items {
+				gc_adopt(vm, item)
+			}
+		case .Dict:
+			d := core.as_dict(v)
+			gc_track(vm, &d.obj)
+			for _, val in d.items {
+				gc_adopt(vm, val)
+			}
+		case .Instance:
+			inst := core.as_instance(v)
+			gc_track(vm, &inst.obj)
+			for _, val in inst.fields {
+				gc_adopt(vm, val)
+			}
+		}
+	}
 }
 
 // maybe_collect_garbage runs a full cycle if the allocation threshold
@@ -259,6 +296,31 @@ free_object :: proc(obj: ^core.Obj) {
 		f := cast(^core.Float_Array_Object)obj
 		delete(f.data)
 		free(f)
+	case .Regex_Pattern:
+		p := cast(^core.Regex_Pattern_Object)obj
+		delete(p.group_names)
+		regex.destroy_regex(p.regex)
+		free(p)
+	case .Regex_Match:
+		m := cast(^core.Regex_Match_Object)obj
+		delete(m.pos)
+		delete(m.groups)
+		free(m)
+	case .Process:
+		// Closes this end of both pipes -- the child process handle
+		// itself (if any) is released by process_wait/process_kill
+		// instead (Odin's own os.process_wait doc comment: "Use the
+		// process_wait() procedure (optionally prefaced with a
+		// process_kill()) to close and free the process handle"), which
+		// a script calling .wait()/.kill() already does; a Process
+		// object dropped without either leaves that OS-level handle
+		// resource unreleased (the child process itself is unaffected
+		// either way -- it runs and exits independently of whether its
+		// parent-side handle was ever explicitly closed).
+		p := cast(^core.Process_Object)obj
+		os.close(p.read_file)
+		os.close(p.write_file)
+		free(p)
 	case:
 		free(obj)
 	}
@@ -295,6 +357,12 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		// exactly the allocation-heavy case this object exists for.
 		f := cast(^core.Float_Array_Object)obj
 		return size_of(core.Float_Array_Object) + len(f.data) * size_of(f64)
+	case .Regex_Pattern:
+		return size_of(core.Regex_Pattern_Object)
+	case .Regex_Match:
+		return size_of(core.Regex_Match_Object)
+	case .Process:
+		return size_of(core.Process_Object)
 	case:
 		return 32
 	}

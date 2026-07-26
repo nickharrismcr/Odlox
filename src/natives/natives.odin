@@ -38,4 +38,8 @@ define_natives :: proc(v: ^vm.VM) {
 	register_colour_utils(v)
 	register_gfx(v)
 	register_physics(v)
+	register_inspect(v)
+	register_re(v)
+	register_pickle(v)
+	register_process(v)
 }

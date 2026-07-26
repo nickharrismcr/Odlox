@@ -169,6 +169,16 @@ type_name :: proc(v: core.Value) -> string {
 			// bare native function, just glox's own established behavior
 			// this port matches rather than "corrects".
 			return "builtin"
+		case .Regex_Pattern, .Regex_Match:
+			// Matches glox's own type() exactly -- RegexPatternObject/
+			// RegexMatchObject.GetType() (obj_builtin_regex_*.go) both
+			// deliberately return OBJECT_NATIVE, same reasoning as
+			// Float_Array above.
+			return "builtin"
+		case .Process:
+			// Matches glox's own type() exactly -- ProcessObject.GetType()
+			// (obj_builtin_process.go) also returns OBJECT_NATIVE.
+			return "builtin"
 		}
 	}
 	return ""

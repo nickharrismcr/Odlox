@@ -159,6 +159,15 @@ as_dict :: proc(v: Value) -> ^Dict_Object {
 as_float_array :: proc(v: Value) -> ^Float_Array_Object {
 	return cast(^Float_Array_Object)v.obj
 }
+as_regex_pattern :: proc(v: Value) -> ^Regex_Pattern_Object {
+	return cast(^Regex_Pattern_Object)v.obj
+}
+as_regex_match :: proc(v: Value) -> ^Regex_Match_Object {
+	return cast(^Regex_Match_Object)v.obj
+}
+as_process :: proc(v: Value) -> ^Process_Object {
+	return cast(^Process_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

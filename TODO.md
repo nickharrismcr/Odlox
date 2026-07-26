@@ -18,12 +18,15 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       image, then a real `physics_world` (a stub exists). The one remaining piece of Phase 6b — a separate,
       much larger effort (real windowing, a `vendor:raylib` dependency, a native object per raylib resource
       type).
-- [ ] Remaining native modules glox has that this port doesn't (`re`, `pickle`, `process`, `inspect`) —
-      lowest priority, add only if needed. `thread`/`sync` are permanently out of scope, not on this list.
-- [ ] `.lox`-source stdlib modules still blocked on one of the above: `json.lox` (needs `re`), `pool.lox`
-      (needs both `process` and `thread` — its ProcessPool half is portable once `process` exists; its
-      ThreadPool half is permanently blocked). `plot_grey.lox`/`plot_rgb.lox`/`sprite.lox` are blocked on
-      raylib instead, tracked under the bullet above.
+- [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are
+      tested; `wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
+      multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused
+      — see `ROADMAP.md`'s Phase 6h section). `test_process.py`/`test_pool.py` are skipped at the whole-file
+      level pending this. `thread`/`sync` remain permanently out of scope, not on this list.
+- [ ] `pool.lox` — blocked on the parked `process.wait_any()` bug above (its `ProcessPool` class needs it
+      working correctly); its `ThreadPool` class is permanently blocked by `thread` being out of scope, so
+      this module can only ever be partially ported even once `wait_any` is fixed. `plot_grey.lox`/
+      `plot_rgb.lox`/`sprite.lox` are blocked on raylib instead, tracked under the raylib bullet above.
 
 ## Phase 7 — Performance pass
 

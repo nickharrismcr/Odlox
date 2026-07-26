@@ -63,7 +63,18 @@ class EOFError < Exception {
 		this.name = "EOFError"
 	}
 }
-`
+class PickleError < Exception {
+	init(msg) {
+		this.msg = msg
+		this.name = "PickleError"
+	}
+}
+class ProcessError < Exception {
+	init(msg) {
+		this.msg = msg
+		this.name = "ProcessError"
+	}
+}`
 
 // bootstrap_cache holds the harvested exception classes after the first
 // bootstrap_exceptions call in this process -- every subsequent VM

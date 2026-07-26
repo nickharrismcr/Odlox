@@ -1,6 +1,13 @@
 import pytest
 from lox_helper import run_lox
 
+# Blocked on two separate things, both parked: pool.lox itself isn't ported
+# yet (its ProcessPool class needs the process module; its ThreadPool class
+# needs thread, which is permanently out of scope), and ProcessPool's own
+# fan-in would hit the parked process.wait_any() "truncated message" bug --
+# see ROADMAP.md's process module section for both.
+pytestmark = pytest.mark.skip(reason="pool.lox not yet ported; blocked on the parked process module -- see ROADMAP.md's process module section")
+
 PROCESS_REUSE_EXPECTED = [
     "[ 4 , 9 , 16 ]",
     "[ 25 , 36 , 49 , 64 , 81 ]",

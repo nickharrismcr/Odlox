@@ -149,6 +149,12 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 		return invoke_builtin_string(vm, core.as_string(receiver), name, arg_count)
 	case .Float_Array:
 		return invoke_builtin_float_array(vm, core.as_float_array(receiver), name, arg_count)
+	case .Regex_Pattern:
+		return invoke_builtin_regex_pattern(vm, core.as_regex_pattern(receiver), name, arg_count)
+	case .Regex_Match:
+		return invoke_builtin_regex_match(vm, core.as_regex_match(receiver), name, arg_count)
+	case .Process:
+		return invoke_builtin_process(vm, core.as_process(receiver), name, arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;
@@ -255,8 +261,9 @@ bind_method :: proc(vm: ^VM, class: ^core.Class_Object, name: string) -> bool {
 
 // collapse_call implements the calling convention every callee kind
 // shares regardless of what it is: argCount args + 1 callee/receiver
-// slot collapses down to exactly 1 result slot.
-@(private = "file")
+// slot collapses down to exactly 1 result slot. Package-visible (not
+// file-private) since regex.odin's Pattern/Match method dispatch uses
+// it too, not just this file's own List/Dict/String/Float_Array ones.
 collapse_call :: proc(vm: ^VM, arg_count: int, result: core.Value) {
 	vm.stack_top -= arg_count + 1
 	push(vm, result)
