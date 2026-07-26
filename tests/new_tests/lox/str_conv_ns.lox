@@ -1,0 +1,10 @@
+var s="123"
+var i=int(s)
+print i
+
+var s2="1234.25"
+var f=float(s2)
+print f
+
+var s3="X"
+var x=int(s3)

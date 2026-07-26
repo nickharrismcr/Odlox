@@ -1,0 +1,21 @@
+
+
+func internal2_func(a){
+    print "2mf1 " & str(a);
+} 
+
+func internal2_func2(a){
+    print "2mf2 " & str(a);
+}
+
+var internal2_var;
+var internal2_var2 = "2mv2";
+
+class internal2_class {
+    init(a) {
+        this.a=a;
+    }
+    get(){
+        return this.a;
+    }
+}

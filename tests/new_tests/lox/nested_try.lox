@@ -1,0 +1,33 @@
+class MyException < Exception {
+    init(msg) {
+        super.init(msg);
+        this.name="MyException";
+    }
+}
+
+
+try {
+    var a=1;
+    var b=2;
+    print "hello";
+    try {
+        var a=1;
+        var b=2;
+        print "hello inner";
+        print "inner raising MyException (something happened)";
+        raise MyException("inner something happened");
+    }
+    except MyException as e {
+        var x=2;
+        print "in inner MyException handler";
+        print "oops " & e.name& " " & str(e);
+    }
+
+    print "raising MyException (outer something happened)";
+    raise MyException("outer something happened");
+}
+except MyException as e {
+    var x=2;
+    print "in outer MyException handler";
+    print "oops " & e.name& " " & str(e);
+}

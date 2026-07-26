@@ -1,0 +1,14 @@
+// Nested try/finally: a return crossing both must run the inner cleanup
+// before the outer one, in that order, and still return the right value.
+func f() {
+    try {
+        try {
+            return "deep";
+        } finally {
+            print "inner cleanup";
+        }
+    } finally {
+        print "outer cleanup";
+    }
+}
+print f();

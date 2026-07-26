@@ -1,0 +1,5 @@
+a=1
+b=2.2
+c="hello"
+
+print format("%d %f %s %s", a, b, c, "world")

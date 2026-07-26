@@ -1,0 +1,17 @@
+var s = "123";
+ 
+s=s.replace("345","---");
+print s;
+
+var l=["1","2","3"];
+s="|".join(l);
+print s;
+
+l.append("abc");
+print l;
+
+var d={"1":"a","2":"b"};
+print d.get("1","");
+print d.get("x","def");
+
+print len(d.keys());

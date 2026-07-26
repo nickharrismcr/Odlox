@@ -1,0 +1,9 @@
+from gfx import *
+
+var f = encode_rgba(10,20,30)
+print f
+var t = decode_rgba(f)
+
+print t[0]
+print t[1]
+print t[2]

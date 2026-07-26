@@ -1,0 +1,8 @@
+
+var p=50;
+
+for (var i=0.0; i < 20; i=i+0.1) {
+    var d=_sin(i);
+    var pd=25*d;
+    print " " * int( p - pd )& "*";
+}

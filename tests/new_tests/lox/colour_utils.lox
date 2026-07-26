@@ -1,0 +1,40 @@
+// Test script for updated colour_utils module with RGB parameters
+import colour_utils;
+
+print("Testing colour_utils with RGB parameters - functions return vec4s:");
+
+// Test fade function
+print("\nTesting fade:");
+var faded_red = colour_utils.fade(255, 0, 0, 0.5);
+print("Faded red (255,0,0,0.5): " & str (faded_red));
+print("Type: " & str (type(faded_red)));
+
+// Test brightness function
+print("\nTesting brightness:");
+var bright_red = colour_utils.brightness(255, 0, 0, 1.5);
+var dim_red = colour_utils.brightness(255, 0, 0, 0.5);
+print("Bright red (255,0,0,1.5): " & str (bright_red));
+print("Dim red (255,0,0,0.5): " & str (dim_red));
+
+// Test lerp function
+print("\nTesting lerp:");
+var purple = colour_utils.lerp(255, 0, 0, 0, 0, 255, 0.5);
+print("Red to blue 50% (255,0,0 -> 0,0,255): " & str (purple));
+
+// Test tint function
+print("\nTesting tint:");
+var tinted_red = colour_utils.tint(255, 0, 0, 0, 255, 0);
+print("Red tinted with green (255,0,0 + 0,255,0): " & str (tinted_red));
+
+// Test HSV to RGB conversion
+print("\nTesting HSV to RGB:");
+var hsvRed = colour_utils.hsv_to_rgb(0, 1, 1);     // Pure red
+var hsvGreen = colour_utils.hsv_to_rgb(120, 1, 1); // Pure green
+var hsvBlue = colour_utils.hsv_to_rgb(240, 1, 1);  // Pure blue
+print("HSV Red (0,1,1): " & str (hsvRed));
+print("HSV Green (120,1,1): " & str (hsvGreen));
+print("HSV Blue (240,1,1): " & str (hsvBlue));
+
+ 
+
+print("\nAll colour_utils tests completed! All functions return vec4 objects.");

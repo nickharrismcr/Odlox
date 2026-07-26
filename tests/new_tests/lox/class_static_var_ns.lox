@@ -1,0 +1,39 @@
+class Animal {
+    static count = 0
+    static label
+
+    static describe(name) {
+        return name & " is an animal"
+    }
+
+    init(name) {
+        this.name = name
+        Animal.count = Animal.count + 1
+    }
+}
+
+class Dog < Animal {
+}
+
+class MathHelper {
+    static square(x) {
+        return x * x
+    }
+}
+
+var a = Animal("Rex")
+var d = Dog("Fido")
+
+print Animal.count
+print Dog.count
+print Animal.label
+
+Dog.count = 99
+print Dog.count
+print Animal.count
+
+Animal.count += 1
+print Animal.count
+
+print Animal.describe("Rex")
+print MathHelper.square(5)

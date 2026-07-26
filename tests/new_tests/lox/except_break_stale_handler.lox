@@ -1,0 +1,28 @@
+class BoomError < Exception {
+    init(msg) { this.msg = msg; this.name = "BoomError"; }
+}
+
+// Regression: break/continue used to never touch frame.Handlers, leaving a
+// stale handler (with a stack-height recorded from inside the now-exited
+// loop iteration) still active after breaking out of an enclosing try. A
+// later, unrelated raise of the same exception class could then be
+// incorrectly "caught" by that stale handler at the wrong stack depth,
+// producing corrupted output before ultimately still failing.
+for (var i = 0; i < 1; i = i + 1) {
+    try {
+        var a = 111;
+        var b = 222;
+        break;
+    } except BoomError as e {
+        print "STALE handler ran (should never happen): " & str(e.msg);
+    }
+}
+
+try {
+    raise BoomError("first");
+} except BoomError as e {
+    print "correctly caught: " & e.msg;
+}
+
+raise BoomError("second, should be uncaught");
+print "unreachable";

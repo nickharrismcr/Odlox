@@ -1,0 +1,6 @@
+
+var a = [1.0,2.0,3.0,4.0]
+var b = ["a","b","c","d"]
+
+var c = a &b
+print c

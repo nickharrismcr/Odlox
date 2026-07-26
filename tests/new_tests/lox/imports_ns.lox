@@ -1,0 +1,15 @@
+import module
+
+module.internal_func("hello")
+module.internal_func2("hello")
+
+print module.internal_var
+print module.internal_var2
+module.internal_var = "mv1"
+print module.internal_var
+
+var a = module.internal_class("setclass")
+print a.get()
+
+var b = module.internal_var2
+print "b=" & b

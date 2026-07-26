@@ -1,0 +1,17 @@
+
+
+func nested_raise() {
+    var a=1
+    var b=2
+    print "in nested raise function"
+    print "raising exception (something happened)"
+    raise Exception("something happened")
+}
+
+try {
+   nested_raise()
+}
+except Exception as e {
+    print "in exception handler"
+    print "oops " & str(e)
+}

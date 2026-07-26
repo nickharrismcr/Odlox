@@ -1,0 +1,14 @@
+class A {
+    method1 (a) {
+        this.field1=a;
+    }
+    method2 () {
+        return this.field1;
+    }
+}
+ 
+
+var a = A ();
+a.method1 (111.0);
+print a.method2 ();
+ 

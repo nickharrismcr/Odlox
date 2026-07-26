@@ -1,0 +1,11 @@
+import logging;
+from logging import Logger;
+
+var log = logging.Logger();
+log.debug("hidden");     // suppressed: default level is INFO
+log.info("hello");
+log.warn("careful");
+log.error("bad");
+log.critical("very bad");
+print Logger.level_name(999);
+print "done";

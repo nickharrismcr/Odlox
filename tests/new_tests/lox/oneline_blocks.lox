@@ -1,0 +1,35 @@
+// Regression coverage for one-line braced blocks. A closing `}` terminates the
+// statement before it, so blocks need not be spread across multiple lines.
+// (Multiple statements *within* a one-line block are separated with `;`, as on
+// any single line.)
+
+// if / else on one line
+if (true) { print "if" }
+if (false) { print "x" } else { print "else" }
+
+// nested one-liners
+if (true) { if (true) { print "nested" } }
+
+// while with a multi-statement body separated by ';'
+var i = 0
+while (i < 3) { print i; i = i + 1 }
+
+// classic for on one line
+for (var j = 0; j < 2; j = j + 1) { print j }
+
+// foreach on one line
+foreach (k in range(2)) { print k }
+
+// function bodies: value return and empty return
+func f() { return 42 }
+print f()
+func g() { return }
+g()
+print "g-ok"
+
+// bare block, and var/const inside a one-line block
+{ print "bare" }
+{ const c = 7; print c }
+
+// statement immediately after a closing brace (the '}' separates them)
+if (true) { print "before" } print "after"

@@ -1,0 +1,33 @@
+func iter(lst) {
+    foreach (var a in lst){
+        print(a)
+    }
+}
+
+func makelist(){
+
+    var a=1
+    var lst=[]
+    while (true){
+        append(lst,a)
+        a=a+1
+        if (a==20){
+            break
+        }
+    }
+    return lst
+}
+
+var lst=makelist()
+print str(lst)
+var lst2 = []
+foreach (var a in lst) {
+    print(a)
+    append(lst2,a*a)
+    if (a==5) {
+        break
+    }
+}
+iter(lst2)
+
+

@@ -1,0 +1,18 @@
+// Regression test: `continue` inside a for-loop nested 3 levels deep, with a
+// list index evaluated before it. Before the fix, continue's cleanup popped
+// the loop's own control variable (not just body locals), leaving its stack
+// slot free to be silently overwritten by the next iteration's list-index
+// temporary -- corrupting the loop counter (crash or infinite loop).
+mylist = [10, 20, 30]
+total = 0
+
+for (ddx = -1; ddx <= 1; ddx = ddx + 1) {
+    for (ddy = -1; ddy <= 1; ddy = ddy + 1) {
+        for (ddz = -1; ddz <= 1; ddz = ddz + 1) {
+            v = mylist[0]
+            if (v == 10) continue
+            total = total + 1
+        }
+    }
+}
+print total

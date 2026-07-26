@@ -1,0 +1,19 @@
+import inspect 
+
+class A {
+    init()
+    {
+       this.x = 10;
+       a=2
+       print a
+       inspect.dump_frame()
+    }
+    out(){
+        inspect.dump_frame()
+        print this.x;
+    }
+}
+
+a=A()
+a.out()
+ 

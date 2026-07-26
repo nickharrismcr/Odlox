@@ -1,0 +1,7 @@
+import process;
+
+p = process.parent();
+while (true) {
+    task = p.recv();
+    p.send(task * task);
+}

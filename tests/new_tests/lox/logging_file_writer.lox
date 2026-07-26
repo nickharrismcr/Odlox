@@ -1,0 +1,15 @@
+import logging;
+import os;
+from logging import Logger;
+
+var path = os.join(os.dirname(sys.args()[0]), "logging_file_writer_output.log");
+var f = os.open(path, "w");
+var log = Logger("app", Logger.INFO, logging.file_writer(f));
+log.debug("hidden");
+log.info("first");
+log.info("second");
+os.close(f);
+
+print os.read_all(path);
+os.remove(path);
+print "done";

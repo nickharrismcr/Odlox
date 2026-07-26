@@ -1,0 +1,19 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+class BarError < Exception {
+    init(msg) { this.msg = msg; this.name = "BarError"; }
+}
+
+// Regression: once the "OP_TRY always points at the last clause" bug (see
+// multi_except_first_match.lox) is fixed, a second bug was exposed -- after
+// a non-last except clause matched and completed, execution fell straight
+// through into the next clause's own raw bytes and ran that body too.
+try {
+    raise FooError("x");
+} except FooError as e {
+    print "in foo handler";
+} except BarError as e {
+    print "in bar handler (should not run)";
+}
+print "done";

@@ -1,0 +1,30 @@
+import sys 
+import os 
+
+func test(s) {
+    print s;
+}
+
+print type(test);
+
+class myclass {
+    init(){}
+}
+print type(myclass);
+var c=myclass();
+print type(c);
+var s = "1234";
+print type(s);
+var t = 1;
+print type(t);
+var u = 1.234;
+print type(u);
+var a = [1,2,3];
+print type(a);
+var b = {"1":"2","3":"4"};
+print type(b);
+var fp = os.open("tmp","w");
+print type(fp);
+
+
+

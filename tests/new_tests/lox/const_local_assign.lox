@@ -1,0 +1,2 @@
+func f() { const a = 5; a = 6; return a; }
+print f();

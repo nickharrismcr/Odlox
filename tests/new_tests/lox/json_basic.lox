@@ -1,0 +1,55 @@
+import json;
+from json import JSONDecodeError, JSONEncodeError;
+
+var s1 = json.encode({"name": "bob", "age": 30, "tags": ["a", "b"], "ok": true, "nil_val": nil, "pi": 3.14});
+var v1 = json.decode(s1);
+print v1["name"];
+print v1["age"];
+print v1["tags"][0];
+print v1["tags"][1];
+print v1["ok"];
+print v1["nil_val"];
+print v1["pi"];
+
+print json.encode([1, 2, 3]);
+print json.decode("[1, 2, 3]")[2];
+
+var nl = format("%c", 10);
+var tab = format("%c", 9);
+var dq = format("%c", 34);
+var bs = format("%c", 92);
+
+var tricky = "quote" & dq & "back" & bs & "slash" & nl & "line" & tab & "tab";
+var s2 = json.encode(tricky);
+print s2;
+print json.decode(s2) == tricky;
+
+var v2 = json.decode("  { " & dq & "a" & dq & " : 1 , " & dq & "b" & dq & " : [true, false, null] }  ");
+print v2["a"];
+print v2["b"][0];
+print v2["b"][1];
+print v2["b"][2];
+
+print json.decode("-3.5e2");
+print json.decode("42");
+print json.decode("0");
+
+print json.encode({"a": [1, {"b": 2}]}, 2);
+
+try {
+    json.decode("{invalid}");
+}
+except JSONDecodeError as e
+{
+    print "caught decode error";
+}
+
+try {
+    json.encode(json.encode);
+}
+except JSONEncodeError as e
+{
+    print "caught encode error";
+}
+
+print "done";

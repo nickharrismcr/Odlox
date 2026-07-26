@@ -1,0 +1,9 @@
+// A bare try/finally with no except clause at all -- previously a parse
+// error ("Expect except."), since tryExceptStatement() required at least
+// one except clause.
+try {
+    print "body";
+} finally {
+    print "cleanup";
+}
+print "after";

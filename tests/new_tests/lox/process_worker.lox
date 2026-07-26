@@ -1,0 +1,5 @@
+import process;
+
+p = process.parent();
+x = p.recv();
+p.send(x * 2);

@@ -1,0 +1,37 @@
+// test break/continue
+
+for ( var a = 1 ; a < 10 ; a = a + 1  ) {
+
+    var b = "B"; 
+    var c = "C" ;
+    b = "*";
+    c = "C1";
+    print float(a);
+
+    if ( a > 5 ){
+        break;
+    }
+    print float(a);
+    b = "*"*a;
+    c = "C2";
+
+    for ( var aa = 1 ; aa < 10 ; aa = aa + 1  ) {
+
+        var bb = "B"; 
+        var cc = "C" ;
+        bb = "B1";
+        cc = "C1";
+    
+        if ( aa > 5 ){
+            break;
+        }
+        print b;
+        print "|"*aa;
+        bb = "B2";
+        cc = "C2";
+
+    }
+
+}
+ 
+

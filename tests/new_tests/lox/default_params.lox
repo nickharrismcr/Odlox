@@ -1,0 +1,20 @@
+// simple default
+func greet(name, greeting="hi") { return greeting & ", " & name }
+print greet("Sam")             // hi, Sam
+print greet("Sam", "yo")       // yo, Sam
+
+// computed default referencing an earlier parameter
+func f(n, m=n*2) { return m }
+print f(4)                     // 8
+print f(4, 10)                 // 10
+
+// fresh mutable default each call (no shared-state trap)
+func acc(x, items=[]) { items.append(x); return items }
+print acc(1)                   // [ 1 ]
+print acc(2)                   // [ 2 ]
+
+// multiple defaults
+func box(w, h=w, d=1) { return str(w) & "x" & str(h) & "x" & str(d) }
+print box(3)                   // 3x3x1
+print box(3, 4)                // 3x4x1
+print box(3, 4, 5)             // 3x4x5

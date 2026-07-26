@@ -1,0 +1,21 @@
+class OtherError < Exception {
+    init(msg) { this.msg = msg; this.name = "OtherError"; }
+}
+class SomeError < Exception {
+    init(msg) { this.msg = msg; this.name = "SomeError"; }
+}
+
+// Regression: raiseException used to check only the innermost try's own
+// except clauses, then immediately unwind to the *caller* frame if none
+// matched -- skipping straight past an enclosing try's handler in the same
+// frame, even though it's syntactically right there and does match.
+try {
+    try {
+        raise SomeError("boom");
+    } except OtherError as e {
+        print "inner wrong (should not run)";
+    }
+} except SomeError as e {
+    print "outer caught: " & e.msg;
+}
+print "done";

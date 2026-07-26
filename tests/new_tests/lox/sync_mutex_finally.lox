@@ -1,0 +1,24 @@
+import sync;
+
+// A closure run via locked() that raises must still release the mutex --
+// proven by a second acquire()/release() succeeding promptly afterward,
+// not hanging forever.
+
+var lock = sync.Mutex();
+
+try {
+    lock.locked(func() {
+        raise Exception("boom");
+    });
+    print "no error";
+}
+except SyncError as e
+{
+    print "caught SyncError";
+}
+
+lock.acquire();
+lock.release();
+print "reacquired ok";
+
+print "done";

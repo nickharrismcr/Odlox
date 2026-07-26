@@ -1,0 +1,20 @@
+// Regression: calling a callable stored in an instance field.
+// `obj.field(args)` must fetch the field value and call it, not look up a
+// method named `field`. Previously this raised "Undefined method 'fn'".
+
+class Runner {
+    init(fn) {
+        this.fn = fn;
+    }
+    do(x) {
+        return this.fn(x);      // field call via `this` inside a method
+    }
+    method() {
+        return 7;               // an ordinary method must still dispatch
+    }
+}
+
+var r = Runner(func (n) { return n * 10; });
+print r.do(5);                  // 50 — field call routed through a method
+print r.fn(4);                  // 40 — field call directly on the instance
+print r.method();               // 7  — ordinary method lookup still works

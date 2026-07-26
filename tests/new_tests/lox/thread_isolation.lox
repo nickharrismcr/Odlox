@@ -1,0 +1,34 @@
+import thread;
+
+// A spawned closure's captured (upvalue) locals must be deep-copied, not
+// shared -- mutating the original after spawn must not leak into the
+// thread, and vice versa. Uses locals (not globals -- a global version
+// would correctly show no isolation, which isn't a bug, just the
+// documented scope limit in docs/thread-module-plan.md).
+
+func makeCounter() {
+    var count = 10;
+    var tags = ["a", "b"];
+
+    var t = thread.spawn(func() {
+        var c = thread.channel();
+        count = count + 1;      // mutate the thread's own copy
+        tags.append("c");       // mutate the thread's own copy (list clone path)
+        c.send(count);
+        c.send(tags);
+    });
+
+    count = count + 100;        // mutate the parent's own original, after spawn
+    tags.append("z");
+
+    var threadCount = t.recv();
+    var threadTags = t.recv();
+    t.wait();
+
+    print count;                // parent's own copy: 10 + 100 = 110
+    print tags;                 // parent's own copy: ["a", "b", "z"]
+    print threadCount;          // thread's own copy: 10 + 1 = 11
+    print threadTags;           // thread's own copy: ["a", "b", "c"]
+}
+
+makeCounter();

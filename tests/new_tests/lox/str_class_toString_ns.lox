@@ -1,0 +1,22 @@
+class A {
+    init() {
+        this.mystring="hello"
+    }
+    toString()
+    {
+        return "A toString = "&this.mystring
+    }
+}
+print A
+var a = A()
+print a
+var b = str(a)
+print b
+print 1
+print "hello"
+var c=1
+print c
+var d=1.0
+print d
+var e=[1,2,3]
+print e

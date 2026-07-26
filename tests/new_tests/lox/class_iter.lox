@@ -1,0 +1,36 @@
+func get_list(lst) {
+  rv=[]
+  foreach ( var i in lst ) {
+    rv.append(i)
+  }
+  return rv
+}
+
+class Iterable {
+  init(lst) {
+    this.items = get_list(lst)
+    this.index = 0
+  }
+  __iter__() {
+    // Reset the index to 0 for a new iteration start !
+    this.index = 0
+    return this
+  }
+  __next__() {
+    // nil terminates the iteration 
+    if (this.index == len(this.items)) {
+      return nil
+    }
+    rv= this.items[this.index]
+    this.index = this.index + 1
+    return rv
+  }
+}
+a=Iterable(range(1,10))
+ 
+
+x=0
+foreach ( var i in a ) {
+  x = x + i
+}
+print x

@@ -1,0 +1,19 @@
+// test break/continue
+
+for ( var a = 1.0 ; a < 10 ; a = a + 1  ) {
+
+    var b = "B"
+    var c = "C" 
+    b = "B1"
+    c = "C1"
+
+    if ( a > 5 ){
+        break
+    }
+    print a
+    b = "B2"
+    c = "C2"
+
+}
+
+

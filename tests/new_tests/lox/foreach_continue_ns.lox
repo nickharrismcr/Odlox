@@ -1,0 +1,24 @@
+
+func make() {
+
+    var lst = []
+    var a=0
+    while (true){
+        a=a+1
+        append(lst,a)
+        if (a==10) {
+            break
+        }
+    }
+    return lst
+}
+
+var lst=make()
+
+print(lst)
+foreach(var a in lst) {
+    if (a<5) {
+        continue
+    }
+    print(a)
+}

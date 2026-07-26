@@ -1,0 +1,22 @@
+class A {
+    init() {
+        this.Afield="Avalue"
+    }
+    getA() {
+        return this.Afield
+    }
+}
+
+
+class B {
+    init() {
+        this.Aclass = A()
+    }
+    getAclass() {
+        return this.Aclass
+    }
+}
+
+var b = B()
+
+print b.getAclass().getA()

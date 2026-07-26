@@ -1,0 +1,22 @@
+class OtherError < Exception {
+    init(msg) { this.msg = msg; this.name = "OtherError"; }
+}
+class SomeError < Exception {
+    init(msg) { this.msg = msg; this.name = "SomeError"; }
+}
+
+// Same fallback as nested_try_same_frame_fallback.lox, but the inner try
+// also has a finally clause: its cleanup must still run before the
+// exception escalates to the outer try's matching handler.
+try {
+    try {
+        raise SomeError("boom");
+    } except OtherError as e {
+        print "inner wrong (should not run)";
+    } finally {
+        print "inner finally";
+    }
+} except SomeError as e {
+    print "outer caught: " & e.msg;
+}
+print "done";

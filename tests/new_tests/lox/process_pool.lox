@@ -1,0 +1,21 @@
+import pool;
+import os;
+import sys;
+
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_pool_worker.lox");
+
+// deliberately more tasks than workers, so at least one worker has to be
+// fed a second/third task after finishing its first
+p = pool.ProcessPool(worker_path, 3);
+tasks = [2, 3, 5, 7, 11, 13, 17, 19];
+results = p.map(tasks);
+p.close();
+
+// print by task order, not arrival order, so the test is deterministic
+// regardless of which worker happens to finish first
+foreach (r in results) {
+    print r;
+}
+
+print "done";

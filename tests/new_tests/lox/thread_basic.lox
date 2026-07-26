@@ -1,0 +1,12 @@
+import thread;
+
+var t = thread.spawn(func() {
+    var c = thread.channel();
+    var x = c.recv();
+    c.send(x * 2);
+    return "done";
+});
+
+t.send(21);
+print t.recv();
+print t.wait();

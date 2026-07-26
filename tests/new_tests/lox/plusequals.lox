@@ -1,0 +1,35 @@
+func test() {
+    a = 1
+    a+=1
+    print a
+}
+
+test()
+b=2
+b+=1
+print b
+
+c=vec2(3,2)
+c.x+=1
+print c.x
+
+// full compound-assignment set on a local
+d = 12
+d *= 2
+d /= 3
+d %= 5
+print d
+
+// on a global
+e = 20
+e *= 3
+print e
+e /= 4
+print e
+e %= 7
+print e
+
+// on a property
+f = vec2(3, 2)
+f.x *= 4
+print f.x

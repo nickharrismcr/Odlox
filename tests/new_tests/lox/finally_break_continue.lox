@@ -1,0 +1,17 @@
+// break/continue jumping out of a try/finally inside a loop must run the
+// finally block's cleanup exactly once per crossing, in addition to the
+// normal-completion path's own single run per non-crossing iteration.
+for (var i = 0; i < 5; i = i + 1) {
+    try {
+        if (i == 1) {
+            continue;
+        }
+        if (i == 3) {
+            break;
+        }
+        print "body " & str(i);
+    } finally {
+        print "cleanup " & str(i);
+    }
+}
+print "done";

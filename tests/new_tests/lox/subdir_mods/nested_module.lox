@@ -1,0 +1,8 @@
+// Lives in a subfolder of the importing script's directory -- exercises
+// getPath()'s recursive subdirectory search in src/vm/vm.go.
+
+func greet(name){
+    return "hello " & name;
+}
+
+var nested_value = "found in subfolder";

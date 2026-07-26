@@ -1,0 +1,41 @@
+// Regression coverage for anonymous functions (lambdas), block-body form.
+
+// assign to a variable and call
+var add = func (a, b) { return a + b }
+print add(2, 3)                              // 5
+
+// closure capture of an enclosing variable
+var mul = 3
+var scale = func (x) { return x * mul }
+print scale(10)                              // 30
+
+// immediately-invoked lambda
+print (func () { return 7 })()               // 7
+
+// lambdas stored in a list, indexed and called
+var ops = [func (x) { return x + 1 }, func (x) { return x * 2 }]
+print ops[0](10)                             // 11
+print ops[1](10)                             // 20
+
+// lambda stored in a dict
+var d = {"sq": func (x) { return x * x }}
+print d["sq"](9)                             // 81
+
+// lambda inside a method capturing `this`
+class Box {
+  init(v) { this.v = v }
+  makeGetter() { return func () { return this.v } }
+}
+var b = Box(99)
+var getv = b.makeGetter()
+print getv()                                 // 99
+
+// passed to functools higher-order helpers
+import functools
+print functools.map([1, 2, 3], func (x) { return x * x })           // [ 1 , 4 , 9 ]
+print functools.filter([-1, 2, -3, 4], func (x) { return x > 0 })   // [ 2 , 4 ]
+print functools.reduce([1, 2, 3, 4], func (a, b) { return a + b })  // 10
+
+// named declarations still work unchanged
+func named() { return 1 }
+print named()                                // 1

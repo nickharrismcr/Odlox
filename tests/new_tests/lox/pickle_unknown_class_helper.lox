@@ -1,0 +1,9 @@
+import pickle;
+
+class Widget {
+    init(x) { this.x = x; }
+}
+
+func make() {
+    return pickle.dumps(Widget(5));
+}

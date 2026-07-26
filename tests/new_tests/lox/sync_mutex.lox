@@ -1,0 +1,28 @@
+import thread;
+import sync;
+
+// Globals are shared across threads, not isolated (see
+// docs/thread-module-plan.md) -- Mutex is what makes that safe to touch
+// concurrently. Several threads all incrementing the same global counter,
+// serialised through one Mutex, must add up exactly, every run.
+
+var counter = 0;
+var lock = sync.Mutex();
+
+func incrementer() {
+    lock.locked(func() {
+        counter = counter + 1;
+    });
+}
+
+var n = 20;
+var threads = [];
+foreach (i in range(n)) {
+    threads.append(thread.spawn(incrementer));
+}
+foreach (t in threads) {
+    t.wait();
+}
+
+print counter;
+print "done";

@@ -844,6 +844,26 @@ class_declaration :: proc(p: ^Parser) {
 			continue
 		}
 		method(p)
+		// Unlike declaration() at the top level (see this file's
+		// declaration() proc), this loop had no panic_mode check of
+		// its own -- a malformed method whose error path leaves
+		// panic_mode set without consuming a token (e.g. consume()
+		// failing on `.Left_Brace` for a method body) meant this
+		// loop's condition (still not Right_Brace/Eof) stayed true
+		// forever and called method() again on the exact same token,
+		// looping without ever making progress. Found via a genuinely
+		// hung `odlox` process (not a wrong compile) on a method
+		// declared with its `{` on the following line -- reproduces
+		// with any malformed method, same root cause as the
+		// already-fixed "Eol between methods" bug above: an error
+		// path inside method() that returns without the token
+		// advancing. synchronize() is the same recovery declaration()
+		// already uses; safe to reuse here since it always advances
+		// at least one token before returning, so it can't loop
+		// forever either.
+		if p.panic_mode {
+			synchronize(p)
+		}
 	}
 	consume(p, .Right_Brace, "Expect '}' after class body.")
 	emit_op(p, .Pop) // drop the class reference

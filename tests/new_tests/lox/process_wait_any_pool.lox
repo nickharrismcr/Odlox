@@ -1,0 +1,50 @@
+import process;
+import os;
+import sys;
+
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_wait_any_pool_worker.lox");
+
+// Each worker sends 4 messages unprompted, then exits on its own -- no
+// request/response handshake driving it. This is a regression test for a
+// bug where wait_any() treated one worker finishing (its pipe closing
+// cleanly) as fatal for the whole fan-in wait, aborting collection from
+// every other still-running worker; and a follow-up bug where, once every
+// worker had finished, wait_any() could deadlock the whole process instead
+// of returning cleanly.
+n_workers = 4;
+workers = [];
+foreach (i in range(1, n_workers + 1)) {
+    workers.append(process.spawn(worker_path, str(i), str(i * 10)));
+}
+
+results = {};
+while (true) {
+    r = process.wait_any(workers);
+    if (r == nil) {
+        break;
+    }
+    idx, val = r;
+    id = str(idx + 1);
+    if (!(id in results.keys())) {
+        results[id] = [];
+    }
+    results[id].append(val);
+}
+
+foreach (w in workers) {
+    w.wait();
+}
+
+// print by worker id, not arrival order, so the test is deterministic
+// regardless of which worker happens to finish first
+foreach (i in range(1, n_workers + 1)) {
+    id = str(i);
+    print format("Results for worker %s", id);
+    foreach (r in results[id]) {
+        wid, pass_n, val = r;
+        print format("%s * %d = %f", wid, pass_n, val);
+    }
+}
+
+print "done";

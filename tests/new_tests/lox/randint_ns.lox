@@ -1,0 +1,20 @@
+import random
+
+var s = "abcdefg"
+var l = len(s)
+var d = {}
+
+for (var i=0; i < 1000; i=i+1) {
+    var c = s[random.integer(0,l-1)]
+    d[c]=true
+}
+
+foreach ( var c in s ){
+    print c
+    if ( d[c]==nil ){
+        print "Fail"
+    }
+}
+print "done"
+
+

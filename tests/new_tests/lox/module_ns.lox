@@ -1,0 +1,22 @@
+import module2
+
+func internal_func(a){
+    print "mf1 " & str(a)
+}
+
+func internal_func2(a){
+    print "mf2 " & str(a)
+}
+
+var internal_var
+var internal_var2 = module2.internal2_var2
+
+
+class internal_class {
+    init(a) {
+        this.a=a
+    }
+    get(){
+        return this.a
+    }
+}

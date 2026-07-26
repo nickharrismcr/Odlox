@@ -1,0 +1,29 @@
+// basic true/false selection
+n = 1
+print n == 1 ? "item" : "items"        // item
+print n == 2 ? "item" : "items"        // items
+
+// used inside a larger expression
+a = 5
+b = 3
+print (a > b ? a : b) + 1              // 6
+
+// right-associative chain: c1 ? x : c2 ? y : z  ==  c1 ? x : (c2 ? y : z)
+print true  ? 2 : true  ? 4 : 5        // 2
+print false ? 2 : true  ? 4 : 5        // 4
+print false ? 2 : false ? 4 : 5        // 5
+
+// lazy evaluation: only the selected branch runs
+hits = 0
+func bang() {
+    hits = hits + 1
+    return -1
+}
+
+x = true ? 42 : bang()                 // bang() must NOT run
+print x                                // 42
+print hits                             // 0
+
+y = false ? bang() : 99                // bang() must NOT run
+print y                                // 99
+print hits                             // 0

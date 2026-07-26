@@ -1,0 +1,26 @@
+count = 3
+pct = 42.5
+print "total: ${count} (${pct}%)"
+print "cost: $$${count}"
+b = true
+n = nil
+print "b=${b} n=${n}"
+a = 1
+c = 2
+print "${a}${c}"
+print "${count}"
+print '${count}-${count}'
+print "nested ${ "x".replace("x", "y") }"
+print "sum=${a + count * c}"
+
+class Pt {
+  init(x, y) {
+    this.x = x
+    this.y = y
+  }
+  toString() {
+    return "Pt(" & str(this.x) & "," & str(this.y) & ")"
+  }
+}
+p = Pt(1, 2)
+print "point ${p}"

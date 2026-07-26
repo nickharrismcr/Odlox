@@ -1,0 +1,18 @@
+// `const` is a property of the binding, not of the value.
+
+// A const local must not poison a literal shared with an ordinary local.
+func f() { const a = 5; var b = 5; b = 6; return b; }
+print f();      // 6
+
+// A local seeded from an already-immutable value (a const global) stays assignable.
+const K = 5;
+func g() { var x = K; x = 6; return x; }
+print g();      // 6
+
+// A const local is still readable.
+func h() { const a = 7; return a + 1; }
+print h();      // 8
+
+// Ordinary locals still support compound assignment.
+func i() { var x = 1; x += 2; return x; }
+print i();      // 3

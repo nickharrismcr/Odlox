@@ -1,0 +1,36 @@
+import pool;
+
+// The thread-module analogue of process_pool_100.lox: a fixed pool of
+// workers (4) draining a much larger task queue (100), dynamically
+// dispatched as each worker frees up. Now built on pool.ThreadPool instead
+// of hand-rolled thread.spawn/wait_any orchestration -- see
+// src/modules/pool.lox -- same design ThreadPool itself is built on.
+n_tasks = 100;
+p = pool.ThreadPool(func(task) { return task * task; }, 4);
+
+tasks = [];
+foreach (i in range(1, n_tasks + 1)) {
+    tasks.append(i);
+}
+
+results = p.map(tasks);
+p.close();
+
+// Every task must have been dispatched exactly once and every result slot
+// filled, regardless of scheduling order across the 4 threads.
+missing = 0;
+sum = 0;
+foreach (r in results) {
+    if (r == nil) {
+        missing = missing + 1;
+    } else {
+        sum = sum + r;
+    }
+}
+
+print len(results);
+print missing;
+print sum;
+print results[0];
+print results[n_tasks - 1];
+print "done";

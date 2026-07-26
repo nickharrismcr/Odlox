@@ -1,0 +1,46 @@
+import pool;
+import os;
+import sys;
+from pool import PoolError;
+
+// Regression test: a ProcessPool must be reusable across multiple map()
+// calls without respawning its workers. Proven by recording each worker's
+// pid() right after construction and again after two separate map()
+// calls -- they must be identical, since a respawn would hand out fresh
+// pids. See thread_pool_reuse.lox for the same property on ThreadPool.
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_pool_worker.lox");
+
+p = pool.ProcessPool(worker_path, 2);
+
+pids_before = [];
+foreach (w in p.workers) {
+    pids_before.append(w.pid());
+}
+
+results1 = p.map([2, 3, 4]);
+print results1;
+
+// a second, differently-sized batch on the same, still-alive workers
+results2 = p.map([5, 6, 7, 8, 9]);
+print results2;
+
+pids_after = [];
+foreach (w in p.workers) {
+    pids_after.append(w.pid());
+}
+print pids_before == pids_after;
+
+p.close();
+
+// map() on a closed pool must raise, not hang or crash
+try {
+    p.map([1]);
+    print "no error";
+}
+except PoolError as e
+{
+    print "caught closed pool";
+}
+
+print "done";

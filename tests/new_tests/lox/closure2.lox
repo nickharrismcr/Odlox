@@ -1,0 +1,16 @@
+func meta_func() {
+  
+  func get_func() {
+    var x = "outside";
+    func _func(y) {
+      print x & " " & y;
+    }
+
+    return _func;
+  }
+
+  return get_func();
+}
+
+var provided_func = meta_func();
+provided_func("added");

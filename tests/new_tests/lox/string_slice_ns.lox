@@ -1,0 +1,16 @@
+
+var a = "abcdefghijkjmnopqrstuvwxyz"
+
+print a[:]
+
+for ( var i = 0; i < len(a); i=i+1 ){
+    print a[i]
+}
+for ( var i = 0; i < len(a); i=i+1 ){
+    print a[:i]
+}
+
+for ( var i = 0; i < len(a); i=i+1 ){
+    print a[i:]
+}
+

@@ -1,0 +1,41 @@
+// Headless logic test for particle_sys: verifies the O(1) swap-remove removal
+// and the particle pool. No graphics — particle_sys only imports random/math.
+import particle_sys;
+
+// init sets a fixed lifetime of 2; a life-2 particle survives one update()
+// (age 1 < 2) and dies on the second (age 2 >= 2). update is a no-op.
+var init_fn = func (p) { p.life = 2; };
+var upd_fn  = func (p) { };
+
+var e = particle_sys.Emitter(vec2(0, 0), init_fn, upd_fn);
+e.emit(3);
+print len(e.get_particles());   // 3 emitted
+
+print e.update();               // true  — all age 1, still alive
+print len(e.get_particles());   // 3
+print e.update();               // false — all age 2, removed
+print len(e.get_particles());   // 0
+
+// Emit again: these should be recycled from the pool, and behave identically.
+e.emit(2);
+print len(e.get_particles());   // 2
+print e.update();               // true
+print e.update();               // false
+print len(e.get_particles());   // 0
+
+// Emitters.queue() is a one-shot burst: after `delay` frames the emitter fires,
+// stays tracked until its particles die, then is dropped. This also guards the
+// field/method name collision -- a field named `queue` would shadow the queue()
+// method, making this call fail with "Can only call functions and classes".
+var es = particle_sys.Emitters();
+es.queue(particle_sys.Emitter(vec2(0, 0), init_fn, upd_fn), 2, 2);
+print es.queue_length();        // 1  — pending, delay not yet elapsed
+print len(es.get());            // 0  — not fired yet
+es.update();                    // delay 2 -> 1
+print es.queue_length();        // 1
+es.update();                    // delay hits 0: emits and is promoted to active
+print es.queue_length();        // 0
+print len(es.get());            // 1  — one live emitter
+es.update();                    // particles age 1, still alive
+es.update();                    // particles die -> exhausted emitter dropped
+print len(es.get());            // 0

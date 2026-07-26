@@ -1,0 +1,3 @@
+foreach ( var i in "hello" ) {
+    print i
+}

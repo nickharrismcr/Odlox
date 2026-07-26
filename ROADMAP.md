@@ -28,11 +28,23 @@ glox that exists solely to support them. See `ARCHITECTURE.md`'s
       -disable-assert -no-bounds-check` for a release/benchmark build) —
       mirrors glox's own fast-vs-debug build split
       (`bin/build_debug.sh`/`core.HotLoopDebugHookCompiled`).
-- [ ] `git init`-equivalent housekeeping already done (repo exists); add a
-      `.gitignore` for build output.
-- [ ] Copy `tests/new_tests/` from glox wholesale (see
-      [Testing](#testing-every-phase)) — do this early so every later
-      phase has an immediate pass/fail signal, not at the end.
+- [x] `git init`-equivalent housekeeping already done (repo exists);
+      `.gitignore` covers build output (`*.exe`/`*.bin`/`*.pdb`/`*.dll`)
+      and, added alongside the test-suite copy below, `__pycache__/`/
+      `.pytest_cache/`.
+- [x] Copy `tests/new_tests/` from glox wholesale (see
+      [Testing](#testing-every-phase)) — done considerably later than
+      "early" (mid-Phase 5, not Phase 0) since glox itself wasn't
+      checked out anywhere in this workspace until a `glox_reference`
+      clone appeared alongside odlox's own directory; copied verbatim
+      from there once available, `tests/old/` (glox's own deprecated
+      pre-`new_tests` format) and `repl_stress_rig.sh` left behind as
+      out of scope for this instruction. `conftest.py`/`lox_helper.py`'s
+      `GLOX` constant repointed at `bin/odlox.exe`; `test_thread.py`
+      marked permanently skipped (`thread.*` is out of scope for this
+      port — see this file's header). See
+      [Testing](#testing-every-phase) below for the first real run's
+      results and the infinite-loop bug it immediately found.
 
 ## Phase 1 — Scanner
 
@@ -671,3 +683,72 @@ an afterthought at the end.** Per `ARCHITECTURE.md` §
 5. Once a benchmark comparison is wanted (Phase 7), port
    `benchmarks/lox/*.lox` the same way — pure `.lox` scripts, no
    Go-specific content.
+
+### First real run (mid-Phase 5) and the bug it immediately found
+
+The suite was wired up later than planned (see Phase 0's checklist above)
+because glox itself wasn't available anywhere in this workspace to copy
+`tests/new_tests/` from until a `glox_reference` clone appeared alongside
+odlox's own directory, partway through this phase. Once wired, the very
+first full run (`python -m pytest tests/new_tests/ -q`) **hung
+indefinitely** rather than reporting pass/fail counts — not slow, an
+actual non-terminating loop, confirmed by running the specific offending
+fixture (`lox/str_class_toString.lox`) directly against `bin/odlox.exe`
+under a hard timeout.
+
+Root cause, found by bisecting to the exact hanging test and reproducing
+minimally: two compounding real bugs, both in the compiler's error path,
+neither previously exercised because Phase 3/4's own hand-written tests
+never fed the compiler input broken in quite this way:
+
+- `functions.odin`'s function-body compiler required a function/method's
+  `{` immediately after its `)`, with no tolerance for an `Eol` in
+  between — but the scanner's own EOL-suppression rule only looks at the
+  *previous* token (`Right_Paren` isn't in its suppress set — see
+  `scanner.odin`'s `keep_eol`), so `toString()` with `{` on the next line
+  (a real, common style, and exactly what the ported fixture uses) left a
+  real `Eol` token sitting right where `consume(.Left_Brace, ...)`
+  expected `{`, and failed. glox's own compiler has exactly this same
+  scanner behavior but explicitly tolerates it in the parser
+  (`p.match(TOKEN_EOL) // allow EOL after parameters`, `compile.go`) —
+  this port had ported the scanner's behavior but missed the
+  corresponding parser-side tolerance. Fixed by adding the same
+  `match(p, .Eol)` calls glox's parser has, both before `)` and before
+  `{`.
+- That alone would only have produced a wrong-but-quick compile error.
+  What turned it into an actual hang: `class_declaration`'s member-parsing
+  loop (`for !check(p, .Right_Brace) && !check(p, .Eof) { ... method(p)
+  }`) never checked `p.panic_mode`/called `synchronize()` after `method`,
+  unlike `declaration()` at the top level, which does. A malformed
+  method whose error path returns without consuming a token (exactly
+  what `consume(.Left_Brace, ...)` failing does) left the loop's
+  condition permanently true and called `method()` again on the exact
+  same token, forever — the identical *shape* of bug already found and
+  fixed once in Phase 3 (see that phase's bug list: "class-body member
+  loop had no branch for the Eol... An actual infinite loop"), recurring
+  through a different error path the first fix didn't cover. Fixed by
+  adding the same `synchronize()` call `declaration()` already has.
+
+Both are pinned down by regression tests in `compile_test.odin`
+(`test_method_brace_on_next_line_compiles`,
+`test_malformed_method_does_not_hang_the_compiler` — the latter's own
+doc comment explains why it's deliberately *not* timeout-guarded: an
+infinite-loop regression should hang the test suite, not fail it
+quietly, since a passing-but-wrong result would defeat the point).
+
+**Baseline after both fixes** (first run that actually completes):
+**40 passed, 190 failed, 14 skipped**, in ~3.5s. Expected at this point
+in the roadmap, not a red flag — the large failure count is almost
+entirely Phase 6 (native/builtin functions, `sys`/`re`/`pickle`/`pool`/
+`process`/raylib-backed modules, string/list method surfaces beyond what
+Phase 4 pulled forward) not existing yet, plus a handful of real,
+separate compiler/VM gaps surfaced by specific failures worth a closer
+look before or during Phase 6 rather than chased down here (an unbraced
+single-statement `if (cond) break` form the parser currently rejects
+outright — `test_break_unbraced`; at least one `try`/`except` syntax
+variant the parser doesn't accept — `test_catch_runtime`). `test_thread.py`
+and `test_sync.py` are marked permanently skipped (`thread.*`/
+`sync.Mutex` are explicitly out of scope — see this file's header); every
+other skip/fail is a live signal, not scope noise. Re-run this suite
+after every phase from here on and update this baseline, per item 4
+above.

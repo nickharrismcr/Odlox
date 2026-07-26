@@ -1,0 +1,26 @@
+import os
+
+func readOneLine(fp) {
+    return os.readln(fp)
+}
+
+func readAll(path) {
+    var fp = os.open(path, "r")
+    var lines = []
+    var marker = "sentinel"
+    try {
+        while (true) {
+            lines.append(readOneLine(fp))
+        }
+    } except EOFError as e {
+        os.close(fp)
+    }
+    print marker
+    print type(lines)
+    print len(lines)
+    print lines[0]
+    return lines
+}
+
+var result = readAll("lox/except_native_raise.lox")
+print "done"

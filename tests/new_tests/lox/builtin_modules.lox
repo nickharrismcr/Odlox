@@ -1,0 +1,23 @@
+// Graphics/physics constructors live in the gfx/physics built-in modules,
+// and `from <builtin> import ...` works for native modules. These paths are
+// display-safe: encode_rgba is a pure function and no window is created.
+
+// 1. namespaced access via `import gfx`
+import gfx
+var f = gfx.encode_rgba(10, 20, 30)
+var t = gfx.decode_rgba(f)
+print t[0]                 // 10
+print t[1]                 // 20
+print t[2]                 // 30
+
+// 2. `from gfx import name` brings the name in unqualified
+from gfx import encode_rgba
+print encode_rgba(10, 20, 30) == f   // true
+
+// 3. `from <builtin> import` works for other native modules too
+from sys import clock
+print type(clock)          // builtin
+
+// 4. physics constructor is namespaced under `physics`
+import physics
+print type(physics.physics_world)   // builtin

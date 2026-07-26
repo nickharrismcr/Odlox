@@ -1,0 +1,14 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+
+// An exception matches an except clause -- finally must still run exactly
+// once, after that clause's own body completes.
+try {
+    raise FooError("boom");
+} except FooError as e {
+    print "caught";
+} finally {
+    print "cleanup";
+}
+print "after";

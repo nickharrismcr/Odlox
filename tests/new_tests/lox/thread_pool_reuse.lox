@@ -1,0 +1,43 @@
+import pool;
+from pool import PoolError;
+
+// A ThreadPool must be reusable across multiple map() calls without
+// respawning its workers -- but unlike ProcessPool (proven via matching
+// pid()s, see process_pool_reuse.lox), a thread has no OS pid to check.
+// Proven instead via a task function that captures a mutable counter as
+// an upvalue: since a fresh spawn deep-copies that upvalue back to its
+// original captured value (0), the counter only keeps climbing across
+// separate map() calls if the same underlying thread -- with its own
+// persisted copy of that upvalue -- handled both. Uses exactly 1 worker
+// so dispatch is deterministic (every task necessarily goes to the same
+// thread), keeping the expected counts unambiguous.
+func make_counting_square() {
+    var count = 0;
+    return func(x) {
+        count = count + 1;
+        return (x * x, count);
+    };
+}
+
+p = pool.ThreadPool(make_counting_square(), 1);
+
+results1 = p.map([2, 3, 4]);
+print results1;
+
+// a second, differently-sized batch on the same, still-alive worker
+results2 = p.map([5, 6]);
+print results2;
+
+p.close();
+
+// map() on a closed pool must raise, not hang or crash
+try {
+    p.map([1]);
+    print "no error";
+}
+except PoolError as e
+{
+    print "caught closed pool";
+}
+
+print "done";

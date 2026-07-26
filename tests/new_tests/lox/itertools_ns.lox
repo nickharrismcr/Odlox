@@ -1,0 +1,9 @@
+import itertools
+
+var a = "1234"
+print itertools.reverse(a)
+
+var b = [1,2,3,4]
+print itertools.reverse(b)
+
+ 

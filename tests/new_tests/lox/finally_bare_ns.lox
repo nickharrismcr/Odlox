@@ -1,0 +1,8 @@
+// Same as finally_bare.lox, newline-terminated style.
+try {
+    print "body"
+}
+finally {
+    print "cleanup"
+}
+print "after"

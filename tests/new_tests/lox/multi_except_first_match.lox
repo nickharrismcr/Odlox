@@ -1,0 +1,28 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+class BarError < Exception {
+    init(msg) { this.msg = msg; this.name = "BarError"; }
+}
+
+// Regression: OP_TRY's operand used to be patched once per except clause
+// instead of once, so it always ended up pointing at the *last* clause --
+// meaning raising something that matched an earlier, non-last clause went
+// uncaught even though it should have matched immediately.
+try {
+    raise FooError("first");
+} except FooError as e {
+    print "caught FooError";
+} except BarError as e {
+    print "caught FooError (wrong)";
+}
+
+try {
+    raise BarError("second");
+} except FooError as e {
+    print "caught FooError (wrong)";
+} except BarError as e {
+    print "caught BarError";
+}
+
+print "done";

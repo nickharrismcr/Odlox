@@ -1,0 +1,20 @@
+
+func generator(start,step)
+{
+    var a=start;
+    func _inner(){
+        var b=a;
+        a=a+step;
+        return b;
+    }
+
+    return _inner;
+}
+
+var gen1=generator(10.0,10.0);
+var gen2=generator(3.0,3.0);
+
+for (var i = 0; i < 10; i=i+1){
+    print "gen1 " & str(gen1());
+    print "gen2 " & str(gen2());
+}

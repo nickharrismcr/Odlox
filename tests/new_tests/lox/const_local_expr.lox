@@ -1,0 +1,3 @@
+// initialiser is computed, not a literal -- must still be enforced
+func f() { const a = 2 + 3; a = 99; return a; }
+print f();

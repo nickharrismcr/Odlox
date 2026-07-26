@@ -1,0 +1,50 @@
+import re;
+
+m = re.search("(\w+)@(\w+)\.com", "contact: bob@example.com now");
+print m != nil;
+print m.group(0);
+print m.group(1);
+print m.group(2);
+print m.start();
+print m.end();
+
+print re.match("bob", "bob@example.com") != nil;
+print re.match("example", "bob@example.com") == nil;
+
+print re.fullmatch("\d+", "12345") != nil;
+print re.fullmatch("\d+", "12345x") == nil;
+
+m2 = re.search("(?P<user>\w+)@(?P<host>\w+)", "alice@wonderland");
+print m2.group("user");
+print m2.group("host");
+d = m2.groupdict();
+print d["user"];
+print d["host"];
+print m2.groups();
+
+print re.sub("\d+", "#", "a1 b22 c333");
+r = re.subn("\d+", "#", "a1 b22 c333", 2);
+print r[0];
+print r[1];
+
+print re.split(",\s*", "a, b,c,  d");
+print re.split(",\s*", "a, b,c,  d", 1);
+
+print re.findall("\d+", "a1 b22 c333");
+print re.findall("(\w)(\d+)", "a1 b22");
+
+p = re.compile("\d+");
+print p.search("xx42yy").group(0);
+print p.sub("#", "1 2 3");
+
+print re.search("zzz", "abc") == nil;
+
+try {
+    re.search("(", "abc");
+}
+except Exception as e
+{
+    print "caught";
+}
+
+print "done";

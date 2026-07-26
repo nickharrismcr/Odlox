@@ -1,0 +1,18 @@
+import thread;
+
+var t = thread.spawn(func() {
+    var c = thread.channel();
+    c.recv();               // blocks forever -- nothing is ever sent
+    print "should not print";
+});
+
+t.cancel();
+
+// cancel() must unblock the worker's parked recv() promptly (not hang),
+// and -- mirroring process.kill() producing a clean EOF for
+// process.wait_any rather than a ProcessError -- a cancelled thread's
+// wait() must return cleanly rather than raise, since cancellation is an
+// expected, self-inflicted shutdown, not a fault.
+print t.wait();
+
+print "done";

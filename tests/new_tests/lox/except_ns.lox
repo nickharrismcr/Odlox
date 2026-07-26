@@ -1,0 +1,20 @@
+class MyException < Exception {
+    init(msg) {
+        super.init(msg)
+        this.name="MyException"
+    }
+}
+
+
+try {
+    var a=1
+    var b=2
+    print "hello"
+    print "raising MyException (something happened)"
+    raise MyException("something happened")
+}
+except Exception as e {
+    var x=2
+    print "in Exception handler"
+    print "oops " & e.name& " " & str(e)
+}

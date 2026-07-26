@@ -1,0 +1,5 @@
+from nested_module import greet;
+print greet("world");
+
+import nested_module;
+print nested_module.nested_value;

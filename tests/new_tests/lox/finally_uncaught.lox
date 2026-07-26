@@ -1,0 +1,18 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+
+// An exception that this try/finally doesn't catch (no except clause here
+// at all) must still run the finally block before continuing to propagate,
+// and an outer try's except clause must still be able to catch it
+// afterward.
+try {
+    try {
+        raise FooError("boom");
+    } finally {
+        print "inner cleanup";
+    }
+} except FooError as e {
+    print "caught by outer";
+}
+print "after";

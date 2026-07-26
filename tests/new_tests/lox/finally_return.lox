@@ -1,0 +1,11 @@
+// A return inside a try/finally must run the finally block's cleanup
+// before actually returning, and must still return the correct value.
+func f() {
+    try {
+        return 42;
+    } finally {
+        print "cleanup";
+    }
+    print "unreachable";
+}
+print f();

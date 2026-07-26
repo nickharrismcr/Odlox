@@ -473,6 +473,39 @@ class Point {
 	testing.expect(t, contains_op(c, .Class_Var))
 }
 
+// Regression test for a real bug found via the ported pytest suite
+// (tests/new_tests/lox/str_class_toString.lox writes exactly this
+// shape): glox's own parser explicitly tolerates an Eol between a
+// method's `)` and its `{` (compile.go: `p.match(TOKEN_EOL) // allow
+// EOL after parameters`) -- this port initially didn't, so any method
+// written with its opening brace on its own line failed to compile.
+@(test)
+test_method_brace_on_next_line_compiles :: proc(t: ^testing.T) {
+	c := compile_ok(t, "class A {\n\tgreet()\n\t{\n\t\treturn 1\n\t}\n}\n")
+	testing.expect(t, contains_op(c, .Method))
+}
+
+// Regression test for the bug that made the missing tolerance above
+// far worse than a wrong-but-quick compile error: class_declaration's
+// member loop had no panic_mode/synchronize check of its own (unlike
+// declaration() at the top level), so a malformed method whose error
+// path returned without consuming a token made the loop call method()
+// again on the exact same token forever. Before both fixes (this one
+// and functions.odin's Eol tolerance), this exact input hung the
+// compiler indefinitely rather than reporting a compile error -- a
+// real, reproduced hang in the compiled odlox binary, not a
+// hypothetical. If this regresses, this test itself will hang
+// `odin test src/compiler` rather than failing cleanly; that's an
+// acceptable trade-off for pinning down an infinite loop specifically
+// (a timeout-based test would only prove "eventually terminates",
+// which isn't what an infinite loop bug threatens).
+@(test)
+test_malformed_method_does_not_hang_the_compiler :: proc(t: ^testing.T) {
+	env := core.make_environment("test")
+	_, ok := Compile("class A {\n\tgreet(\n\t{\n\t\treturn 1\n\t}\n}\nprint A\n", "test.lox", env)
+	testing.expect(t, !ok)
+}
+
 @(test)
 test_class_inheritance_emits_inherit_and_super :: proc(t: ^testing.T) {
 	c := compile_ok(t, `

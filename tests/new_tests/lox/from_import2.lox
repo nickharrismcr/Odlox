@@ -1,0 +1,4 @@
+from math import * 
+
+print min(3, 5)
+print max(3, 5)

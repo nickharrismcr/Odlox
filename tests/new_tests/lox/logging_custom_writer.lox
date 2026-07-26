@@ -1,0 +1,22 @@
+import logging;
+from logging import Logger;
+
+// A capturing writer proves the writer is genuinely pluggable and
+// receives the fully-formatted line; Logger.DEBUG as the configured
+// level is the boundary case that lets every level through.
+var lines = [];
+var log = Logger("t", Logger.DEBUG, func(line) { lines.append(line); });
+log.debug("d");
+log.info("i");
+log.warn("w");
+log.error("e");
+log.critical("c");
+
+// Strip the leading "[date time] " timestamp bracket (fixed width: "[" +
+// 10-char date + " " + 8-char time + "] " = 22 chars) so the test can
+// assert exact, deterministic tails.
+foreach (line in lines) {
+    print line[22:];
+}
+print len(lines);
+print "done";

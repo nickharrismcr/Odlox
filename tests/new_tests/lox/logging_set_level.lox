@@ -1,0 +1,16 @@
+import logging;
+from logging import Logger;
+
+var log = Logger("w", Logger.WARN);
+log.debug("hidden");
+log.info("hidden");
+log.warn("careful");
+log.error("bad");
+log.critical("very bad");
+
+// set_level/get_level after construction
+log.set_level(Logger.CRITICAL);
+print log.get_level() == Logger.CRITICAL;
+log.error("hidden too now");
+log.critical("still shown");
+print "done";

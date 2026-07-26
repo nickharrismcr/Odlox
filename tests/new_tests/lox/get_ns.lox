@@ -1,0 +1,6 @@
+
+var d={ "a":1, "b":2 }
+var r=d.get("a","not found")
+print r
+r=d.get("c","not found")
+print r

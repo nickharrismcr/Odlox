@@ -1,0 +1,13 @@
+import process, sys;
+
+id = sys.args()[1];
+val = float(sys.args()[2]);
+
+parent = process.parent();
+
+// Fire-and-forget: sends several messages with no request/response
+// handshake, then just exits -- unlike process_pool_worker.lox, which
+// only ever replies once asked.
+foreach (i in range(1, 5)) {
+    parent.send((id, i, i * val));
+}

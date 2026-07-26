@@ -1,0 +1,23 @@
+
+
+var a = [111,222,333,444,555];
+
+print len(a);
+
+for (var i = 0; i < len(a); i=i+1) {
+     print a[i];
+}
+
+print a[-1];
+
+var b = ["11","22","33","44","55","66"];
+
+print len(b);
+
+for (var i = 0; i < len(b); i=i+1) {
+     print b[i];
+}
+
+for (var i = len(b)-1; i >=0 ; i=i-1) {
+     print b[i];
+}

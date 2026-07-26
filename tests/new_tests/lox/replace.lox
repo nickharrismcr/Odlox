@@ -1,0 +1,5 @@
+var s = "abcdefg";
+var t = replace(s,"abc","ABC");
+print t;
+ 
+

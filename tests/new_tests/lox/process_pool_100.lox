@@ -1,0 +1,41 @@
+import pool;
+import os;
+import sys;
+
+// Same design as process_pool.lox, scaled to the numbers actually worth
+// checking: a pool much smaller than the queue (4 workers, 100 tasks), so
+// most workers run several tasks each and the pool stays saturated
+// throughout. Now built on the pool module instead of hand-rolled
+// in_flight[]/wait_any() orchestration -- see src/modules/pool.lox.
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_pool_worker.lox");
+
+n_tasks = 100;
+p = pool.ProcessPool(worker_path, 4);
+
+tasks = [];
+foreach (i in range(1, n_tasks + 1)) {
+    tasks.append(i);
+}
+
+results = p.map(tasks);
+p.close();
+
+// Every task must have been dispatched exactly once and every result slot
+// filled, regardless of scheduling order across the 4 workers.
+missing = 0;
+sum = 0;
+foreach (r in results) {
+    if (r == nil) {
+        missing = missing + 1;
+    } else {
+        sum = sum + r;
+    }
+}
+
+print len(results);
+print missing;
+print sum;
+print results[0];
+print results[n_tasks - 1];
+print "done";

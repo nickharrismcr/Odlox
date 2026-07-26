@@ -1,0 +1,10 @@
+// try/except/finally where nothing is raised -- finally must run exactly
+// once, on the normal-completion path (not the except body's path).
+try {
+    print "body";
+} except Exception as e {
+    print "handler (should not run)";
+} finally {
+    print "cleanup";
+}
+print "after";

@@ -1,0 +1,13 @@
+class MyException < Exception {
+    init(msg) { this.msg = msg; this.name = "MyException" }
+}
+
+// Same as except_fallthrough_no_raise.lox, exercised with the
+// newline-terminated statement style instead of semicolons.
+try {
+    print "before"
+}
+except MyException as e {
+    print "handler (should not run)"
+}
+print "after"

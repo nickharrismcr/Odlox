@@ -1,0 +1,14 @@
+
+func test(a,b) {
+
+    func innertest(a,b,c) {
+        return c*(a+b);
+    }
+
+    print a+b;
+    for (var i = 0 ; i < 10; i=i+1 ){
+        print innertest(a,b,i);
+    }
+}
+
+test(1.0,2.0);

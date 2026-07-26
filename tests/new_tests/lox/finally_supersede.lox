@@ -1,0 +1,23 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+class BarError < Exception {
+    init(msg) { this.msg = msg; this.name = "BarError"; }
+}
+
+// A new exception raised from inside a finally block, while a different
+// exception is already propagating through it, must supersede the
+// original -- the new one is what an enclosing except clause ends up
+// catching, matching Python's finally semantics.
+try {
+    try {
+        raise FooError("boom");
+    } finally {
+        raise BarError("supersede");
+    }
+} except BarError as e {
+    print "caught BarError (correct)";
+} except FooError as e {
+    print "caught FooError (wrong)";
+}
+print "after";

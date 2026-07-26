@@ -1,0 +1,35 @@
+class FooError < Exception {
+    init(msg) { this.msg = msg; this.name = "FooError"; }
+}
+
+// Regression: a try/except for a user-defined exception class used to fail
+// to resolve the class name ("Undefined exception handler") whenever the
+// try/except lived inside any non-top-level function -- regardless of
+// where the raise itself happened -- because the classname lookup only
+// ever consulted that function's own (always-empty, by design) chunk-local
+// globals table instead of the shared Environment's.
+func risky() {
+    raise FooError("from a nested call");
+}
+
+func g() {
+    try {
+        risky();
+    } except FooError as e {
+        print "caught in g: " & e.msg;
+    }
+}
+
+g();
+
+// Also exercise raising and catching within the very same function frame.
+func h() {
+    try {
+        raise FooError("same frame");
+    } except FooError as e {
+        print "caught in h: " & e.msg;
+    }
+}
+
+h();
+print "done";

@@ -1,0 +1,16 @@
+class MyException < Exception {
+    init(msg) { this.msg = msg; this.name = "MyException"; }
+}
+
+// Regression: falling through a try body without raising, when an except
+// clause is present, used to panic the VM outright -- OP_END_TRY never
+// consumed its own 2-byte jump offset, so the raw offset bytes got executed
+// as if they were opcodes. Every existing try/except test always
+// deliberately raised inside the try body, so this path went untested.
+try {
+    print "before";
+}
+except MyException as e {
+    print "handler (should not run)";
+}
+print "after";

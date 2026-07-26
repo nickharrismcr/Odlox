@@ -1,0 +1,137 @@
+import pickle;
+import pickle_unknown_class_helper;
+
+// primitives
+print pickle.loads(pickle.dumps(nil)) == nil;
+print pickle.loads(pickle.dumps(true));
+print pickle.loads(pickle.dumps(false));
+print pickle.loads(pickle.dumps(42));
+print pickle.loads(pickle.dumps(-123456789));
+print pickle.loads(pickle.dumps(3.5));
+print pickle.loads(pickle.dumps("hello world"));
+
+// list
+var l = [1, 2, 3, "four"];
+print pickle.loads(pickle.dumps(l));
+
+// tuple
+var t = (1, 2, "three");
+print pickle.loads(pickle.dumps(t));
+
+// dict
+var d = {"a": 1, "b": [2, 3], "c": {"d": 4}};
+var d2 = pickle.loads(pickle.dumps(d));
+print d2["a"];
+print d2["b"];
+print d2["c"]["d"];
+
+// vec2/3/4
+var v2 = pickle.loads(pickle.dumps(vec2(1.5, 2.5)));
+print v2.x;
+print v2.y;
+
+var v3 = pickle.loads(pickle.dumps(vec3(1, 2, 3)));
+print v3.x;
+print v3.y;
+print v3.z;
+
+var v4 = pickle.loads(pickle.dumps(vec4(1, 2, 3, 4)));
+print v4.x;
+print v4.y;
+print v4.z;
+print v4.w;
+
+// nested structure
+var nested = [{"pos": vec2(1, 2), "tags": ("a", "b")}, [1, [2, 3]]];
+var nested2 = pickle.loads(pickle.dumps(nested));
+print nested2[0]["pos"].x;
+print nested2[0]["tags"];
+print nested2[1][1][1];
+
+// class instance: fields and methods both survive the round trip (methods
+// aren't serialised at all -- the decoding side resolves the class by name
+// and reattaches the instance's data to that live class)
+class Point {
+    init(x, y) {
+        this.x = x;
+        this.y = y;
+    }
+    sum() {
+        return this.x + this.y;
+    }
+}
+var p = pickle.loads(pickle.dumps(Point(3, 4)));
+print p.x;
+print p.y;
+print p.sum();
+
+// exception instance: a user-defined Exception subclass, pickled after
+// being caught, round-trips its fields and its class's overridden toString
+class MyError < Exception {
+    init(msg) {
+        super.init(msg);
+        this.name = "MyError";
+    }
+}
+try {
+    raise MyError("boom");
+}
+except Exception as caught
+{
+    var e2 = pickle.loads(pickle.dumps(caught));
+    print e2.name;
+    print e2.msg;
+    print str(e2);
+}
+
+// error path: cyclic instance (a field pointing back at its own instance)
+class Node {
+    init() {
+        this.next = nil;
+    }
+}
+var n = Node();
+n.next = n;
+try {
+    pickle.dumps(n);
+}
+except PickleError as e
+{
+    print "caught cyclic instance";
+}
+
+// error path: instance of a class only visible in another module's scope
+// -- loads() resolves class names against the calling frame's own module,
+// so a class that's a global only in pickle_unknown_class_helper (and
+// never imported by name here) can't be found
+var widgetData = pickle_unknown_class_helper.make();
+try {
+    pickle.loads(widgetData);
+    print "no error";
+}
+except PickleError as e
+{
+    print "caught unknown class";
+}
+
+// error path: unsupported value type (a native function)
+try {
+    pickle.dumps(pickle.dumps);
+}
+except PickleError as e
+{
+    print "caught unsupported";
+}
+
+// error path: cyclic structure
+var cyc = [];
+cyc.append(cyc);
+try {
+    pickle.dumps(cyc);
+}
+except PickleError as e
+{
+    print "caught cyclic";
+}
+
+print "done";

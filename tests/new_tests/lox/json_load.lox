@@ -1,0 +1,19 @@
+import json;
+from json import JSONDecodeError;
+
+var data = json.load("lox/json_sample.json");
+print data["name"];
+print data["age"];
+print data["tags"][0];
+print data["tags"][1];
+print data["active"];
+
+try {
+    json.load("lox/does_not_exist.json");
+}
+except RunTimeError as e
+{
+    print "caught missing file error";
+}
+
+print "done";

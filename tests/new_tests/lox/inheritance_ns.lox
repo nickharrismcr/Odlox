@@ -1,0 +1,15 @@
+class A {
+    output() {
+        print "hello"
+    }
+}
+
+class B < A {
+    suboutput() {
+        super.output()
+    }
+}
+
+var b = B()
+b.output()
+b.suboutput()

@@ -1,0 +1,17 @@
+import os
+
+var fp = os.open("lox/io_read.lox","r");
+print "reading";
+var i=1;
+try {
+    while (true) {
+        var s = os.readln(fp);
+        print str(i)&" "&s;
+        i=i+1;
+    }
+} except EOFError as e {
+    print "in EOFError handler";
+}
+os.close(fp);
+print "file closed";
+var s = os.readln(fp);

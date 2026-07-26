@@ -1,0 +1,20 @@
+// pure variadic
+func sum(*xs) { var t = 0; foreach (x in xs) { t = t + x } return t }
+print sum()                    // 0
+print sum(1, 2, 3)             // 6
+print sum(5)                   // 5
+
+// fixed + variadic
+func lead(a, *rest) { return str(a) & "/" & str(len(rest)) }
+print lead("x")                // x/0
+print lead("x", 1, 2)          // x/2
+
+// fixed + default + variadic
+func mix(a, b=10, *rest) { return str(a) & "," & str(b) & "," & str(len(rest)) }
+print mix(1)                   // 1,10,0
+print mix(1, 2)                // 1,2,0
+print mix(1, 2, 3, 4)          // 1,2,2
+
+// *rest is a real list
+func tags(first, *rest) { rest.append("z"); return rest }
+print tags("a", "b", "c")      // [ b, c, z ]

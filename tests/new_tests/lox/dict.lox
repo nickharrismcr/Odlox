@@ -1,0 +1,26 @@
+var a = {"a":"1","b":"2"};
+//print a;
+print a["a"];
+print a["b"];
+
+var c={};
+ 
+
+for (var i = 0; i < 20; i=i+1 ){
+    c[str(i)]=i;
+}
+
+for (var i = 0; i < 20; i=i+1 ){
+    print str(i)&" : "&str(c[str(i)]);
+}
+
+print len(c.keys());
+
+
+var e={"a":{"b":"c","d":[1,2,3,{"e":"f"}]}};
+print len(e.keys());
+print len(e["a"].keys());
+print e["a"]["b"];
+print e["a"]["d"];
+print e["a"]["d"][0];
+print e["a"]["d"][3]["e"];

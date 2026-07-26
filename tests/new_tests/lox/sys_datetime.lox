@@ -1,0 +1,3 @@
+print sys.today();
+print sys.now();
+print "done";

@@ -1,0 +1,31 @@
+import process;
+import os;
+import sys;
+
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_worker.lox");
+
+p = process.spawn(worker_path);
+
+// nothing has been sent yet, so the worker can't possibly have replied
+ok, val = p.try_recv();
+print ok;
+
+p.send(21);
+print p.recv();
+
+print p.wait();
+
+// spawning a script that doesn't exist starts a glox process fine (the
+// binary itself exists) -- but that child exits immediately without ever
+// writing a reply, so recv() sees the closed pipe and raises ProcessError
+broken = process.spawn(os.join(here, "does_not_exist.lox"));
+try {
+    broken.recv();
+}
+except ProcessError as e
+{
+    print "caught broken pipe";
+}
+
+print "done";

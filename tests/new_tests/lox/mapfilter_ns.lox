@@ -1,0 +1,49 @@
+
+func map(list,function) {
+
+    var ln = len(list)
+    var rv = []
+    for (var i = 0; i < ln; i=i+1) {
+        rv.append(function(list[i]))
+    }
+    return rv
+}
+
+func filter(list,function){
+    var ln = len(list)
+    var rv = []
+    for (var i = 0; i < ln; i=i+1) {
+        if ( function (list[i]) ) {
+            rv.append(list[i])
+        }
+    }
+    return rv
+}
+
+func modifier(a) {
+    return a*2
+}
+
+func divisibleBy(a) {
+    func closure(x) {
+        return ( x % a ) == 0
+    }
+    return closure
+}
+
+func makeList(size) {
+    var rv=[]
+    for ( var i = 0 ; i < size; i = i+1 ){
+        rv.append(i)
+    }
+    return rv
+}
+
+
+for ( var i = 0; i < 100; i=i+1 ) {
+    var inp = makeList(i)
+    var res = map(inp,modifier)
+    print res
+    var res2 = filter(res,divisibleBy(3))
+    print res2
+}
