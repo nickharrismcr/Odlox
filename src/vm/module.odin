@@ -29,9 +29,18 @@ do_import_from :: proc(vm: ^VM, module_name: string, names: []string) {
 		return
 	}
 	if len(names) == 0 {
-		// `from mod import *`
+		// `from mod import *` -- every name in the module's environment,
+		// not just its "real" top-level declarations, since Environment.vars
+		// also holds whatever free builtins the module's own code happened
+		// to reference (seed_builtin_globals writes those into both the
+		// module's globals *and* vars -- see builtins.odin). A module
+		// like math.lox that calls vec2()/vec3() internally ends up with
+		// "vec2"/"vec3" entries in its own vars purely as a side effect of
+		// referencing them, not because it "exports" them -- bind_imported_name_soft
+		// (not bind_imported_name) is what makes that harmless: see its
+		// own doc comment.
 		for k, v in mod.environment.vars {
-			bind_imported_name(vm, core.string_get(k), v)
+			bind_imported_name_soft(vm, core.string_get(k), v)
 		}
 		return
 	}
@@ -50,6 +59,36 @@ bind_imported_name :: proc(vm: ^VM, name: string, val: core.Value) {
 	slot := core.env_slot_for_name(vm.environment, name)
 	if slot < 0 {
 		runtime_error(vm, "Internal error: import name '%s' has no global slot.", name)
+		return
+	}
+	core.env_grow_globals(vm.environment, slot + 1)
+	core.env_set_global(vm.environment, slot, val)
+}
+
+// bind_imported_name_soft is `from mod import *`'s own binding step --
+// deliberately more forgiving than bind_imported_name (used for a
+// specific `from mod import name`), which treats a missing global slot
+// as an internal-error bug. For a *named* import, the compiler already
+// guaranteed a slot exists (from_import_statement's own
+// `global_slot(p, name)` call, at compile time) -- so "no slot" really
+// would mean something is broken. `import *` has no such guarantee: it
+// walks whatever names the module's environment happens to hold, most
+// of which the importing script's own compiled code never mentioned by
+// identifier at all, so there's no reason a global slot would exist for
+// them -- and no reason one needs to, either, since nothing in the
+// importing script can ever try to *read* a name it never referenced.
+// Real bug, found porting math.lox: `from math import *` failed
+// immediately with "Internal error: import name 'vec3' has no global
+// slot" purely because math.lox's own `rotate2d` happens to call
+// `vec3(...)` internally (unrelated to anything the importing script
+// asked for) -- confirmed against glox's own importFunctionFromModule,
+// which silently skips the fast-slot write when no matching slot is
+// found in the current chunk, rather than erroring.
+@(private = "file")
+bind_imported_name_soft :: proc(vm: ^VM, name: string, val: core.Value) {
+	core.env_set_var(vm.environment, core.intern_string(name), val)
+	slot := core.env_slot_for_name(vm.environment, name)
+	if slot < 0 {
 		return
 	}
 	core.env_grow_globals(vm.environment, slot + 1)

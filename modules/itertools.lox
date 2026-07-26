@@ -1,0 +1,97 @@
+import random
+
+//
+// @file itertools.lox
+// @brief Iterator and sequence utilities for GLOX
+// 
+// This module provides utilities for working with iterables including strings and lists.
+// Inspired by Python's itertools module, it offers functions for manipulating and
+// transforming sequences.
+// 
+// Functions:
+// - reverse(sequence) - Reverse a string or list
+// - sort(list, cmp) - Sort a list using a custom comparison function
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+// takes a string or list and returns it reversed 
+func reverse(s) {
+
+    func _reverse(iter) {
+         var rv=[];
+        for ( var i=len(s)-1; i >= 0; i=i-1) {
+            rv.append(s[i]);
+        }
+        return rv;
+    }
+
+    if (type(s) == "string"){
+        return "".join(_reverse(s));
+    }
+    if (type(s) == "list") {
+        return _reverse(s);
+    }
+    raise RunTimeError("Invalid argument to reverse().");
+}
+
+func stringsorter(a,b){
+    if (a < b) return -1
+    if (a > b) return 1
+    return 0
+}
+
+// bubble sort a list 
+// cmp is function that should return -1, 0 or 1 
+func sort(list, cmp) {
+
+    if (type(list)!="list") {
+        raise RunTimeError("Invalid type for sort()");
+    }
+
+    var n = len(list);
+
+    for (var i = 0; i < n - 1; i = i + 1) {
+        for (var j = 0; j < n - i - 1; j = j + 1) {
+            if (cmp(list[j], list[j + 1]) > 0) {
+                var tmp = list[j];
+                list[j] = list[j + 1];
+                list[j + 1] = tmp;
+            }
+        }
+    }
+
+    return list;
+}
+ 
+
+class Bouncer {
+    init(min,max,dx) {
+        this.x= random.integer(min, max)
+        this.dx = dx
+        this.min=min
+        this.max=max       
+    }
+    update() {
+        this.x = this.x + this.dx
+        if (this.x < this.min) {
+            this.x = this.min
+            this.dx = -this.dx
+        }
+        if (this.x > this.max) {
+            this.x = this.max
+            this.dx = -this.dx
+        }
+    }
+    copy() {
+        return Bouncer(this.min, this.max, this.dx)
+    }
+    get() {
+        return this.x
+    }
+    set(value) {
+        this.x = value
+    }
+}
+

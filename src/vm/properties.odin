@@ -102,11 +102,82 @@ get_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string) -> bool {
 	return true
 }
 
+// set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`)
+// -- glox's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case
+// (`v.AsVec2().SetX(tmp.AsFloat())`, `vm.go`), which this port was
+// missing entirely: set_property only ever checked `receiver.type ==
+// .Obj`, so any vector's `.type` (`.Vec2`/`.Vec3`/`.Vec4`, never
+// `.Obj` -- see value.odin) fell straight through to the generic
+// "Only instances, classes, and modules have settable properties."
+// error, rejecting vector field assignment outright. Found porting
+// src/modules/particle_sys.lox, a real glox module that assigns
+// `this.pos.x = ...` directly. Vec2/3/4 objects are mutable heap
+// values (a Value just wraps a pointer to one -- see obj_vec.odin), so
+// this mutates the field in place rather than replacing anything on
+// the stack, same shape as Instance/Class/Module's map-entry updates.
+set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
+	if !core.is_number(value) {
+		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)
+		return false
+	}
+	f := core.as_float(value)
+	ok := true
+	#partial switch v.type {
+	case .Vec2:
+		vv := core.as_vec2(v)
+		switch name {
+		case "x":
+			vv.x = f
+		case "y":
+			vv.y = f
+		case:
+			ok = false
+		}
+	case .Vec3:
+		vv := core.as_vec3(v)
+		switch name {
+		case "x":
+			vv.x = f
+		case "y":
+			vv.y = f
+		case "z":
+			vv.z = f
+		case:
+			ok = false
+		}
+	case .Vec4:
+		vv := core.as_vec4(v)
+		switch name {
+		case "x", "r":
+			vv.x = f
+		case "y", "g":
+			vv.y = f
+		case "z", "b":
+			vv.z = f
+		case "w", "a":
+			vv.w = f
+		case:
+			ok = false
+		}
+	}
+	if !ok {
+		runtime_error(vm, "Undefined vector field '%s'.", name)
+		return false
+	}
+	pop(vm)
+	pop(vm)
+	push(vm, value)
+	return true
+}
+
 set_property :: proc(vm: ^VM, name: string) -> bool {
 	receiver := peek(vm, 1)
 	value := peek(vm, 0)
 
-	if receiver.type == .Obj {
+	#partial switch receiver.type {
+	case .Vec2, .Vec3, .Vec4:
+		return set_vec_swizzle(vm, receiver, name, value)
+	case .Obj:
 		#partial switch receiver.obj_type {
 		case .Instance:
 			core.as_instance(receiver).fields[core.intern_string(name)] = value

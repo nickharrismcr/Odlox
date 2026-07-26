@@ -8,9 +8,44 @@ import "core:strings"
 // compiler/expr.odin's subscript): object, then start (Nil if open),
 // then end (Nil if open, slices only).
 
+// dict_key_string coerces any Value into the string a dict subscript
+// should look it up by -- matches create_dict's own coercion (see that
+// proc's doc comment) and glox's own index()/indexAssign() (`iv.String()`
+// for anything that isn't already a StringObject), so `d[10]` and a
+// literal `{10: ...}` agree on the same key.
+@(private = "file")
+dict_key_string :: proc(v: core.Value) -> (key: string, needs_free: bool) {
+	if core.is_string(v) {
+		return core.string_get(core.as_string(v)), false
+	}
+	return core.value_to_string(v), true
+}
+
+// do_index handles Op_Index (`obj[idx]`). Real bug, found porting the
+// stdlib: this used to unconditionally require an int index before
+// even checking what obj was, so `dict["key"]` -- a real, expected
+// feature (glox's own index() has a full OBJECT_DICT case) -- always
+// failed with "Index must be an integer.", regardless of obj's actual
+// type. Fixed by checking the container type first and only requiring
+// an int for List/String, matching glox's own per-type dispatch.
 do_index :: proc(vm: ^VM) -> bool {
 	idx := pop(vm)
 	obj := pop(vm)
+
+	if obj.type == .Obj && obj.obj_type == .Dict {
+		key, needs_free := dict_key_string(idx)
+		defer if needs_free {
+			delete(key)
+		}
+		v, ok := core.dict_get(core.as_dict(obj), key)
+		if !ok {
+			runtime_error(vm, "Key '%s' not found.", key)
+			return false
+		}
+		push(vm, v)
+		return true
+	}
+
 	if !core.is_int(idx) {
 		runtime_error(vm, "Index must be an integer.")
 		return false
@@ -42,10 +77,23 @@ do_index :: proc(vm: ^VM) -> bool {
 	return false
 }
 
+// do_index_assign handles Op_Index_Assign (`obj[idx] = value`). Same
+// missing-Dict-case bug as do_index, fixed the same way.
 do_index_assign :: proc(vm: ^VM) -> bool {
 	value := pop(vm)
 	idx := pop(vm)
 	obj := pop(vm)
+
+	if obj.type == .Obj && obj.obj_type == .Dict {
+		key, needs_free := dict_key_string(idx)
+		defer if needs_free {
+			delete(key)
+		}
+		core.dict_set(core.as_dict(obj), key, value)
+		push(vm, value)
+		return true
+	}
+
 	if !core.is_int(idx) {
 		runtime_error(vm, "Index must be an integer.")
 		return false
@@ -183,11 +231,23 @@ create_dict :: proc(vm: ^VM, pair_count: int) -> bool {
 	for _ in 0 ..< pair_count {
 		value := pop(vm)
 		key := pop(vm)
-		if !core.is_string(key) {
-			runtime_error(vm, "Dict keys must be strings.")
-			return false
+		// A non-string key is coerced to its string representation, not
+		// rejected -- matches glox's own createDict exactly (`key.String()`
+		// for anything that isn't already a StringObject). Real bug: this
+		// used to reject non-string keys outright, which broke any real
+		// glox source using an int-keyed dict literal -- found porting
+		// src/modules/logging.lox, whose Logger._LEVEL_NAMES is exactly
+		// `{10: "DEBUG", 20: "INFO", ...}`, looked up later via
+		// `str(level)`. core.value_to_string is the same stringification
+		// Op_Str's own generic (non-toString) fallback uses, so a level
+		// int and its str() lookup key always agree.
+		if core.is_string(key) {
+			items[core.as_string(key)] = value
+		} else {
+			key_str := core.value_to_string(key)
+			items[core.intern_string(key_str)] = value
+			delete(key_str) // intern_string clones; this copy is now redundant
 		}
-		items[core.as_string(key)] = value
 	}
 	d := core.make_dict_object(items)
 	gc_track(vm, &d.obj)

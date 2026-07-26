@@ -62,6 +62,24 @@ main :: proc() {
 			opts.instrument = true
 		case "--no-peephole":
 			compiler.DebugSkipPeephole = true
+		case "--force-compile":
+			// Real bug, found via the ported pytest suite's own
+			// lox_helper.py, which calls every fixture twice, once with
+			// this flag: before this case existed, "--force-compile"
+			// fell into the `case:` branch below same as any real file
+			// path would, so *it* became file_path (the very next arg,
+			// the real path, then landed in script_args instead --
+			// "everything after the script path is passed through
+			// verbatim", per this loop's own comment above, and once
+			// file_path is set to anything, nothing overwrites it
+			// again). Every force_compile=True test invocation failed
+			// to even find its own script. glox's -f/--force-compile
+			// bypasses its bytecode cache (see ARCHITECTURE.md's
+			// Bytecode cache section) -- there's no cache here at all
+			// (Phase 8, deferred), so every run already recompiles from
+			// source unconditionally; explicitly accepting and ignoring
+			// the flag is the correct behavior, not a stopgap.
+			continue
 		case:
 			file_path = a
 		}

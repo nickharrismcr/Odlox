@@ -1,0 +1,184 @@
+
+//
+// @file particle_sys.lox
+// @brief Particle system framework for GLOX graphics
+// 
+// This module provides a flexible particle system implementation for creating
+// visual effects like explosions, smoke, fire, rain, and other particle-based
+// animations in GLOX graphics applications.
+// 
+// Classes:
+// - Particle - Individual particle with position, velocity, and lifecycle
+// - Emitter - Manages a collection of particles, emitting new ones and updating existing ones
+// - Emitters - Manages multiple emitters, allowing for complex particle effects
+// 
+ 
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+import random;
+ 
+import math; 
+
+
+// Module-level free list of dead Particle instances, shared across all
+// emitters. Particles are recycled (see _acquire/_release) rather than
+// reallocated every emit, so a steady-state fountain does no per-frame
+// Particle allocation.
+var _pool = [];
+
+func _acquire(pos, init_function, update_function) {
+    if (len(_pool) > 0) {
+        var p = _pool[len(_pool) - 1];
+        _pool.remove(len(_pool) - 1);   // pop last: O(1), no shift
+        p.reset(pos, init_function, update_function);
+        return p;
+    }
+    return Particle(pos, init_function, update_function);
+}
+
+func _release(p) {
+    _pool.append(p);
+}
+
+class Particle {
+    init(pos,init_function, update_function) {
+        this.reset(pos, init_function, update_function);
+    }
+    // reset re-initialises a (possibly recycled) particle in place. Every field
+    // is overwritten here or by init_function, so a pooled particle carries no
+    // stale state.
+    reset(pos,init_function, update_function) {
+        this.pos = pos; // Position of the particle
+        this.dpos = vec2(0, 0); // Change in position
+        init_function(this);
+        this.function = update_function;
+        this.age = 0;
+    }
+    next() {
+        this.age = this.age + 1;
+        if (this.age >= this.life) {
+            return false; // Particle is dead
+        }
+        var f=this.function;
+
+        this.pos.x = this.pos.x + this.dpos.x;
+        this.pos.y = this.pos.y + this.dpos.y;
+ 
+        f(this);
+        return true; // Particle is still alive
+    }
+
+    toString() {
+        return "Particle(pos=" & str(this.pos) & ", dpos=" & str(this.dpos) & ", life=" & str(this.life) & ")";
+    }   
+}
+
+class Emitter {
+    init(pos,init_function, update_function) {
+        this.pos = pos; // Position of the emitter
+        this.init_function = init_function;
+        this.update_function = update_function;
+        this.particles = [];
+        this.emit_queue = [];
+        // Rendering hint honoured by the caller's draw loop: "circle" (default)
+        // or "square". This module stays render-agnostic -- it never draws -- but
+        // carrying the shape here lets a shared draw routine pick per emitter.
+        this.shape = "circle";
+    }
+ 
+    emit(num_particles) {
+        for (var i = 0; i < num_particles; i = i + 1) {
+            this.emit_particle();
+        }
+    }
+    emit_particle() {
+        var particle = _acquire(vec2(this.pos.x, this.pos.y),this.init_function, this.update_function);
+        this.particles.append(particle);
+    }
+    update() {
+        // Swap-with-last removal keeps this O(n) instead of O(n^2): remove(i) in
+        // the middle shifts every following element, whereas removing the last
+        // index is a no-shift pop. Reordering is safe under additive blending.
+        var i = 0;
+        var n = len(this.particles);
+        while (i < n) {
+            var p = this.particles[i];
+            if (!p.next()) {
+                _release(p);              // return dead particle to the pool
+                n = n - 1;
+                this.particles[i] = this.particles[n];
+                this.particles.remove(n); // pop last: O(1)
+            } else {
+                i = i + 1;
+            }
+        }
+        return len(this.particles) >= 1;
+    }
+    get_particles() {
+        return this.particles;
+    }
+}
+
+class Emitters {
+    init() {
+        // NOTE: this list must not be named `queue` -- a field shadows a method of
+        // the same name, so it would make the queue() method below unreachable
+        // (emitters.queue(...) would try to call the list).
+        this.pending = [];
+        this.emitters = [];
+    }
+    // Queue an emitter to fire `particles` particles after `delay` frames. Good for
+    // one-shot bursts: once its particles all die, the emitter is dropped.
+    queue(emitter,particles,delay) {
+        this.pending.append([emitter, particles, delay]);
+    }
+    queue_length(){
+        return len(this.pending);
+    }
+    update() {
+        
+        this.update_queue();
+        this.update_emitters();
+    
+    }
+    update_queue() {
+        var i = 0;
+        var n = len(this.pending);
+        while (i < n) {
+            var q = this.pending[i];
+            q[2] = q[2] - 1; // Decrease delay
+            if (q[2] <= 0) {
+                q[0].emit(q[1]);
+                this.emitters.append(q[0]); // Add emitter to the list
+                n = n - 1;                  // swap-with-last removal
+                this.pending[i] = this.pending[n];
+                this.pending.remove(n);
+            } else {
+                i = i + 1;
+            }
+        }
+    }
+    update_emitters() {
+        var i = 0;
+        var n = len(this.emitters);
+        while (i < n) {
+            var e = this.emitters[i];
+            if (!e.update()) {
+                n = n - 1;                      // swap-with-last removal
+                this.emitters[i] = this.emitters[n];
+                this.emitters.remove(n);
+            } else {
+                i = i + 1;
+            }
+        }
+        return len(this.emitters) > 0;
+    }
+    get() {
+        return this.emitters;
+    }
+}   
+
+

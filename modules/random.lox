@@ -1,0 +1,36 @@
+//
+// @file random.lox
+// @brief Extended random number generation utilities for GLOX
+// 
+// This module extends the built-in rand() function with additional random number
+// generation utilities for common use cases including integer ranges, float ranges,
+// and random selection from collections.
+// 
+// Functions:
+// - integer(min, max) - Generate random integer in range [min, max]
+// - float(min, max) - Generate random float in range [min, max)
+// - choice(list) - Randomly select an element from a list
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+import math;
+
+// Returns an integer between min and max (inclusive)
+func integer(min, max) {
+ 
+    return min + math.floor(rand() * (max - min + 1));
+}
+
+func float(min, max) {
+    return min + rand() * (max - min);
+}   
+
+func choice(lst) {
+    if (len(lst)== 0) {
+        return nil;
+    }
+    var index = integer(0, len(lst) - 1);
+    return lst[index];
+}

@@ -645,16 +645,11 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       then a recursive subdirectory search of it — matching glox's own
       three-tier `getPath`/`findModuleInSubdirs` order. Covered by two
       new filesystem-fixture tests in `src/vm/module_test.odin`.
-- [ ] Port `src/modules/*.lox` themselves (glox's own Lox-source
-      standard library — `math.lox`, `string.lox`, `functools.lox`,
-      `itertools.lox`, `random.lox`, `json.lox`, `logging.lox`, plus
-      several raylib-dependent ones) into odlox's own `modules/`
-      directory. **Not started** — the free-function floor these
-      depend on exists (this phase) and the path-resolution mechanism
-      to find them now exists too (just above), but the `.lox` files
-      themselves still need to be copied over and adapted; `import
-      math` still reports "not found" until they are. `odlox`'s own
-      convention is a `modules/` directory at the `$LOX_PATH` root
+- [x] Port `src/modules/*.lox` themselves (glox's own Lox-source
+      standard library) into odlox's own `modules/` directory — see
+      the Phase 6c section below for the full writeup (which modules,
+      what's deferred and why, the real bugs found doing it). `odlox`'s
+      own convention is a `modules/` directory at the `$LOX_PATH` root
       rather than glox's `src/modules/` — odlox's own `src/` is
       exclusively Odin source, so reusing that name for a Lox-source
       directory would be actively confusing.
@@ -953,6 +948,183 @@ fixes alone (independent of the toString/iterator features) accounted
 for 8 of those, since `try`/`finally` and multi-line REPL sessions
 turn out to be exercised more widely across the ported suite than
 their own dedicated test files suggest.
+
+### Phase 6c: the `.lox` standard library port
+
+Ported 7 of glox's 13 `src/modules/*.lox` files into odlox's own
+`modules/` directory: `functools.lox` (`map`/`filter`/`reduce`),
+`math.lox` (the `sin`/`cos`/`sqrt`/... wrappers around Phase 6a's
+underscore-prefixed natives, plus `floor`/`round`/`max`/`min`/`abs`/
+`pow`/`radians`/`degrees`/vector helpers), `string.lox` (`split`),
+`random.lox` (`integer`/`float`/`choice`, on top of `math.lox`),
+`itertools.lox` (`reverse`/`sort`/a `Bouncer` class, on top of
+`random.lox`), `logging.lox` (a leveled `Logger` class using `sys.*`/
+`os.*`), and `particle_sys.lox` (a headless particle-system framework
+— confirmed via its own ported test, "headless: the module only
+imports random/math, no window" — genuinely no raylib dependency
+despite the name). Copied and tested unmodified, no adaptation needed
+beyond the modules themselves being correct glox source — every bug
+this phase found was in odlox's own compiler/VM, not in the ported
+`.lox` files.
+
+**Deferred, each for a real, specific reason**: `colour.lox` (imports
+`colour_utils`, an unregistered native module), `json.lox` (imports
+`re`, unregistered), `plot_grey.lox`/`plot_rgb.lox`/`sprite.lox`
+(`from gfx import *`, unregistered — genuinely raylib-dependent,
+Phase 6b), `pool.lox` (imports `process`/`thread` — `thread` is
+permanently out of scope, `process` unregistered). All five are
+one-line `import` failures away from working once their native
+dependency exists, not separately broken.
+
+**Real bugs found while porting these seven modules** (kept here, not
+just in commit history, for the same reason as every other phase's
+list) — six of them, ranging from "the module system's core call
+mechanism was fundamentally broken for any nontrivial module" down to
+one CLI-argument-parsing regression from earlier in this same session:
+
+- **The single most severe bug found in this entire project so far**:
+  `run.odin`'s `Get_Global`/`Set_Global`/`Define_Global`/
+  `Define_Global_Const` all resolved through `vm.environment` — the
+  *running VM instance's own* `Environment` field — instead of the
+  *currently executing frame's own function*'s environment
+  (`fl.fn.environment`, which `refresh_frame` already hoists; every
+  `Function_Object` records which `Environment` it was compiled
+  against — see [Compiler](#compiler)). Those two are only the same
+  `Environment` for the top-level script itself. The instant an
+  *imported module's* function is called — `math.sin(x)`, where
+  `math.lox`'s own `sin` body calls `_sin(angle)`, a global reference —
+  the closure being executed belongs to the module's own `Environment`
+  (built by its own separate sub-VM compile in `module.odin`'s
+  `load_module`), but global reads/writes resolved against the
+  *importing script's* `vm.environment` instead: a completely
+  different global slot space. Any imported function that referenced
+  *any* global at all — calling another top-level function in its own
+  module, reading a module-level var, or calling an underscore-
+  prefixed native — either silently read/wrote the wrong slot or hit
+  `Undefined variable '#N'` outright. This had been true since Phase 4
+  first wired module property access up; it went uncaught because the
+  one existing module test only ever read a plain exported *value*
+  from an imported module, never *called* an imported function that
+  itself touched a global — exactly the gap a real standard-library
+  port immediately exposes. Reproduced with the simplest possible case
+  (a two-function module where one calls the other by name) before
+  touching any of the actual ported modules, then fixed by resolving
+  through `fl.fn.environment` throughout — correct for the top-level
+  script too, since its `Function_Object.environment` is set to the
+  same `vm.environment` `Compile()` was called with in the first
+  place.
+- `create_dict` rejected any non-string dict-literal key outright
+  ("Dict keys must be strings.") instead of coercing it to its string
+  representation the way glox's own `createDict` does (`key.String()`
+  for anything that isn't already a `StringObject`). Found because
+  `logging.lox`'s `Logger._LEVEL_NAMES` is exactly
+  `{10: "DEBUG", 20: "INFO", ...}`, looked up later via `str(level)` —
+  a real, working glox idiom this port simply couldn't compile the
+  data for. Fixed by coercing through the same `core.value_to_string`
+  `Op_Str`'s own non-`toString` fallback uses, so a coerced key and its
+  later `str()`-based lookup always agree.
+- `do_index`/`do_index_assign` (`Op_Index`/`Op_Index_Assign`) had no
+  `Dict` case at all — `do_index` unconditionally required an integer
+  index *before even checking what the container was*, so
+  `dict["key"]`, a real, expected feature glox's own `index()` fully
+  supports, always failed with "Index must be an integer.", regardless
+  of the container's actual type. Found via `logging.lox`'s
+  `Logger.level_name`. Fixed by checking the container type first and
+  only requiring an int for `List`/`String`, matching glox's own
+  per-type dispatch (and reusing the same key-coercion as the
+  `create_dict` fix above, so `d[10]` and `{10: ...}` agree too).
+- `set_property` only ever checked `receiver.type == .Obj` before
+  dispatching — but a `vec2`/`vec3`/`vec4` value's own `.type` is
+  never `.Obj` (see [Value representation](#value-representation)), so
+  `v.x = expr` always fell straight through to the generic "Only
+  instances, classes, and modules have settable properties." error,
+  even though *reading* `v.x` already worked (`get_property` has its
+  own vec-swizzle case, landed in Phase 4). glox's own
+  `OP_SET_PROPERTY` has a real `Vec2`/`Vec3`/`Vec4` case. Found via
+  `particle_sys.lox`, a real glox module that assigns `this.pos.x =
+  ...` directly. Fixed with a `set_vec_swizzle` mirroring the existing
+  `get_vec_swizzle`.
+- **A regression from earlier in this same session, not a
+  pre-existing bug**: the parenthesized-control-flow-grammar work's
+  CLI-argument-parsing rewrite (`main.odin`) changed "everything after
+  the script path becomes `sys.args()`" from "the *last* unmatched
+  argument wins as the file path" (the original behavior) to "the
+  *first* unmatched argument becomes the file path, permanently" —
+  which broke `--force-compile` (`odlox --force-compile script.lox`):
+  `--force-compile` itself became `file_path`, and the real script
+  path landed in `script_args` instead, never read again. The ported
+  test suite's own `lox_helper.py` calls *every* fixture twice, once
+  with this flag — so this one regression was silently causing a huge
+  fraction of the suite's `force_compile=True` runs to fail outright
+  with "could not read '--force-compile'" for however long it was
+  live (this whole session, until caught here). Fixed by explicitly
+  recognizing and ignoring `--force-compile` in the argument loop —
+  there's no bytecode cache to force-recompile from at all (Phase 8,
+  deferred), so every run already recompiles from source
+  unconditionally; accepting and ignoring the flag is the correct
+  behavior, not a stopgap.
+- `from mod import *` had two separate real bugs, found together
+  porting `math.lox`:
+  1. The scanner's Eol-suppression heuristic (`scanner.odin`'s
+     `keep_eol`) treats `*` purely by token type — indistinguishable
+     from the multiplication operator, which legitimately continues
+     an expression onto the next line — so the Eol that should follow
+     `from mod import *` on its own line was never scanned into the
+     token stream at all, and `from_import_statement`'s old
+     unconditional `consume_eol` call always failed with "Expect
+     newline after import." Fixed by not requiring a terminator after
+     the `*` case specifically — nothing can legally follow `*` in
+     this grammar position anyway, unlike real multiplication, so
+     there's nothing to validate.
+  2. Past that: `from mod import *` walks *every* name in the
+     imported module's own `Environment.vars`, which includes
+     whatever free builtins the module's code happened to reference
+     internally (e.g. `math.lox` calling `vec2()`/`vec3()`) via
+     `seed_builtin_globals`, not just its "real" top-level
+     declarations. The old `bind_imported_name` treated "no matching
+     global slot in the importing script" as a fatal internal-error
+     bug — but for a star-import there's no reason one *should*
+     exist unless the importing script happens to reference that same
+     name itself elsewhere, since nothing in slot-indexed
+     `Op_Get_Global` can ever ask for a name the importing script's
+     own compiled code never mentioned by identifier. Confirmed
+     against glox's own `importFunctionFromModule`, which silently
+     skips the fast-slot write when no matching slot is found rather
+     than erroring. Fixed with a separate, more forgiving
+     `bind_imported_name_soft` used only for the star-import path — a
+     *named* import (`from mod import x`) keeps the strict version,
+     since the compiler already guarantees a slot exists for `x` at
+     compile time (`from_import_statement`'s own `global_slot(p,
+     name)` call), so "no slot" there really would mean something is
+     broken.
+
+Regression coverage: `module_test.odin` gained
+`test_imported_function_calling_another_function_in_its_own_module`,
+`test_imported_function_reading_module_level_var`, and
+`test_from_import_star_with_module_referencing_extra_builtins`;
+`vm_test.odin` gained `test_dict_subscript_get_and_set` and
+`test_dict_literal_with_int_key_is_coerced_to_string`;
+`builtins_test.odin` gained `test_vec_field_assignment`. All 62
+`vm`-package tests (up from 56) reverified individually, every one
+passing — the same exhaustive-not-batch discipline established fixing
+the previous section's three bugs, since this section's fixes are at
+least as foundational.
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — 115
+passed / 115 failed / 14 skipped before this work, **147 passed / 83
+failed / 14 skipped** after: the largest jump of any phase so far by a
+wide margin, from a mix of genuinely new functionality (7 real modules
+now importable) and, more than that, six bugs in code that had shipped
+several phases ago. Worth naming directly: none of the six were found
+by *reasoning about* the VM or compiler in the abstract — every one
+surfaced from trying to run someone else's real, working Lox source
+(glox's own shipped standard library) through this port and taking the
+first failure seriously enough to trace to its actual root cause
+rather than working around it. That's the same lesson the previous
+section's three bugs taught, generalized: this port's own hand-written
+tests, however thorough, encode only the assumptions their author
+already had — real external source is what finds the assumptions that
+were wrong.
 
 ## Phase 7 — Performance pass
 

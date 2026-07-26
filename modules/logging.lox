@@ -1,0 +1,68 @@
+//
+// @file logging.lox
+// @brief Basic leveled logging with a pluggable writer.
+//
+// Logger.log(level, msg) filters against the logger's own configured
+// level, then hands a fully-formatted line ("[date time] [LEVEL] name:
+// message") to the logger's writer -- a plain closure taking one string
+// argument. The default writer prints to stdout; swap in something else
+// (e.g. file_writer(file) below) to send output elsewhere. Timestamps
+// come from sys.today()/sys.now() (real wall-clock date/time).
+//
+
+import sys;
+import os;
+
+class Logger {
+    static DEBUG    = 10;
+    static INFO     = 20;
+    static WARN     = 30;
+    static ERROR    = 40;
+    static CRITICAL = 50;
+
+    static _LEVEL_NAMES = {10: "DEBUG", 20: "INFO", 30: "WARN", 40: "ERROR", 50: "CRITICAL"};
+
+    // Returns the name for a known level constant, or "LEVEL<n>" for any
+    // other integer -- never raises, since an unrecognised level isn't a
+    // real failure, just an unusual one.
+    static level_name(level) {
+        return Logger._LEVEL_NAMES.get(str(level), format("LEVEL%d", level));
+    }
+
+    // name labels every line this logger produces. level is the minimum
+    // level that will actually be emitted -- anything below it is
+    // suppressed before the line is even formatted, let alone written.
+    // writer is a func(line) that receives the fully-formatted string;
+    // the default just prints it.
+    init(name="root", level=Logger.INFO, writer=func(line) { print line; }) {
+        this.name = name;
+        this.level = level;
+        this.writer = writer;
+    }
+
+    set_level(level)   { this.level = level; }
+    set_writer(writer) { this.writer = writer; }
+    get_level()        { return this.level; }
+
+    log(level, msg) {
+        if (level < this.level) {
+            return;
+        }
+        var line = format("[%s %s] [%s] %s: %s", sys.today(), sys.now(), Logger.level_name(level), this.name, msg);
+        this.writer(line);
+    }
+
+    debug(msg)    { this.log(Logger.DEBUG, msg); }
+    info(msg)     { this.log(Logger.INFO, msg); }
+    warn(msg)     { this.log(Logger.WARN, msg); }
+    error(msg)    { this.log(Logger.ERROR, msg); }
+    critical(msg) { this.log(Logger.CRITICAL, msg); }
+}
+
+// Convenience writer for the common "log to a file" case. The caller
+// still owns the file's lifecycle (open it before, close it after) --
+// this only removes the boilerplate of writing the wrapping closure by
+// hand every time.
+func file_writer(file) {
+    return func(line) { os.write(file, line & "\n"); };
+}

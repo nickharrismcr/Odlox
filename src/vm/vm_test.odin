@@ -287,6 +287,41 @@ test_dict_get_and_set :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.as_int(v), 1)
 }
 
+// Regression test for a real, pre-existing gap: do_index (Op_Index)
+// unconditionally required an integer index *before even checking
+// what the container was* -- so `dict["key"]`, a real, expected
+// feature (glox's own index() has a full dict case), always failed
+// with "Index must be an integer.". Found porting logging.lox, whose
+// Logger.level_name does exactly this. Fixed by checking the
+// container's type first, matching glox's own per-type dispatch, not
+// by relaxing the int-index requirement for List/String.
+@(test)
+test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `var d = {"a": 1}` + "\nvar result = d[\"a\"]\n", "result")
+	testing.expect_value(t, core.as_int(v), 1)
+
+	v2 := run_and_get_global(t, `var d = {}` + "\nd[\"x\"] = 42\nvar result = d[\"x\"]\n", "result")
+	testing.expect_value(t, core.as_int(v2), 42)
+}
+
+// Regression test: create_dict used to reject any non-string dict key
+// outright ("Dict keys must be strings.") instead of coercing it to
+// its string representation the way glox's own createDict does
+// (`key.String()` for anything that isn't already a StringObject).
+// Found porting logging.lox, whose Logger._LEVEL_NAMES is exactly
+// `{10: "DEBUG", 20: "INFO", ...}`, looked up later via `str(level)` --
+// so the coerced key and the lookup key need to agree, which they do
+// as long as both go through the same stringification
+// (core.value_to_string, also Op_Str's own non-toString fallback).
+@(test)
+test_dict_literal_with_int_key_is_coerced_to_string :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `var d = {10: "ten"}` + "\nvar result = d[10]\n", "result")
+	testing.expect_value(t, core.string_get(core.as_string(v)), "ten")
+
+	v2 := run_and_get_global(t, `var d = {10: "ten"}` + "\nvar result = d.get(str(10), \"?\")\n", "result")
+	testing.expect_value(t, core.string_get(core.as_string(v2)), "ten")
+}
+
 @(test)
 test_destructuring_assignment :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, "a, b = 1, 2\nvar result = a + b\n", "result")

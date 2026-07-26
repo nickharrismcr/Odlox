@@ -133,3 +133,140 @@ test_import_prefers_lox_path_modules_dir :: proc(t: ^testing.T) {
 		testing.expect_value(t, core.string_get(core.as_string(v)), "lox-path")
 	}
 }
+
+// -----------------------------------------------------------------------
+// Regression test for a real, severe, pre-existing bug found porting
+// the .lox standard library: run.odin's Get_Global/Set_Global/
+// Define_Global(_Const) all resolved through vm.environment -- the
+// *running VM instance's own* Environment field -- instead of the
+// *currently executing frame's own function*'s environment
+// (fl.fn.environment). Those only coincide for the top-level script
+// itself; the instant an *imported module's* function is called and
+// that function references any global at all (calling another
+// function in its own module, reading a module-level var, or calling
+// an underscore-prefixed native), it resolved against the *importing
+// script's* global slot space instead of its own -- wrong slot, wrong
+// value, or "Undefined variable '#N'" outright. See run.odin's own
+// doc comment on the fix for the full story.
+
+@(private = "file")
+run_two_module_files :: proc(t: ^testing.T, dir: string, main_source, helper_source: string) -> (result: core.Value, status: Interpret_Result, msg: string) {
+	main_path := write_temp_lox(t, dir, "main.lox", main_source)
+	defer delete(main_path)
+	helper_path := write_temp_lox(t, dir, "helper.lox", helper_source)
+	defer delete(helper_path)
+
+	data, ok := os.read_entire_file_from_path(main_path, context.allocator)
+	testing.expect(t, ok == nil)
+	defer delete(data)
+
+	vm_instance := new_vm(main_path)
+	define_builtins(vm_instance)
+	status, _ = interpret(vm_instance, string(data))
+	msg = vm_instance.error_msg
+	if status != .Ok {
+		return
+	}
+	slot := core.env_slot_for_name(vm_instance.environment, "result")
+	testing.expect(t, slot >= 0)
+	if slot < 0 {
+		return
+	}
+	result = vm_instance.environment.globals[slot]
+	return
+}
+
+@(test)
+test_imported_function_calling_another_function_in_its_own_module :: proc(t: ^testing.T) {
+	base, _ := os.temp_dir(context.temp_allocator)
+	root, _ := filepath.join({base, "odlox_module_test_crossref"})
+	defer delete(root)
+	defer os.remove_all(root)
+	testing.expect(t, os.make_directory_all(root) == nil)
+
+	v, status, msg := run_two_module_files(t, root, `
+import helper
+var result = helper.triple(7)
+`, `
+func triple(x) {
+	return helper_val(x)
+}
+func helper_val(x) {
+	return x * 3
+}
+`)
+	testing.expectf(t, status == .Ok, "expected Ok, got %v: %s", status, msg)
+	if status == .Ok {
+		testing.expect_value(t, core.as_int(v), 21)
+	}
+}
+
+@(test)
+test_imported_function_reading_module_level_var :: proc(t: ^testing.T) {
+	base, _ := os.temp_dir(context.temp_allocator)
+	root, _ := filepath.join({base, "odlox_module_test_modvar"})
+	defer delete(root)
+	defer os.remove_all(root)
+	testing.expect(t, os.make_directory_all(root) == nil)
+
+	v, status, msg := run_two_module_files(t, root, `
+import helper
+var result = helper.get_base_plus(10)
+`, `
+var base_value = 100
+func get_base_plus(x) {
+	return base_value + x
+}
+`)
+	testing.expectf(t, status == .Ok, "expected Ok, got %v: %s", status, msg)
+	if status == .Ok {
+		testing.expect_value(t, core.as_int(v), 110)
+	}
+}
+
+// -----------------------------------------------------------------------
+// Regression test for `from mod import *`, which had two separate real
+// bugs found together while porting math.lox:
+//
+//  1. The scanner's Eol-suppression heuristic (scanner.odin's keep_eol)
+//     treats `*` purely by token type -- indistinguishable from the
+//     multiplication operator, which legitimately continues onto the
+//     next line -- so the Eol after `from mod import *` on its own
+//     line was never scanned at all, and from_import_statement's old
+//     unconditional consume_eol call always failed.
+//  2. Even past that, `from mod import *` iterates *every* name in the
+//     imported module's own environment, which includes free builtins
+//     the module's code merely referenced internally (e.g. math.lox
+//     calling vec2()/vec3()), not just its "real" exports -- binding
+//     one of those into the importing script raised "has no global
+//     slot" whenever the importing script's own code never happened
+//     to reference that same name itself. Fixed with
+//     bind_imported_name_soft, which (like glox's own
+//     importFunctionFromModule) silently skips the fast-slot write
+//     when none exists, rather than treating that as an error.
+@(test)
+test_from_import_star_with_module_referencing_extra_builtins :: proc(t: ^testing.T) {
+	base, _ := os.temp_dir(context.temp_allocator)
+	root, _ := filepath.join({base, "odlox_module_test_star"})
+	defer delete(root)
+	defer os.remove_all(root)
+	testing.expect(t, os.make_directory_all(root) == nil)
+
+	v, status, msg := run_two_module_files(t, root, `
+from helper import *
+var result = double(21)
+`, `
+func double(x) {
+	// References vec2() purely internally -- helper.environment.vars
+	// ends up with a "vec2" entry as a side effect (see
+	// seed_builtin_globals), which the importing script above never
+	// mentions by name anywhere -- exactly the case that used to crash.
+	var unused = vec2(0, 0)
+	return x * 2
+}
+`)
+	testing.expectf(t, status == .Ok, "expected Ok, got %v: %s", status, msg)
+	if status == .Ok {
+		testing.expect_value(t, core.as_int(v), 42)
+	}
+}

@@ -1,0 +1,28 @@
+//
+// @file string.lox
+// @brief String manipulation utilities for GLOX
+// 
+// Functions:
+// - split(string, delimiter) - Split string into list using delimiter
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+func split(s,delim) {
+    var rv=[];
+    var w="";
+
+    foreach (var c in s) {
+        if (c==delim) {
+            append(rv,w);
+            w="";
+        } else {
+            w=w &c;
+        }
+    }
+    if (w!=""){
+        append(rv,w);
+    }
+    return rv;
+}

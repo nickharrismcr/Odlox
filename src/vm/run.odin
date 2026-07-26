@@ -232,33 +232,59 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			}
 
 		// --- globals ---
+		//
+		// Real bug, found while porting the .lox standard library: every
+		// one of these four cases used vm.environment (the *running VM
+		// instance's own* Environment field) instead of the *currently
+		// executing frame's function's own* environment (fl.fn.environment,
+		// already hoisted by refresh_frame -- every Function_Object
+		// records which Environment it was compiled against, see
+		// compiler_state.odin's init_root_compiler/init_function_compiler).
+		// Those are only the same Environment for the top-level script
+		// itself. The moment an *imported module's* function is called --
+		// e.g. `math.sin(x)`, where math.lox's own `sin` body calls
+		// `_sin(angle)`, a global reference -- the Closure being executed
+		// belongs to the module's own Environment (built by its own,
+		// separate sub-VM compile in module.odin's load_module), but
+		// global reads/writes were resolving against the *importing
+		// script's* vm.environment instead: a completely different global
+		// slot space. Any imported function that referenced a global at
+		// all (calling another top-level function in its own module,
+		// reading a module-level var, or calling an underscore-prefixed
+		// native like _sin) read/wrote the wrong slot or hit "Undefined
+		// variable '#N'" outright. Reproduced with the simplest possible
+		// case: a two-function module where one calls the other by name.
+		// Fixed by resolving through fl.fn.environment throughout --
+		// correct for the top-level script too, since Function_Object.environment
+		// there is set to the same vm.environment Compile() was called
+		// with in the first place.
 		case .Define_Global:
 			slot := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			core.env_set_global(vm.environment, int(slot), pop(vm))
+			core.env_set_global(fl.fn.environment, int(slot), pop(vm))
 		case .Define_Global_Const:
 			slot := fl.code[fl.f.ip]
 			fl.f.ip += 1
 			v := pop(vm)
 			v.immutable = true
-			core.env_set_global(vm.environment, int(slot), v)
+			core.env_set_global(fl.fn.environment, int(slot), v)
 		case .Get_Global:
 			slot := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			if int(slot) >= len(vm.environment.defined) || !vm.environment.defined[slot] {
-				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(vm.environment, int(slot)))
+			if int(slot) >= len(fl.fn.environment.defined) || !fl.fn.environment.defined[slot] {
+				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
 			} else {
-				push(vm, vm.environment.globals[slot])
+				push(vm, fl.fn.environment.globals[slot])
 			}
 		case .Set_Global:
 			slot := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			if int(slot) >= len(vm.environment.defined) || !vm.environment.defined[slot] {
-				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(vm.environment, int(slot)))
-			} else if vm.environment.globals[slot].immutable {
-				runtime_error(vm, "Cannot assign to const variable '%s'.", core.env_name_for_slot(vm.environment, int(slot)))
+			if int(slot) >= len(fl.fn.environment.defined) || !fl.fn.environment.defined[slot] {
+				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
+			} else if fl.fn.environment.globals[slot].immutable {
+				runtime_error(vm, "Cannot assign to const variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
 			} else {
-				core.env_set_global(vm.environment, int(slot), peek(vm, 0))
+				core.env_set_global(fl.fn.environment, int(slot), peek(vm, 0))
 			}
 
 		// --- locals / upvalues ---

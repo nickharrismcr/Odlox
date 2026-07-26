@@ -1008,7 +1008,20 @@ from_import_statement :: proc(p: ^Parser) {
 	if match(p, .Star) {
 		emit_op_byte(p, .Import_From, module_const)
 		emit_byte(p, 0) // 0 = import everything the module exports
-		consume_eol(p, "Expect newline after import.")
+		// Not consume_eol: the scanner's own Eol-suppression heuristic
+		// (scanner.odin's keep_eol) treats `*` purely as a token type,
+		// with no way to know this one is `from mod import *`'s wildcard
+		// marker rather than the multiplication operator -- which
+		// legitimately continues onto the next line (`x = a *\nb`), so
+		// `Star` is in keep_eol's suppress-after set. That means the Eol
+		// that would normally follow `from mod import *` on its own line
+		// is never even scanned into the token stream here at all --
+		// requiring one via consume_eol always failed with "Expect
+		// newline after import.", since there was structurally nothing
+		// for it to match. Nothing can legally follow `*` in this
+		// grammar position anyway (unlike real multiplication), so no
+		// terminator check is needed here at all; the next token just
+		// starts the next statement normally.
 		return
 	}
 

@@ -916,6 +916,24 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
   insert; closing copies the live stack value into `.closed` and repoints
   `.location` at `&.closed`, detaching it from the stack — standard clox-
   style closing, unchanged by the port.
+- **Dict/property gaps found in Phase 6c**, both real, both fixed by
+  matching glox's own per-type dispatch rather than the narrower
+  version that had shipped: `Op_Index`/`Op_Index_Assign` had no `Dict`
+  case at all (`do_index` required an integer index before even
+  checking the container's type, so `dict["key"]` always failed
+  outright — glox's own `index()`/`indexAssign()` fully support it);
+  `Op_Set_Property` only ever checked `receiver.type == .Obj` before
+  dispatching, but a `vec2`/`vec3`/`vec4` value's `.type` is never
+  `.Obj` (see [Value representation](#value-representation)), so
+  `v.x = expr` always fell through to a generic error even though
+  *reading* `v.x` already worked — glox's own `OP_SET_PROPERTY` has a
+  real `Vec2`/`Vec3`/`Vec4` case (`set_vec_swizzle` now mirrors the
+  existing `get_vec_swizzle`). Relatedly, `create_dict` used to reject
+  any non-string dict-literal key outright instead of coercing it to
+  its string representation the way glox's own `createDict` does
+  (`key.String()`) — real glox source relies on this (an int-keyed
+  dict literal looked up later via `str()`), so this wasn't a
+  hypothetical gap.
 
 ---
 
@@ -1017,10 +1035,57 @@ runtime through `import_module`, which:
 3. Optionally consults the bytecode cache — see next section for why this
    step is deferred in odlox.
 
+**The single most severe bug found in this project so far lived exactly
+at this "nested VM instance" boundary, found in Phase 6c porting real
+`.lox` modules.** A module's own closures (functions/methods it
+declares) genuinely do end up living in the *importing* script's own
+VM after import — the nested sub-VM that compiled and ran the
+module's top-level code once is disposable, only its `Environment`
+survives (wrapped in the `Module_Object`) — but each of those
+closures' `Function_Object.environment` field still correctly points
+at the *module's own* `Environment`, distinct from whatever VM later
+calls them (see [Compiler](#compiler) on `Function_Object.environment`
+being set once, at compile time, and never changing). `run.odin`'s
+`Get_Global`/`Set_Global`/`Define_Global(_Const)` cases, though,
+resolved through `vm.environment` — the *running VM instance's own*
+field — rather than the *currently executing frame's function's own*
+environment. Those coincide only for the top-level script itself. The
+instant an imported module's function referenced *any* global at
+all — calling another function in its own module, reading a
+module-level var, or calling an underscore-prefixed native — it
+silently read/wrote the wrong slot, in the *importing* script's global
+space, or hit `Undefined variable '#N'` outright. This had been true
+since Phase 4 first wired module property access up; nothing caught
+it because the one existing module test only ever read a plain
+exported *value*, never *called* an imported function that itself
+touched a global. Fixed by resolving through the current frame's
+`fl.fn.environment` throughout, hoisted by `refresh_frame` same as
+every other per-instruction hot-path field (see
+[VM dispatch loop](#vm-dispatch-loop--calling-convention)).
+
 `from mod import *` (`__all__`) iterates the module's `Environment.vars`
 snapshot, copying each exported closure/class/native value into the
 importing scope and allocating it a fast global slot on the importing
-side — port as-is; no Go-specific behavior involved.
+side where one exists — **corrected, Phase 6c**: "port as-is" was the
+original plan, but two real bugs needed fixing to get there. First, a
+scanner-level one: `*` (the wildcard marker) is lexically
+indistinguishable from the multiplication operator, which the Eol-
+suppression heuristic ([Scanner](#scanner)) treats as "the expression
+continues onto the next line" — so the Eol that should terminate `from
+mod import *` was never scanned into the token stream, and the parser's
+old unconditional newline-check always failed. Second: this "allocate a
+fast global slot" step used to treat "no matching slot in the importing
+script" as a fatal internal-error bug, on the assumption every name
+being walked was a deliberate module export — but `Environment.vars`
+also holds whatever free builtins the module's own code happened to
+reference internally (`seed_builtin_globals` writes those into both a
+module's globals *and* vars), and there's no reason the importing
+script would have a slot reserved for a name it never itself mentioned
+by identifier, nor any need for one (slot-indexed `Op_Get_Global` can
+never ask for a name that was never referenced). Fixed by making that
+specific case silently skip the fast-slot write instead of erroring —
+confirmed against glox's own `importFunctionFromModule`, which does
+exactly that.
 
 ---
 

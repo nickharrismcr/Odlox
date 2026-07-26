@@ -100,6 +100,24 @@ test_vec_constructors :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.as_float(v), 3.0)
 }
 
+// Regression test for a real, pre-existing gap: set_property only ever
+// checked `receiver.type == .Obj` before dispatching, but a vec2/vec3/
+// vec4's own .type is never .Obj (see value.odin) -- so `v.x = ...`
+// always fell straight through to the generic "Only instances,
+// classes, and modules have settable properties." error, even though
+// *reading* v.x already worked (get_property has its own vec-swizzle
+// case). glox's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case.
+// Found porting particle_sys.lox, a real glox module that assigns
+// `this.pos.x = ...` directly.
+@(test)
+test_vec_field_assignment :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var v = vec2(1, 2)\nv.x = 10\nvar result = v.x + v.y\n", "result")
+	testing.expect_value(t, core.as_float(v), 12.0)
+
+	v2 := run_builtins(t, "var v = vec3(1, 2, 3)\nv.z = 30\nvar result = v.z\n", "result")
+	testing.expect_value(t, core.as_float(v2), 30.0)
+}
+
 // -----------------------------------------------------------------------
 // Math free functions (the underscore-prefixed native floor --
 // src/modules/math.lox's higher-level sin/cos/sqrt aren't ported yet)
