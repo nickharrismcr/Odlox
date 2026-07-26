@@ -1,28 +1,31 @@
 package compiler
 
 import "../core"
+import "core:fmt"
 
 // Declarations, statements, and control flow. See functions.odin for
 // function/method body compilation (shared with expr.odin's lambda) and
 // compiler_state.odin for the scope/local/loop/try bookkeeping this file
 // drives.
 //
-// KNOWN SIMPLIFICATION vs. glox: this port's break/continue/return
-// correctly *unwind exception handlers* when crossing an enclosing `try`
-// (cross_tries, below -- so frame.Handlers, once the VM exists in Phase
-// 4, never holds a stale entry for a try no longer lexically in scope),
-// but does NOT re-run that try's `finally` block on the way out, unlike
-// glox's full trampoline design (Try_Finally.pending/Trampoline_Site
-// exist here, matching glox's compiler_state.odin shapes, but nothing
-// currently populates `pending` or drains it). glox's own
-// docs/exception-handling.md documents why that's a real, nontrivial
-// design (deferred trampolines, `__retval` slot anchoring, replaying
-// `finally` once per crossing exit path) -- implementing it blind, with
-// no VM yet to validate against, risked a subtly wrong result that's
-// hard to notice without exactly the kind of test coverage Phase 4 will
-// finally make possible. Revisit this once the VM lands and the ported
-// test suite can actually exercise `break`/`return` inside a
-// `try ... finally` and catch a wrong answer.
+// break/continue/return crossing an enclosing `try` correctly *unwind
+// exception handlers* (cross_tries, below -- so frame.handlers never
+// holds a stale entry for a try no longer lexically in scope) AND
+// replay that try's `finally` block on the way out, via the same
+// deferred-trampoline design glox's own docs/exception-handling.md
+// documents in full (read that before touching any of this): `finally`
+// is parsed *last*, so a return/break/continue written inside the try
+// body can't yet know whether cleanup code needs to run first -- it
+// defers into Try_Finally.pending (a Trampoline_Site) instead of
+// emitting its terminal instruction immediately, and
+// try_except_statement resolves every pending site (compile_pending_
+// trampolines) once it learns whether a finally exists. This was left
+// unimplemented through Phase 4 deliberately (the doc comment here used
+// to say so) since implementing it blind, with no VM yet to validate
+// against, risked a subtly wrong result hard to notice without real test
+// coverage -- the ported test suite's finally_return.lox/
+// finally_break_continue.lox/finally_nested.lox fixtures are exactly
+// that coverage, and drove this implementation.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
@@ -253,6 +256,17 @@ implicit_assignment_statement :: proc(p: ^Parser) {
 		// unlike the "new local"/global-define branches below, whose
 		// value *becomes* the freshly-created binding itself and is
 		// never a leftover to pop.
+		// const check: expr.odin's named_variable (the Pratt-parser path
+		// for `x = 1` used as a sub-expression) already rejects const
+		// locals, but bare `x = 1` as a full statement is dispatched here
+		// instead (see statement()'s .Identifier case) and skipped that
+		// check entirely -- `const a = 5` followed by a statement-level
+		// `a = 6` silently reassigned it (returned 6, no error) until this
+		// fix, since this branch went straight to Set_Local with no
+		// is_const test of its own.
+		if c.locals[existing_local].is_const {
+			error(p, fmt.tprintf("Cannot assign to const '%s'.", name))
+		}
 		expression(p)
 		emit_op_byte(p, .Set_Local, u8(existing_local))
 		emit_op(p, .Pop)
@@ -406,6 +420,17 @@ if_statement :: proc(p: ^Parser) {
 	// condition). See parse_condition's own doc comment for why the
 	// parens themselves are optional rather than made mandatory to
 	// match glox exactly.
+	// The match(p, .Eol) immediately before each statement(p) call below
+	// is load-bearing, not cosmetic: statement()'s own dispatch has a
+	// `case .Semicolon, .Eol: advance(p)` "empty statement" case, so
+	// without skipping a stray Eol here first, `if (cond)\n{ body }`
+	// would have that Eol consumed AS the entire then/else body (a
+	// silent no-op), leaving `{ body }` to be parsed afterward as a
+	// completely separate, unconditional statement -- the block would
+	// run regardless of cond, with no compile error. Confirmed by direct
+	// repro: `if (false)\n{ print "x" }` printed "x" anyway before this
+	// fix. Same reasoning applies to while/foreach's body below.
+	match(p, .Eol)
 	statement(p)
 
 	else_jump := emit_jump(p, .Jump)
@@ -416,6 +441,7 @@ if_statement :: proc(p: ^Parser) {
 	// .If case that calls back into if_statement, so no special-casing
 	// is needed here the way the old brace-only version needed one.
 	if match(p, .Else) {
+		match(p, .Eol)
 		statement(p)
 	}
 	patch_jump(p, else_jump)
@@ -449,6 +475,7 @@ while_statement :: proc(p: ^Parser) {
 
 	exit_jump := emit_jump(p, .Jump_If_False)
 	emit_op(p, .Pop)
+	match(p, .Eol) // see if_statement's doc comment: same Eol-before-body hazard
 	statement(p)
 	emit_loop(p, loop.start)
 
@@ -606,6 +633,7 @@ foreach_statement :: proc(p: ^Parser) {
 	emit_byte(p, 0xff)
 
 	loop.start = len(current_chunk(p).code)
+	match(p, .Eol) // see if_statement's doc comment: same Eol-before-body hazard
 	statement(p)
 
 	for c in loop.continues {
@@ -665,8 +693,7 @@ break_statement :: proc(p: ^Parser) {
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
-	cross_tries(p, loop.scope_depth)
-	append(&loop.breaks, emit_jump(p, .Jump))
+	emit_crossing_jump(p, loop.scope_depth, .Break, loop)
 	consume_eol(p, "Expect newline after 'break'.")
 }
 
@@ -677,16 +704,12 @@ continue_statement :: proc(p: ^Parser) {
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
-	cross_tries(p, loop.scope_depth)
-	if loop.is_foreach {
-		// A foreach's "increment" is Op_Next itself, which sits *after*
-		// the body -- so continue forward-jumps to just before it,
-		// rather than back-jumping to the top the way a while/for loop's
-		// continue does.
-		append(&loop.continues, emit_jump(p, .Jump))
-	} else {
-		emit_loop(p, loop.start)
-	}
+	// A foreach's "increment" is Op_Next itself, which sits *after* the
+	// body -- so continue forward-jumps to just before it, rather than
+	// back-jumping to the top the way a while/for loop's continue does.
+	// (emit_crossing_jump's Continue finalize checks loop.is_foreach
+	// itself, once it actually emits the jump/loop instruction.)
+	emit_crossing_jump(p, loop.scope_depth, .Continue, loop)
 	consume_eol(p, "Expect newline after 'continue'.")
 }
 
@@ -709,8 +732,39 @@ return_statement :: proc(p: ^Parser) {
 	}
 	consume_eol(p, "Expect newline after return value.")
 
-	cross_tries(p, 0) // return always crosses every try still open in this function
-	emit_op(p, .Return)
+	// Collect every enclosing try, innermost first -- a return crosses
+	// all of them unconditionally, up to the function boundary (unlike
+	// break/continue, which only cross as far as the target loop). No
+	// Op_End_Try needed here the way break/continue's cross_tries emits
+	// one per crossing: Op_Return already tears down the whole frame
+	// (see run.odin), which discards frame.handlers wholesale -- popping
+	// them one at a time first would be redundant, not incorrect, but
+	// glox's own returnStatement (compile.go) skips it for exactly this
+	// reason and this port matches that.
+	chain: [dynamic]^Try_Finally
+	for t := p.current_compiler.tries; t != nil; t = t.previous {
+		append(&chain, t)
+	}
+	if len(chain) == 0 {
+		emit_op(p, .Return)
+		return
+	}
+
+	// Anchor the return value in a synthetic local before any enclosing
+	// (not-yet-parsed) finally block can declare locals of its own that
+	// might otherwise reuse this slot number.
+	add_local(p, synthetic_token(.Identifier, "__retval", p.previous.line))
+	retval_slot := p.current_compiler.local_count - 1
+	mark_initialised(p)
+
+	site := Trampoline_Site {
+		jump_offset             = emit_jump(p, .Jump),
+		remaining               = chain[1:],
+		local_count_at_crossing = p.current_compiler.local_count,
+		retval_slot             = retval_slot,
+		kind                    = .Return,
+	}
+	append(&chain[0].pending, site)
 }
 
 @(private = "file")
@@ -727,15 +781,170 @@ pop_locals_above :: proc(p: ^Parser, target_depth: int) {
 
 // cross_tries pops (Op_End_Try, a no-op-offset variant used purely for
 // its handler-popping side effect) every try context entered at or
-// after target_scope_depth -- see this file's header comment for what
-// this does and doesn't do (handlers are correctly unwound; `finally`
-// is not replayed).
+// after target_scope_depth, so frame.handlers never holds a stale entry
+// for a try no longer lexically in scope -- and returns all of them,
+// innermost first, so the caller (emit_crossing_jump) can defer a
+// finally replay through each one, in order.
+//
+// Deliberately not filtered by has_finally: for a try the break/continue
+// is directly inside (not yet closed), has_finally isn't known yet --
+// `finally` is the last thing try_except_statement parses, so its own
+// still-being-compiled body can't know whether one follows.
+// compile_pending_trampolines resolves this correctly once each try
+// actually closes and has_finally becomes known.
 @(private = "file")
-cross_tries :: proc(p: ^Parser, target_scope_depth: int) {
+cross_tries :: proc(p: ^Parser, target_scope_depth: int) -> [dynamic]^Try_Finally {
+	crossed: [dynamic]^Try_Finally
 	for t := p.current_compiler.tries; t != nil && t.scope_depth_at_entry >= target_scope_depth; t = t.previous {
 		emit_op(p, .End_Try)
 		emit_byte(p, 0)
 		emit_byte(p, 0)
+		append(&crossed, t)
+	}
+	return crossed
+}
+
+// local_count_at_depth returns how many of the current function's locals
+// have depth <= boundary_scope_depth -- i.e. the local count (and so the
+// runtime stack height relative to the frame's own slots) that remains
+// once every local declared inside a loop body has been popped, mirroring
+// the depth check break/continue's own pop_locals_above already uses.
+@(private = "file")
+local_count_at_depth :: proc(p: ^Parser, boundary_scope_depth: int) -> int {
+	c := p.current_compiler
+	n := c.local_count
+	for n > 0 && c.locals[n - 1].depth > boundary_scope_depth {
+		n -= 1
+	}
+	return n
+}
+
+// emit_crossing_jump emits whatever jump takes a break/continue across
+// any try/finally blocks it crosses on the way out to loop_scope_depth:
+// if none have a finally clause (in fact none are even open at all --
+// the common case), the real terminal jump/loop-back-edge is emitted
+// immediately; otherwise a deferred trampoline site is queued on the
+// innermost crossed try so its finally runs first, chaining outward
+// through the rest before the real break/continue jump finally emits.
+@(private = "file")
+emit_crossing_jump :: proc(p: ^Parser, loop_scope_depth: int, kind: Trampoline_Kind, loop: ^Loop) {
+	crossed := cross_tries(p, loop_scope_depth)
+	if len(crossed) == 0 {
+		finalize_break_or_continue(p, kind, loop)
+		return
+	}
+	site := Trampoline_Site {
+		jump_offset             = emit_jump(p, .Jump),
+		remaining               = crossed[1:],
+		local_count_at_crossing = local_count_at_depth(p, loop_scope_depth),
+		retval_slot             = -1,
+		kind                    = kind,
+		loop                    = loop,
+	}
+	append(&crossed[0].pending, site)
+}
+
+// finalize_break_or_continue emits the real terminal instruction for a
+// Break/Continue Trampoline_Kind -- shared between emit_crossing_jump's
+// no-crossing fast path and compile_pending_trampolines' end-of-chain
+// case, so both stay in sync with continue's foreach-vs-loop distinction.
+@(private = "file")
+finalize_break_or_continue :: proc(p: ^Parser, kind: Trampoline_Kind, loop: ^Loop) {
+	switch kind {
+	case .Break:
+		append(&loop.breaks, emit_jump(p, .Jump))
+	case .Continue:
+		if loop.is_foreach {
+			append(&loop.continues, emit_jump(p, .Jump))
+		} else {
+			emit_loop(p, loop.start)
+		}
+	case .Return:
+		emit_op(p, .Return) // reached only via compile_pending_trampolines; return's own site carries no loop
+	}
+}
+
+// compile_trampolines_after_normal_path compiles try_ctx's pending
+// break/continue/return trampolines (see compile_pending_trampolines),
+// placed immediately after the normal-completion path in the bytecode
+// stream. That adjacency means normal completion would otherwise fall
+// straight through into them, so -- when there's anything to skip --
+// this wraps them in an unconditional jump the normal path takes to
+// land just past all of them, at the true end of the whole
+// try/except/finally statement.
+@(private = "file")
+compile_trampolines_after_normal_path :: proc(p: ^Parser, try_ctx: ^Try_Finally) {
+	if len(try_ctx.pending) == 0 {
+		return
+	}
+	skip := emit_jump(p, .Jump)
+	compile_pending_trampolines(p, try_ctx)
+	patch_jump(p, skip)
+}
+
+// compile_pending_trampolines resolves every break/continue/return that
+// deferred into try_ctx while its body was being compiled (see
+// Try_Finally/Trampoline_Site), chaining onward into any further outer
+// try/finally the same jump also needs to cross.
+//
+// Runs unconditionally, whether or not try_ctx ended up with a finally
+// clause -- return/break/continue must defer into the innermost
+// enclosing try *before* that try has parsed far enough to know whether
+// a `finally` follows its except clauses (single-pass parser, `finally`
+// is the last thing consumed), so every enclosing try collects deferred
+// sites regardless. If try_ctx has no finally, there's nothing to
+// replay -- the jump just passes straight through to the next hop (or
+// the real terminal instruction) with no bytecode of its own.
+@(private = "file")
+compile_pending_trampolines :: proc(p: ^Parser, try_ctx: ^Try_Finally) {
+	for site in try_ctx.pending {
+		patch_jump(p, site.jump_offset)
+
+		if try_ctx.has_finally {
+			c := p.current_compiler
+			saved_count := c.local_count
+			saved_depth := c.scope_depth
+
+			// Reserve slots up to local_count_at_crossing so this
+			// replay's own locals can't alias whatever's still live
+			// higher on the real runtime stack (e.g. a pending return's
+			// anchored __retval) -- see Trampoline_Site's doc comment.
+			for i := c.local_count; i < site.local_count_at_crossing; i += 1 {
+				c.locals[i] = Local{depth = c.scope_depth}
+			}
+			c.local_count = site.local_count_at_crossing
+
+			saved_tries := c.tries
+			c.tries = try_ctx.previous // control flow inside finally sees only outer trys
+
+			restore_pos(p, try_ctx.finally_snapshot)
+			begin_scope(p)
+			block(p)
+			end_scope(p)
+
+			c.tries = saved_tries
+			c.local_count = saved_count
+			c.scope_depth = saved_depth
+
+			if site.retval_slot >= 0 {
+				emit_op_byte(p, .Get_Local, u8(site.retval_slot))
+			}
+		}
+
+		if len(site.remaining) > 0 {
+			next := site.remaining[0]
+			new_site := Trampoline_Site {
+				jump_offset             = emit_jump(p, .Jump),
+				remaining               = site.remaining[1:],
+				local_count_at_crossing = site.local_count_at_crossing,
+				retval_slot             = site.retval_slot,
+				kind                    = site.kind,
+				loop                    = site.loop,
+			}
+			append(&next.pending, new_site)
+		} else {
+			finalize_break_or_continue(p, site.kind, site.loop)
+		}
 	}
 }
 
@@ -761,6 +970,7 @@ try_except_statement :: proc(p: ^Parser) {
 
 	try_jump := emit_jump(p, .Try)
 
+	match(p, .Eol) // `try\n{` -- same tolerance as every other brace in this construct
 	consume(p, .Left_Brace, "Expect '{' after 'try'.")
 	begin_scope(p)
 	block(p)
@@ -772,6 +982,23 @@ try_except_statement :: proc(p: ^Parser) {
 	clause_exit_jumps: [dynamic]int
 	saw_except := false
 
+	// Real bug, found via the ported test suite's own finally_bare_ns.lox
+	// (`}` and `finally`/`except` on separate lines -- a real, common
+	// style, and byte-identical to finally_bare.lox otherwise): block()
+	// leaves the parser positioned right after the try body's `}`, and
+	// unlike inside a class body (stmt.odin's class_declaration has its
+	// own explicit "Eol between two methods" branch for exactly this
+	// reason) or a function's `)`/`{` gap (functions.odin's compile_function_body),
+	// nothing here tolerated an Eol sitting between that `}` and the
+	// `except`/`finally` keyword that's supposed to follow it -- the
+	// scanner keeps that Eol (Right_Brace isn't in keep_eol's suppress
+	// set), so `check(p, .Except)`/`check(p, .Finally)` saw an Eol
+	// instead and this whole try/except/finally construct failed to
+	// parse. Skipped consistently at every point a clause boundary is
+	// checked, not just the first: between the try body and the first
+	// except clause, between successive except clauses, and before the
+	// finally check.
+	match(p, .Eol)
 	for check(p, .Except) {
 		saw_except = true
 		advance(p)
@@ -796,6 +1023,14 @@ try_except_statement :: proc(p: ^Parser) {
 			add_local(p, p.previous)
 			mark_initialised(p)
 		}
+		// Same Eol-tolerance-before-brace need as functions.odin's
+		// compile_function_body: `except Exception as e\n{` (found in
+		// the same fixture as the try-body-to-clause gap fixed above) --
+		// found once porting the .lox standard library kept turning up
+		// this exact class of gap, spot by spot, wherever this compiler
+		// requires a `{` immediately after something with no tolerance
+		// for it landing on the next line instead.
+		match(p, .Eol)
 		consume(p, .Left_Brace, "Expect '{' after except clause.")
 		block(p)
 		end_scope(p)
@@ -803,6 +1038,7 @@ try_except_statement :: proc(p: ^Parser) {
 		append(&clause_exit_jumps, emit_jump(p, .Jump))
 		emit_op(p, .End_Except)
 		patch_jump(p, skip_jump)
+		match(p, .Eol)
 	}
 
 	if !saw_except && !check(p, .Finally) {
@@ -813,6 +1049,7 @@ try_except_statement :: proc(p: ^Parser) {
 	try_ctx.has_finally = has_finally
 
 	if has_finally {
+		match(p, .Eol) // `finally\n{` -- same tolerance as except's own clause body above
 		consume(p, .Left_Brace, "Expect '{' after 'finally'.")
 		try_ctx.finally_snapshot = snapshot_pos(p)
 
@@ -839,6 +1076,7 @@ try_except_statement :: proc(p: ^Parser) {
 	}
 
 	p.current_compiler.tries = try_ctx.previous
+	compile_trampolines_after_normal_path(p, try_ctx)
 }
 
 // -----------------------------------------------------------------------

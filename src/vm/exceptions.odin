@@ -1,6 +1,7 @@
 package vm
 
 import "../core"
+import "core:fmt"
 
 // try/except/finally at the VM level. The bytecode shape this reads is
 // documented in stmt.odin's try_except_statement; read that first.
@@ -153,6 +154,22 @@ resolve_class_by_name :: proc(vm: ^VM, name: string) -> (^core.Class_Object, boo
 		}
 	}
 	return nil, false
+}
+
+// format_uncaught_exception matches glox's own
+// `vm.RunTimeError("Uncaught exception: %s : %s ", exc.Class, exc.Fields[core.MSG])`
+// (src/vm/vm.go) exactly, including the trailing space baked into the
+// format string itself. Before this existed, an uncaught exception's
+// report fell back to a generic core.value_to_string(err) on the raw
+// instance ("<instance BoomError>"), which doesn't say anything about
+// *why* -- the class name is buried and the message is dropped
+// entirely.
+format_uncaught_exception :: proc(err: core.Value) -> string {
+	inst := core.as_instance(err)
+	class_str := core.value_to_string(core.make_object_value(&inst.class.obj))
+	msg, has_msg := inst.fields[core.intern_string("msg")]
+	msg_str := core.value_to_string(msg) if has_msg else "\"\""
+	return fmt.aprintf("Uncaught exception: %s : %s ", class_str, msg_str)
 }
 
 pop_handler :: proc(vm: ^VM) {

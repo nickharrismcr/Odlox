@@ -151,12 +151,20 @@ error_at :: proc(p: ^Parser, tok: Token, message: string) {
 	p.panic_mode = true
 	p.had_error = true
 
+	// glox's own errorAt (compile.go) reports compile errors via plain
+	// fmt.Printf -- stdout, not stderr. This used fmt.eprintfln (stderr)
+	// until found via test_const_local.py: run_lox() only captures
+	// stdout, so every compile-time error check via that helper silently
+	// saw empty output regardless of what the compiler actually reported,
+	// masking failures behind assertions on '' rather than the real
+	// message. Same fix applied to run_file's Runtime_Error case in
+	// main.odin for the same reason.
 	if tok.type == .Eof {
-		fmt.eprintfln("[line %d] Error at end: %s", tok.line, message)
+		fmt.printfln("[line %d] Error at end: %s", tok.line, message)
 	} else if tok.type == .Error {
-		fmt.eprintfln("[line %d] Error: %s", tok.line, message)
+		fmt.printfln("[line %d] Error: %s", tok.line, message)
 	} else {
-		fmt.eprintfln("[line %d] Error at '%s': %s", tok.line, lexeme(tok), message)
+		fmt.printfln("[line %d] Error at '%s': %s", tok.line, lexeme(tok), message)
 	}
 }
 

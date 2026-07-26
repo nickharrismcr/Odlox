@@ -1126,6 +1126,167 @@ tests, however thorough, encode only the assumptions their author
 already had — real external source is what finds the assumptions that
 were wrong.
 
+### Phase 6d: compiler gap sweep — EOL tolerance, const-local rejection, finally trampoline
+
+Three specific, previously-identified gaps, tackled together in one sitting
+since the third turned out to depend on groundwork already sitting unused in
+`compiler_state.odin` from Phase 3 (`Try_Finally.pending`/`Trampoline_Site` —
+see that phase's own note that implementing the trampoline blind, with no VM
+yet to validate against, was deliberately deferred until real test coverage
+could catch a wrong answer). That coverage now exists.
+
+1. **`}` immediately followed by `except`/`finally` on the next line didn't
+   parse**, and neither did `except Exception as e` with its own `{` on the
+   next line. Same root cause as every prior bug in this class (the
+   scanner's `keep_eol` heuristic — see Phase 5's first-run bug writeup —
+   only looks at the token *before* an Eol, so it can't know a `}` will be
+   followed by a keyword that should tolerate one): fixed with `match(p,
+   .Eol)` at every clause boundary `try_except_statement` checks (before the
+   try body's own `{`, between the try body and the first `except`, between
+   successive `except` clauses, and before `finally`'s own `{`) — found via
+   `finally_bare_ns.lox` and `catch_runtime.lox`, both of which differ from
+   an already-passing sibling fixture only in brace/keyword line placement.
+
+   **A more serious bug surfaced while verifying this one, in the same
+   family but silent rather than a compile error**: `if (cond)`/`while
+   (cond)`/`foreach (...)` followed by `{ body }` on the *next* line
+   compiled without error but ran the body **unconditionally**, regardless
+   of the condition. Root cause: the "optional parens" grammar refactor
+   (Phase 6a-continued) changed these three constructs to parse their body
+   via the general `statement(p)` dispatcher instead of a hardcoded
+   block-only parse — and `statement(p)`'s own dispatch has a `case
+   .Semicolon, .Eol: advance(p) // empty statement` case. A stray Eol
+   between the condition and the real `{ body }` got consumed *as* the
+   entire conditional/loop body (a legitimate no-op empty statement in that
+   context), leaving `{ body }` to be parsed immediately afterward as a
+   completely separate, unconditional statement in the enclosing scope —
+   confirmed by `if (false)\n{ print "x" }\nprint "after"` printing **both**
+   lines. Fixed with the same `match(p, .Eol)` pattern, added immediately
+   before each of the four `statement(p)` call sites this affects
+   (`if_statement`'s then- and else-branches, `while_statement`'s body,
+   `foreach_statement`'s body) — `for_statement`'s body was never at risk,
+   since its body is still parsed via a hardcoded `consume(.Left_Brace)` +
+   `block()`, not `statement(p)`.
+
+2. **`const` local reassignment wasn't actually rejected.** `named_variable`
+   (expr.odin) already had an `is_const_local` check for expression-position
+   assignment (`x = 1` as part of a larger expression), but bare `x = 1` as
+   a full statement is dispatched separately, through
+   `implicit_assignment_statement` (added when statement-level implicit
+   assignment was first wired up) — which went straight to `Set_Local` with
+   no const check of its own. `const a = 5; a = 6; return a` returned `6`
+   with no error. Fixed by adding the same `is_const_local` check there.
+
+   Matching the error message itself to glox's own (`Cannot assign to const
+   '%s'.`, naming the variable) surfaced a second, narrower bug: in
+   `named_variable`'s compound-assignment branch (`x += 1`), building the
+   message from `name`'s own lexeme *after* that branch's `advance(p)` call
+   produced the wrong text — `"Cannot assign to const '+='."` instead of
+   `"...'a'."` — even though `name` is passed by value and `advance(p)`
+   only mutates `p.previous`/`p.current`, not the callee's copy. Root cause
+   not fully pinned down (worth another look if a similar symptom recurs
+   elsewhere: a value parameter observably changing after a call that only
+   touches the parser struct, not the parameter itself); worked around
+   robustly by capturing `lexeme(name)` into a local `string` at the very
+   top of `named_variable`, before anything else runs, and using that
+   captured string in both error sites instead of re-deriving it later.
+
+   Verifying this end-to-end (via `test_const_local.py`, which checks the
+   message text through `run_lox`'s stdout-only capture) surfaced a third,
+   much bigger bug, unrelated to `const` itself: **every compile-time error
+   this compiler reports was going to stderr** (`parser.odin`'s
+   `error_at`, via `fmt.eprintfln`) **while glox's own compiler reports them
+   to plain stdout** (`compile.go`'s `errorAt`, `fmt.Printf`) — confirmed by
+   reading glox's source directly rather than guessing. Since
+   `tests/new_tests/lox_helper.py`'s `run_lox` only captures stdout, *every*
+   test asserting on a compile-error message via that helper was silently
+   seeing empty output and failing on `'' does not contain ...` rather than
+   the real mismatch, regardless of whether the message itself was right —
+   this had been masking failures since `lox_helper.py` was first wired up
+   in Phase 0. Fixed by switching `error_at` to `fmt.printfln` (stdout),
+   matching glox exactly. The equivalent mismatch existed for *runtime*
+   errors too — `main.odin`'s `run_file` used `fmt.eprintln` for the
+   `Runtime_Error` case where glox's own `main.go` uses plain
+   `fmt.Println` — fixed the same way, found via
+   `test_except_break_stale_handler` (see below) failing with an
+   `IndexError` (one stdout line short) despite the actual VM behavior
+   already being correct.
+
+3. **`finally` never replayed on `break`/`continue`/`return` crossing a
+   `try`** — the Phase 3-era known simplification. `break`/`continue`
+   already correctly unwound `frame.handlers` when crossing a `try`
+   (`cross_tries`, itself a Phase 6a-continued-part-2 fix for a stale-handler
+   bug), but never re-ran that try's own `finally` cleanup on the way out;
+   `return` crossing a `try`/`finally` skipped `finally` entirely, and a
+   nested `try`/`finally` under a `return` only ran the outer cleanup, never
+   the inner one. Implemented glox's own deferred-trampoline design in full
+   (`docs/exception-handling.md`, "The trampoline: why return/break/continue
+   can't just splice inline") using the `Try_Finally.pending`/
+   `Trampoline_Site` shapes already sitting in `compiler_state.odin` since
+   Phase 3: `return`/`break`/`continue` crossing a `try` defer into that
+   try's `pending` list instead of emitting their terminal instruction
+   immediately (since `finally` is parsed *last*, whether one exists at all
+   isn't known until `try_except_statement` actually gets there); once it
+   is known, `compile_pending_trampolines` resolves every deferred site —
+   patch the jump, replay the `finally` body from its snapshotted token
+   position if one exists, then either chain onward to a further outer
+   `try` the same jump also crosses, or finally emit the real terminal
+   instruction. `return`'s value is anchored in a synthetic `__retval` local
+   before the (not-yet-parsed) `finally` block can declare locals of its own
+   that might reuse the slot; `local_count_at_crossing` on each site
+   reserves dummy locals up to the exact runtime stack height at the
+   crossing point before compiling a replay, so the replay's own locals
+   can't alias a still-live crossing value sitting higher on the real
+   stack. `return` needs no `Op_End_Try` unwinding at all (unlike
+   break/continue) — `Op_Return` already resets `stack_top` to the frame's
+   own base and discards `frame.handlers` wholesale via the frame pop, so
+   there's nothing stale left to clean up first, matching glox's own
+   `returnStatement`.
+
+   **One deliberate deviation from glox's design**: glox's `trampolineSite`
+   carries a `finalize func(p *Parser)` closure (capturing the enclosing
+   `*Loop` by reference) that runs whenever a deferred site finally
+   resolves — safe in Go, since a closure that escapes its defining frame is
+   heap-promoted by the GC. Odin has no such guarantee for a `proc(p:
+   ^Parser)` value stored in a struct field and invoked much later, from a
+   completely different point in the compile pass, after the defining call
+   has long since returned — and nothing in this codebase previously
+   exercised that pattern to lean on it with confidence (this exact
+   `finalize` field existed, unused, since Phase 3). Replaced with an
+   explicit `Trampoline_Kind` enum (`Return`/`Break`/`Continue`) plus a
+   plain `^Loop` field — already a stable heap allocation via `push_loop`'s
+   own `new(Loop)` — so `compile_pending_trampolines` switches on `kind`
+   explicitly instead of calling a stored closure.
+
+   Fixed by (and verified against) `finally_return.lox`,
+   `finally_break_continue.lox`, and `finally_nested.lox`, plus
+   `except_break_stale_handler.lox` incidentally getting its correct output
+   for the first time once the stdout/stderr fix above landed alongside it.
+
+**Regression coverage**: all 67 `compiler`-package tests and all 62
+`vm`-package tests reverified individually
+(`-define:ODIN_TEST_NAMES=<pkg>.<test>`, one at a time), not just via a
+batched `odin test` run — the batched run itself still hit the
+long-documented toolchain segfault a few times while this work was in
+progress (confirmed non-reproducing for any single test in isolation, so
+attributed to that known issue per the standing "isolate first, attribute to
+known flakiness second" lesson, not treated as a new regression).
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — 147 passed / 83
+failed / 14 skipped before this work, **171 passed / 59 failed / 14
+skipped** after — every one of the 24 newly-passing tests a direct or
+incidental consequence of the fixes above (the stdout/stderr fix alone
+flipped several unrelated tests that were asserting on compile-error text
+that was always correct but never actually reaching the assertion). Two
+unrelated, pre-existing gaps were noticed while chasing these but are out of
+scope for this pass and still open: `test_break_unbraced.lox`/other fixtures
+using bare `i = 0` (no `var`) as a `for` loop's init clause hit "Undefined
+variable" at runtime (a `for`-init-clause-specific implicit-global-assignment
+gap, unrelated to `implicit_assignment_statement`'s own statement-level
+handling); and a construct followed immediately by another statement with
+*no* newline at all between them on the same source line (`if (true) { ... }
+print "after"`, all one line) still fails to parse.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

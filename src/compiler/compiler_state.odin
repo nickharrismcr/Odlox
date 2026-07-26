@@ -64,12 +64,31 @@ Try_Finally :: struct {
 	previous:             ^Try_Finally,
 }
 
+// Trampoline_Kind + loop replace glox's `finalize func(p *Parser)` closure
+// field (compile.go's trampolineSite): glox's closures capture `loop` (a
+// *Loop) by reference and stay valid because Go closures that escape are
+// heap-promoted by the GC. Odin has no equivalent guarantee for a `proc(p:
+// ^Parser)` value stored past the defining call's own stack frame -- and a
+// trampoline site's finalize step can run arbitrarily later, from a
+// completely different point in the compile pass (once the enclosing
+// try/finally actually closes). Rather than assume closures-over-locals are
+// safe to stash in a long-lived struct field here (untested in this
+// codebase -- nothing previously populated this field), Break/Continue
+// carry a plain `^Loop` (already heap-allocated by push_loop's own `new`)
+// instead, and compile_pending_trampolines switches on kind explicitly.
+Trampoline_Kind :: enum {
+	Return,
+	Break,
+	Continue,
+}
+
 Trampoline_Site :: struct {
 	jump_offset:             int,
-	remaining:               [dynamic]^Try_Finally, // further outer trys this same jump also crosses
+	remaining:               []^Try_Finally, // further outer trys this same jump also crosses
 	local_count_at_crossing: int,
 	retval_slot:             int, // -1 for break/continue; the anchored __retval slot for return
-	finalize:                proc(p: ^Parser), // emits the real terminal instruction once `remaining` is exhausted
+	kind:                    Trampoline_Kind,
+	loop:                    ^Loop, // nil for Return; the loop break/continue targets otherwise
 }
 
 Class_Compiler :: struct {

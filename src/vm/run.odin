@@ -510,7 +510,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Raise:
 			err := ensure_exception_instance(vm, pop(vm))
 			if !raise_exception(vm, err) {
-				vm.error_msg = core.value_to_string(err)
+				vm.error_msg = format_uncaught_exception(err)
 				return .Runtime_Error, core.NIL_VALUE
 			}
 			fl = refresh_frame(vm)
@@ -556,7 +556,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			vm.pending_exception_class = ""
 			err_inst := make_named_error_instance(vm, class_name, msg)
 			if !raise_exception(vm, err_inst) {
-				vm.error_msg = core.value_to_string(err_inst)
+				vm.error_msg = format_uncaught_exception(err_inst)
 				return .Runtime_Error, core.NIL_VALUE
 			}
 			fl = refresh_frame(vm)

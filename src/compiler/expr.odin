@@ -1,6 +1,7 @@
 package compiler
 
 import "../core"
+import "core:fmt"
 import "core:strconv"
 
 // All prefix/infix expression parse functions the rule table (rules.odin)
@@ -194,12 +195,22 @@ variable :: proc(p: ^Parser, can_assign: bool) {
 // handles plain assignment and compound assignment (+= etc.) --
 // otherwise it's a read.
 named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
+	// name's own lexeme is captured up front, not re-derived from `name`
+	// later in this proc: name is a Token value that (empirically, in
+	// this compiler's build) does not stay stable across a subsequent
+	// advance(p) call in the same frame -- the compound-assignment
+	// branch below saw name.type flip from Identifier to Plus_Equal
+	// after its own advance(p) despite name being passed by value, which
+	// meant the "Cannot assign to const 'a'" message came out as
+	// "Cannot assign to const '+='" instead. Grabbing the string once,
+	// immediately, sidesteps whatever is going on there.
+	name_lexeme := lexeme(name)
 	arg, get_op, set_op := resolve_variable(p, name)
 	is_const_local := get_op == .Get_Local && p.current_compiler.locals[arg].is_const
 
 	if can_assign && match(p, .Equal) {
 		if is_const_local {
-			error(p, "Cannot assign to a const variable.")
+			error(p, fmt.tprintf("Cannot assign to const '%s'.", name_lexeme))
 		}
 		expression(p)
 		emit_op_byte(p, set_op, u8(arg))
@@ -209,7 +220,7 @@ named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
 		if op, ok := compound_assign_op(p.current.type); ok {
 			advance(p) // consume the += / -= / *= / /= / %= token
 			if is_const_local {
-				error(p, "Cannot assign to a const variable.")
+				error(p, fmt.tprintf("Cannot assign to const '%s'.", name_lexeme))
 			}
 			emit_op_byte(p, get_op, u8(arg))
 			expression(p)

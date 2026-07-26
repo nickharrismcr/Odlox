@@ -147,7 +147,12 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	case .Compile_Error:
 		os.exit(65)
 	case .Runtime_Error:
-		fmt.eprintln(vm_instance.error_msg)
+		// Matches glox's own main.go exactly (`fmt.Println(vmInstance.ErrorMsg)`,
+		// not Fprintln(os.Stderr, ...)) -- an uncaught exception's report is
+		// plain stdout there, not stderr. Found via test_except_break_stale_handler,
+		// which asserts on run_lox()'s stdout-only capture and got an
+		// IndexError (one line short) while this was still on stderr.
+		fmt.println(vm_instance.error_msg)
 		os.exit(70)
 	case .Ok:
 		fmt.println(result)

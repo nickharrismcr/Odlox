@@ -714,13 +714,33 @@ Compiler :: struct {
 }
 ```
 
-`Loop`, `Try_Finally`, and `trampoline_site` port with their exact fields
-and algorithm — these back `break`/`continue`/`return` correctly crossing
-`finally` blocks, already documented start-to-finish in glox's own
-`docs/exception-handling.md` (worth reading directly rather than
-re-summarizing here; the compiler-side "trampoline" design and the
-`localCountAtCrossing` bookkeeping are subtle and easy to break silently if
-re-derived from scratch instead of ported as-is).
+`Loop`, `Try_Finally`, and `Trampoline_Site` port glox's `TryFinally`/
+`trampolineSite` algorithm exactly (`local_count_at_crossing`'s dummy-local
+reservation, the deferred-then-drained `pending` list, replaying `finally`
+from a snapshotted token position) — these back `break`/`continue`/`return`
+correctly crossing `finally` blocks, and the design is documented
+start-to-finish in glox's own `docs/exception-handling.md` (worth reading
+directly rather than re-summarizing here).
+
+**Correction, Phase 6d**: this section originally said the fields port
+"exactly" — one deliberately doesn't. glox's `trampolineSite.finalize` is a
+`func(p *Parser)` closure captured over the enclosing `*Loop`, safe in Go
+because an escaping closure is heap-promoted by the GC. Odin gives no such
+guarantee for a `proc(p: ^Parser)` value stored in a struct field and
+invoked much later from a different point in the compile pass, after the
+call that created it has long since returned, and nothing in this codebase
+exercised that pattern beforehand to lean on it with confidence. `Trampoline_
+Site` here instead carries an explicit `kind: Trampoline_Kind` enum
+(`Return`/`Break`/`Continue`) plus a plain `loop: ^Loop` field — already a
+stable heap allocation via `push_loop`'s own `new(Loop)` — and
+`compile_pending_trampolines` switches on `kind` rather than calling a
+stored closure. Also plain `[]^Try_Finally` for `remaining` rather than
+`[dynamic]^Try_Finally` (Go's slice there is just sliced further, never
+appended to, once built — an ordinary Odin slice matches that usage more
+directly than a dynamic array). Everything else — including this whole
+feature actually being implemented, rather than deferred as a Phase 3-era
+known simplification — landed in Phase 6d; see `ROADMAP.md`'s section of
+that name for the full writeup.
 
 ### Local/upvalue resolution: ports as pure recursion, no change in shape
 
