@@ -13,6 +13,7 @@ import "core:strings"
 import "compiler"
 import "core"
 import "debug"
+import "natives"
 import "vm"
 
 Options :: struct {
@@ -141,6 +142,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	vm_instance := vm.new_vm(path)
 	vm_instance.script_args = script_args
 	vm.define_builtins(vm_instance)
+	natives.define_natives(vm_instance)
 	if opts.trace {
 		vm_instance.debug_hook = debug.Trace_Hook
 	} else if opts.instrument {
@@ -260,6 +262,7 @@ repl :: proc() {
 	fmt.println("odlox:")
 	vm_instance := vm.new_vm("__repl__")
 	vm.define_builtins(vm_instance)
+	natives.define_natives(vm_instance)
 	vm.set_repl(vm_instance, true)
 
 	reader: bufio.Reader

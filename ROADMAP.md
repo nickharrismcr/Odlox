@@ -618,11 +618,17 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       implement (`pickle`/`process`, and `thread`/`sync` are
       permanently out of scope), so adding their exception classes now
       would be dead code; add each alongside its own module instead.
-- [ ] `natives` package skeleton + registration hook wired from
-      `main.odin` — **not created**. There's nothing to put in it until
-      Phase 6b (raylib) has actual content; an empty package with a
-      no-op registration call is scaffolding with no purpose, not
-      infrastructure. Revisit when Phase 6b starts.
+- [x] `natives` package skeleton + registration hook wired from
+      `main.odin`. `src/natives/natives.odin`: a single `define_natives ::
+      proc(v: ^vm.VM)` entry point, currently a no-op, called from both of
+      `main.odin`'s VM-construction sites (`run_file`, `repl`) right after
+      `vm.define_builtins`. The registration mechanism itself
+      (`core.Builtin_Fn`, `vm.define_builtin`) already existed since
+      Phase 6a — nothing new needed there, this just adds the package
+      boundary and wires it in ahead of having real content, so Phase 6b
+      only needs to add functions to an already-plumbed-through package
+      rather than create the package and its wiring at the same time as
+      the first real raylib work.
 - [ ] Raylib-backed natives: window/2D drawing first (smallest surface,
       most test coverage via `_ns`-paired tests can validate the non-
       graphics logic before graphics itself is wired up), then
@@ -637,6 +643,39 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
 - [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only
       if the target use case needs them. **Not started.**
 - [ ] `colour_utils`, other small utility modules. **Not started.**
+- [ ] **Error call stack trace.** An uncaught exception here only ever
+      reports a single line (`format_uncaught_exception`, exceptions.odin --
+      "Uncaught exception: <class X> : msg") with no indication of *where*
+      in the call chain it happened. glox's own `raiseException` (vm.go)
+      builds a real per-frame trace as the exception unwinds
+      (`appendStackTrace`: one `File '<script>', line <N>, in <function>`
+      entry plus the actual source line text, per frame walked without a
+      matching handler) and unconditionally prints it via
+      `vmInstance.PrintStackTrace()` right after the error message itself,
+      on *every* uncaught runtime error in both the file-run and REPL
+      paths (`main.go`) -- not a debug-only/opt-in feature there.
+      **Already partly scaffolded and never finished**: `VM` (vm.odin) has
+      carried both a `source: string` field ("its source text, for
+      stack-trace context lines") and a `stack_trace: [dynamic]string`
+      field since whichever phase first wrote vm.odin, but grepping every
+      real use turns up only `interpret.odin` resetting `stack_trace` to
+      nil at the start of each run -- `source` is never actually assigned
+      anywhere, and `stack_trace` is never appended to or printed. Porting
+      the feature needs: (1) actually populating `vm.source` at
+      construction (`new_vm`/`new_vm_raw`, vm.odin) with the real source
+      text passed to `interpret`; (2) building one trace entry per frame
+      inside `raise_exception`'s existing unwind loop (exceptions.odin),
+      before each frame is popped -- not after, since the frame (and its
+      line-number info) is gone once popped; (3) a way to extract a single
+      line's text out of `vm.source` for the trace's context-line entry
+      (glox's `sourceLine`); (4) printing `vm.stack_trace` from both of
+      `main.odin`'s error-reporting sites (`run_file`'s `Runtime_Error`
+      case, `repl`'s `.Runtime_Error` case) right after the error message,
+      matching glox's "always printed, not opt-in" behavior. **Not
+      started** -- no fixture in the ported test suite currently exercises
+      or expects this, so there's nothing yet forcing the exact output
+      format; check for one before assuming any particular line/spacing
+      convention matches glox byte-for-byte.
 - [x] Fix `module.odin`'s `read_module_source` search order/path so
       `import math` (or any other stdlib module, once copied over) can
       actually be found: now checks `$LOX_PATH/modules/<name>.lox`
