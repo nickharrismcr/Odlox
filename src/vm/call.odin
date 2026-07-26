@@ -123,6 +123,10 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 // method called `fn`) -- checked first for instances, matching glox.
 invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 	receiver := peek(vm, arg_count)
+	#partial switch receiver.type {
+	case .Vec2, .Vec3, .Vec4:
+		return invoke_vector_method(vm, receiver, name, arg_count)
+	}
 	if receiver.type != .Obj {
 		runtime_error(vm, "Only objects have methods.")
 		return false
@@ -143,6 +147,8 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 		return invoke_builtin_dict(vm, core.as_dict(receiver), name, arg_count)
 	case .String:
 		return invoke_builtin_string(vm, core.as_string(receiver), name, arg_count)
+	case .Float_Array:
+		return invoke_builtin_float_array(vm, core.as_float_array(receiver), name, arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;
@@ -164,6 +170,55 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 		return call_value(vm, fn, arg_count)
 	}
 	runtime_error(vm, "Undefined method '%s'.", name)
+	return false
+}
+
+// invoke_vector_method mirrors glox's own VectorMethodCall (vm.go)
+// exactly: the only method a vec2/3/4 supports at all is `.add(other)` --
+// in-place addition with an argument of the *same* vec type, mutating
+// the receiver and leaving it on the stack as its own return value
+// (popping just the one argument, matching the receiver+args -> single-
+// return-value convention every other Invoke path follows). Anything
+// else -- wrong arg count, a mismatched vec type, or any other method
+// name -- is "Invalid use of '.' operator", matching glox's own fallback
+// error exactly. `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/`.a` on Vec4) are
+// a separate, already-implemented Get/Set_Property fast path
+// (properties.odin) -- not method calls, so not handled here.
+@(private = "file")
+invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_count: int) -> bool {
+	if name == "add" && arg_count == 1 {
+		other := peek(vm, 0)
+		#partial switch receiver.type {
+		case .Vec2:
+			if other.type == .Vec2 {
+				r, o := core.as_vec2(receiver), core.as_vec2(other)
+				r.x += o.x
+				r.y += o.y
+				pop(vm)
+				return true
+			}
+		case .Vec3:
+			if other.type == .Vec3 {
+				r, o := core.as_vec3(receiver), core.as_vec3(other)
+				r.x += o.x
+				r.y += o.y
+				r.z += o.z
+				pop(vm)
+				return true
+			}
+		case .Vec4:
+			if other.type == .Vec4 {
+				r, o := core.as_vec4(receiver), core.as_vec4(other)
+				r.x += o.x
+				r.y += o.y
+				r.z += o.z
+				r.w += o.w
+				pop(vm)
+				return true
+			}
+		}
+	}
+	runtime_error(vm, "Invalid use of '.' operator")
 	return false
 }
 
@@ -253,6 +308,78 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 		result = core.make_int_value(core.list_length(l))
 	case:
 		runtime_error(vm, "Undefined list method '%s'.", name)
+		return false
+	}
+	collapse_call(vm, arg_count, result)
+	return true
+}
+
+// invoke_builtin_float_array ports glox's own farray_methods.go
+// (RegisterAllFloatArrayMethods) exactly -- get/set/clear/width/height,
+// same argument order -- except an out-of-range get/set is a proper Lox
+// runtime error here (core.float_array_get/set's own ok bool) rather
+// than glox's native Go panic (obj_builtin_farray.go's FloatArray.Get/Set).
+@(private = "file")
+invoke_builtin_float_array :: proc(vm: ^VM, f: ^core.Float_Array_Object, name: string, arg_count: int) -> bool {
+	result: core.Value
+	switch name {
+	case "width":
+		if arg_count != 0 {
+			runtime_error(vm, "width takes no arguments.")
+			return false
+		}
+		result = core.make_int_value(f.width)
+	case "height":
+		if arg_count != 0 {
+			runtime_error(vm, "height takes no arguments.")
+			return false
+		}
+		result = core.make_int_value(f.height)
+	case "get":
+		if arg_count != 2 {
+			runtime_error(vm, "get takes two arguments (x, y).")
+			return false
+		}
+		x_val, y_val := peek(vm, 1), peek(vm, 0)
+		if !core.is_int(x_val) || !core.is_int(y_val) {
+			runtime_error(vm, "get arguments must be integers.")
+			return false
+		}
+		v, ok := core.float_array_get(f, core.as_int(x_val), core.as_int(y_val))
+		if !ok {
+			runtime_error(vm, "Index out of bounds: (%d, %d) for array size %dx%d.", core.as_int(x_val), core.as_int(y_val), f.width, f.height)
+			return false
+		}
+		result = core.make_float_value(v)
+	case "set":
+		if arg_count != 3 {
+			runtime_error(vm, "set takes three arguments (x, y, value).")
+			return false
+		}
+		x_val, y_val, val_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_int(x_val) || !core.is_int(y_val) || !core.is_number(val_val) {
+			runtime_error(vm, "set arguments must be (int, int, number).")
+			return false
+		}
+		if !core.float_array_set(f, core.as_int(x_val), core.as_int(y_val), core.as_float(val_val)) {
+			runtime_error(vm, "Index out of bounds: (%d, %d) for array size %dx%d.", core.as_int(x_val), core.as_int(y_val), f.width, f.height)
+			return false
+		}
+		result = core.NIL_VALUE
+	case "clear":
+		if arg_count != 1 {
+			runtime_error(vm, "clear takes one argument.")
+			return false
+		}
+		val_val := peek(vm, 0)
+		if !core.is_number(val_val) {
+			runtime_error(vm, "clear argument must be a number.")
+			return false
+		}
+		core.float_array_clear(f, core.as_float(val_val))
+		result = core.NIL_VALUE
+	case:
+		runtime_error(vm, "Undefined float_array method '%s'.", name)
 		return false
 	}
 	collapse_call(vm, arg_count, result)

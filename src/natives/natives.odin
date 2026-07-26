@@ -29,6 +29,13 @@ import "../vm"
 
 // define_natives registers every native (raylib-backed) object/function
 // with v -- called from main.odin right after vm.define_builtins, the
-// same way that proc's own doc comment describes. No-op for now.
+// same way that proc's own doc comment describes. colour_utils/gfx/
+// physics (this file's siblings) are the first real content: colour_utils
+// in full, gfx/physics only as much as doesn't need raylib itself yet
+// (see gfx.odin/physics.odin's own doc comments for exactly what's still
+// missing and why).
 define_natives :: proc(v: ^vm.VM) {
+	register_colour_utils(v)
+	register_gfx(v)
+	register_physics(v)
 }

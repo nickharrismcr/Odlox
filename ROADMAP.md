@@ -632,50 +632,24 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
 - [ ] Raylib-backed natives: window/2D drawing first (smallest surface,
       most test coverage via `_ns`-paired tests can validate the non-
       graphics logic before graphics itself is wired up), then
-      texture/shader/batch/camera/render_texture/image/physics_world.
-      **Not started.**
-- [ ] `float_array`, `vec2`/`vec3`/`vec4` methods beyond basic
-      arithmetic. **Not started** — this phase only added the bare
-      constructors (`vec2(x,y)` etc.), which were needed regardless
-      (`core_functions.go` registers them as ordinary free functions,
-      no raylib dependency); swizzle-beyond-`.x/.y/.z/.w` and
-      vector-specific methods are still open.
+      texture/shader/batch/camera/render_texture/image/physics_world (a
+      stub already exists -- see Phase 6f). **Not started** -- this is
+      the one remaining piece of Phase 6b: everything raylib-window-
+      dependent, deliberately deferred as its own much larger effort
+      (real windowing, an actual vendor:raylib dependency, a native
+      object per raylib resource type).
+- [x] `float_array`, `vec2`/`vec3`/`vec4` methods beyond basic
+      arithmetic. See Phase 6f for the full writeup -- `float_array`
+      turned out not to need raylib at all (a plain w*h f64 buffer), and
+      glox's own vec2/3/4 "methods beyond field access" turned out to be
+      exactly one method (`.add()`), not the larger swizzle/vector-math
+      surface this bullet originally assumed.
 - [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only
       if the target use case needs them. **Not started.**
-- [ ] `colour_utils`, other small utility modules. **Not started.**
-- [ ] **Error call stack trace.** An uncaught exception here only ever
-      reports a single line (`format_uncaught_exception`, exceptions.odin --
-      "Uncaught exception: <class X> : msg") with no indication of *where*
-      in the call chain it happened. glox's own `raiseException` (vm.go)
-      builds a real per-frame trace as the exception unwinds
-      (`appendStackTrace`: one `File '<script>', line <N>, in <function>`
-      entry plus the actual source line text, per frame walked without a
-      matching handler) and unconditionally prints it via
-      `vmInstance.PrintStackTrace()` right after the error message itself,
-      on *every* uncaught runtime error in both the file-run and REPL
-      paths (`main.go`) -- not a debug-only/opt-in feature there.
-      **Already partly scaffolded and never finished**: `VM` (vm.odin) has
-      carried both a `source: string` field ("its source text, for
-      stack-trace context lines") and a `stack_trace: [dynamic]string`
-      field since whichever phase first wrote vm.odin, but grepping every
-      real use turns up only `interpret.odin` resetting `stack_trace` to
-      nil at the start of each run -- `source` is never actually assigned
-      anywhere, and `stack_trace` is never appended to or printed. Porting
-      the feature needs: (1) actually populating `vm.source` at
-      construction (`new_vm`/`new_vm_raw`, vm.odin) with the real source
-      text passed to `interpret`; (2) building one trace entry per frame
-      inside `raise_exception`'s existing unwind loop (exceptions.odin),
-      before each frame is popped -- not after, since the frame (and its
-      line-number info) is gone once popped; (3) a way to extract a single
-      line's text out of `vm.source` for the trace's context-line entry
-      (glox's `sourceLine`); (4) printing `vm.stack_trace` from both of
-      `main.odin`'s error-reporting sites (`run_file`'s `Runtime_Error`
-      case, `repl`'s `.Runtime_Error` case) right after the error message,
-      matching glox's "always printed, not opt-in" behavior. **Not
-      started** -- no fixture in the ported test suite currently exercises
-      or expects this, so there's nothing yet forcing the exact output
-      format; check for one before assuming any particular line/spacing
-      convention matches glox byte-for-byte.
+- [x] `colour_utils`, other small utility modules. See Phase 6f.
+- [x] **Error call stack trace.** See Phase 6f -- implemented using the
+      `source`/`stack_trace` fields already scaffolded (and forgotten)
+      on `VM` since whichever phase first wrote vm.odin.
 - [x] Fix `module.odin`'s `read_module_source` search order/path so
       `import math` (or any other stdlib module, once copied over) can
       actually be found: now checks `$LOX_PATH/modules/<name>.lox`
@@ -1479,6 +1453,146 @@ Every one of the 27 remaining failures is gated on a native module this
 port hasn't built yet (`process`/`pool`/`re` (`regex`)/`pickle`/`json`
 (needs `pickle`/`re`)/`colour_utils`/`inspect`/`gfx` (needed by
 `rgb_encode.lox`)) -- none are compiler/VM-core gaps as of this section.
+
+### Phase 6f: `colour_utils`/`gfx` (non-raylib subset), vec2/3/4 `.add()`, `float_array`, and the error call stack trace
+
+Four separate asks tackled together: `colour_utils`, the `gfx`/`physics`
+modules (scoped to what doesn't need raylib), `vec2`/`vec3`/`vec4` methods
+"beyond basic arithmetic", `float_array`, and the error call stack trace
+noted at the end of Phase 6e.
+
+**The `natives` package (Phase 6d's skeleton) gets its first real content.**
+`vm.make_builtin_module`/`vm.define_builtin` both had to lose their
+`@(private)` tag -- package-private, they were only ever callable from
+inside the `vm` package itself, which was fine when nothing outside `vm`
+registered natives, but blocks exactly the mechanism `natives` needs to
+create its own built-in modules and register functions under them. Both
+are now package-public, matching `core.Builtin_Fn`'s own already-public
+shape (docs/ARCHITECTURE.md's Native/builtin functions section covers why
+that boundary is public in the first place).
+
+**`colour_utils`** (`src/natives/colour_utils.odin`): `fade`/`tint`/
+`brightness`/`lerp`/`hsv_to_rgb`/`random`, ported from glox's
+`src/builtin/color_functions.go` clamp-for-clamp and truncation-order-for-
+truncation-order -- every function returns a vec4 `(r, g, b, 255)`, same
+as glox's own `core.MakeVec4Value(..., 255.0, false)`. None of it needs
+raylib; it lives in `natives` rather than `vm/builtins*.odin` purely to
+keep the whole module (registration + everything under it) in one place,
+same reasoning as `gfx.odin` below.
+
+**`gfx`/`physics`, scoped to the non-raylib subset**: glox's real `gfx`
+module (`src/vm/builtin.go`'s `makeBuiltInModule(vm, "gfx")`) is a large
+raylib-dependent surface -- window/image/texture/render_texture/shader/
+camera/batch -- none of which this port implements yet (that's Phase 6b,
+a separate, much larger effort: real windowing, an actual `vendor:raylib`
+dependency, a native object per raylib resource type). What's registered
+now is deliberately just the parts of `gfx` that are pure math or a plain
+data structure with no raylib dependency of their own:
+`encode_rgba`/`decode_rgba` (bit-packing, ported from glox's
+`src/builtin/os_functions.go`/`src/util/colour.go`) and `float_array`
+(below). `physics.physics_world` is registered as a stub that raises a
+clear "not yet implemented" error if actually called -- glox's own
+version is a genuine hand-rolled spatial-grid physics engine
+(`src/builtin/obj_builtin_physics_world.go`), well beyond this pass's
+scope, and the only thing anything in the ported test suite checks is
+`type(physics.physics_world) == "builtin"`, which a stub native function
+already satisfies without needing real physics behind it.
+
+**`vec2`/`vec3`/`vec4` methods "beyond basic arithmetic" turned out to be
+a much smaller gap than ROADMAP itself assumed** when that bullet was
+first written: reading glox's actual `VectorMethodCall` (vm.go) shows the
+*entire* vec2/3/4 method surface is exactly one method, `.add(other)` (in-
+place addition, special-cased by name) -- there is no swizzle-beyond-
+`.x/.y/.z/.w`, no `.length()`/`.normalize()`/`.dot()`/`.cross()` anywhere
+in glox's own vector types. `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/`.a` on
+Vec4) field access was already fully implemented (`properties.odin`,
+since an earlier phase); `.add()` itself was not -- `call.odin`'s
+`invoke()` required `receiver.type == .Obj`, and a vec2/3/4 Value's own
+`.type` is `.Vec2`/`.Vec3`/`.Vec4` (a top-level tag, not nested under
+`.Obj` -- see `docs/ARCHITECTURE.md`'s Value representation section), so
+calling `.add()` on any vector unconditionally hit "Only objects have
+methods." Fixed with a new `invoke_vector_method` (call.odin), checked
+before the `.Obj` requirement, mirroring `VectorMethodCall`'s exact stack
+convention: pop just the one argument, leave the (now-mutated) receiver
+in place as its own return value.
+
+**`float_array`** (`core/obj_float_array.odin` + `call.odin`'s
+`invoke_builtin_float_array` + `natives/gfx.odin`'s `float_array`
+constructor): a flat row-major w\*h `f64` buffer, ported from glox's
+`src/builtin/obj_builtin_farray.go`/`farray_methods.go` --
+`get`/`set`/`clear`/`width`/`height`, same argument order. Needed a new
+`Object_Type` tag (`.Float_Array`) and the handful of touch points every
+existing heap-object kind already has: `object_to_string` (`<FloatArray
+WxH>`, matching glox's own `String()`), `type()` (reports `"builtin"` --
+matching glox's own `FloatArrayObject.GetType()`, which deliberately
+returns `OBJECT_NATIVE` rather than a dedicated kind, not a claim that
+odlox's version is literally a bare function), and `gc.odin`'s free/size-
+estimate switches (`values_equal`'s switch is `#partial` and needs no new
+case at all -- falling through to reference-identity equality for an
+unlisted kind is already the correct default, matching glox's own "every
+kind not String/List/Dict is identity equality"). One real, deliberate
+deviation from glox: `FloatArray.Get`/`Set` (Go) panics on an out-of-range
+index; `core.float_array_get`/`float_array_set` return an `ok` bool
+instead, and the VM turns a failed one into an ordinary Lox runtime error
+-- matching every other bounds check in this port rather than crashing
+the whole process on a script-level indexing mistake. No fixture in the
+ported test suite exercises `float_array` (glox's own copy is only ever
+used from raylib-drawing code this port doesn't have yet); verified
+manually instead -- construction, every method, an out-of-range get
+caught cleanly via `try`/`except`, and a 2000-iteration allocate-and-
+discard loop to exercise the GC's own free path under real collection
+pressure.
+
+**Error call stack trace**: implemented per Phase 6e's own TODO, using
+the `source`/`stack_trace` fields already sitting on `VM` unused. `vm.source`
+is now actually assigned (`interpret.odin`, right where `stack_trace` was
+already being reset to nil at the start of each run). `exceptions.odin`
+gained `append_stack_trace` (mirroring glox's `appendStackTrace` exactly:
+one `File '<script>', line <N>, in <function>` entry plus the actual
+source line's text, per frame `raise_exception`'s unwind loop visits,
+recorded *before* that frame is popped) and `source_line` (extracts a
+1-indexed line's text out of `vm.source`, mirroring glox's own
+`sourceLine`). `main.odin` prints `vm.stack_trace` (via a new
+`vm.print_stack_trace`) right after the error message itself, in both the
+file-run and REPL `Runtime_Error` cases -- unconditional, not an opt-in
+debug feature, matching glox's own `main.go` exactly.
+
+**Real bug caught while testing this, not left in**: `match_clause_chain`'s
+two successful-match returns (a matching `except` clause, and the always-
+matching `Finally` handler) didn't clear `vm.stack_trace` -- glox's own
+equivalent success branches do (`vm.stackTrace = []string{}`, `vm.go`).
+Without it, a *caught* exception's trace entries lingered and would get
+prepended, stale and misleading, to a genuinely later *uncaught*
+exception's real trace within the same `interpret()` call -- confirmed by
+writing exactly that scenario (a caught exception in one function,
+followed by an unrelated uncaught one in another) and checking the
+second trace didn't include the first's leftover entries. Fixed with a
+small `clear_stack_trace` helper called at both success points.
+
+**One existing pytest assertion was wrong, not this feature**: adding the
+trace surfaced that `test_tuples.py` asserted an uncaught exception's
+message was `lines[-1]` (the *last* line of output) -- true only when
+nothing gets printed after it, which was never actually glox's own
+behavior (confirmed against the real `bin/glox.exe` on this exact
+fixture: it also prints a trace after the message, so the message isn't
+the last line there either). Fixed the assertion to check the specific
+line index the message actually lands at (`lines[7]`, right after the
+already-verified `lines[6]`) instead of assuming it's last -- this was a
+test bug the trace's absence had been masking, not a regression the
+trace introduced.
+
+**Regression coverage**: all 67 `compiler`-package, 62 `vm`-package, and 41
+`core`-package tests reverified individually, plus a GC stress smoke test
+(2000 float_array allocate/discard iterations) run manually.
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — 203 passed /
+27 failed / 14 skipped before this work, **207 passed / 23 failed / 14
+skipped** after (the 4 gained: `test_colour_utils`, `test_rgb_encode`
+[both parametrizations], `test_builtin_modules`). Every one of the 23
+remaining failures is still gated on a native module this port hasn't
+built yet (`process`/`pool`/`re`/`pickle`/`json`/`inspect`) -- `gfx`
+itself is no longer in that list (its only ported-suite dependents needed
+exactly the subset now implemented).
 
 ## Phase 7 — Performance pass
 

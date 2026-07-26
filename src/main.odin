@@ -166,6 +166,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 		// which asserts on run_lox()'s stdout-only capture and got an
 		// IndexError (one line short) while this was still on stderr.
 		fmt.println(vm_instance.error_msg)
+		vm.print_stack_trace(vm_instance)
 		os.exit(70)
 	case .Ok:
 		fmt.println(result)
@@ -311,6 +312,7 @@ repl :: proc() {
 			}
 		case .Runtime_Error:
 			fmt.println(vm_instance.error_msg)
+			vm.print_stack_trace(vm_instance)
 		case .Compile_Error:
 		// compile errors are already reported by the compiler as they occur
 		}

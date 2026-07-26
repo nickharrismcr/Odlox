@@ -255,6 +255,10 @@ free_object :: proc(obj: ^core.Obj) {
 		inst := cast(^core.Instance_Object)obj
 		delete(inst.fields)
 		free(inst)
+	case .Float_Array:
+		f := cast(^core.Float_Array_Object)obj
+		delete(f.data)
+		free(f)
 	case:
 		free(obj)
 	}
@@ -282,6 +286,15 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size_of(core.Class_Object)
 	case .Module:
 		return size_of(core.Module_Object)
+	case .Float_Array:
+		// Unlike List/Dict (whose own backing storage this same estimate
+		// also ignores, accepted there as "rough is fine"), a Float_Array's
+		// footprint is dominated by its data slice, not the struct header --
+		// a 512x512 array is 2MB, not 32 bytes -- so this one specifically
+		// includes it, or the GC-growth heuristic would badly under-count
+		// exactly the allocation-heavy case this object exists for.
+		f := cast(^core.Float_Array_Object)obj
+		return size_of(core.Float_Array_Object) + len(f.data) * size_of(f64)
 	case:
 		return 32
 	}

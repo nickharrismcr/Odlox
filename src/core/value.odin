@@ -156,6 +156,9 @@ as_list :: proc(v: Value) -> ^List_Object {
 as_dict :: proc(v: Value) -> ^Dict_Object {
 	return cast(^Dict_Object)v.obj
 }
+as_float_array :: proc(v: Value) -> ^Float_Array_Object {
+	return cast(^Float_Array_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

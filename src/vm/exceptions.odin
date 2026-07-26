@@ -198,6 +198,7 @@ raise_exception :: proc(vm: ^VM, err: core.Value) -> bool {
 	err_class := exception_class_of(err)
 
 	for {
+		append_stack_trace(vm)
 		for h := frame(vm).handlers; h != nil; h = h.prev {
 			vm.stack_top = h.stack_top
 			push(vm, err)
@@ -216,6 +217,92 @@ raise_exception :: proc(vm: ^VM, err: core.Value) -> bool {
 	}
 }
 
+// clear_stack_trace discards whatever append_stack_trace built up while
+// this exception was propagating -- called at both of match_clause_chain's
+// successful-match returns (an except clause matching, or the always-
+// matching Finally handler), matching glox's own `vm.stackTrace =
+// []string{}` at its equivalent two success branches (vm.go). Without
+// this, a caught-and-handled exception's trace entries would linger in
+// vm.stack_trace and get prepended, stale and misleading, to a *later*
+// uncaught exception's real trace within the same interpret() call.
+@(private = "file")
+clear_stack_trace :: proc(vm: ^VM) {
+	delete(vm.stack_trace)
+	vm.stack_trace = nil
+}
+
+// append_stack_trace mirrors glox's own appendStackTrace (vm.go) exactly:
+// one entry per frame `raise_exception`'s unwind loop visits, recorded
+// *before* that frame is popped (pop_frame_for_exception below discards
+// the frame outright, taking its ip/line info with it -- there's no
+// recovering it afterward). Each frame contributes two trace lines: the
+// "File '<script>', line <N>, in <function>" location line, and the
+// actual source line's text -- glox's own PrintStackTrace (main.go, both
+// the file-run and REPL error paths) prints vm.stack_trace verbatim,
+// unconditionally, right after the error message itself, not as an
+// opt-in debug feature.
+@(private = "file")
+append_stack_trace :: proc(vm: ^VM) {
+	f := frame(vm)
+	if f.closure == nil {
+		return
+	}
+	function := f.closure.function
+	where_name := core.string_get(function.name)
+	if where_name == "" {
+		where_name = "<module>"
+	}
+	// A frame caught mid-push (e.g. on stack overflow) can have ip == 0,
+	// and a finished frame can have ip past the code -- clamp so the
+	// line lookup can never index out of range, matching glox's own
+	// appendStackTrace guard exactly.
+	ip := f.ip - 1
+	if ip < 0 {
+		ip = 0
+	}
+	if ip >= len(function.chunk.lines) {
+		ip = len(function.chunk.lines) - 1
+	}
+	if ip < 0 {
+		return
+	}
+	line := function.chunk.lines[ip]
+	append(&vm.stack_trace, fmt.aprintf("File '%s', line %d, in %s", function.chunk.filename, line, where_name))
+	append(&vm.stack_trace, source_line(vm.source, line))
+}
+
+// source_line extracts line n (1-indexed, matching every line number
+// this compiler/VM tracks -- see scanner.odin's Scanner.line starting at
+// 1) from source, mirroring glox's own sourceLine (vm.go). Returns an
+// empty string rather than erroring if n is out of range (a stale/
+// mismatched vm.source, or a line number past the end of a since-
+// truncated source) -- a blank context line is a reasonable degradation,
+// not worth a second failure mode inside error reporting itself.
+@(private = "file")
+source_line :: proc(source: string, n: int) -> string {
+	start := 0
+	current_line := 1
+	for i := 0; i < len(source); i += 1 {
+		if current_line == n {
+			start = i
+			for j := i; j < len(source); j += 1 {
+				if source[j] == '\n' {
+					end := j
+					if end > start && source[end - 1] == '\r' {
+						end -= 1
+					}
+					return source[start:end]
+				}
+			}
+			return source[start:]
+		}
+		if source[i] == '\n' {
+			current_line += 1
+		}
+	}
+	return ""
+}
+
 // match_clause_chain walks h's try statement's own Except/Finally
 // clauses (starting at frame.ip, already positioned at the first one)
 // looking for a match. On success, leaves frame.ip at the matching
@@ -229,6 +316,7 @@ match_clause_chain :: proc(vm: ^VM, h: ^Exception_Handler, err_class: ^core.Clas
 
 		if op == .Finally {
 			frame(vm).handlers = h.prev
+			clear_stack_trace(vm)
 			return true
 		}
 
@@ -242,6 +330,7 @@ match_clause_chain :: proc(vm: ^VM, h: ^Exception_Handler, err_class: ^core.Clas
 		if found && err_class != nil && core.is_subclass_of(err_class, handler_class) {
 			frame(vm).ip = clause_start + 4 // past Except's own operands, at the clause body
 			frame(vm).handlers = h.prev
+			clear_stack_trace(vm)
 			return true
 		}
 

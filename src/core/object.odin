@@ -41,6 +41,8 @@ Object_Type :: enum u8 {
 	Vec2,
 	Vec3,
 	Vec4,
+
+	Float_Array,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -111,6 +113,9 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		// value_to_string's own Vec2/3/4 cases, which know the tag
 		// without needing to re-derive it from the object.
 		return value_to_string(make_object_value(obj), allocator)
+	case .Float_Array:
+		f := cast(^Float_Array_Object)obj
+		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)
 	}
 	return "<unknown>"
 }

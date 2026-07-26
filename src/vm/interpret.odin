@@ -14,6 +14,12 @@ interpret :: proc(vm: ^VM, source: string) -> (Interpret_Result, string) {
 	vm.stack_trace = nil
 	vm.error_msg = ""
 	vm.pending_exception_class = ""
+	// vm.source backs the stack trace's per-frame context-line entry
+	// (exceptions.odin's append_stack_trace) -- this field existed since
+	// whichever phase first wrote vm.odin ("its source text, for stack-
+	// trace context lines") but was never actually assigned anywhere
+	// until the trace itself was implemented.
+	vm.source = source
 
 	fn: ^core.Function_Object
 	ok: bool

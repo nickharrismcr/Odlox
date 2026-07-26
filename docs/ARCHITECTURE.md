@@ -309,6 +309,7 @@ Object_Type :: enum u8 {
     // itself to already be enough).
     List_Iterator, Int_Iterator, String_Iterator,
     Vec2, Vec3, Vec4,
+    Float_Array, // Phase 6f -- a plain w*h f64 buffer, ported from glox's FloatArrayObject
 }
 
 Obj :: struct {

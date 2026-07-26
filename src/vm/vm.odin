@@ -152,6 +152,17 @@ frame :: proc(vm: ^VM) -> ^Call_Frame {
 	return &vm.frames[vm.frame_count - 1]
 }
 
+// print_stack_trace mirrors glox's own PrintStackTrace (vm.go) -- called
+// from main.odin right after printing an uncaught runtime error's own
+// message, on every such error in both the file-run and REPL paths, not
+// as an opt-in debug feature. vm.stack_trace is built up by
+// exceptions.odin's append_stack_trace as raise_exception unwinds.
+print_stack_trace :: proc(vm: ^VM) {
+	for line in vm.stack_trace {
+		fmt.println(line)
+	}
+}
+
 push :: proc(vm: ^VM, v: core.Value) {
 	vm.stack[vm.stack_top] = v
 	vm.stack_top += 1

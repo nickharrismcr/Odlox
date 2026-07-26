@@ -92,7 +92,10 @@ seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 	}
 }
 
-@(private)
+// Package-public (not private) -- the natives package (Phase 6b+)
+// creates its own built-in modules (gfx, colour_utils, physics, ...)
+// through this exact same mechanism, same reasoning as define_builtin's
+// own doc comment just below.
 make_builtin_module :: proc(vm: ^VM, name: string) {
 	env := core.make_environment(name)
 	mod := core.make_module_object(name, env)
@@ -100,8 +103,11 @@ make_builtin_module :: proc(vm: ^VM, name: string) {
 }
 
 // define_builtin registers fn as name, either globally (module == "")
-// or as a member of an already-created built-in module.
-@(private)
+// or as a member of an already-created built-in module. Package-public
+// (not file- or package-private) since the natives package (Phase 6b+)
+// registers its own native functions through this exact same mechanism --
+// see docs/ARCHITECTURE.md's Native/builtin functions section for why
+// natives imports vm directly rather than through an abstract interface.
 define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_Fn) {
 	native := core.make_native_object(fn)
 	val := core.make_object_value(&native.obj)
@@ -155,6 +161,14 @@ type_name :: proc(v: core.Value) -> string {
 			return "module"
 		case .File:
 			return "file"
+		case .Float_Array:
+			// Matches glox's own type() exactly: FloatArrayObject.GetType()
+			// (obj_builtin_farray.go) deliberately returns OBJECT_NATIVE,
+			// not a dedicated float-array kind, so glox's type() reports
+			// "builtin" for it too -- not a claim that it literally *is* a
+			// bare native function, just glox's own established behavior
+			// this port matches rather than "corrects".
+			return "builtin"
 		}
 	}
 	return ""
