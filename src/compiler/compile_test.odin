@@ -409,6 +409,92 @@ test_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
 	testing.expect(t, contains_op(c, .End_Foreach))
 }
 
+// -----------------------------------------------------------------------
+// Parenthesized control-flow headers and unbraced bodies (glox's real
+// grammar requires the parens unconditionally -- see stmt.odin's
+// parse_condition doc comment; this port makes them optional instead,
+// to add the parenthesized fixtures the ported test suite actually
+// uses without breaking the bare style every existing test already
+// relies on). One shape test per statement kind, both forms, plus the
+// unbraced-body case parens make possible.
+
+@(test)
+test_if_accepts_optional_parens_both_forms :: proc(t: ^testing.T) {
+	bare := compile_ok(t, "if x { print 1 }\n")
+	testing.expect_value(t, count_op(bare, .Jump_If_False), 1)
+
+	paren := compile_ok(t, "if (x) { print 1 }\n")
+	testing.expect_value(t, count_op(paren, .Jump_If_False), 1)
+}
+
+@(test)
+test_if_body_can_be_unbraced_single_statement :: proc(t: ^testing.T) {
+	// Regression test: `if (cond) break`/`if (n < 2) return n` (both real
+	// ported-suite fixtures) couldn't even compile before -- if_statement
+	// hard-required a `{` after the condition. contains_op(.Return) here
+	// confirms the bare `return n` after the condition was actually
+	// parsed as the if's body, not left dangling as a syntax error.
+	c := compile_ok(t, "func f(n) {\n\tif (n < 2) return n\n\treturn 0\n}\n")
+	fc := inner_function_chunk(t, c)
+	// 2 explicit returns (the if's unbraced body, and the trailing one)
+	// + 1 implicit one end_compiler always appends after every function
+	// body regardless of whether the last statement already returned.
+	testing.expect_value(t, count_op(fc, .Return), 3)
+}
+
+@(test)
+test_else_if_chains_through_generic_statement_dispatch :: proc(t: ^testing.T) {
+	// Regression test for the simplification in if_statement: `else`
+	// now just calls statement(p) generically (which itself dispatches
+	// back into if_statement for a following `if`) instead of a
+	// hand-rolled `match(p, .If) { if_statement(p) } else { ...brace-only... }`
+	// special case. Three chained else-if branches should still
+	// produce three conditional jumps.
+	c := compile_ok(t, "if a { print 1 } else if b { print 2 } else if c { print 3 } else { print 4 }\n")
+	testing.expect_value(t, count_op(c, .Jump_If_False), 3)
+}
+
+@(test)
+test_while_accepts_optional_parens :: proc(t: ^testing.T) {
+	bare := compile_ok(t, "while x { print 1 }\n")
+	paren := compile_ok(t, "while (x) { print 1 }\n")
+	testing.expect(t, contains_op(bare, .Loop))
+	testing.expect(t, contains_op(paren, .Loop))
+}
+
+@(test)
+test_for_accepts_optional_parens_both_forms :: proc(t: ^testing.T) {
+	bare := compile_ok(t, "for var i = 0; i < 3; i = i + 1 { print i }\n")
+	paren := compile_ok(t, "for (var i = 0; i < 3; i = i + 1) { print i }\n")
+	testing.expect(t, contains_op(bare, .Loop))
+	testing.expect(t, contains_op(paren, .Loop))
+}
+
+@(test)
+test_for_with_parens_and_no_increment :: proc(t: ^testing.T) {
+	// Exercises has_increment's paren-aware branch specifically: with
+	// parens, "no increment clause" is signalled by `)` immediately
+	// following the condition's `;`, not by `{` (the bare-form signal) --
+	// getting this wrong would either skip a real increment or treat the
+	// body's own `{` as if it were an increment expression.
+	c := compile_ok(t, "for (var i = 0; i < 3;) { print i }\n")
+	testing.expect(t, contains_op(c, .Loop))
+}
+
+@(test)
+test_foreach_accepts_optional_parens_and_var_keyword :: proc(t: ^testing.T) {
+	forms := []string{
+		"foreach x in items { print x }\n",
+		"foreach (x in items) { print x }\n",
+		"foreach var x in items { print x }\n",
+		"foreach (var x in items) { print x }\n",
+	}
+	for src in forms {
+		c := compile_ok(t, src)
+		testing.expectf(t, contains_op(c, .Foreach), "expected %q to emit Foreach", src)
+	}
+}
+
 @(test)
 test_return_outside_function_is_error :: proc(t: ^testing.T) {
 	env := core.make_environment("test")

@@ -756,6 +756,42 @@ compile-time and type-agnostic; the runtime type-specialization half of the
 same optimization (`ADD_NN` → `ADD_II`/`ADD_FF` on first execution) belongs
 to the VM — see next section.
 
+### Control-flow headers: parens optional, not mandatory like glox's
+
+`if`/`while`/`for`/`foreach` all wrap their header in `(...)` in glox's
+real grammar (`ifStatement`/`whileStatement`/`forStatement`/
+`foreachStatement` in `compile.go` all call
+`p.consume(TOKEN_LEFT_PAREN, ...)` unconditionally — there is no bare
+form in glox at all). This wasn't caught until Phase 6's testing
+against the ported suite: Phase 3's original port had it backwards,
+accepting only a bare (no-parens) form, so every parenthesized fixture
+in the ported test suite failed to compile outright.
+
+Fixed by making the parens **optional** (`stmt.odin`'s `parse_condition`
+for `if`/`while`; equivalent inline handling in `for_statement`/
+`foreach_statement`) rather than mandatory — a deliberate divergence
+from glox, not an oversight this time: flipping to "mandatory" would
+match glox exactly but break every bare-style script this compiler's
+own test suite (`compile_test.odin`, `vm_test.odin`) and every
+hand-written example already uses, for no benefit worth that cost.
+
+The other real grammar fact this surfaced: in glox, an `if`/`while`/
+`foreach` body is *any single statement* (`p.statement()`, called
+directly — no block-specific path), not only a `{ block }`. This
+port's original version hard-required `{`. Fixed the same way, by
+routing the body through the general `statement(p)` dispatch (which
+already has its own `.Left_Brace` case doing exactly what used to be
+inlined at each call site, so a braced body is unaffected — this also
+simplified `if_statement`'s `else`/`else if` handling from a
+hand-rolled special case into a single generic `statement(p)` call,
+since `statement()`'s own `.If` case already recurses back into
+`if_statement` for a following `if`). `for`'s body deliberately stays
+brace-required: with no parens, there's no unambiguous token telling
+the parser where an omittable increment clause ends and a bare
+statement body begins (parens sidestep this in glox by making `)`
+that delimiter — exactly why glox's own grammar makes them mandatory
+there specifically). No fixture in the ported suite needs otherwise.
+
 ### REPL compilation
 
 `compile_repl` differs from a normal compile only in seeding the `Parser`'s
@@ -880,17 +916,25 @@ runtime through `import_module`, which:
 1. Resolves a `.lox` path and checks a **process-wide** module cache
    (`name → Module_Object`) first — since threads are out of scope, this
    cache needs no mutex in odlox, unlike glox's `moduleCacheMu`.
-   **Correction, Phase 6**: this originally described glox's own search
-   order (`LOX_PATH`'s `src/modules/` subdirectory first, then the
-   running script's own directory, then a recursive subdirectory
-   search) as the plan to implement — `module.odin`'s
-   `read_module_source`, as actually built in Phase 4, checks the
-   script's own directory *first* and a bare `$LOX_PATH/<name>.lox`
-   second, with no `src/modules` convention and no recursive search at
-   all. This wasn't caught until Phase 6 needed `import math` to
-   actually find a copied-over `.lox` standard library module and
-   couldn't — see `ROADMAP.md`'s Phase 6 checklist for the fix, not yet
-   done.
+   **Fixed, Phase 6**: this section originally described glox's own
+   three-tier search order as the plan, but Phase 4's actual
+   `read_module_source` implementation diverged from it (script's own
+   directory first, no subdirectory search at all) — not caught until
+   Phase 6 needed `import math` to find a copied-over `.lox` module and
+   couldn't. Now fixed to match glox's order with one deliberate path
+   difference: `$LOX_PATH/modules/<name>.lox` first (not glox's
+   `$LOX_PATH/src/modules/` — odlox's own `src/` is exclusively Odin
+   source, so that convention doesn't transfer), then the running
+   script's own directory, then a recursive subdirectory search of it
+   (`find_module_in_subdirs`, using `core:os`'s `Walker` API, skipping
+   VCS/build/cache directories). Found a real, separate, pre-existing
+   bug while building the subdirectory search: `read_module_source` was
+   calling `delete()` on `filepath.dir(vm.script)`'s result, which is a
+   slice *view* into `vm.script` (see `os/path.odin`'s `split_path`),
+   not an owned allocation — a bad free that silently corrupted the
+   heap on every successful module import since Phase 4, which the new
+   search path's extra allocations turned into an actual, reliably
+   reproducing segfault. Fixed by simply not deleting it.
 2. On a cache miss, spins up a **fresh, nested VM instance** to compile-and-
    run the module's top-level code in isolation, then harvests its
    resulting `Environment` into a `Module_Object`. This nested-VM pattern

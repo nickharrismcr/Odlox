@@ -637,19 +637,27 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
 - [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only
       if the target use case needs them. **Not started.**
 - [ ] `colour_utils`, other small utility modules. **Not started.**
-- [ ] Port `src/modules/*.lox` (glox's own Lox-source standard library —
-      `math.lox`, `string.lox`, `functools.lox`, `itertools.lox`,
-      `random.lox`, `json.lox`, `logging.lox`, plus several raylib-
-      dependent ones) and fix `module.odin`'s `read_module_source` to
-      actually find them (glox's own resolution checks
-      `$LOX_PATH/src/modules/<name>.lox` *first*, before the running
-      script's own directory — odlox's currently checks the script's
-      directory first and `$LOX_PATH/<name>.lox` second, with no
-      `src/modules` subdirectory convention at all). **Not started**:
-      the free-function floor these `.lox` modules are built on now
-      exists (this phase), but the modules themselves and the path-
-      resolution fix they need are real, separate work — `import math`
-      still reports "not found" until this lands.
+- [x] Fix `module.odin`'s `read_module_source` search order/path so
+      `import math` (or any other stdlib module, once copied over) can
+      actually be found: now checks `$LOX_PATH/modules/<name>.lox`
+      first (odlox's own convention — see below for why not glox's
+      literal `src/modules`), then the running script's own directory,
+      then a recursive subdirectory search of it — matching glox's own
+      three-tier `getPath`/`findModuleInSubdirs` order. Covered by two
+      new filesystem-fixture tests in `src/vm/module_test.odin`.
+- [ ] Port `src/modules/*.lox` themselves (glox's own Lox-source
+      standard library — `math.lox`, `string.lox`, `functools.lox`,
+      `itertools.lox`, `random.lox`, `json.lox`, `logging.lox`, plus
+      several raylib-dependent ones) into odlox's own `modules/`
+      directory. **Not started** — the free-function floor these
+      depend on exists (this phase) and the path-resolution mechanism
+      to find them now exists too (just above), but the `.lox` files
+      themselves still need to be copied over and adapted; `import
+      math` still reports "not found" until they are. `odlox`'s own
+      convention is a `modules/` directory at the `$LOX_PATH` root
+      rather than glox's `src/modules/` — odlox's own `src/` is
+      exclusively Odin source, so reusing that name for a Lox-source
+      directory would be actively confusing.
 
 **Real bugs found and fixed while building this** (kept here, not just in
 commit history, for the same reason as every other phase's list):
@@ -705,38 +713,102 @@ commit history, for the same reason as every other phase's list):
   Deliberately narrow (only touches an un-precisioned `%f`), not a
   general printf reimplementation.
 
-**Found but explicitly out of this phase's scope** (compiler-level, not
-native/builtin-functions — flagged here because Phase 6 testing is what
-surfaced them, not because fixing them belongs in this phase): a good
-fraction of the ported suite's remaining failures trace back to
-parenthesized control-flow headers this parser doesn't accept —
-`for ( var i = 0; i < n; i = i+1 ) { ... }`, `foreach (x in y) { ... }`,
-and (noted back in Phase 5's own test-suite wiring) unbraced
-`if (cond) break`. Whether glox's grammar genuinely makes the
-parentheses optional sugar around these headers, or whether some of
-these fixtures use a syntax variant this port was never meant to
-accept, needs real investigation against glox's actual grammar before
-touching `compiler/stmt.odin` — not assumed and patched reactively here.
+### Phase 6a-continued: module path fix + parenthesized control-flow grammar
+
+Two items flagged as "found but out of scope" right after Phase 6a
+landed, picked up immediately after since both were straightforward
+prerequisites blocking the `.lox` standard library port and a large
+fraction of the ported test suite.
+
+**Module search path** — see the checklist above; fixed exactly as
+described there.
+
+**Parenthesized control-flow headers**: checked directly against
+glox's actual grammar (`src/compiler/compile.go`'s `ifStatement`/
+`whileStatement`/`forStatement`/`foreachStatement`) rather than
+guessing. Finding: glox requires `(`/`)` around every one of these
+headers **unconditionally** — there is no bare form in glox at all.
+This port's Phase 3 compiler had it backwards: only the bare form
+compiled, and every parenthesized fixture in the ported suite failed
+outright. Made the parens **optional** rather than mandatory
+(`compiler/stmt.odin`'s new `parse_condition` helper for `if`/`while`,
+equivalent inline handling in `for_statement`/`foreach_statement`) —
+matching glox exactly (mandatory) would have broken every bare-style
+script this compiler's own test suite and every hand-written example
+already use, for no real benefit. Also ported glox's other real
+grammar fact this surfaced: an `if`/`while`/`foreach` body can be *any
+single statement*, not just a `{ block }` (glox's `ifStatement` etc.
+call `p.statement()` directly for the body, not a block-specific
+path) — needed for `if (cond) break`/`if (n < 2) return n`, both real
+fixtures in the ported suite that previously couldn't compile at all.
+`for`'s body stays brace-required: unlike the other three, an
+optional-paren `for` genuinely can't support an unbraced body without
+real grammar ambiguity (with no parens, there's no unambiguous token
+telling the parser where an omittable increment clause ends and a
+bare-statement body begins — parens sidestep this by making `)` that
+delimiter, which is exactly why glox's own grammar makes them
+mandatory instead of optional here). No fixture in the ported suite
+needs an unbraced `for` body, so this is a real, deliberate
+restriction, not an oversight.
+
+**Real bugs found while doing this** (kept here for the same reason as
+every other phase's list):
+
+- **A pre-existing, silent heap-corruption bug**, not something this
+  work introduced: `module.odin`'s `read_module_source` called
+  `delete()` on the result of `filepath.dir(vm.script)`. `os.dir`
+  (what `filepath.dir` aliases) returns a slice *view into its input
+  string*, not a fresh allocation (see `os/path.odin`'s `split_path`)
+  — so this was a bad free of memory the function never owned, on
+  *every single successful module import* since Phase 4 first wrote
+  that line. It didn't crash immediately (bad frees don't always
+  corrupt something that gets touched right away), which is exactly
+  why it went unnoticed through every previous phase's testing.
+  Implementing the new recursive-subdirectory search changed the heap
+  layout just enough to turn that latent corruption into an actual,
+  reliably reproducing segfault on the very first test of the new
+  search path — found by bisecting with targeted `fmt.eprintln` tracing
+  down to the exact statement, not by inspection. Fixed by simply not
+  calling `delete` on it. A reminder for this whole port: `delete()`
+  on anything returned by a path-splitting helper needs to be checked
+  against that helper's actual allocation contract, not assumed.
+- The `class_declaration` member-loop `synchronize()` fix from the
+  pytest-suite-wiring work and this phase's `if_statement` simplification
+  compose cleanly: replacing the old hand-rolled `else`/`else if`
+  special case with a plain `statement(p)` call (which itself dispatches
+  back into `if_statement` for a following `if`) removed code instead
+  of adding it, while also fixing the parenthesized case — a rare
+  instance in this port where "match glox's real grammar" and "simplify
+  this port's own code" pointed the same direction. Not a bug, but
+  worth noting since it's the kind of simplification easy to miss when
+  focused only on "make the failing tests pass."
 
 **Milestone check**: `python -m pytest tests/new_tests/ -q` — baseline
-after Phase 5's infinite-loop fix was 40 passed / 190 failed / 14
-skipped; after this phase, **62 passed / 168 failed / 14 skipped**.
-Real, verified progress (every new builtin manually smoke-tested end to
-end against the compiled binary, not just trusted from unit tests — see
-the bugs list above, all three of which a unit-test-only pass would
-likely have missed), not the finish line: most of the remaining 168 are
-either genuinely out of this phase's scope (raylib/`re`/`pickle`/
-`process`/`thread`/`sync`/`colour_utils`, the `src/modules/*.lox`
-standard library, the parenthesized-header parsing gap above) or
-depend on those. `src/vm/builtins_test.odin` (15 new cases) covers
-every free function and module added — verified to pass individually
-and as a batch under `-define:ODIN_TEST_THREADS=1`; running them
-combined with `vm_test.odin` in one default (multithreaded)
-`odin test src/vm` invocation reproduces the same pre-existing
-toolchain-level test-infrastructure crash Phase 4 already documented
-at length (now triggered at a lower test count, simply because there
-are more tests in the same binary) — not a new issue, see that
-section.
+after Phase 6a's builtins was 62 passed / 168 failed / 14 skipped;
+after this follow-up work, **107 passed / 123 failed / 14 skipped**.
+The single largest jump of any phase so far, from two changes that
+sound small (a path-resolution order fix, optional parens) — a good
+illustration of how much of the ported suite's failure count was never
+about missing features at all, just this port's grammar not accepting
+syntax glox's real grammar always required. Regression-tested: 7 new
+shape tests in `compile_test.odin` (both paren forms for all four
+control-flow statements, the unbraced-if-body case, `else if` chaining
+still working after the simplification, `for`'s no-increment-with-parens
+edge case), 2 new filesystem-fixture tests in `module_test.odin` (found
+in a subdirectory, `$LOX_PATH/modules` takes priority over the same
+directory) — both pass individually but, like `vm.test_dict_get_and_set`
+and others before them, reproducibly crash if run in the same
+`odin test src/vm` invocation as each other under the default
+multithreaded runner or even `-define:ODIN_TEST_THREADS=1`; consistent
+with (each constructs two full VMs, matching the allocation weight
+Phase 4's writeup already found sufficient) rather than a new instance
+of the same pre-existing toolchain issue — investigated directly (ruled
+out a bug in this file's own env-var set/restore sequence by running it
+standalone, outside the VM/GC/compiler entirely, which does not
+reproduce it) rather than assumed. Every remaining ported-suite failure
+at this point is either raylib/`re`/`pickle`/`process`/`colour_utils`
+(Phase 6b, not started) or the `.lox` standard library itself (path
+resolution now fixed, the files aren't copied over yet).
 
 ## Phase 7 — Performance pass
 

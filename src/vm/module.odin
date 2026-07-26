@@ -10,11 +10,10 @@ import "core:strings"
 // out of scope entirely (see docs/ARCHITECTURE.md's Scope section),
 // vm.module_cache is just a plain per-VM map, no lock.
 //
-// KNOWN GAP vs. glox: built-in modules (sys/gfx/os/...) resolve through
-// vm.builtin_modules, but nothing registers any yet -- that's Phase 6's
-// job (native/builtin functions). Importing another *.lox file works
-// now; importing a not-yet-implemented built-in module reports "not
-// found" rather than working, until Phase 6 lands.
+// Built-in modules (sys/os so far -- see builtins.odin/builtins_sys.odin/
+// builtins_os.odin) resolve through vm.builtin_modules; gfx/re/pickle/
+// process/colour_utils/inspect aren't registered yet (Phase 6b). A *.lox
+// source module resolves through read_module_source below.
 
 do_import :: proc(vm: ^VM, module_name: string, alias: string) {
 	mod, ok := load_module(vm, module_name)
@@ -105,31 +104,90 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	return mod, true
 }
 
-// read_module_source tries, in order: alongside the running script,
-// then LOX_PATH's module directory -- a reduced version of glox's
-// search (which also recurses into subdirectories; not ported yet,
-// since no built-in module registrations exist to need it this phase).
+// read_module_source tries, in order: `$LOX_PATH/modules/<name>.lox`,
+// then alongside the running script, then a recursive search of the
+// script's own directory tree -- matching glox's own three-tier search
+// (`getPath`/`findModuleInSubdirs` in glox's vm.go) so scripts can
+// group their own modules into subfolders, with one deliberate path
+// difference: glox looks under `$LOX_PATH/src/modules`, its own repo's
+// Lox-source-stdlib location; odlox's `src/` is exclusively Odin
+// source, so the equivalent convention here is a `modules/` directory
+// at the LOX_PATH root instead (see `ROADMAP.md`'s Phase 6 section --
+// this is that fix). An earlier version of this proc checked the
+// script's own directory first and never searched subdirectories at
+// all, silently diverging from glox's search order; fixed here rather
+// than left for `import math` (or any other stdlib module) to keep
+// failing "not found" once those get copied over.
 @(private = "file")
 read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string, found: bool) {
 	filename := strings.concatenate({name, ".lox"})
 	defer delete(filename)
 
-	dir := filepath.dir(vm.script)
-	defer delete(dir)
-	candidate, _ := filepath.join({dir, filename})
-	if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
-		return d, candidate, true
-	}
-	delete(candidate)
-
 	if lox_path, ok := os.lookup_env_alloc("LOX_PATH", context.allocator); ok {
 		defer delete(lox_path)
-		candidate2, _ := filepath.join({lox_path, filename})
-		if d, err := os.read_entire_file_from_path(candidate2, context.allocator); err == nil {
-			return d, candidate2, true
+		modules_dir, _ := filepath.join({lox_path, "modules"})
+		defer delete(modules_dir)
+		candidate, _ := filepath.join({modules_dir, filename})
+		if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
+			return d, candidate, true
 		}
-		delete(candidate2)
+		delete(candidate)
+	}
+
+	// filepath.dir (os.dir) returns a slice *into* vm.script, not a
+	// fresh allocation (see os/path.odin's split_path) -- deleting it
+	// is a bad free of memory this proc doesn't own. Real bug, not
+	// hypothetical: it silently corrupted the heap on every successful
+	// module import since Phase 4 first wrote this line, without
+	// crashing immediately (bad frees don't always crash where they
+	// happen) -- surfaced reliably once find_module_in_subdirs' extra
+	// allocations changed the heap layout enough to turn latent
+	// corruption into an actual segfault on the very first test of
+	// this phase's subdirectory-search addition.
+	dir := filepath.dir(vm.script)
+	if dir == "" {
+		dir = "."
+	}
+
+	candidate2, _ := filepath.join({dir, filename})
+	if d, err := os.read_entire_file_from_path(candidate2, context.allocator); err == nil {
+		return d, candidate2, true
+	}
+	delete(candidate2)
+
+	if found_path, ok := find_module_in_subdirs(dir, filename); ok {
+		defer delete(found_path)
+		if d, err := os.read_entire_file_from_path(found_path, context.allocator); err == nil {
+			return d, strings.clone(found_path), true
+		}
 	}
 
 	return nil, "", false
+}
+
+// find_module_in_subdirs recursively searches root for a file named
+// target, skipping directories that are never going to contain a
+// script's own Lox modules (VCS/build/cache dirs -- glox's own
+// equivalent skips just `__loxcache__`, its bytecode-cache directory;
+// this port has no bytecode cache -- see ARCHITECTURE.md's Bytecode
+// cache section -- but the same principle applies to its own
+// build/tooling directories).
+@(private = "file")
+find_module_in_subdirs :: proc(root: string, target: string) -> (string, bool) {
+	w := os.walker_create(root)
+	defer os.walker_destroy(&w)
+	for info in os.walker_walk(&w) {
+		base := filepath.base(info.fullpath)
+		if info.type == .Directory {
+			switch base {
+			case ".git", "__pycache__", ".pytest_cache", "bin", "__loxcache__":
+				os.walker_skip_dir(&w)
+			}
+			continue
+		}
+		if base == target {
+			return strings.clone(info.fullpath), true
+		}
+	}
+	return "", false
 }

@@ -380,44 +380,63 @@ function_declaration :: proc(p: ^Parser) {
 // Control flow
 
 if_statement :: proc(p: ^Parser) {
-	expression(p)
-	consume(p, .Left_Brace, "Expect '{' after if condition.")
+	parse_condition(p)
 
 	then_jump := emit_jump(p, .Jump_If_False)
 	emit_op(p, .Pop)
-	begin_scope(p)
-	block(p)
-	end_scope(p)
+	// statement(p), not a hardcoded block: a braced `{ ... }` body still
+	// goes through statement()'s own .Left_Brace case (identical
+	// begin_scope/block/end_scope to what used to be inlined here), but
+	// this also accepts a bare unbraced single statement -- needed for
+	// `if (cond) break`/`if (n < 2) return n` in the ported test suite,
+	// which previously couldn't even compile (Expect '{' after if
+	// condition). See parse_condition's own doc comment for why the
+	// parens themselves are optional rather than made mandatory to
+	// match glox exactly.
+	statement(p)
 
 	else_jump := emit_jump(p, .Jump)
 	patch_jump(p, then_jump)
 	emit_op(p, .Pop)
 
+	// `else if` falls out for free: statement()'s own dispatch has a
+	// .If case that calls back into if_statement, so no special-casing
+	// is needed here the way the old brace-only version needed one.
 	if match(p, .Else) {
-		if match(p, .If) {
-			if_statement(p)
-		} else {
-			consume(p, .Left_Brace, "Expect '{' after 'else'.")
-			begin_scope(p)
-			block(p)
-			end_scope(p)
-		}
+		statement(p)
 	}
 	patch_jump(p, else_jump)
+}
+
+// parse_condition compiles a control-flow header's condition
+// expression, tolerating an optional wrapping `(...)`. glox's own
+// grammar requires the parens unconditionally (`p.consume(TOKEN_LEFT_PAREN,
+// "Expect '(' after if.")`, no bare form at all) -- this port initially
+// accepted only the bare form, which meant every `if (cond)`/`while (cond)`
+// fixture in the ported test suite failed to compile. Made optional
+// rather than mandatory specifically to stay backward compatible with
+// the bare style this compiler's own test suite (compile_test.odin,
+// vm_test.odin) and every hand-written example already use -- flipping
+// to "mandatory" would have matched glox exactly but broken everything
+// already passing for no real benefit.
+@(private = "file")
+parse_condition :: proc(p: ^Parser) {
+	has_paren := match(p, .Left_Paren)
+	expression(p)
+	if has_paren {
+		consume(p, .Right_Paren, "Expect ')' after condition.")
+	}
 }
 
 while_statement :: proc(p: ^Parser) {
 	loop := push_loop(p)
 	loop.start = len(current_chunk(p).code)
 
-	expression(p)
-	consume(p, .Left_Brace, "Expect '{' after while condition.")
+	parse_condition(p)
 
 	exit_jump := emit_jump(p, .Jump_If_False)
 	emit_op(p, .Pop)
-	begin_scope(p)
-	block(p)
-	end_scope(p)
+	statement(p)
 	emit_loop(p, loop.start)
 
 	patch_jump(p, exit_jump)
@@ -436,10 +455,24 @@ while_statement :: proc(p: ^Parser) {
 // instead of the condition -- the standard trick that turns "run
 // increment before re-checking condition" into code that reads in
 // natural source order without a special third jump kind.
+// has_paren tracks whether `(` was seen so the matching `)` can be
+// required/consumed at the right spot -- optional, not mandatory (see
+// parse_condition's doc comment for why), which for `for` specifically
+// means the body is *not* extended to accept a bare unbraced statement
+// the way if/while/foreach's bodies now do: without parens, there's no
+// unambiguous way to tell where an omittable increment clause ends and
+// an unbraced body begins (glox's own grammar sidesteps this by making
+// the parens -- and therefore the closing `)` as an unambiguous
+// delimiter -- mandatory). No fixture in the ported test suite needs
+// an unbraced `for` body, so this keeps the existing brace-required
+// body exactly as it was and only adds the optional paren wrapping
+// around the header.
 for_statement :: proc(p: ^Parser) {
 	begin_scope(p) // owns the init-variable's scope, if any
 
 	loop := push_loop(p)
+
+	has_paren := match(p, .Left_Paren)
 
 	if match(p, .Semicolon) {
 		// no initializer
@@ -468,7 +501,10 @@ for_statement :: proc(p: ^Parser) {
 	}
 	consume(p, .Semicolon, "Expect ';' after loop condition.")
 
-	if !check(p, .Left_Brace) {
+	// The increment clause is present unless the next token closes the
+	// header: `)` if parens were opened, `{` (the body) otherwise.
+	has_increment := !check(p, .Right_Paren) if has_paren else !check(p, .Left_Brace)
+	if has_increment {
 		body_jump := emit_jump(p, .Jump)
 		increment_start := len(current_chunk(p).code)
 		expression(p)
@@ -478,6 +514,9 @@ for_statement :: proc(p: ^Parser) {
 		patch_jump(p, body_jump)
 	}
 
+	if has_paren {
+		consume(p, .Right_Paren, "Expect ')' after for clauses.")
+	}
 	consume(p, .Left_Brace, "Expect '{' before for body.")
 	begin_scope(p)
 	block(p)
@@ -496,17 +535,23 @@ for_statement :: proc(p: ^Parser) {
 	end_scope(p)
 }
 
-// foreach_statement: `foreach x in iterable { body }`. Reserves two
-// hidden locals -- the visible loop variable and `__iter`, which holds
-// the iterable/iterator across iterations -- then emits the
-// Foreach/Next/End_Foreach trio. See core/chunk.odin's Op_Code doc
-// comment and the operand-layout notes inline below; both this compiler
-// and the VM that reads this bytecode (Phase 4) are implemented by this
-// port, so the exact encoding is this port's own choice as long as it's
+// foreach_statement: `foreach [(]  [var]  x in iterable  [)]  body`. The
+// parens and the `var` keyword are both optional (see parse_condition's
+// doc comment on if_statement for why odlox makes glox's mandatory
+// parens optional instead); body goes through statement(p) so both a
+// `{ block }` and a bare single statement work. Reserves two hidden
+// locals -- the visible loop variable and `__iter`, which holds the
+// iterable/iterator across iterations -- then emits the Foreach/Next/
+// End_Foreach trio. See core/chunk.odin's Op_Code doc comment and the
+// operand-layout notes inline below; both this compiler and the VM
+// that reads this bytecode (Phase 4) are implemented by this port, so
+// the exact encoding is this port's own choice as long as it's
 // internally consistent, which these two emission sites (here and
 // Phase 4's foreach handler) need to agree on.
 foreach_statement :: proc(p: ^Parser) {
 	begin_scope(p)
+	has_paren := match(p, .Left_Paren)
+	match(p, .Var) // `foreach (var x in y)` -- optional, same as glox's own p.match(TOKEN_VAR)
 	consume(p, .Identifier, "Expect loop variable name.")
 	// A local's compile-time slot must correspond to an actual runtime
 	// stack push (see add_local/finish_declare elsewhere) -- but the
@@ -530,7 +575,9 @@ foreach_statement :: proc(p: ^Parser) {
 	mark_initialised(p)
 	iter_slot := u8(p.current_compiler.local_count - 1)
 
-	consume(p, .Left_Brace, "Expect '{' before foreach body.")
+	if has_paren {
+		consume(p, .Right_Paren, "Expect ')' after iterable.")
+	}
 
 	loop := push_loop(p)
 	loop.is_foreach = true
@@ -546,9 +593,7 @@ foreach_statement :: proc(p: ^Parser) {
 	emit_byte(p, 0xff)
 
 	loop.start = len(current_chunk(p).code)
-	begin_scope(p)
-	block(p)
-	end_scope(p)
+	statement(p)
 
 	for c in loop.continues {
 		patch_jump(p, c)
