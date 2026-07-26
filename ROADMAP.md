@@ -810,6 +810,150 @@ at this point is either raylib/`re`/`pickle`/`process`/`colour_utils`
 (Phase 6b, not started) or the `.lox` standard library itself (path
 resolution now fixed, the files aren't copied over yet).
 
+### Phase 6a-continued, part 2: toString/__iter__ protocol, plus three real bugs an exhaustive per-test pass finally caught
+
+The last two items shared blockers for both the `.lox` standard library
+port and Phase 6b: `toString()` dispatch and the user-level
+`__iter__`/`__next__` iterator protocol. Both were already flagged as
+deferred, `Run_Mode.Current_Function`-shaped gaps back in Phase 4.
+
+**`toString()` dispatch** (`run.odin`'s `Op_Str` case) turned out not to
+need `Run_Mode.Current_Function`/a nested `run()` call at all, once
+checked against glox's actual `OP_STR` handling: glox just pushes a new
+call frame for the `toString` method and lets the *outer* dispatch loop
+carry on (`continue` after `vm.call(...)`/`refreshFrame()`) — when that
+method's own return eventually fires, ordinary return handling lands
+the result exactly where `Op_Str` needs it, with no recursion into a
+second `run()` invocation required. Ported the same way: `call_value`
++ `refresh_frame`, then just falling out of the switch normally, since
+Op_Str's call is the very last thing that opcode does. `Run_Mode.Current_Function`
+*is* still needed for `foreach`'s `__iter__`/`__next__`
+(`foreach.odin`'s new `call_closure_now`) — unlike `Op_Str`, those need
+the call's result back immediately, mid-opcode, to decide what happens
+next (is the result nil? does it have a `__next__` method?), which is
+exactly the case that mode exists for. Ported closely against glox's
+own `OP_FOREACH`/`OP_NEXT` instance branches (`vm.go`), including
+checking that `__iter__`'s return value actually has a `__next__`
+method before accepting it as a real iterator.
+
+**Real bug found immediately**: `print instance` never picked up a
+class's own `toString()`, even right after wiring dispatch into
+`Op_Str` — because `print_statement` (`stmt.odin`) never emitted
+`Op_Str` in the first place, unlike glox's own `printStatement`
+(`p.emitByte(OP_STR); p.emitByte(OP_PRINT)`). `str(x)` (a different
+call site, `expr.odin`'s `str_call`) already emitted `Op_Str` directly,
+which is exactly what made this easy to miss: `str(x)` "worked" the
+moment dispatch was wired up, while `print x` on the identical value
+silently didn't, because it never routed through `Op_Str` at all.
+Fixed by adding the missing `emit_op(p, .Str)`.
+
+**Three more real, pre-existing bugs**, found not by the toString/iterator
+work itself but by a change in *methodology* it prompted: every
+individual `vm`-package test (56 across `vm_test.odin`/
+`builtins_test.odin`/`module_test.odin`) was run one at a time, alone,
+rather than trusting a full-suite run and attributing any failure to
+the already-documented toolchain flakiness. That habit had become
+routine after several phases of genuinely-flaky combined runs — this
+pass found that flakiness had been quietly providing cover for real,
+100%-reproducible bugs too:
+
+- **`match_clause_chain`'s "is there another except/finally clause"
+  check was simply wrong.** It treated "next_clause is still within
+  the chunk's bounds" as proof there was another clause to check —
+  but `next_clause`, when a `try`/`except` isn't the very last thing
+  in its function (the overwhelmingly common case), almost always
+  lands on a real, in-bounds instruction that has nothing to do with
+  exception handling at all: the code that comes *after* the whole
+  `try`/`except` construct. Reading it as `[type_const][skip_hi]
+  [skip_lo]` operand bytes either crashed with an out-of-range panic
+  (reproduced with `try { raise "x" } except EOFError as e {...}` —
+  any except clause that doesn't match the raised type, provided
+  there's anything after the try/except, which there always
+  effectively is once `end_compiler`'s trailing `Nil`+`Return` is
+  counted) or, worse, silently misbehaved in less lucky byte layouts.
+  Fixed by actually checking the opcode at `next_clause` is `.Except`
+  or `.Finally` before treating it as a real clause, not just that
+  it's in bounds.
+- **`Op_End_Try` never applied its own jump offset — a very serious
+  bug, not a corner case: every single `try { ... } finally { ... }`
+  with no `except` clause raised a bogus uncaught exception on
+  perfectly ordinary, non-exceptional completion.** The compiler
+  (`stmt.odin`'s `try_except_statement`) emits a real, non-zero
+  forward jump at `End_Try` — needed to skip from normal completion
+  straight to the *normal-path* copy of the `finally` block, bypassing
+  the *exceptional-path* copy (which unconditionally ends in
+  `Op_Raise`, to re-propagate once `finally` has run after a caught
+  exception). The VM's `Op_End_Try` handler, though, just skipped past
+  the two operand bytes as if they were inert padding, on a comment
+  claiming "the compiler always emits 0,0 here" — which was simply
+  false for any `try`/`finally` construct. Execution fell straight
+  through into the exceptional `finally` copy regardless of whether
+  anything was actually raised, hit that copy's trailing `Op_Raise`,
+  and reported an exception that was never really raised at all.
+  Fixed to actually apply the offset, the same way `Op_Jump` does.
+- **The REPL's `Environment.global_names` accumulated duplicate
+  entries on every single line, corrupting global-slot lookups from
+  the second line onward.** `end_compiler` publishes the current
+  compile unit's slot→name table onto the shared `Environment` once
+  compilation finishes — but for a REPL line, that `Environment` is
+  the *same* persistent one across every line (`new_vm_raw` creates it
+  once, never again), while the table being published
+  (`p.global_names_by_slot`) is *already* the complete, correct,
+  cumulative mapping for that line (rebuilt fresh each
+  `Compile_Repl` call from the persisted `Repl_State.globals` map).
+  `end_compiler` used to `append` that onto `environment.global_names`
+  unconditionally, every line, instead of replacing it — so after N
+  REPL lines, the array held very close to N stacked, overlapping
+  copies of the mapping. `env_slot_for_name`'s linear search would
+  then find any given name at whatever leftover index the *first*
+  stale copy happened to still contain it at: consistently, silently
+  wrong (not randomly), by exactly the amount of accumulated
+  duplication. A 3-line REPL session was enough to reproduce it
+  (`var x = 10` / `x + 5` / `var y = x + 5` — resolving `y`'s slot
+  afterward returned 3, not the real slot 1). Fixed by clearing the
+  array before republishing instead of appending to it.
+
+None of these three were introduced by this session's work — each was
+reachable on the previous commit, and the REPL one traces back to
+whichever phase first wrote `end_compiler`'s environment-publishing
+step. All three were sitting behind the "probably just the known
+toolchain flakiness" assumption, since intermittent combined-test-run
+failures had trained that assumption in across several earlier phases.
+The actual lesson: **that assumption needs re-earning per bug, not
+applied wholesale** — a failure that reproduces in isolation, every
+time, is not toolchain flakiness regardless of how it looks in a
+crowded batch run. Worth remembering for any future test failure in
+this codebase: isolate first, attribute to known flakiness second, not
+the other way around.
+
+Regression coverage: `vm_test.odin` gained
+`test_to_string_dispatch_via_str_builtin`,
+`test_instance_without_to_string_uses_generic_fallback`,
+`test_foreach_over_class_with_iter_protocol`,
+`test_foreach_over_class_iter_protocol_respects_break_and_continue`,
+`test_foreach_over_instance_without_iter_is_runtime_error`,
+`test_foreach_iter_result_without_next_is_runtime_error`, and
+`test_uncaught_exception_with_trailing_code_does_not_crash` (the
+`match_clause_chain` regression, with deliberate trailing code rather
+than relying on `end_compiler`'s implicit trailing bytes the way the
+pre-existing `test_uncaught_exception_is_runtime_error` incidentally
+does); `compile_test.odin` gained
+`test_print_statement_emits_str_before_print`. The `End_Try` and REPL
+bugs didn't need new tests — both are exactly what two *existing*
+tests (`test_finally_runs_on_normal_completion`,
+`test_repl_second_line_sees_first_lines_global`) were already asserting,
+they'd just never been run in enough isolation to be believed.
+
+**Milestone check**: all 56 `vm`-package tests now verified individually
+(not just as a batch), confirmed passing every one — the exhaustiveness
+itself is the deliverable here, not just a number. `python -m pytest
+tests/new_tests/ -q`: 107 passed / 123 failed / 14 skipped before this
+work, **115 passed / 115 failed / 14 skipped** after — the three bug
+fixes alone (independent of the toString/iterator features) accounted
+for 8 of those, since `try`/`finally` and multi-line REPL sessions
+turn out to be exercised more widely across the ported suite than
+their own dedicated test files suggest.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

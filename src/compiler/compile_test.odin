@@ -173,6 +173,33 @@ from math import sqrt, pow
 `)
 }
 
+// Regression test: print_statement must emit Op_Str before Op_Print --
+// Op_Str is also the toString() dispatch point (run.odin's Op_Str
+// case), so skipping it (an earlier version did) meant `print instance`
+// never picked up a class's own toString() even after toString
+// dispatch was wired up in Op_Str itself, since print never routed
+// through that opcode at all. str(x) (expr.odin's str_call, a
+// different call site) already emitted Op_Str correctly, which is
+// exactly what made this easy to miss -- str(x) "worked" while print
+// x on the same value silently didn't.
+@(test)
+test_print_statement_emits_str_before_print :: proc(t: ^testing.T) {
+	c := compile_ok(t, "print 1\n")
+	seq := op_sequence(c)
+	testing.expect(t, len(seq) >= 2)
+	str_idx := -1
+	for op, i in seq {
+		if op == .Str {
+			str_idx = i
+			break
+		}
+	}
+	testing.expectf(t, str_idx >= 0, "expected Op_Str in %v", seq)
+	if str_idx >= 0 {
+		testing.expect_value(t, seq[str_idx + 1], core.Op_Code.Print)
+	}
+}
+
 // -----------------------------------------------------------------------
 // Expressions
 

@@ -194,16 +194,40 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Print:
 			print_value(pop(vm))
 		case .Str:
-			// KNOWN GAP vs. glox: does not dispatch to a user-defined
-			// toString() method on an Instance receiver (that needs the
-			// nested re-entrant run() call this file's Run_Mode exists
-			// for, not yet wired up here) -- falls back to
-			// core.value_to_string's generic "<instance ClassName>" for
-			// every instance regardless of a toString method.
-			v := pop(vm)
+			// Dispatches to a user-defined toString() method on an
+			// Instance receiver, if one exists. Deliberately does *not*
+			// use a nested run(vm, .Current_Function) call the way
+			// Op_Foreach/Op_Next do (see foreach.odin) -- unlike those,
+			// which need the call's result back *within* the same
+			// opcode's own handling to decide what to do next, Op_Str's
+			// call is the very last thing this case does. Peeking
+			// (never popping) the receiver, then just calling
+			// call_value + refresh_frame and falling out of the switch
+			// normally, pushes a new frame and lets the *outer* dispatch
+			// loop run it -- when toString's own Op_Return eventually
+			// fires, its ordinary return handling (pop back to
+			// fl.f.slots, push the result) leaves exactly the string
+			// result sitting where the original receiver was, which is
+			// exactly Op_Str's contract. Same trick glox's own OP_STR
+			// uses (`continue` after `vm.call(...)`/`refreshFrame()`,
+			// no vm.run(RUN_CURRENT_FUNCTION) there either -- that mode
+			// is reserved for Op_Foreach/Op_Next, whose call result
+			// really is needed mid-opcode).
+			v := peek(vm, 0)
 			if core.is_string(v) {
-				push(vm, v)
+				// already a string; nothing to do
+			} else if v.type == .Obj && v.obj_type == .Instance {
+				inst := core.as_instance(v)
+				if method_val, ok := inst.class.methods[core.intern_string("toString")]; ok {
+					if call_value(vm, method_val, 0) {
+						fl = refresh_frame(vm)
+					}
+				} else {
+					pop(vm)
+					push(vm, core.make_string_value(core.value_to_string(v)))
+				}
 			} else {
+				pop(vm)
 				push(vm, core.make_string_value(core.value_to_string(v)))
 			}
 
@@ -432,7 +456,26 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			h.prev = fl.f.handlers
 			fl.f.handlers = h
 		case .End_Try:
-			fl.f.ip += 2 // offset unused for a plain handler pop (compiler always emits 0,0 here)
+			// Real bug, found via an actual "try { ... } finally { ... }"
+			// run with no exception raised: the compiler emits a real,
+			// non-zero forward jump here (stmt.odin's try_except_statement
+			// patches normal_end_jump with the distance past the
+			// exceptional-path finally replay, straight to the
+			// normal-path finally replay -- see that proc's "Shared
+			// normal-completion landing point" comment), but this case
+			// was treating the offset as inert padding (the two
+			// operand bytes were just skipped, not read and applied),
+			// on the wrong assumption that "the compiler always emits
+			// 0,0 here". It doesn't -- normal completion fell straight
+			// through into the *exceptional* finally copy instead of
+			// jumping past it, which ends in an unconditional Op_Raise
+			// (re-propagate) -- so every try/finally with no except
+			// clause raised a bogus uncaught exception on perfectly
+			// normal completion. Fixed to actually jump, same pattern
+			// as Op_Jump.
+			offset := read_u16(fl.code, fl.f.ip)
+			fl.f.ip += 2
+			fl.f.ip += offset
 			pop_handler(vm)
 		case .End_Except, .Finally:
 		// no-op landing markers -- reached only by normal fallthrough;

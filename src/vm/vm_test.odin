@@ -1,6 +1,7 @@
 package vm
 
 import "../core"
+import "core:strings"
 import "core:testing"
 
 // End-to-end VM tests: compile and *run* real source, then inspect the
@@ -85,6 +86,36 @@ test_string_comparison_and_indexing :: proc(t: ^testing.T) {
 test_str_builtin_stringifies :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, "var result = str(42)\n", "result")
 	testing.expect_value(t, core.string_get(core.as_string(v)), "42")
+}
+
+// toString() dispatch (run.odin's Op_Str case). str(instance) and
+// print instance both go through Op_Str, so both should pick up a
+// class's own toString() rather than falling back to the generic
+// "<instance ClassName>" -- print's own path was a real, separate bug
+// (print_statement never emitted Op_Str at all before this, only
+// str(x) did -- see stmt.odin's print_statement), covered by the
+// second test below.
+@(test)
+test_to_string_dispatch_via_str_builtin :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `
+class Point {
+	init(x, y) { this.x = x; this.y = y }
+	toString() { return "(" & str(this.x) & ", " & str(this.y) & ")" }
+}
+var result = str(Point(1, 2))
+`, "result")
+	testing.expect_value(t, core.string_get(core.as_string(v)), "(1, 2)")
+}
+
+@(test)
+test_instance_without_to_string_uses_generic_fallback :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `
+class Plain {
+	init() { this.x = 1 }
+}
+var result = str(Plain())
+`, "result")
+	testing.expect(t, strings.has_prefix(core.string_get(core.as_string(v)), "<instance"))
 }
 
 // -----------------------------------------------------------------------
@@ -283,6 +314,93 @@ test_foreach_over_string_counts_chars :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// User-level iterator protocol (__iter__/__next__ -- foreach.odin).
+// Needs a nested run(vm, .Current_Function) call to invoke each method
+// synchronously mid-opcode (unlike Op_Str's toString dispatch, which
+// doesn't -- see foreach.odin's call_closure_now doc comment for why
+// the two cases differ). Deferred out of Phase 4's scope originally;
+// picked up once the native iterable path (list/string/range, tested
+// above) had real coverage to build the nested-call path against.
+
+@(test)
+test_foreach_over_class_with_iter_protocol :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `
+class Range {
+	init(n) { this.n = n }
+	__iter__() { return RangeIterator(this.n) }
+}
+class RangeIterator {
+	init(n) { this.n = n; this.i = 0 }
+	__next__() {
+		if this.i >= this.n { return nil }
+		var v = this.i
+		this.i = this.i + 1
+		return v
+	}
+}
+var result = 0
+foreach x in Range(5) {
+	result = result + x
+}
+`, "result")
+	testing.expect_value(t, core.as_int(v), 0 + 1 + 2 + 3 + 4)
+}
+
+@(test)
+test_foreach_over_class_iter_protocol_respects_break_and_continue :: proc(t: ^testing.T) {
+	v := run_and_get_global(t, `
+class Range {
+	init(n) { this.n = n }
+	__iter__() { return RangeIterator(this.n) }
+}
+class RangeIterator {
+	init(n) { this.n = n; this.i = 0 }
+	__next__() {
+		if this.i >= this.n { return nil }
+		var v = this.i
+		this.i = this.i + 1
+		return v
+	}
+}
+var result = 0
+foreach y in Range(10) {
+	if y == 3 { continue }
+	if y == 7 { break }
+	result = result + y
+}
+`, "result")
+	// 0+1+2 (skip 3) +4+5+6, break before 7
+	testing.expect_value(t, core.as_int(v), 0 + 1 + 2 + 4 + 5 + 6)
+}
+
+@(test)
+test_foreach_over_instance_without_iter_is_runtime_error :: proc(t: ^testing.T) {
+	expect_runtime_error(t, `
+class NotIterable {
+	init() { this.x = 1 }
+}
+foreach z in NotIterable() {
+	print z
+}
+`)
+}
+
+@(test)
+test_foreach_iter_result_without_next_is_runtime_error :: proc(t: ^testing.T) {
+	expect_runtime_error(t, `
+class BadIterator {
+	init() { this.x = 1 }
+}
+class BadIterable {
+	__iter__() { return BadIterator() }
+}
+foreach z in BadIterable() {
+	print z
+}
+`)
+}
+
+// -----------------------------------------------------------------------
 // Exceptions
 
 @(test)
@@ -334,6 +452,35 @@ try {
 } except EOFError as e {
 	var unreachable = 1
 }
+`)
+}
+
+// Regression test for a real, reproduced crash in
+// exceptions.odin's match_clause_chain: when a raised exception's type
+// doesn't match a try's only except clause, the VM has to decide "is
+// there another clause to check, or is this genuinely uncaught?" by
+// reading whatever bytecode sits right after this clause's own body --
+// which previously only checked whether that position was still
+// *within the chunk's bounds*, not whether it actually held another
+// Except/Finally opcode. Real scripts almost always have *something*
+// after a try/except (this test's own `var tail = 1`, deliberately
+// placed there rather than left implicit the way
+// test_uncaught_exception_is_runtime_error above happens to via
+// end_compiler's always-emitted trailing Nil+Return), which put a real,
+// in-bounds, unrelated instruction at that position -- reading it as
+// [type_const][skip_hi][skip_lo] operand bytes crashed with an
+// out-of-range panic. Fixed by checking the opcode actually there, not
+// just the chunk bounds.
+@(test)
+test_uncaught_exception_with_trailing_code_does_not_crash :: proc(t: ^testing.T) {
+	expect_runtime_error(t, `
+var tail = 0
+try {
+	raise "x"
+} except EOFError as e {
+	var unreachable = 1
+}
+tail = 1
 `)
 }
 

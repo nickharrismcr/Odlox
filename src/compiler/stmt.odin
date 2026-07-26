@@ -140,6 +140,19 @@ expression_statement :: proc(p: ^Parser) {
 print_statement :: proc(p: ^Parser) {
 	expression(p)
 	consume_eol(p, "Expect newline after value.")
+	// Op_Str first, matching glox's own printStatement exactly -- not
+	// just for the generic string conversion (display_string's job in
+	// run.odin's Op_Print handler already covers that on its own) but
+	// because Op_Str is also the toString() dispatch point (see
+	// run.odin's Op_Str case). Missing this meant `print instance`
+	// always showed the generic "<instance ClassName>" form even when
+	// the class defined its own toString() -- found immediately after
+	// wiring toString dispatch up in Op_Str itself: `str(x)` (which
+	// compiles straight to Op_Str, see expr.odin's str_call) picked up
+	// the new dispatch correctly, but `print x` on the exact same
+	// instance still didn't, because it never went through Op_Str at
+	// all before this fix.
+	emit_op(p, .Str)
 	emit_op(p, .Print)
 }
 

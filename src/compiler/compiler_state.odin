@@ -154,6 +154,27 @@ end_compiler :: proc(p: ^Parser) -> ^Compiler {
 			append(&fn.chunk.global_names, name)
 		}
 		if fn.environment != nil {
+			// Real bug, found via an actual multi-line REPL session (not
+			// just a single compile): fn.environment is the *same*
+			// persistent Environment across every REPL line (see
+			// vm.odin's new_vm_raw -- it's created once, never replaced),
+			// but this used to just append(&fn.environment.global_names,
+			// name) unconditionally, every single end_compiler call.
+			// p.global_names_by_slot is already the complete, correct,
+			// cumulative slot->name mapping for *this* line (rebuilt
+			// fresh each Compile_Repl call from the persisted
+			// Repl_State.globals map -- see compile.odin's
+			// rebuild_names_by_slot), so appending it on top of
+			// whatever previous lines already appended just kept
+			// growing environment.global_names without bound: after N
+			// REPL lines it held very close to N copies of the
+			// slot->name mapping stacked on top of each other, so
+			// env_slot_for_name (a linear search) would find a real
+			// name at whatever leftover index the *first* stale copy
+			// happened to still contain it at -- consistently wrong by
+			// exactly the amount of accumulated duplication, not
+			// randomly. Fixed by clearing first: replace, don't append.
+			clear(&fn.environment.global_names)
 			for name in p.global_names_by_slot {
 				append(&fn.environment.global_names, name)
 			}

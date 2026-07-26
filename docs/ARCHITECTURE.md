@@ -801,6 +801,27 @@ committed back on success) rather than starting empty — the single
 `Environment` is what actually carries values across REPL lines; the slot
 tables just need to stay in sync with it across separately-compiled lines.
 
+**Real bug, found via an actual multi-line REPL session** (not caught by
+any single-compile test, since it only manifests across *multiple*
+`end_compiler` calls sharing one `Environment`): `end_compiler`
+(`compiler_state.odin`) publishes the current compile unit's slot→name
+table onto `Environment.global_names` for error messages/exception-class
+lookup (see [Environment & globals](#environment--globals)) — but it
+used to `append` that table every time, never clearing first. For a
+normal file compile this is harmless (one `end_compiler` call per fresh
+`Environment`), but a REPL session reuses the same `Environment` across
+every line, and each line's `p.global_names_by_slot` is *already* the
+complete, correct, cumulative mapping (rebuilt fresh each
+`Compile_Repl` call from `Repl_State.globals`) — so appending it on top
+of what previous lines already appended left `Environment.global_names`
+holding roughly N stacked, overlapping copies after N lines.
+`env_slot_for_name`'s linear search would then resolve any given name
+to whatever leftover index the *first* stale copy happened to still
+hold it at: consistently wrong, not randomly, and wrong by exactly the
+accumulated duplication — a 3-line session was enough to reproduce it.
+Fixed by clearing `Environment.global_names` before republishing,
+rather than appending to it.
+
 ---
 
 ## VM dispatch loop & calling convention
@@ -868,15 +889,28 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
   `invoke_from_builtin`) uniformly collapses `argc + 1` stack slots down to
   1 (the single returned `Value`) regardless of which of the four callee
   kinds (closure/native/class-constructor/bound-method) it was.
-- **Foreach/iterator protocol** (`OP_FOREACH`/`OP_NEXT`/`OP_END_FOREACH`):
-  two paths — native iterables (list/string) convert in place via a
-  `Get_Iterator` proc and call `.next()` directly with zero Lox-level call
-  overhead; user class instances go through the real `__iter__`/`__next__`
-  method-call protocol, which requires a **nested re-entrant call into
-  `run` itself** (glox's `RUN_CURRENT_FUNCTION` mode) — port this exactly,
-  including the "raise the exception floor for the nested call's duration"
-  detail (an uncaught exception inside the nested call must not unwind
-  past its own boundary into the real caller).
+- **Foreach/iterator protocol** (`Op_Foreach`/`Op_Next`/`Op_End_Foreach`,
+  `foreach.odin`) — **implemented**: two paths, native iterables (list/
+  string/`range()`, converted in place to one of three built-in
+  iterator kinds, pulled with zero Lox-level call overhead) and user
+  class instances (a real `__iter__`/`__next__` method-call protocol),
+  the latter needing a **nested re-entrant call into `run` itself**
+  (`Run_Mode.Current_Function`, `foreach.odin`'s `call_closure_now`) —
+  ported closely against glox's own `RUN_CURRENT_FUNCTION` usage in its
+  `OP_FOREACH`/`OP_NEXT` instance branches, including the "raise the
+  exception floor for the nested call's duration" detail (`run()`
+  already had this from Phase 4's original `Run_Mode` scaffolding — see
+  [Exceptions](#exceptions)). **`Op_Str`'s `toString()` dispatch does
+  *not* use this mechanism**, worth calling out since it's easy to
+  assume every "call a Lox method from inside an opcode" case needs the
+  same nested-`run()` machinery: checked against glox's own `OP_STR`
+  handling directly, and glox just pushes a new call frame for
+  `toString` and lets the *outer* dispatch loop carry on (`continue`
+  after `vm.call(...)`/`refreshFrame()`) — no nested `run()` call at
+  all, because `Op_Str`'s call is the very last thing that opcode does,
+  unlike `Op_Foreach`/`Op_Next`, which need the call's result back
+  *immediately, mid-opcode* to decide what happens next. Ported the
+  same way odlox-side (`run.odin`'s `Op_Str` case).
 - **Upvalue capture/closing** (`capture_upvalue`/`close_upvalues`): the
   open-upvalues list is sorted descending by stack slot, walked to find-or-
   insert; closing copies the live stack value into `.closed` and repoints
@@ -887,23 +921,61 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
 
 ## Exceptions
 
-Already documented exhaustively, start to finish, in glox's own
-`docs/exception-handling.md` — bytecode shape, the VM-side handler-matching
-loop (`raise_exception`/`next_handler`), and the compiler-side `finally`
-trampoline design. **Read that file directly when implementing this phase**
-rather than working from a re-summary; it documents two easy-to-break
-invariants (`OP_END_EXCEPT` must be immediately followed by the next
-clause's `OP_EXCEPT`/`OP_FINALLY` with nothing in between; `OP_TRY`'s
-operand is patched exactly once, to the first clause) that matter far more
-than the broad shape, which is otherwise a direct, mechanical Go→Odin port
-(a cons-list of `Exception_Handler{except_ip, stack_top, prev}` per frame,
-unwind-and-retry-in-caller's-frame on no match).
+**Status: implemented (Phase 4), with a real deviation from the plan below
+and two bugs found later worth knowing about.** glox's own
+`docs/exception-handling.md` documents its design exhaustively (bytecode
+shape, the VM-side handler-matching loop, the compiler-side `finally`
+trampoline) and is still worth reading for the parts that ported
+unchanged (a cons-list of `Exception_Handler{except_ip, stack_top, prev}`
+per frame, unwind-and-retry-in-caller's-frame on no match) — but two of
+the specific invariants it calls out don't apply to what's actually
+here, and this port has bugs of its own glox's design doesn't share.
+
+**Deliberate deviation from the plan**: glox finds "the next except/finally
+clause" by scanning raw bytecode for `OP_END_EXCEPT` immediately followed
+by `OP_EXCEPT`/`OP_FINALLY` — fragile once a clause body can contain a
+*nested* try/except (that inner `OP_END_EXCEPT` would be found first,
+wrongly), which is exactly why glox's own doc calls "must be immediately
+followed by" a load-bearing invariant. This port doesn't have that
+invariant at all: `Op_Except` carries its own explicit 2-byte skip
+offset to the next clause (`exceptions.odin`'s `match_clause_chain`),
+patched exactly like any other jump, computed and read entirely by this
+port's own compiler/VM. No scanning, no ambiguity, correct through
+nested `try`s for free — see `exceptions.odin`'s own header comment for
+the full rationale.
+
+**Two real bugs found well after Phase 4**, both in
+`exceptions.odin`/`run.odin`, neither caught until an exhaustive
+individual-test pass (Phase 6a-continued) stopped attributing every
+`vm`-package test failure to already-documented toolchain flakiness:
+
+- `match_clause_chain`'s "is there another clause" check only verified
+  `next_clause` was still within the *chunk's* bounds — true for
+  almost any position in almost any real function, since a `try`/
+  `except` is rarely the very last thing compiled. It needed to check
+  what opcode is actually *at* `next_clause` (`.Except` or `.Finally`,
+  or there's no more clauses), not just whether that position exists.
+- `Op_End_Try`'s runtime handler never applied its own jump offset at
+  all — treated the two operand bytes as inert padding on a since-
+  disproven comment that the compiler always emits zero there. It
+  doesn't: the compiler emits a real forward jump, needed to route
+  normal completion past the *exceptional* copy of a `finally` block
+  straight to the *normal-path* copy. Every `try`/`finally` with no
+  `except` clause fell through into the exceptional copy regardless,
+  which ends in an unconditional re-raise — so completely ordinary,
+  non-exceptional `try`/`finally` completion reported a bogus uncaught
+  exception, unconditionally, every time.
+
+See `ROADMAP.md`'s Phase 6a-continued-part-2 section for the full
+writeup, including why these went undetected for as long as they did
+(both are 100%-reproducible in isolation — the toolchain flakiness
+documented in the Scope/Garbage collector sections is real, but it
+had been providing unearned cover for these too).
 
 One behavior glox documents as a **known, deliberate limitation** — an
 exception raised inside an `except` clause's own body doesn't run the
-enclosing `finally` — should be ported as the same deliberate limitation,
-not silently fixed or silently left ambiguous; note it in code comments at
-the same place glox does.
+enclosing `finally` — is ported as the same deliberate limitation here
+too, not silently fixed or silently left ambiguous.
 
 ---
 

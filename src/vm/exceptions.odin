@@ -220,9 +220,31 @@ match_clause_chain :: proc(vm: ^VM, h: ^Exception_Handler, err_class: ^core.Clas
 			return true
 		}
 
+		// next_clause is either the next Except/Finally clause's start,
+		// or -- when this was the last clause -- the shared landing
+		// point right after the whole try/except construct (the same
+		// position normal_end_jump/End_Try's own jump target patches
+		// to; see stmt.odin's try_except_statement). Bounds-checking
+		// against len(code) alone cannot tell these apart: it only
+		// looks "off the end of the chunk", which is only true when
+		// this try/except happens to be the very last construct in its
+		// function. Any code after it (the overwhelmingly common case)
+		// puts a real, in-bounds instruction at next_clause that has
+		// nothing to do with exception handling -- reading it as
+		// [type_const][skip_hi][skip_lo] crashed reading past the end
+		// of the chunk entirely once that instruction was short enough
+		// (an out-of-range panic, not silently wrong behavior, but a
+		// crash either way and reproducible with any except clause that
+		// doesn't match the raised type, followed by more code). Fixed
+		// by checking what's actually *at* next_clause, not just
+		// whether it's in bounds.
 		next_clause := clause_start + 4 + skip
 		if next_clause >= len(code) {
 			return false // no more clauses in this try
+		}
+		next_op := core.Op_Code(code[next_clause])
+		if next_op != .Except && next_op != .Finally {
+			return false // next_clause is the post-try landing point, not another clause
 		}
 		frame(vm).ip = next_clause
 	}
