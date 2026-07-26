@@ -36,12 +36,19 @@ Only after Phases 1–6 are correct and green against the test suite.
       was never implemented, not just unconfirmed** — `docs/ARCHITECTURE.md` documents it as the design intent
       but `run.odin`/`vm.odin` still use plain `int` index fields (`fl.f.ip`, `vm.stack_top`), not raw pointer
       locals. Needs to actually be built, then measured.
-- [ ] Port `benchmarks/lox/*.lox` (from the glox reference repo) unmodified; establish an odlox vs. glox vs.
-      CPython baseline.
-- [ ] Profile before optimizing (Odin equivalent of glox's `-cpuprofile`/`-memprofile` workflow) against
-      `trees`/`method_call`/`fib`/`loop`-equivalent benchmarks.
-- [ ] Attempt compile-time-baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it
-      properly or skip it; a runtime-only slot table was a net regression in glox's own roadmap.
+- [ ] `get_property`/`bind_method` (`vm/properties.odin`) call `core.intern_string(name)` on every single
+      property/method access, even though the name is already an interned string constant from the bytecode
+      (`Op_Get_Property`'s operand). This re-hashes on every access for no reason — pass the already-interned
+      `^String_Object` (or cache it on the constant) instead of re-interning a plain `string` each time. Cheap,
+      high-confidence win; found via the Phase 7 benchmark baseline (see ROADMAP.md's Phase 7b), not yet implemented.
+- [ ] Object-model cost (map-backed instance fields/methods, `core/obj_instance.odin`'s
+      `fields: map[^String_Object]Value`, `core/obj_class.odin`'s `methods`/`statics` maps) is now confirmed
+      as odlox's own worst relative cost, not just a theoretical carry-over from glox: the Phase 7 baseline
+      (ROADMAP.md's Phase 7b) shows `trees` at 1.45x and `binary_trees` at 1.44x *slower* than glox specifically (odlox wins
+      everywhere else), matching glox's own performance-roadmap identification of this as its top pain point.
+      odlox ported the map-backed design unchanged rather than improving on it. Attempt compile-time-baked
+      instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it properly or skip it; a
+      runtime-only slot table was a net regression in glox's own roadmap, so don't repeat that shortcut.
 - [ ] Consider a monomorphic inline cache on `OP_GET_PROPERTY`/`OP_INVOKE`.
 - [ ] Consider a free-list/pool allocator for high-churn small fixed-size objects (vec2/3/4, upvalues,
       bound methods).

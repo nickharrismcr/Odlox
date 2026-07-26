@@ -1,0 +1,26 @@
+import sys
+
+// Tight loop benchmark targeting peephole-optimised superinstructions.
+// All variables are function-local so the compiler emits:
+//   OP_INCR_CONST_I  for  i    = i    + 1
+//   OP_ADD_II        for  acc  = acc  + i
+//   OP_INCR_CONST_F  for  f    = f    + 1.0
+//   OP_ADD_FF        for  facc = facc + f
+
+func tight(n) {
+  var i    = 0;
+  var acc  = 0;
+  var f    = 0.0;
+  var facc = 0.0;
+  while (i < n) {
+    i    = i    + 1;
+    acc  = acc  + i;
+    f    = f    + 1.0;
+    facc = facc + f;
+  }
+  return acc;
+}
+
+var start = sys.clock();
+print tight(50000000);
+print sys.clock() - start;

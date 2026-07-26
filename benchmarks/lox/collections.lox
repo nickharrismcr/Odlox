@@ -1,0 +1,78 @@
+import sys
+
+// Exercises list/dict/string built-in methods in a hot loop: many
+// short-lived collections created and mutated per iteration. Targets the
+// per-object method-table cost in ListObject/DictObject/StringObject
+// (see docs/performance-roadmap.md Step 1: shared method tables).
+
+func list_ops(n) {
+  var total = 0;
+  var i = 0;
+  while (i < n) {
+    i = i + 1;
+    var l = [];
+    l.append(i);
+    l.append(i + 1);
+    l.append(i + 2);
+    l.append(i + 3);
+    total = total + l.length();
+    total = total + l.find(i + 2);
+    l.remove(0);
+    total = total + l.length();
+  }
+  return total;
+}
+
+func dict_ops(n) {
+  var total = 0;
+  var i = 0;
+  while (i < n) {
+    i = i + 1;
+    var d = {};
+    d["a"] = i;
+    d["b"] = i + 1;
+    d["c"] = i + 2;
+    total = total + d.get("a", 0);
+    total = total + len(d.keys());
+    total = total + d.remove("b");
+  }
+  return total;
+}
+
+func string_ops(n) {
+  var total = 0;
+  var i = 0;
+  var base = "the quick brown fox jumps over the lazy dog";
+  var parts = ["a", "b", "c", "d"];
+  while (i < n) {
+    i = i + 1;
+    var r = base.replace("fox", "cat");
+    total = total + len(r);
+    var j = "-".join(parts);
+    total = total + len(j);
+  }
+  return total;
+}
+
+var n = 3000000;
+
+var listStart = sys.clock();
+var listTotal = list_ops(n);
+var listTime = sys.clock() - listStart;
+
+var dictStart = sys.clock();
+var dictTotal = dict_ops(n);
+var dictTime = sys.clock() - dictStart;
+
+var stringStart = sys.clock();
+var stringTotal = string_ops(n);
+var stringTime = sys.clock() - stringStart;
+
+print "list";
+print listTime;
+print "dict";
+print dictTime;
+print "string";
+print stringTime;
+print "total";
+print listTime + dictTime + stringTime;

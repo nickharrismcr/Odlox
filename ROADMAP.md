@@ -1828,9 +1828,10 @@ for the full reasoning behind each item; this is the checklist form.
 
 - [x] Runtime self-patching arithmetic specialization (`Add_Ii`/`Add_Ff`/
       `Incr_Const_I`/`Incr_Const_F`) — see Phase 7a below.
-- [ ] Port `benchmarks/lox/*.lox` (from the glox reference repo)
+- [x] Port `benchmarks/lox/*.lox` (from the glox reference repo)
       unmodified; establish a baseline odlox vs. glox vs. CPython
-      comparison, same shape as glox's own `bin/benchmarks.sh` table.
+      comparison, same shape as glox's own `bin/benchmarks.sh` table —
+      see Phase 7b below.
 - [ ] Profile before optimizing — Odin equivalent of glox's
       `-cpuprofile`/`-memprofile` workflow (`core:prof`, or manual
       `time.now()` bracketing plus an allocation counter) against `trees`/
@@ -1931,6 +1932,88 @@ opcode-family fix alone flipped a 1.25x deficit into a ~2x lead — is now
 lower urgency than it looked at the start of this investigation, though
 still worth doing since it taxes *every* opcode's operand read, not just
 the arithmetic family.
+
+### Phase 7b: the loxcraft benchmark suite, ported and run (odlox vs. glox vs. CPython)
+
+Ported `benchmarks/lox/*.lox` and `benchmarks/python/*.py` unmodified from
+`glox_reference/benchmarks/` into `odlox/benchmarks/` — the standard
+loxcraft-derived 13-benchmark suite glox itself uses (`binary_trees`,
+`collections`, `equality`, `fib`, `instantiation`, `invocation`, `loop`,
+`method_call`, `properties`, `string_equality`, `trees`, `zoo`,
+`zoo_batch`). Every script ran on odlox with zero changes needed — no
+compatibility gaps, just three genuinely long-running ones
+(`string_equality` ~20s, `trees` ~34s, `zoo` ~17s) that looked like hangs
+under an initially-too-short smoke-test timeout before being confirmed as
+just slow by design (`string_equality` does `n = 15_000_000` iterations of
+64 comparisons each — glox itself takes ~38s on the same script).
+
+Added `bin/time_lox.py` (ported from glox's own, generalized with an
+`--exe <path>` flag so the same script can time any of the three engines
+instead of being hardcoded to one binary) and `bin/benchmarks.sh` (glox's
+`bin/benchmarks.sh` shape, extended to a 3-way odlox/glox/CPython table;
+`GLOX_EXE` env var overrides the glox binary location, default
+`d:/go/glox/bin/glox.exe` — the sibling glox repo on this machine, not
+`glox_reference`, since that's the one with a built, up-to-date binary).
+One real bug hit and fixed along the way: Python's `subprocess.run` with a
+bare relative path (`"bin/odlox.exe"`) fails on Windows with
+`FileNotFoundError: [WinError 2]` even when the file exists and the
+relative path is correct — Windows' `CreateProcess` doesn't resolve a
+relative executable path against the current working directory the way a
+shell does. Fixed by `os.path.abspath()`-ing the exe path in
+`time_lox.py` before building the subprocess command.
+
+**Baseline** (3 runs each, both interpreters' release builds, same
+machine):
+
+| benchmark | odlox | glox | python | odlox/glox | odlox/py |
+|---|---|---|---|---|---|
+| binary_trees | 26.10s | 18.08s | 7.41s | **1.44x** | 3.52x |
+| collections | 5.36s | 10.65s | 2.92s | 0.50x | 1.83x |
+| equality | 30.74s | 50.00s | 20.40s | 0.61x | 1.51x |
+| fib | 9.12s | 20.51s | 9.13s | 0.44x | 1.00x |
+| instantiation | 34.06s | 41.50s | 22.48s | 0.82x | 1.52x |
+| invocation | 17.70s | 16.88s | 8.96s | 1.05x | 1.98x |
+| loop | 2.51s | 5.62s | 3.55s | 0.45x | 0.71x |
+| method_call | 18.97s | 20.59s | 8.77s | 0.92x | 2.16x |
+| properties | 20.01s | 18.04s | 7.56s | 1.11x | 2.65x |
+| string_equality | 20.58s | 37.75s | 17.37s | 0.55x | 1.18x |
+| trees | 33.66s | 23.20s | 6.83s | **1.45x** | 4.92x |
+| zoo | 16.91s | 16.45s | 9.76s | 1.03x | 1.73x |
+| zoo_batch | 10.01s | 10.02s | 10.03s | 1.00x | 1.00x |
+
+(`odlox/glox` < 1.00x means odlox is faster; a 1-run smoke pass beforehand
+matched this table within noise, so it's not a fluke of averaging.)
+
+**Reading it**: odlox is ahead on everything dispatch/arithmetic-heavy
+(`loop` 0.45x, `fib` 0.44x, `collections` 0.50x, `equality`/
+`string_equality` ~0.55-0.61x) — the Phase 7a fix plus the 16-byte `Value`
+and tag-byte object discrimination pay off exactly where expected.
+It's *behind* specifically on `trees` (1.45x) and `binary_trees` (1.44x),
+with `properties`/`invocation`/`zoo` roughly even — the object-heavy
+end of the suite. Checked why: `core/obj_instance.odin`'s
+`Instance_Object.fields` and `core/obj_class.odin`'s `Class_Object.methods`/
+`statics` are `map[^String_Object]Value`, ported unchanged from glox's own
+design — the exact mechanism glox's own `docs/performance-roadmap.md`
+names as its top cost driver for these two benchmarks specifically
+(map-backed per-instance field storage, allocated per object; map-backed
+method lookup). odlox inherited the cost without inheriting any of glox's
+mitigations for it. A second, smaller issue found in the same area:
+`vm/properties.odin`'s `get_property`/`bind_method` call
+`core.intern_string(name)` on every access even though `name` is already
+an interned constant from the bytecode operand — a redundant hash on
+every single property/method read, on top of the map lookup. Both are
+now tracked in `TODO.md`, not yet fixed.
+
+**Where this leaves Phase 7**: the two remaining big-ticket items are (1)
+the raw-pointer `ip`/stack-top change (taxes every opcode, benchmark-
+agnostic) and (2) the instance/class map-backed field-and-method-lookup
+cost (taxes specifically OO-heavy code — `trees`/`binary_trees` here, and
+by the same mechanism glox's own roadmap found, likely `properties`/
+`method_call`/`instantiation` too once the two current wins on those are
+netted out). Given glox's own roadmap explicitly tried and reverted a
+runtime-only slot table as a net regression, (2) needs the compile-time-
+baked opcode variant done properly, not the shortcut — see the `TODO.md`
+entry.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 
