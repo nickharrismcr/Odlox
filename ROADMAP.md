@@ -1839,12 +1839,16 @@ for the full reasoning behind each item; this is the checklist form.
 - [ ] Build the raw-pointer `ip`/stack-top change (Phase 4 always
       documented this as done; it never actually was — see Phase 7a
       below), then measure it.
+- [x] Stop re-interning already-interned property/method names on every
+      `Op_Get_Property`/`Op_Set_Property`/`Op_Invoke`/`Op_Super_Invoke`/
+      `Op_Get_Super` access — see Phase 7c below.
 - [ ] Attempt compile-time-baked instance field slots
       (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — glox's own roadmap
       concluded a runtime-only slot table (no compiler changes) is a net
       *regression* on access-heavy code; don't repeat that specific
       mistake. Either do the compile-time-baked opcodes properly or skip
-      this item.
+      this item. Phase 7c closed most, not all, of the `trees`/
+      `binary_trees` gap — this is what's left.
 - [ ] Consider a monomorphic inline cache on `OP_GET_PROPERTY`/
       `OP_INVOKE` (class-id → slot/method), complementary to the above.
 - [ ] Consider a free-list/pool allocator for high-churn small fixed-size
@@ -2014,6 +2018,73 @@ netted out). Given glox's own roadmap explicitly tried and reverted a
 runtime-only slot table as a net regression, (2) needs the compile-time-
 baked opcode variant done properly, not the shortcut — see the `TODO.md`
 entry.
+
+### Phase 7c: stop re-interning already-interned property/method names
+
+Diagnosed the Phase 7b `trees`/`binary_trees` regression down to a
+specific mechanism rather than leaving it at "map-backed fields, same as
+glox": `get_property`/`set_property`/`bind_method`/`invoke`/
+`invoke_from_class`/`do_get_super`/`do_super_invoke` all took `name` as a
+plain `string` and called `core.intern_string(name)` to get a map key —
+but every one of their call sites (`run.odin`'s `Op_Get_Property`/
+`Op_Set_Property`/`Op_Invoke`/`Op_Super_Invoke`/`Op_Get_Super` cases)
+already reads `name` off a bytecode constant the compiler interned at
+*compile* time (`compiler/expr.odin`'s `dot` → `core.make_string_value`).
+`intern_string` re-hashes the full string content against the global,
+whole-program intern table just to re-derive the exact `^String_Object`
+pointer already sitting in the constant pool — on every single property
+or method access, on top of the real per-instance/per-class map lookup
+that follows it. glox never pays this: it caches the interned integer id
+on the constant at compile time, so its own property/method access is a
+single map lookup using Go's `mapaccess2_fast64` int-key fast path.
+
+**Fix**: thread the already-interned `^core.String_Object` straight
+through instead of a plain `string` — every function above now takes
+`^core.String_Object` and uses it directly as the map key (including
+`core.env_get_var`/`env_set_var`, which already expected a
+`^String_Object` and were themselves being handed a freshly-reinterned
+one before this fix). The builtin dispatch procs that switch on `name`'s
+*content* rather than use it as a map key
+(`invoke_builtin_list`/`dict`/`string`/`float_array`/`regex`/`process`,
+`invoke_vector_method`, `get_vec_swizzle`/`set_vec_swizzle`) still take a
+plain `string` — `core.string_get(name)` at those call sites is a cheap
+field read, not a re-intern. `do_class`/`do_method`/`do_class_var`/
+`do_import` were deliberately left on plain strings: those run once per
+class/method declaration or import, not on a per-access hot path, so
+there was nothing to win there.
+
+**Verification**: full `pytest` regression unchanged (218/0/26); clean
+`-o:speed` build with no signature-mismatch errors anywhere in the tree
+(a wrong call site would have failed to compile, not just misbehaved).
+
+**Result** (3-run Phase 7b baseline vs. after, same fixture):
+
+| benchmark | before | after |
+|---|---|---|
+| properties | 1.11x | **0.69x** |
+| method_call | 0.92x | **0.62x** |
+| invocation | 1.05x | **0.70x** |
+| zoo | 1.03x | **0.66x** |
+| binary_trees | 1.44x | 1.27x |
+| trees | 1.45x | 1.14x |
+| (everything else) | ~unchanged | ~unchanged |
+
+`properties`, `invocation`, `method_call`, and `zoo` all flipped from
+"odlox loses to glox" to "odlox wins" — confirming the redundant-intern
+cost wasn't specific to `trees`/`binary_trees`, it was a flat tax on
+*every* property or method access in the interpreter, just most visible
+on the two benchmarks that do the most of it. `trees`/`binary_trees`
+improved substantially (gap roughly halved) but remain the only two
+benchmarks where odlox still trails glox — with the redundant lookup
+gone, what's left is presumably the *real* per-instance/per-class map
+lookup itself (odlox's `map[^String_Object]Value` vs. Go's
+`map[int]Value` fast path) plus whatever allocation cost is specific to
+deep tree construction. `instantiation.lox` (pure allocation, comparatively
+little access) already favors odlox at 0.79x, which argues for the access
+pattern over raw allocation cost being the residual driver — but this is
+an inference from the benchmark shapes, not something isolated by
+profiling. That's the compile-time-baked instance field slots item in
+`TODO.md`/the checklist above, still open.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 
