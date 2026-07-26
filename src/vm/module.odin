@@ -15,6 +15,18 @@ import "core:strings"
 // process/colour_utils/inspect aren't registered yet (Phase 6b). A *.lox
 // source module resolves through read_module_source below.
 
+// module_source_cache holds every imported module's own source text,
+// keyed by its bare import name -- unlike module_cache above, this one
+// genuinely is process-wide (no per-VM copy would work): a module's own
+// functions run as ordinary closures in whichever VM calls them, often
+// long after the sub-VM that originally compiled the module's source has
+// gone out of scope, but the stack trace (exceptions.odin's
+// append_stack_trace/source_line) still needs that module's source text
+// to print a context line for a frame inside one of its functions. No
+// mutex needed for the same reason module_cache doesn't have one.
+@(private)
+module_source_cache: map[string]string
+
 do_import :: proc(vm: ^VM, module_name: string, alias: string) {
 	mod, ok := load_module(vm, module_name)
 	if !ok {
@@ -111,6 +123,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return nil, false
 	}
 	defer delete(data)
+	module_source_cache[name] = strings.clone(string(data))
 
 	sub := new_vm_raw(path)
 	// Share (not copy) the parent's builtin registrations -- an

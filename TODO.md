@@ -24,8 +24,6 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       (needs both `process` and `thread` — its ProcessPool half is portable once `process` exists; its
       ThreadPool half is permanently blocked). `plot_grey.lox`/`plot_rgb.lox`/`sprite.lox` are blocked on
       raylib instead, tracked under the bullet above.
-- [ ] `colour.lox` — no longer blocked (needs only `random`/`colour_utils`, both implemented), just not
-      ported yet. Small, easy win whenever picked up; no test fixture exists for it in either repo yet.
 
 ## Phase 7 — Performance pass
 

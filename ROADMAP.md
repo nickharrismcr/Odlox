@@ -664,12 +664,7 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       module can only ever be partially ported). `plot_grey.lox`/
       `plot_rgb.lox`/`sprite.lox` remain blocked on raylib (`gfx` window/
       drawing), tracked under the raylib-natives bullet above, not here.
-- [ ] `colour.lox` is no longer blocked as of Phase 6f (`colour_utils`
-      now registered) -- **not yet ported**, just no longer has a reason
-      not to be; a small, easy port whenever picked up (imports only
-      `random` and `colour_utils`, both already implemented; no test
-      fixture exists for it yet in either repo, so treat as an
-      unvalidated-by-suite addition same as any manually-verified one).
+- [x] `colour.lox`. See Phase 6g.
 - [x] `colour_utils`, other small utility modules. See Phase 6f.
 - [x] **Error call stack trace.** See Phase 6f -- implemented using the
       `source`/`stack_trace` fields already scaffolded (and forgotten)
@@ -1622,6 +1617,62 @@ remaining failures is still gated on a native module this port hasn't
 built yet (`process`/`pool`/`re`/`pickle`/`json`/`inspect`) -- `gfx`
 itself is no longer in that list (its only ported-suite dependents needed
 exactly the subset now implemented).
+
+### Phase 6g: `colour.lox` port, and a real bug in the stack trace it found
+
+Small follow-up once cross-checking against glox's full module list
+(prompted by a question about the Phase 6 checklist being too terse to
+serve as an actual inventory) turned up that `colour.lox` — unlike
+`json.lox`/`pool.lox`, still genuinely blocked on `re`/`process`/`thread`
+— only imports `random` and `colour_utils`, both already implemented as
+of Phase 6f. Copied verbatim into `modules/colour.lox` (no source changes
+at all — `diff` against glox's own copy is empty) and verified manually,
+function by function, since no pytest fixture exercises this module in
+either repo: every colour constant, `primary_colours()`, `scale_colour()`,
+`fade`/`lerp`/`brightness`/`tint`/`hsv_to_rgb` (each just a thin wrapper
+around the `colour_utils` native functions Phase 6f already added), and
+`random_rgb()`.
+
+**One function left deliberately broken, matching glox exactly**:
+`ColourFromEncoded(value)` calls a bare `decode_rgb(value)` — no such
+name exists anywhere in glox itself (only `gfx.decode_rgba`, under the
+`gfx` module, never imported by `colour.lox` at all) and calling it always
+raises "Undefined variable 'decode_rgb'." Confirmed byte-for-byte against
+real glox (`bin/glox.exe` on the identical call): same error, same
+unreachable-in-either-test-suite status (`ColourFromEncoded` is only ever
+referenced from `plot_rgb.lox`, itself blocked on raylib). A real,
+pre-existing bug in glox's own module, ported faithfully rather than
+silently fixed.
+
+**A genuine bug in Phase 6f's own stack trace, found while manually
+verifying `ColourFromEncoded`'s failure**: the trace's file/line/function
+line was correct, but the source-line context that should follow it came
+back blank whenever the failing frame belonged to a function defined in
+an *imported* module (as opposed to the top-level script) — `vm.source`
+only ever holds whichever source text this VM's own `interpret()` call
+most recently compiled, but a module's functions run as ordinary closures
+in the *calling* VM, using a `Chunk.filename` that doesn't match that
+VM's own `.script` at all. glox has the identical problem in principle
+and solves it with a process-wide `globalModuleSource map[string]string`
+(vm.go), keyed by bare module name, checked by `sourceLine` whenever the
+requested script differs from the current VM's own -- this port had no
+equivalent at all. Fixed with `module.odin`'s new `module_source_cache`
+(same shape, no mutex needed for the same reason `module_cache` itself
+doesn't need one -- see that file's own header comment on why), populated
+in `load_module` right where a module's source is first read, and
+`exceptions.odin`'s `append_stack_trace` now picks `vm.source` or this
+cache based on the same `chunk.filename != vm.script` comparison glox's
+own `sourceLine` makes. Confirmed against real glox's output for the
+exact same failing call — file, line, function, *and* source-line text
+all now match exactly.
+
+**Regression coverage**: all 62 `vm`-package tests reverified individually.
+
+**Milestone check**: `python -m pytest tests/new_tests/ -q` — unchanged at
+207 passed / 23 failed / 14 skipped (no fixture exercises `colour.lox` or
+this specific stack-trace path, so this phase's own verification was
+entirely manual — documented here in full for that reason, not left to
+commit history alone).
 
 ## Phase 7 — Performance pass
 

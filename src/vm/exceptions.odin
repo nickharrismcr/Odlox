@@ -2,6 +2,7 @@ package vm
 
 import "../core"
 import "core:fmt"
+import "core:path/filepath"
 
 // try/except/finally at the VM level. The bytecode shape this reads is
 // documented in stmt.odin's try_except_statement; read that first.
@@ -268,7 +269,25 @@ append_stack_trace :: proc(vm: ^VM) {
 	}
 	line := function.chunk.lines[ip]
 	append(&vm.stack_trace, fmt.aprintf("File '%s', line %d, in %s", function.chunk.filename, line, where_name))
-	append(&vm.stack_trace, source_line(vm.source, line))
+	append(&vm.stack_trace, source_line(frame_source(vm, function.chunk.filename), line))
+}
+
+// frame_source picks the right source text to pull a trace's context
+// line from: vm.source directly if the frame belongs to vm's own
+// top-level script, or module_source_cache otherwise -- a frame can
+// belong to a function defined in an *imported* module, running as an
+// ordinary closure in this vm long after the sub-VM that originally
+// compiled that module's source went out of scope (see
+// module_source_cache's own doc comment, module.odin). Mirrors glox's
+// own sourceLine (vm.go), which makes the same script-vs-vm.script
+// comparison before falling back to its own process-wide module-source
+// map.
+@(private = "file")
+frame_source :: proc(vm: ^VM, chunk_filename: string) -> string {
+	if chunk_filename == vm.script {
+		return vm.source
+	}
+	return module_source_cache[filepath.stem(chunk_filename)]
 }
 
 // source_line extracts line n (1-indexed, matching every line number

@@ -1,0 +1,117 @@
+//
+// @file colour.lox
+// @brief Color utilities and constants for GLOX graphics programming
+// 
+// This module provides high-level color manipulation functions, predefined color constants,
+// and wrapper functions for native color utilities. It uses the native colour_utils module
+// for performance-critical operations while providing a convenient Lox interface.
+// 
+// Features:
+// - Predefined color constants (RED, GREEN, BLUE, etc.)
+// - Color manipulation functions (fade, tint, brightness, lerp)
+// - HSV to RGB conversion
+// - Random color generation
+// - Color scaling utilities
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+import random;
+import colour_utils;
+
+func scale_colour(colour, scalar) {
+    colour.r = int(colour.r * scalar);
+    colour.g = int(colour.g * scalar);
+    colour.b = int(colour.b * scalar);
+    return colour;
+}   
+ 
+ 
+
+ 
+func ColourFromEncoded(value) {
+    rgb= decode_rgb(value);
+    return vec4(rgb[0], rgb[1], rgb[2], 255);
+}
+
+const RED     = vec4(255, 0, 0, 255);
+const GREEN   = vec4(0, 255, 0, 255);
+const BLUE    = vec4(0, 0, 255, 255);
+const YELLOW  = vec4(255, 255, 0, 255);
+const CYAN    = vec4(0, 255, 255, 255);
+const MAGENTA = vec4(255, 0, 255, 255);
+const BLACK   = vec4(0, 0, 0, 255);
+const WHITE   = vec4(255, 255, 255, 255);
+const ORANGE  = vec4(255, 165, 0, 255);
+const TERRAIN_ORANGE = vec4(255, 150, 0, 255); // slightly dimmer than ORANGE; used for terrain-outline dots
+
+// Additional Raylib color constants
+const LIGHTGRAY  = vec4(200, 200, 200, 255);
+const GRAY       = vec4(130, 130, 130, 255);
+const DARKGRAY   = vec4(80, 80, 80, 255);
+const PINK       = vec4(255, 109, 194, 255);
+const MAROON     = vec4(190, 33, 55, 255);
+const LIME       = vec4(0, 158, 47, 255);
+const DARKGREEN  = vec4(0, 117, 44, 255);
+const SKYBLUE    = vec4(102, 191, 255, 255);
+const DARKBLUE   = vec4(0, 82, 172, 255);
+const PURPLE     = vec4(200, 122, 255, 255);
+const VIOLET     = vec4(135, 60, 190, 255);
+const DARKPURPLE = vec4(112, 31, 126, 255);
+const BEIGE      = vec4(211, 176, 131, 255);
+const BROWN      = vec4(127, 106, 79, 255);
+const DARKBROWN  = vec4(76, 63, 47, 255);
+const GOLD       = vec4(255, 203, 0, 255);
+const RAYWHITE   = vec4(245, 245, 245, 255);
+
+
+func primary_colours() {
+    return {
+        "red":     RED,
+        "green":   GREEN,
+        "blue":    BLUE,
+        "yellow":  YELLOW,
+        "cyan":    CYAN,
+        "magenta": MAGENTA,
+        "black":   BLACK,
+        "white":   WHITE
+    };
+}
+
+
+func random_rgb(){
+    // Use native builtin for better performance - returns vec4 directly
+    return colour_utils.random();
+}
+
+// Enhanced color manipulation functions
+// These will use native Raylib functions once implemented
+
+func fade(color, alpha) {
+    // Use native builtin with direct RGB values for better performance - returns vec4 directly
+    return colour_utils.fade(int(color.x), int(color.y), int(color.z), alpha);
+}
+
+func lerp(color1, color2, t) {
+    // Use native builtin with direct RGB values for better performance - returns vec4 directly
+    return colour_utils.lerp(int(color1.x), int(color1.y), int(color1.z), int(color2.x), int(color2.y), int(color2.z), t);
+}
+
+func brightness(color, factor) {
+    // Use native builtin for better performance - returns vec4 directly
+    return colour_utils.brightness(int(color.x), int(color.y), int(color.z), factor);
+}
+
+func tint(color, tint_color) {
+    // Use native builtin for better performance - returns vec4 directly
+    return colour_utils.tint(int(color.x), int(color.y), int(color.z), int(tint_color.x), int(tint_color.y), int(tint_color.z));
+}
+
+func hsv_to_rgb(h, s, v) {
+    // Use native builtin for HSV to RGB conversion - returns vec4 directly
+    return colour_utils.hsv_to_rgb(h, s, v);
+}
+
+ 
+
