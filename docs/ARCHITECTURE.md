@@ -29,10 +29,11 @@ do Y", that's this port's design decision.
 10. [VM dispatch loop & calling convention](#vm-dispatch-loop--calling-convention)
 11. [Exceptions](#exceptions)
 12. [Modules & imports](#modules--imports)
-13. [Native/builtin functions](#nativebuiltin-functions)
-14. [Bytecode cache (.lxc)](#bytecode-cache-lxc)
-15. [Test strategy](#test-strategy)
-16. [Performance: what Odin allows that Go didn't](#performance-what-odin-allows-that-go-didnt)
+13. [Debug tooling](#debug-tooling)
+14. [Native/builtin functions](#nativebuiltin-functions)
+15. [Bytecode cache (.lxc)](#bytecode-cache-lxc)
+16. [Test strategy](#test-strategy)
+17. [Performance: what Odin allows that Go didn't](#performance-what-odin-allows-that-go-didnt)
 
 ---
 
@@ -95,7 +96,7 @@ odlox/
 │   │                                            (imports core, compiler)
 │   ├── natives/              package natives — raylib-backed native objects/functions, Phase 6+
 │   │                                            (imports core, vm)
-│   └── debug/                package debug   — disassembler, execution tracer   (imports core)
+│   └── debug/                package debug   — disassembler, execution tracer   (imports core, vm)
 └── docs/
 ```
 
@@ -103,8 +104,18 @@ odlox/
 — keeping the repo root free for `README.md`/`ROADMAP.md`/`docs/`.)
 
 Dependency direction is a strict DAG, same as glox's:
-`core ← compiler ← vm ← natives`, with `debug` hanging off `core` alone and
-`main` at the top wiring everything together. No cycles anywhere.
+`core ← compiler ← vm ← natives`, with `main` at the top wiring everything
+together. No cycles anywhere. **One correction from the original plan,
+found while building Phase 5**: `debug` was planned to hang off `core`
+alone (a disassembler only needs `Chunk`/`Op_Code` to read bytecode), and
+`disassemble.odin` genuinely does only need `core`. But the *other* half
+of this phase — `Trace_Hook`/`Instrument_Hook`, which implement
+`vm.Debug_Hook` so `main.odin` can plug them straight into a running
+`VM.debug_hook` field — has to import `vm` to even name that type. Since
+`vm` doesn't import `debug` (nothing about running bytecode needs to know
+a disassembler exists), this is still a clean DAG, just one layer deeper
+than first planned: `core ← compiler ← vm ← debug`, with `natives` a
+sibling of `debug` off `vm` rather than the other way around.
 
 ### The one real translation wrinkle: `core.VMContext`
 
@@ -885,6 +896,70 @@ runtime through `import_module`, which:
 snapshot, copying each exported closure/class/native value into the
 importing scope and allocating it a fast global slot on the importing
 side — port as-is; no Go-specific behavior involved.
+
+---
+
+## Debug tooling
+
+Port of `src/debug/debug.go`. Two independent pieces, in one package but
+with different runtime costs, so they're gated differently.
+
+**The disassembler** (`disassemble_chunk`/`disassemble_instruction`, and
+`disassemble_program` — not in glox, added here since it's a natural fit
+once `Chunk` and `Function_Object` already exist) only needs `core` —
+no VM required to read bytecode, just like clox's own disassembler runs
+over a `Chunk` with no interpreter attached. `disassemble_program` walks
+a compiled script's *whole* function tree (every `func`/method/lambda is
+its own `Chunk`, stored as a `Function_Object` constant in its enclosing
+chunk — see [Chunk, opcodes, bytecode](#chunk-opcodes-bytecode)), not
+just the top-level one, with a visited-set guard against printing the
+same `Function_Object` twice.
+
+Two small additions beyond a bare port, both because the compiler
+already tracks the data and a debug tool is exactly where surfacing it
+earns its cost: `Get_Local`/`Set_Local`/`Inc_Local` print the local
+variable's *source name*, recovered from `Chunk.local_vars` (debug info
+`add_local`/`end_scope` were already recording for other reasons — see
+[Compiler](#compiler)) rather than just a bare slot number;
+`Get_Global`/`Set_Global`/`Define_Global(_Const)` resolve their slot to
+a name via `Chunk.global_names`. Both are lookups the disassembler does
+locally — they add no new state anywhere else.
+
+**The trace/instrument hooks** (`Trace_Hook`, `Instrument_Hook`) are a
+different matter: they implement `vm.Debug_Hook`
+(`proc(vm: ^VM, event: Debug_Event)`, fired from `run()`'s dispatch loop
+between opcodes and from `call()` on every call/return — see
+[VM dispatch loop](#vm-dispatch-loop--calling-convention)), so `debug`
+has to import `vm` to even name that type. This is the one place this
+phase's package layout diverges from the original plan — see
+[Package layout](#package-layout)'s note on why that's still a clean DAG.
+
+Gating matches glox's own hot-loop debug hook
+(`core.HotLoopDebugHookCompiled`, toggled by commenting/uncommenting a
+call site via a build shell script) in *intent* — compiled out of a
+release build entirely, not just skipped at runtime — but the mechanism
+is native to Odin rather than a script working around Go's lack of one:
+each hook proc's body is wrapped in `when ODIN_DEBUG { ... }`, Odin's own
+builtin constant that's true exactly when the binary is built with
+`-debug`. `run()`/`call()`'s call sites (`if vm.debug_hook != nil { ... }`)
+are unconditional either way — that check is cheap enough it isn't worth
+compiling out, and Phase 4 already needed it as the mechanism's on/off
+switch regardless of which hook (if any) is attached. What `when
+ODIN_DEBUG` actually removes from a release binary is the *work* each
+hook does when it fires: `Trace_Hook`'s per-step stack dump plus a full
+`disassemble_instruction` call, and `Instrument_Hook`'s counter
+increment — real, avoidable per-opcode cost if left in.
+
+`main.odin` exposes both through CLI flags (`--debug`, `--instrument`),
+plus `--compile-only` (compile, report, don't run — the milestone check
+[Phase 3](../ROADMAP.md) refers to), `--disassemble` (compile, dump via
+`disassemble_program`, don't run), `--info` (compile, print a size
+summary), and `--no-peephole` (toggles `compiler.DebugSkipPeephole`,
+combinable with any of the above). `--debug`/`--instrument` on a non-
+`-debug` build still set `vm.debug_hook` (there's no reason not to — the
+hook body itself is what's compiled out) but `main.odin` also prints one
+`when !ODIN_DEBUG`-gated note explaining why nothing will appear, so the
+flag fails informatively instead of silently doing nothing.
 
 ---
 

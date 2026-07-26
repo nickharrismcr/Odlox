@@ -1,7 +1,9 @@
 package main
 
-// CLI entry point: file execution, REPL, and the standalone
-// `--print-tokens` scanner smoke test kept from Phase 1.
+// CLI entry point: file execution, REPL, the standalone `--print-tokens`
+// scanner smoke test kept from Phase 1, and Phase 5's debug-tooling
+// flags (--compile-only, --disassemble, --info, --debug, --instrument,
+// --no-peephole).
 
 import "core:bufio"
 import "core:fmt"
@@ -9,7 +11,14 @@ import "core:os"
 import "core:strings"
 
 import "compiler"
+import "core"
+import "debug"
 import "vm"
+
+Options :: struct {
+	trace:      bool, // --debug: attach debug.Trace_Hook while running
+	instrument: bool, // --instrument: attach debug.Instrument_Hook, report the count after running
+}
 
 main :: proc() {
 	args := os.args[1:]
@@ -17,22 +26,70 @@ main :: proc() {
 		usage()
 	}
 
-	switch args[0] {
-	case "--print-tokens":
-		if len(args) != 2 {
+	opts: Options
+	mode := ""
+	file_path := ""
+
+	for a in args {
+		switch a {
+		case "-h", "--help":
 			usage()
+		case "--repl":
+			mode = "repl"
+		case "--print-tokens":
+			mode = "print-tokens"
+		case "--compile-only":
+			mode = "compile-only"
+		case "--disassemble":
+			mode = "disassemble"
+		case "--info":
+			mode = "info"
+		case "--debug":
+			opts.trace = true
+		case "--instrument":
+			opts.instrument = true
+		case "--no-peephole":
+			compiler.DebugSkipPeephole = true
+		case:
+			file_path = a
 		}
-		print_tokens_for_file(args[1])
-	case "--repl":
+	}
+
+	when !ODIN_DEBUG {
+		if opts.trace || opts.instrument {
+			fmt.eprintln("odlox: --debug/--instrument have no effect in this build (rebuild with `odin build src -debug`)")
+		}
+	}
+
+	switch mode {
+	case "repl":
 		repl()
-	case "-h", "--help":
-		usage()
+	case "print-tokens":
+		require_file(file_path)
+		print_tokens_for_file(file_path)
+	case "compile-only":
+		require_file(file_path)
+		compile_only(file_path)
+	case "disassemble":
+		require_file(file_path)
+		disassemble_file(file_path)
+	case "info":
+		require_file(file_path)
+		info_file(file_path)
 	case:
-		run_file(args[0])
+		require_file(file_path)
+		run_file(file_path, opts)
 	}
 }
 
-run_file :: proc(path: string) {
+@(private = "file")
+require_file :: proc(path: string) {
+	if path == "" {
+		usage()
+	}
+}
+
+run_file :: proc(path: string, opts: Options) {
 	data, err := os.read_entire_file_from_path(path, context.allocator)
 	if err != nil {
 		fmt.eprintfln("odlox: could not read %q: %v", path, err)
@@ -41,7 +98,19 @@ run_file :: proc(path: string) {
 	defer delete(data)
 
 	vm_instance := vm.new_vm(path)
+	if opts.trace {
+		vm_instance.debug_hook = debug.Trace_Hook
+	} else if opts.instrument {
+		debug.reset_instrument()
+		vm_instance.debug_hook = debug.Instrument_Hook
+	}
+
 	status, result := vm.interpret(vm_instance, string(data))
+
+	if opts.instrument {
+		fmt.eprintfln("odlox: %d instructions executed", debug.instruction_count())
+	}
+
 	switch status {
 	case .Compile_Error:
 		os.exit(65)
@@ -51,6 +120,87 @@ run_file :: proc(path: string) {
 	case .Ok:
 		fmt.println(result)
 	}
+}
+
+// compile_only reports whether path compiles, without running it --
+// the `odlox --compile-only` milestone check ROADMAP.md's Phase 3
+// section refers to.
+compile_only :: proc(path: string) {
+	fn, ok := compile_file(path)
+	if !ok {
+		os.exit(65)
+	}
+	_ = fn
+	fmt.println("OK")
+}
+
+// disassemble_file compiles path and dumps the full bytecode listing
+// (the top-level chunk plus every nested function's own chunk) without
+// running it -- Phase 5's primary deliverable, wired up.
+disassemble_file :: proc(path: string) {
+	fn, ok := compile_file(path)
+	if !ok {
+		os.exit(65)
+	}
+	debug.disassemble_program(fn)
+}
+
+// info_file compiles path and prints a compact summary rather than the
+// full instruction-by-instruction dump `--disassemble` gives -- a
+// quick "how big is this program" check. glox's own `--info`/`-i`
+// output isn't available to compare against in this workspace (glox
+// itself isn't checked out here, only the unrelated odin-lang/examples
+// reference), so this is this port's own reasonable definition of what
+// the flag should report, not a verified port of glox's exact format.
+info_file :: proc(path: string) {
+	fn, ok := compile_file(path)
+	if !ok {
+		os.exit(65)
+	}
+	functions, instructions, constants := program_stats(fn, {})
+	fmt.printfln("%s:", path)
+	fmt.printfln("  functions:    %d", functions)
+	fmt.printfln("  instructions: %d bytes", instructions)
+	fmt.printfln("  constants:    %d", constants)
+	fmt.printfln("  globals:      %d", fn.chunk.global_count)
+}
+
+@(private = "file")
+program_stats :: proc(fn: ^core.Function_Object, visited: map[^core.Function_Object]bool) -> (functions, instructions, constants: int) {
+	visited := visited
+	if visited[fn] {
+		return
+	}
+	visited[fn] = true
+	functions = 1
+	instructions = len(fn.chunk.code)
+	constants = len(fn.chunk.constants)
+	for v in fn.chunk.constants {
+		if v.type == .Obj && v.obj_type == .Function {
+			f2, i2, c2 := program_stats(core.as_function(v), visited)
+			functions += f2
+			instructions += i2
+			constants += c2
+		}
+	}
+	return
+}
+
+// compile_file reads and compiles path against a throwaway Environment
+// (nothing here runs the result, so there's no VM to size globals
+// against -- see interpret.odin's core.env_grow_globals call for why a
+// real run needs that extra step and this doesn't).
+@(private = "file")
+compile_file :: proc(path: string) -> (^core.Function_Object, bool) {
+	data, err := os.read_entire_file_from_path(path, context.allocator)
+	if err != nil {
+		fmt.eprintfln("odlox: could not read %q: %v", path, err)
+		os.exit(1)
+	}
+	defer delete(data)
+
+	env := core.make_environment(path)
+	return compiler.Compile(string(data), path, env)
 }
 
 // repl mirrors glox's own REPL behavior: prints every result except
@@ -169,6 +319,12 @@ usage :: proc() {
 Options:
   --repl              Start interactive REPL
   --print-tokens      Tokenize a file and print the token stream, then exit
+  --compile-only      Compile a file and report success/failure, then exit
+  --disassemble       Compile a file and print its full bytecode listing, then exit
+  --info              Compile a file and print a size summary, then exit
+  --debug             Attach a live execution trace while running (needs a -debug build)
+  --instrument        Count executed instructions while running (needs a -debug build)
+  --no-peephole       Disable the peephole optimizer
   -h, --help          Show this help`)
 	os.exit(1)
 }

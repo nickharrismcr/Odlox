@@ -465,15 +465,113 @@ Low-risk, mechanical — mostly useful as a debugging aid *for* Phase 3/4,
 so pull pieces of it forward as needed rather than treating it as strictly
 sequential.
 
-- [ ] `disassemble`/`disassemble_instruction` — one case per opcode,
-      byte/jump/constant operand formatting.
-- [ ] Execution trace hook (stack dump + disassembled instruction per
-      step) and instrument hook (instruction counter), gated the same way
-      glox gates its hot-loop hook: compiled out of the release build,
-      available in a debug build. Decide upfront whether Odin's `when`
-      compile-time conditionals are enough here (likely yes — no need for
-      glox's shell-script-mediated uncomment/recomment dance, since Odin
-      can gate the hook call behind a compile-time constant directly).
+- [x] `disassemble_chunk`/`disassemble_instruction`
+      (`src/debug/disassemble.odin`) — one case per opcode, byte/jump/
+      constant operand formatting, matching clox's own
+      `disassembleChunk`/`disassembleInstruction` shape (offset/line/
+      mnemonic columns, `->` for resolved jump targets). Also
+      `disassemble_program`, which isn't in clox: recurses into every
+      `Function_Object` constant in a chunk's constant pool so one call
+      dumps a whole compiled script, not just its top-level chunk (every
+      `func`/method/lambda is a separate `Chunk` stored as a constant —
+      see `obj_function.odin`). Two extras beyond a bare port, both
+      because this port already has the data on hand and a debugger is
+      exactly where it's worth showing: `Get_Local`/`Set_Local`/
+      `Inc_Local` print the local's *name*, not just its slot number,
+      recovered from `Chunk.local_vars` (debug info the compiler was
+      already recording — see `compiler_state.odin`'s `add_local`/
+      `end_scope`); `Get_Global`/`Set_Global`/`Define_Global(_Const)`
+      resolve the slot to a name via `Chunk.global_names`.
+- [x] Execution trace hook (`debug.Trace_Hook` — stack dump + the
+      about-to-execute instruction, once per step) and instrument hook
+      (`debug.Instrument_Hook` — an executed-instruction counter),
+      both implementing `vm.Debug_Hook` and both gated with `when
+      ODIN_DEBUG` inside the proc body: confirmed Odin's builtin
+      `ODIN_DEBUG` constant (true exactly when built with `-debug`) is
+      sufficient on its own, no separate flag or glox-style shell-script
+      uncomment/recomment dance needed, and no change to Phase 4's
+      hook-call sites either (`if vm.debug_hook != nil` was already the
+      only runtime cost of *having* the mechanism; `when ODIN_DEBUG`
+      is what makes actually *using* it disassemble-and-format nothing
+      in a release build). `main.odin`'s `--debug`/`--instrument` set
+      `vm.debug_hook` unconditionally either way, and print one
+      `when !ODIN_DEBUG` note if the flag will have no effect, so a
+      non-debug build fails informatively rather than silently.
+- [x] CLI flags wired (deferred from Phase 4, landed here alongside the
+      tooling they control): `--compile-only` (compile, report OK/exit
+      65, don't run), `--disassemble` (compile + `disassemble_program`,
+      don't run — the direct way to actually use this phase's
+      deliverable), `--info` (compile + a size summary: function/
+      instruction/constant/global counts — **this port's own definition
+      of what to report, not a verified port of glox's own `--info`**;
+      glox itself isn't checked out anywhere in this workspace to
+      compare against, only the unrelated `odin-lang/examples` reference
+      repo, so there was nothing to port *from* for this one flag's
+      exact output shape), `--debug` (attach `Trace_Hook` and run),
+      `--instrument` (attach `Instrument_Hook`, run, report the count),
+      `--no-peephole` (sets `compiler.DebugSkipPeephole`, combinable
+      with any of the above).
+- [x] `src/debug/disassemble_test.odin` (`odin test src/debug`) — 10
+      cases: a full walk of a kitchen-sink-program chunk (reusing
+      Phase 3's own smoke-test source) asserting the disassembler's
+      returned offsets land exactly on `len(code)` with no gap or
+      overrun for every opcode family the compiler can emit, a
+      `disassemble_program` recursion-into-nested-functions check, and
+      hand-built single-instruction width checks for every
+      non-obvious operand shape (`Except`, `Foreach`, `Next`,
+      `Jump_If_Defined`, `Import_From` both with names and with `*`).
+      All green.
+
+**Real bugs found and fixed while building this** (kept here, not just in
+commit history, for the same reason as Phases 3/4's lists):
+
+- `Get_Super` was initially classified as a zero-operand opcode (it
+  reads like one at a glance next to `Inherit`/`Get_Property`'s
+  neighbors) — it actually carries a one-byte name-constant operand
+  (`run.odin`'s `.Get_Super` case reads `fl.code[fl.f.ip]` before
+  calling `do_get_super`). Undetected, this would have desynced the
+  disassembler's offset tracking after every `super.name` reference in
+  any real program, corrupting every instruction printed after it.
+  Caught by cross-checking every opcode's handling in `run.odin`
+  directly rather than trusting the shape implied by its name; pinned
+  down by `test_get_super_instruction_is_one_operand_byte`.
+- `Get_Global`/`Set_Global`/`Define_Global`/`Define_Global_Const`'s
+  one-byte operand was initially formatted as a constant-pool index
+  (the same shape as `Get_Property`'s name operand, which *is* one) —
+  it's actually a slot number into `Environment.globals`, a completely
+  different index space than `Chunk.constants`. The two indices
+  coincide for simple scripts (global slots and constant-pool indices
+  both start at 0 and grow together when every early constant also
+  defines a global), which is exactly what made this easy to miss by
+  eyeballing a small disassembly and easy to get real garbage from on
+  a bigger one — one string constant that isn't also a global anywhere
+  earlier in the chunk is enough to make the two indices diverge and
+  the disassembler print the wrong name or panic out of range. Fixed
+  with a dedicated `global_instruction` formatter that resolves through
+  `Chunk.global_names` instead; pinned down by
+  `test_global_slot_is_not_a_constant_pool_index`, which deliberately
+  constructs exactly that diverging case.
+- The `Try`/`End_Try` jump-offset sign was initially copied from the
+  `Loop` case they sit next to in `Op_Code`'s declaration order
+  (backward jump, `sign = -1`) — both are actually forward jumps,
+  patched later by `patch_jump` as placeholders exactly like
+  `Jump`/`Jump_If_False` (see `stmt.odin`'s `try_except_statement`:
+  `emit_jump(p, .Try)`/`emit_jump(p, .End_Try)`, never `emit_loop`).
+  `Loop` is the only backward jump in that whole group. Caught by
+  checking the actual emission call, not just the opcode's position in
+  a `case` list next to superficially-similar jump opcodes.
+
+**Milestone check**: `odlox --disassemble` produces a correct,
+fully-resolved listing (jump targets, constant values, local/global
+names) for every construct Phase 3's kitchen-sink smoke test exercises,
+verified both by hand (run against real `.lox` scripts covering
+closures/classes/inheritance/loops/foreach/try-except-finally/imports —
+see the bugs list above) and by `disassemble_test.odin`'s automated
+full-chunk walk. `--debug`/`--instrument` verified against a `-debug`
+build showing live per-instruction stack traces and a correct executed-
+instruction count; verified separately that a non-debug build prints
+the explanatory note instead of running the (compiled-out) hooks
+silently.
 
 ## Phase 6 — Native/builtin functions & standard library
 
