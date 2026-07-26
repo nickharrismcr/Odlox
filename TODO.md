@@ -18,7 +18,14 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       image, then a real `physics_world` (a stub exists). The one remaining piece of Phase 6b — a separate,
       much larger effort (real windowing, a `vendor:raylib` dependency, a native object per raylib resource
       type).
-- [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only if the target use case needs them.
+- [ ] Remaining native modules glox has that this port doesn't (`re`, `pickle`, `process`, `inspect`) —
+      lowest priority, add only if needed. `thread`/`sync` are permanently out of scope, not on this list.
+- [ ] `.lox`-source stdlib modules still blocked on one of the above: `json.lox` (needs `re`), `pool.lox`
+      (needs both `process` and `thread` — its ProcessPool half is portable once `process` exists; its
+      ThreadPool half is permanently blocked). `plot_grey.lox`/`plot_rgb.lox`/`sprite.lox` are blocked on
+      raylib instead, tracked under the bullet above.
+- [ ] `colour.lox` — no longer blocked (needs only `random`/`colour_utils`, both implemented), just not
+      ported yet. Small, easy win whenever picked up; no test fixture exists for it in either repo yet.
 
 ## Phase 7 — Performance pass
 

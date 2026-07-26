@@ -639,8 +639,37 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       glox's own vec2/3/4 "methods beyond field access" turned out to be
       exactly one method (`.add()`), not the larger swizzle/vector-math
       surface this bullet originally assumed.
-- [ ] `regexp`, `pickle`, `process` modules — lowest priority; add only
-      if the target use case needs them. **Not started.**
+- [ ] Remaining native modules glox registers that this port doesn't yet
+      (`src/vm/builtin.go`'s full `makeBuiltInModule` list is the
+      authoritative inventory — cross-check against it, not this bullet,
+      if this list is ever suspected stale):
+      - [ ] `re` (regexp) — lowest priority; add only if the target use
+            case needs it. **Not started.**
+      - [ ] `pickle` — lowest priority. **Not started.**
+      - [ ] `process` — lowest priority. **Not started.**
+      - [ ] `inspect` — VM-introspection module (`src/debug/inspect.go`
+            in glox: dumps a call frame's locals/globals/args as a dict,
+            walking the frame chain via `prev_frame`). Self-contained,
+            not blocked on anything else this port lacks — this port
+            already tracks the same per-local debug info
+            (`Local_Var_Info`) glox's version reads from. **Not started.**
+      - `thread`/`sync` are **permanently out of scope** (see this file's
+        header) — not on this list to eventually finish, listed here only
+        so their absence is understood, not mistaken for an oversight.
+- [ ] `.lox`-source stdlib modules still blocked on one of the above
+      (Phase 6c ported everything that wasn't): `json.lox` (imports `re`),
+      `pool.lox` (imports both `process` and `thread` — its `ProcessPool`
+      class is portable once `process` exists; its `ThreadPool` class
+      is permanently blocked by `thread` being out of scope, so this
+      module can only ever be partially ported). `plot_grey.lox`/
+      `plot_rgb.lox`/`sprite.lox` remain blocked on raylib (`gfx` window/
+      drawing), tracked under the raylib-natives bullet above, not here.
+- [ ] `colour.lox` is no longer blocked as of Phase 6f (`colour_utils`
+      now registered) -- **not yet ported**, just no longer has a reason
+      not to be; a small, easy port whenever picked up (imports only
+      `random` and `colour_utils`, both already implemented; no test
+      fixture exists for it yet in either repo, so treat as an
+      unvalidated-by-suite addition same as any manually-verified one).
 - [x] `colour_utils`, other small utility modules. See Phase 6f.
 - [x] **Error call stack trace.** See Phase 6f -- implemented using the
       `source`/`stack_trace` fields already scaffolded (and forgotten)
@@ -983,6 +1012,11 @@ Phase 6b), `pool.lox` (imports `process`/`thread` — `thread` is
 permanently out of scope, `process` unregistered). All five are
 one-line `import` failures away from working once their native
 dependency exists, not separately broken.
+
+*Correction, Phase 6f*: `colour_utils` is registered now, so
+`colour.lox` is the one of these five no longer blocked on anything —
+not yet actually ported, just no longer has a reason not to be (see
+Phase 6's checklist above).
 
 **Real bugs found while porting these seven modules** (kept here, not
 just in commit history, for the same reason as every other phase's
