@@ -121,11 +121,18 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 // invoke: Op_Invoke's fast path. A field holding a callable shadows a
 // method of the same name (`this.fn(x)` calls the field value, not a
 // method called `fn`) -- checked first for instances, matching glox.
-invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
+// name is an already-interned ^core.String_Object throughout this file
+// (see properties.odin's get_property doc comment for why) -- the
+// String/List/Dict/Float_Array/Regex/Process builtin dispatch procs
+// below still take a plain string, since they switch on the name's
+// content rather than use it as a map key, so core.string_get(name) at
+// each of those call sites is a cheap, non-hashing conversion, not a
+// re-intern.
+invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int) -> bool {
 	receiver := peek(vm, arg_count)
 	#partial switch receiver.type {
 	case .Vec2, .Vec3, .Vec4:
-		return invoke_vector_method(vm, receiver, name, arg_count)
+		return invoke_vector_method(vm, receiver, core.string_get(name), arg_count)
 	}
 	if receiver.type != .Obj {
 		runtime_error(vm, "Only objects have methods.")
@@ -134,7 +141,7 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 	#partial switch receiver.obj_type {
 	case .Instance:
 		inst := core.as_instance(receiver)
-		if field_val, ok := inst.fields[core.intern_string(name)]; ok {
+		if field_val, ok := inst.fields[name]; ok {
 			vm.stack[vm.stack_top - arg_count - 1] = field_val
 			return call_value(vm, field_val, arg_count)
 		}
@@ -142,19 +149,19 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 	case .Class:
 		return invoke_from_class(vm, core.as_class(receiver), name, arg_count, true)
 	case .List:
-		return invoke_builtin_list(vm, core.as_list(receiver), name, arg_count)
+		return invoke_builtin_list(vm, core.as_list(receiver), core.string_get(name), arg_count)
 	case .Dict:
-		return invoke_builtin_dict(vm, core.as_dict(receiver), name, arg_count)
+		return invoke_builtin_dict(vm, core.as_dict(receiver), core.string_get(name), arg_count)
 	case .String:
-		return invoke_builtin_string(vm, core.as_string(receiver), name, arg_count)
+		return invoke_builtin_string(vm, core.as_string(receiver), core.string_get(name), arg_count)
 	case .Float_Array:
-		return invoke_builtin_float_array(vm, core.as_float_array(receiver), name, arg_count)
+		return invoke_builtin_float_array(vm, core.as_float_array(receiver), core.string_get(name), arg_count)
 	case .Regex_Pattern:
-		return invoke_builtin_regex_pattern(vm, core.as_regex_pattern(receiver), name, arg_count)
+		return invoke_builtin_regex_pattern(vm, core.as_regex_pattern(receiver), core.string_get(name), arg_count)
 	case .Regex_Match:
-		return invoke_builtin_regex_match(vm, core.as_regex_match(receiver), name, arg_count)
+		return invoke_builtin_regex_match(vm, core.as_regex_match(receiver), core.string_get(name), arg_count)
 	case .Process:
-		return invoke_builtin_process(vm, core.as_process(receiver), name, arg_count)
+		return invoke_builtin_process(vm, core.as_process(receiver), core.string_get(name), arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;
@@ -167,15 +174,15 @@ invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
 		// to "Undefined method" regardless of whether the member
 		// existed.
 		mod := core.as_module(receiver)
-		fn, found := core.env_get_var(mod.environment, core.intern_string(name))
+		fn, found := core.env_get_var(mod.environment, name)
 		if !found {
-			runtime_error(vm, "Undefined module property '%s'.", name)
+			runtime_error(vm, "Undefined module property '%s'.", core.string_get(name))
 			return false
 		}
 		vm.stack[vm.stack_top - arg_count - 1] = fn
 		return call_value(vm, fn, arg_count)
 	}
-	runtime_error(vm, "Undefined method '%s'.", name)
+	runtime_error(vm, "Undefined method '%s'.", core.string_get(name))
 	return false
 }
 
@@ -228,16 +235,15 @@ invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_co
 	return false
 }
 
-invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: string, arg_count: int, is_static: bool) -> bool {
-	key := core.intern_string(name)
+invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object, arg_count: int, is_static: bool) -> bool {
 	method_val, ok := core.Value{}, false
 	if is_static {
-		method_val, ok = class.static_methods[key]
+		method_val, ok = class.static_methods[name]
 	} else {
-		method_val, ok = class.methods[key]
+		method_val, ok = class.methods[name]
 	}
 	if !ok {
-		runtime_error(vm, "Undefined method '%s'.", name)
+		runtime_error(vm, "Undefined method '%s'.", core.string_get(name))
 		return false
 	}
 	return call(vm, core.as_closure(method_val), arg_count)
@@ -246,10 +252,10 @@ invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: string, arg_
 // bind_method implements property access to a method value (not a
 // call): `instance.method` without `()` produces a Bound_Method_Object
 // pairing the receiver with the unbound closure.
-bind_method :: proc(vm: ^VM, class: ^core.Class_Object, name: string) -> bool {
-	method_val, ok := class.methods[core.intern_string(name)]
+bind_method :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object) -> bool {
+	method_val, ok := class.methods[name]
 	if !ok {
-		runtime_error(vm, "Undefined property '%s'.", name)
+		runtime_error(vm, "Undefined property '%s'.", core.string_get(name))
 		return false
 	}
 	bound := core.make_bound_method_object(peek(vm, 0), core.as_closure(method_val))

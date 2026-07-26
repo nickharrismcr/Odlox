@@ -9,17 +9,32 @@ import "../core"
 // going through the general Object property machinery, since a vector
 // isn't an Obj-carrying Value kind the same way (see core/value.odin).
 
-get_property :: proc(vm: ^VM, name: string) -> bool {
+// get_property/set_property/bind_method/invoke/invoke_from_class all take
+// name as an already-interned ^core.String_Object, not a plain string.
+// Every call site (run.odin's Get_Property/Set_Property/Invoke/
+// Super_Invoke/Get_Super cases) reads name straight off a bytecode
+// constant that the compiler already interned when it emitted it
+// (compiler/expr.odin's dot -> core.make_string_value); a plain-string
+// signature here meant every single property/method access re-hashed
+// that name's full content against the global intern table just to
+// re-derive the exact pointer already sitting in the constant pool --
+// real, measured cost, found via the Phase 7b benchmark baseline
+// (trees/binary_trees, both property-access-heavy, were the only two
+// benchmarks where odlox lost to glox; glox avoids this entirely by
+// caching the interned id on the constant at compile time). Passing the
+// pointer through turns every one of these into a single map lookup
+// keyed by pointer identity, same as glox's int-keyed fast path.
+get_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	receiver := peek(vm, 0)
 
 	#partial switch receiver.type {
 	case .Vec2, .Vec3, .Vec4:
-		return get_vec_swizzle(vm, receiver, name)
+		return get_vec_swizzle(vm, receiver, core.string_get(name))
 	case .Obj:
 		#partial switch receiver.obj_type {
 		case .Instance:
 			inst := core.as_instance(receiver)
-			if v, ok := inst.fields[core.intern_string(name)]; ok {
+			if v, ok := inst.fields[name]; ok {
 				pop(vm)
 				push(vm, v)
 				return true
@@ -28,22 +43,22 @@ get_property :: proc(vm: ^VM, name: string) -> bool {
 		case .Class:
 			class := core.as_class(receiver)
 			for c := class; c != nil; c = c.super {
-				if v, ok := c.statics[core.intern_string(name)]; ok {
+				if v, ok := c.statics[name]; ok {
 					pop(vm)
 					push(vm, v)
 					return true
 				}
 			}
-			runtime_error(vm, "Undefined static property '%s'.", name)
+			runtime_error(vm, "Undefined static property '%s'.", core.string_get(name))
 			return false
 		case .Module:
 			mod := core.as_module(receiver)
-			if v, ok := core.env_get_var(mod.environment, core.intern_string(name)); ok {
+			if v, ok := core.env_get_var(mod.environment, name); ok {
 				pop(vm)
 				push(vm, v)
 				return true
 			}
-			runtime_error(vm, "Undefined module property '%s'.", name)
+			runtime_error(vm, "Undefined module property '%s'.", core.string_get(name))
 			return false
 		}
 	}
@@ -170,29 +185,29 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 	return true
 }
 
-set_property :: proc(vm: ^VM, name: string) -> bool {
+set_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	receiver := peek(vm, 1)
 	value := peek(vm, 0)
 
 	#partial switch receiver.type {
 	case .Vec2, .Vec3, .Vec4:
-		return set_vec_swizzle(vm, receiver, name, value)
+		return set_vec_swizzle(vm, receiver, core.string_get(name), value)
 	case .Obj:
 		#partial switch receiver.obj_type {
 		case .Instance:
-			core.as_instance(receiver).fields[core.intern_string(name)] = value
+			core.as_instance(receiver).fields[name] = value
 			pop(vm)
 			pop(vm)
 			push(vm, value)
 			return true
 		case .Class:
-			core.as_class(receiver).statics[core.intern_string(name)] = value
+			core.as_class(receiver).statics[name] = value
 			pop(vm)
 			pop(vm)
 			push(vm, value)
 			return true
 		case .Module:
-			core.env_set_var(core.as_module(receiver).environment, core.intern_string(name), value)
+			core.env_set_var(core.as_module(receiver).environment, name, value)
 			pop(vm)
 			pop(vm)
 			push(vm, value)
@@ -255,7 +270,7 @@ do_class_var :: proc(vm: ^VM, name: string) {
 
 // do_get_super: stack is [..., this_value, superclass_value] (see
 // compiler/expr.odin's super_).
-do_get_super :: proc(vm: ^VM, name: string) -> bool {
+do_get_super :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	super := core.as_class(pop(vm))
 	return bind_method(vm, super, name)
 }
@@ -264,7 +279,7 @@ do_get_super :: proc(vm: ^VM, name: string) -> bool {
 // superclass_value]. Popping the superclass value leaves exactly
 // [this_value, args...] -- the same shape invoke_from_class/call expect
 // for any ordinary method call, so it can reuse that path directly.
-do_super_invoke :: proc(vm: ^VM, name: string, arg_count: int) -> bool {
+do_super_invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int) -> bool {
 	super := core.as_class(pop(vm))
 	return invoke_from_class(vm, super, name, arg_count, false)
 }

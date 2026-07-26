@@ -385,7 +385,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			name_const := fl.code[fl.f.ip]
 			arg_count := int(fl.code[fl.f.ip + 1])
 			fl.f.ip += 2
-			name := core.string_get(core.as_string(fl.constants[name_const]))
+			name := core.as_string(fl.constants[name_const])
 			if invoke(vm, name, arg_count) {
 				fl = refresh_frame(vm)
 			}
@@ -393,7 +393,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			name_const := fl.code[fl.f.ip]
 			arg_count := int(fl.code[fl.f.ip + 1])
 			fl.f.ip += 2
-			name := core.string_get(core.as_string(fl.constants[name_const]))
+			name := core.as_string(fl.constants[name_const])
 			if do_super_invoke(vm, name, arg_count) {
 				fl = refresh_frame(vm)
 			}
@@ -486,15 +486,15 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Get_Property:
 			name_const := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			get_property(vm, core.string_get(core.as_string(fl.constants[name_const])))
+			get_property(vm, core.as_string(fl.constants[name_const]))
 		case .Set_Property:
 			name_const := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			set_property(vm, core.string_get(core.as_string(fl.constants[name_const])))
+			set_property(vm, core.as_string(fl.constants[name_const]))
 		case .Get_Super:
 			name_const := fl.code[fl.f.ip]
 			fl.f.ip += 1
-			do_get_super(vm, core.string_get(core.as_string(fl.constants[name_const])))
+			do_get_super(vm, core.as_string(fl.constants[name_const]))
 
 		// --- foreach (see foreach.odin) ---
 		case .Foreach:
