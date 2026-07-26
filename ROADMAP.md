@@ -186,10 +186,9 @@ structures and the load-bearing subtleties.
 - [x] Panic-mode error recovery (`synchronize`) + REPL-specific
       compilation (`Repl_State` persistence across lines, via
       `Compile_Repl`).
-- [ ] `--print-tokens`/disassembly hooks wired for debugging the compiler
-      itself. `--print-tokens` already exists (Phase 1); a real
-      bytecode disassembler is Phase 5's job — deferred there rather
-      than duplicated early, per the roadmap's original sequencing.
+- [x] `--print-tokens`/disassembly hooks wired for debugging the compiler
+      itself. `--print-tokens` since Phase 1; `--disassemble` since
+      Phase 5's disassembler landed.
 - [x] Compiler-level unit tests (`src/compiler/compile_test.odin`,
       `odin test src/compiler`) — 58 cases, including a "kitchen sink"
       smoke test exercising classes/inheritance/closures/control-flow/
@@ -365,18 +364,14 @@ and [Garbage collector](docs/ARCHITECTURE.md#garbage-collector).
       and the trailing `Nil` for that one case specifically; not
       attempted here. Global-slot persistence *across* REPL lines (the
       part `Repl_State` exists for) does work correctly.
-- [ ] Error/panic reporting: stack traces with source-line context, using
-      `Chunk.lines` for line numbers. **Not built** — errors currently
-      just carry a message string (`vm.error_msg`), with no call-stack
-      trace attached. A real gap, deferred alongside Phase 5's debug
-      tooling since a proper trace wants the disassembler infrastructure
-      that phase builds anyway.
+- [x] Error/panic reporting: stack traces with source-line context, using
+      `Chunk.lines` for line numbers. Built in Phase 6f (`exceptions.odin`'s
+      `append_stack_trace`/`source_line`, `vm.odin`'s `print_stack_trace`),
+      well after this bullet's original Phase 3-era placement — deferred
+      far longer than "alongside Phase 5" first assumed.
 - [x] CLI flags: `--repl`, `--print-tokens` (kept from Phase 1), file
       execution as the default. `--compile-only`/`--debug`/`--info`/
-      `--no-peephole` **not wired to CLI flags yet** (`DebugSkipPeephole`
-      exists as a package variable, toggled directly by tests, but
-      nothing exposes it on the command line) — deferred to Phase 5
-      alongside the debug hooks those flags would actually control.
+      `--no-peephole`/`--disassemble` all wired since Phase 5.
 
 **Real bugs found and fixed while building this** (kept here, not just in
 commit history, for the same reason as Phase 3's list — genuine gotchas a
@@ -1649,44 +1644,67 @@ Phase 7/8, or whenever active porting work winds down for good). While
 porting was actively in progress, comments narrating *how a piece of code
 came to be the way it is* — which phase added it, which fixture found a
 bug in it, what the wrong behavior used to be, why an earlier attempt was
-replaced — were genuinely valuable working notes (this is by design; see
-the established working-pattern memory this project runs on: "document
-real bugs found, honestly"). That value is time-limited. Once the port is
-done, a reader of this codebase (very possibly not someone who lived
-through the port) needs comments that explain the architecture and
-behavior *as it stands*, not an archaeology of how it got there — the
-same bar glox's own comments already meet (terse, functional, describes
-what a piece of code does/why it's shaped that way, nothing about its own
-history). Compare any glox file — `src/vm/vm.go`, `src/compiler/compile.go`
-— against this port's current `.odin` files for the contrast this phase
-needs to close.
+replaced, how this compares to or deviates from glox's own version — were
+genuinely valuable working notes (this is by design; see the established
+working-pattern memory this project runs on: "document real bugs found,
+honestly"). That value is time-limited. Once the port is done, a reader
+of this codebase (very possibly not someone who lived through the port,
+and not assumed to have glox open in another window) needs comments that
+explain *this* interpreter's architecture and behavior on its own terms —
+not an archaeology of how it got there, and not a running comparison
+against another codebase. Comments should read as if this interpreter had
+simply been written this way from the start, the same bar glox's own
+comments already meet for glox itself (terse, functional, describes what
+a piece of code does/why it's shaped that way, full stop — no reference
+to its own history, and no reference to any other implementation).
+
+The comparison-to-glox discussion — what was ported faithfully, what
+deliberately deviates and why, what's a known limitation relative to
+glox — isn't discarded, just relocated: that's exactly what
+`docs/ARCHITECTURE.md` already exists to hold (it currently carries a
+substantial amount of this material inline in source comments too;
+that's the duplication this phase removes from the source side). Anything
+in a source comment that's really making an architectural case belongs
+there instead, cross-referenced (`see docs/ARCHITECTURE.md's <section>`)
+rather than re-argued in place.
 
 - [ ] Read through every `.odin` file under `src/` and rewrite comments
       that reference: phase numbers ("Phase 4", "Phase 6d", ...), this
       port's own name ("this port", "odlox" used reflexively rather than
       just naming the thing), specific pytest/fixture names that found a
       bug, "real bug, found via...", before/after behavior descriptions,
-      or anything else that reads as a changelog entry rather than a
-      description of current architecture/functionality.
-- [ ] Keep the comments that carry real, still-load-bearing information a
-      glox-style comment would also carry: *why* code is shaped a
-      particular way when the reason isn't obvious from reading it (a
-      genuine invariant, a non-obvious bytecode/VM contract, a deliberate
-      deviation from glox's own design and the actual technical reason
-      for it). Cutting the narrative framing doesn't mean cutting the
-      substance — "X must happen before Y because Z" survives; "found
-      this was broken via fixture W in phase N" doesn't.
+      comparisons to glox ("matches glox's X", "unlike glox", "glox does
+      Y but this doesn't"), or anything else that reads as a changelog
+      entry or a comparison rather than a plain description of this
+      interpreter's current architecture/functionality.
+- [ ] Keep the comments that carry real, still-load-bearing information
+      about *this* codebase, stated on its own terms: *why* code is
+      shaped a particular way when the reason isn't obvious from reading
+      it (a genuine invariant, a non-obvious bytecode/VM contract) —
+      stated as a fact about how this interpreter works, not as a diff
+      against glox. Cutting the narrative/comparison framing doesn't mean
+      cutting the substance — "X must happen before Y because Z" survives
+      regardless of phrasing; "found this was broken via fixture W in
+      phase N" and "unlike glox, which does X, this does Y" don't, though
+      the underlying fact (if still relevant) may need to survive as a
+      plain, un-attributed statement ("code assumes Y").
+- [ ] Migrate anything genuinely worth keeping from the comparison-to-glox
+      material into `docs/ARCHITECTURE.md` before deleting it from source
+      — don't just delete a deviation's rationale outright if it isn't
+      already captured there.
 - [ ] Don't do this piecemeal alongside ordinary feature work before this
       phase — every phase section above this one *deliberately* documents
-      its own bugs/fixtures/history in ROADMAP.md precisely so the
-      in-code comments don't have to carry that weight forever; doing the
-      cleanup only once, at the end, avoids fighting an ongoing stream of
-      new narrative comments from concurrent work.
+      its own bugs/fixtures/history/glox-comparisons in ROADMAP.md
+      precisely so the in-code comments don't have to carry that weight
+      forever; doing the cleanup only once, at the end, avoids fighting
+      an ongoing stream of new narrative comments from concurrent work.
 - [ ] Spot-check a representative file from each package (`core`,
-      `compiler`, `vm`, `debug`, `natives`, `main.odin`) against the
-      equivalent glox file side by side once done, as a rough calibration
-      check that the tone actually landed where glox's own comments sit,
-      not just "shorter than before."
+      `compiler`, `vm`, `debug`, `natives`, `main.odin`) once done: could
+      someone who has never seen glox and doesn't care that it exists
+      read this file and understand the architecture and behavior from
+      the comments alone? That's the actual bar — "shorter than before"
+      or "no longer mentions glox" are necessary but not sufficient
+      checks on their own.
 
 ---
 
