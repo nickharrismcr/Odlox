@@ -1641,6 +1641,53 @@ for why this is deferred rather than ported alongside Phase 4.
       renamed equivalent).
 - [ ] `--force-compile`-equivalent CLI flag.
 
+## Phase 9 (final, do last) — Comment cleanup pass
+
+Not a feature phase — a housekeeping pass over every `.odin` source file,
+done only once the port is otherwise feature-complete and stable (after
+Phase 7/8, or whenever active porting work winds down for good). While
+porting was actively in progress, comments narrating *how a piece of code
+came to be the way it is* — which phase added it, which fixture found a
+bug in it, what the wrong behavior used to be, why an earlier attempt was
+replaced — were genuinely valuable working notes (this is by design; see
+the established working-pattern memory this project runs on: "document
+real bugs found, honestly"). That value is time-limited. Once the port is
+done, a reader of this codebase (very possibly not someone who lived
+through the port) needs comments that explain the architecture and
+behavior *as it stands*, not an archaeology of how it got there — the
+same bar glox's own comments already meet (terse, functional, describes
+what a piece of code does/why it's shaped that way, nothing about its own
+history). Compare any glox file — `src/vm/vm.go`, `src/compiler/compile.go`
+— against this port's current `.odin` files for the contrast this phase
+needs to close.
+
+- [ ] Read through every `.odin` file under `src/` and rewrite comments
+      that reference: phase numbers ("Phase 4", "Phase 6d", ...), this
+      port's own name ("this port", "odlox" used reflexively rather than
+      just naming the thing), specific pytest/fixture names that found a
+      bug, "real bug, found via...", before/after behavior descriptions,
+      or anything else that reads as a changelog entry rather than a
+      description of current architecture/functionality.
+- [ ] Keep the comments that carry real, still-load-bearing information a
+      glox-style comment would also carry: *why* code is shaped a
+      particular way when the reason isn't obvious from reading it (a
+      genuine invariant, a non-obvious bytecode/VM contract, a deliberate
+      deviation from glox's own design and the actual technical reason
+      for it). Cutting the narrative framing doesn't mean cutting the
+      substance — "X must happen before Y because Z" survives; "found
+      this was broken via fixture W in phase N" doesn't.
+- [ ] Don't do this piecemeal alongside ordinary feature work before this
+      phase — every phase section above this one *deliberately* documents
+      its own bugs/fixtures/history in ROADMAP.md precisely so the
+      in-code comments don't have to carry that weight forever; doing the
+      cleanup only once, at the end, avoids fighting an ongoing stream of
+      new narrative comments from concurrent work.
+- [ ] Spot-check a representative file from each package (`core`,
+      `compiler`, `vm`, `debug`, `natives`, `main.odin`) against the
+      equivalent glox file side by side once done, as a rough calibration
+      check that the tone actually landed where glox's own comments sit,
+      not just "shorter than before."
+
 ---
 
 ## Testing every phase
