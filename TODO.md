@@ -39,17 +39,18 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       `rectangle`/`circle`/`circle_fill`/`draw_texture`/`draw_texture_pro`/`get_texture`, each drawn
       directly on the render texture rather than through `win.begin_texture_mode`), `win.BLEND_*`/`WRAP_*`/
       `KEY_*` constants, `gfx.shader()` (+ `win.begin_shader_mode`/`end_shader_mode`), `render_texture.draw_array_fast`,
-      and `gfx.lox_julia_array` are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k/6l/6m/6p/6q) — verified
-      both by scripted smoke tests (open a real window, exercise every method, close cleanly; no way to
-      visually confirm rendered output from here) and by actually running several real example scripts
-      (`lox_examples/defender` with its real `pngs/` art copied from `d:/go/glox/lox_examples/defender/pngs/`;
-      `tile_planes.lox`; `cobweb-bifurc.lox`; `kaleido.lox`; `julia.lox`, now running end to end) to a live
-      loop under a bounded wall-clock timeout with zero crashes (no display access here, so a *visual*
-      correctness check still needs a human look). Still outstanding, each its own real chunk of work:
-      `render_texture.text()`, `gfx.lox_mandel_array` (`mandel_gfx.lox`'s equivalent of `lox_julia_array`,
-      confirmed as its one remaining gap now that `draw_array_fast` is done), `camera`/`batch`/
-      `batch_instanced`, 3D drawing, `draw_array`. `d:/odin/glox_reference/src/builtin/` is the ground truth
-      for each (`obj_builtin_camera.go`+`camera_methods.go`,
+      `gfx.lox_julia_array`, and `gfx.lox_mandel_array` are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k/6l/
+      6m/6p/6q/6r/6s) — verified both by scripted smoke tests (open a real window, exercise every method,
+      close cleanly; no way to visually confirm rendered output from here) and by actually running several
+      real example scripts (`lox_examples/defender` with its real `pngs/` art copied from
+      `d:/go/glox/lox_examples/defender/pngs/`; `tile_planes.lox`; `cobweb-bifurc.lox`; `kaleido.lox`;
+      `julia.lox`; `mandel_gfx.lox` — the last two now both running end to end) to a live loop under a
+      bounded wall-clock timeout with zero crashes (no display access here, so a *visual* correctness check
+      still needs a human look). `lox_julia_array`/`lox_mandel_array` are both parallelized across CPU cores
+      (`core:thread`, one worker per core, row-band split — see Phase 6r/6s), verified deterministic (not
+      just crash-free) by diffing repeated runs cell-by-cell. Still outstanding, each its own real chunk of
+      work: `render_texture.text()`, `camera`/`batch`/`batch_instanced`, 3D drawing, `draw_array`.
+      `d:/odin/glox_reference/src/builtin/` is the ground truth for each (`obj_builtin_camera.go`+`camera_methods.go`,
       `obj_builtin_batch.go`+`batch_methods.go`, `obj_builtin_batch_instanced.go`+
       `batch_instanced_methods.go`, `builtin_draw.go` for `lox_julia_array`/`draw_array_fast`).
 - [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are

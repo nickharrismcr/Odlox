@@ -2451,6 +2451,47 @@ iterations, 10 calls averaged, release build — 168ms/call single-threaded (mea
 `num_workers = 1`, then reverting) vs. 17.8ms/call parallel, ≈9.4× on this machine. `lox_examples/julia.lox`
 re-verified running its full loop clean under both build modes afterward. `pytest` held at 220/0/26.
 
+### Phase 6s: `gfx.lox_mandel_array`, parallel from the start, and `mandel_gfx.lox` running end to end
+
+Trigger: direct follow-on request — do the same for the Mandelbrot equivalent (`mandel_gfx.lox`'s one
+remaining gap, noted in Phase 6q), with threading built in from the start rather than added afterward.
+
+**`natives/gfx_mandel.odin`** (new file): ported from glox's own `MandelArrayBuiltIn`/`mandelbrotCalcBlock`.
+Two real differences from `lox_julia_array`, both confirmed against glox's source rather than assumed by
+similarity to the Julia version:
+
+- **Argument order**: `(array, height, width, max_iterations, xoffset, yoffset, scale)` — height before
+  width, offsets before scale. Confirmed against `mandel_gfx.lox`'s actual call site, not just the Go
+  source, since it genuinely differs from `lox_julia_array`'s own `(array, width, height, ..., scale,
+  xoffset, yoffset)`.
+- **`f64` precision throughout**, not `f32` like the Julia version. glox's own source comment calls this out
+  specifically ("better precision in deep zooms") — `mandel_gfx.lox`'s whole premise is a continuous
+  `scale *= zoom_speed` zoom every frame, so this is load-bearing for the effect not visibly degrading into
+  blocky artifacts partway through a long zoom, not a stylistic carryover.
+
+Also ports two performance-critical early-exit paths from glox's `mandelbrotCalcBlock`, both classification
+shortcuts that never change the *result*, only how fast a non-escaping point gets recognized as such: a
+closed-form main-cardioid/period-2-bulb membership test (skipped once the zoom is deep enough — `scale <
+1e-5` — that the test itself becomes the bottleneck for no benefit), and periodicity detection (after 20
+iterations, compare the current orbit position against one and two iterations back; a provably cyclic orbit
+never escapes, so it's reclassified as `max_iteration` immediately instead of spinning out the rest of the
+iteration budget). Color-table indexing also differs from Julia's: `color_table[(iteration*2) % max_iteration]`,
+not plain `color_table[iteration]` — matches glox's own `mandelbrotCalcBlock` exactly. The six-band gradient
+table itself and the RGB packing helper are duplicated rather than shared with `gfx_julia.odin` — identical
+today, but each is free to diverge independently, matching how glox itself has these as two separate call
+sites of one shared Go function rather than a hard coupling worth an abstraction to preserve here.
+
+**Parallelized the same way as `lox_julia_array`** from the outset (flat row bands, one per CPU core,
+`core:thread`'s `create_and_start_with_poly_data`/`destroy`) — see Phase 6r's own reasoning for why this is
+safe without any VM/GC interaction; nothing about that reasoning is specific to the Julia calculation.
+
+**Verified**: the identical call run 5 times against 5 separate `float_array`s with identical inputs, diffed
+every cell, repeated across 3 separate process runs — zero mismatches, including a deep-zoom (`scale < 1e-5`)
+case that specifically exercises the cardioid/bulb-test-skipped branch. `lox_examples/mandel_gfx.lox`,
+unmodified, now runs its full real-time zoom loop under a bounded wall-clock smoke test (`timeout 8`, both
+build modes) with zero crashes and no orphaned process — the same script that previously stopped at the very
+first `lox_mandel_array` call. `pytest` held at 220/0/26 throughout; both build modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

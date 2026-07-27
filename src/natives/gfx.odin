@@ -34,6 +34,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "render_texture", gfx_render_texture)
 	vm.define_builtin(v, "gfx", "shader", gfx_shader)
 	vm.define_builtin(v, "gfx", "lox_julia_array", gfx_lox_julia_array)
+	vm.define_builtin(v, "gfx", "lox_mandel_array", gfx_lox_mandel_array)
 }
 
 // window_created mirrors glox's own package-level `windowCreated` bool
