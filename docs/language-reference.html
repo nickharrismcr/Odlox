@@ -1813,7 +1813,27 @@ print counter   // always exactly 20</code></pre>
 
 <!-- ==================== PERFORMANCE ==================== -->
 <h2 class="section" id="performance">Performance notes</h2>
-<p>Across the ported loxcraft benchmark suite, odlox is generally slower than CPython — roughly 1.5–5× depending on the benchmark, worst on object/dictionary-heavy code — except on tight numeric loops, where it matches or beats CPython outright. Key implementation notes for writing fast Lox:</p>
+<p>The loxcraft benchmark suite (13 scripts covering arithmetic, object/class dispatch, collections, and recursion) measured against CPython, release builds, 3 runs averaged each:</p>
+<table>
+<thead><tr><th>benchmark</th><th>odlox</th><th>CPython</th><th>odlox / CPython</th></tr></thead>
+<tbody>
+<tr><td><code>binary_trees</code></td><td>23.59s</td><td>7.40s</td><td>3.19×</td></tr>
+<tr><td><code>collections</code></td><td>5.33s</td><td>2.95s</td><td>1.81×</td></tr>
+<tr><td><code>equality</code></td><td>27.68s</td><td>20.86s</td><td>1.33×</td></tr>
+<tr><td><code>fib</code></td><td>10.11s</td><td>9.17s</td><td>1.10×</td></tr>
+<tr><td><code>instantiation</code></td><td>33.19s</td><td>22.38s</td><td>1.48×</td></tr>
+<tr><td><code>invocation</code></td><td>8.82s</td><td>9.38s</td><td>0.94×</td></tr>
+<tr><td><code>loop</code></td><td>2.60s</td><td>3.59s</td><td>0.72×</td></tr>
+<tr><td><code>method_call</code></td><td>12.68s</td><td>8.82s</td><td>1.44×</td></tr>
+<tr><td><code>properties</code></td><td>11.49s</td><td>8.09s</td><td>1.42×</td></tr>
+<tr><td><code>string_equality</code></td><td>22.02s</td><td>17.49s</td><td>1.26×</td></tr>
+<tr><td><code>trees</code></td><td>26.75s</td><td>6.90s</td><td>3.88×</td></tr>
+<tr><td><code>zoo</code></td><td>10.32s</td><td>10.10s</td><td>1.02×</td></tr>
+<tr><td><code>zoo_batch</code></td><td>10.01s</td><td>10.02s</td><td>1.00×</td></tr>
+</tbody>
+</table>
+<p>A ratio below 1.00× means odlox is faster. Across the suite: 1.58× arithmetic mean, 1.41× geometric mean, 1.49× by total time. odlox is at or ahead of CPython on <code>loop</code>, <code>invocation</code>, and <code>zoo</code>/<code>zoo_batch</code>; furthest behind on <code>binary_trees</code>/<code>trees</code> (deep object-tree construction and traversal) and <code>collections</code> (dict-heavy code) — the object-model and hash-map-heavy end of the suite.</p>
+<p>Key implementation notes for writing fast Lox:</p>
 <ul>
 <li>Prefer <a href="#control-flow"><code>foreach (i in range(n))</code></a> over manual counter loops — <code>range</code> is a native iterator.</li>
 <li>Use <a href="#batch"><code>batch</code></a> / <a href="#batch-instanced"><code>batch_instanced</code></a> for large numbers of similar primitives instead of per-object draw calls.</li>
