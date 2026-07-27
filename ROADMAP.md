@@ -2162,20 +2162,21 @@ end_frame)`, `win.draw_texture_rect(...)`).
    so would turn a silent content bug into a hard crash for a script that has always run, just not quite as
    its author intended.
 
-**`lox_examples/defender` itself is not runnable to a *visual* conclusion from here** — its own asset
-directory (`pngs/*.png`, ~15 files) does not exist anywhere in `glox_reference` either (confirmed: not a
-copying mistake, the source repo genuinely ships the game without its art assets). What *was* verified,
-honestly bounded the same way Phase 6j's window work was: with 15 throwaway placeholder PNGs (not committed —
-purely local, deleted after the test), `main.lox` under `LOX_PATH=<repo root>` resolves every one of its ~30
-imports, constructs the full game object graph (entity manager, player, camera, radar, mountains, particle
-system, bullet pool, sprite/texture loading), enters the real `while (!win.should_close() and !game.done)`
-game loop, and runs it under a real raylib window for a bounded 6-second wall-clock window (`timeout 6`) with
-**zero crashes, zero uncaught exceptions, and no orphaned process afterward** — the process was still running
-cleanly when forcibly terminated by the timeout, not stopped by an error. That confirms the whole engine-side
-surface this phase built (texture/image/render_texture, sprite animation, window 2D+texture drawing, blend
-mode, module resolution) is correct and load-bearing for a real, non-trivial game; it does **not** confirm
-correct on-screen visual output (no display access here), and cannot confirm anything about the missing art
-assets since they were never real to begin with.
+**`lox_examples/defender`'s own art assets (`pngs/*.png`, 18 files) don't exist in `glox_reference`** — that
+clone genuinely ships the game without them, not a copying mistake. They *do* exist in `d:/go/glox`, the
+user's separately-maintained, actively-developed glox working copy (`d:/go/glox/lox_examples/defender/pngs/`)
+— copied verbatim from there once found, same directory structure. First verified engine-correctness with 15
+throwaway placeholder PNGs (not committed, deleted immediately after that test) before the real assets were
+known to exist anywhere; re-verified afterward with the real ones. Either way: `main.lox` under
+`LOX_PATH=<repo root>` resolves every one of its ~30 imports, constructs the full game object graph (entity
+manager, player, camera, radar, mountains, particle system, bullet pool, sprite/texture loading), enters the
+real `while (!win.should_close() and !game.done)` game loop, and runs it under a real raylib window for a
+bounded 6-second wall-clock window (`timeout 6`) with **zero crashes, zero uncaught exceptions, and no
+orphaned process afterward** — the process was still running cleanly when forcibly terminated by the timeout,
+not stopped by an error. That confirms the whole engine-side surface this phase built (texture/image/
+render_texture, sprite animation, window 2D+texture drawing, blend mode, module resolution) is correct and
+load-bearing for a real, non-trivial game, now with its actual intended art; it does **not** confirm correct
+on-screen visual output — no display access here, so that still needs an actual human look.
 
 Full `pytest` regression held at 220/0/26 throughout every fix in this phase (checked after each one, not
 just at the end). Both build modes (`bin/build.sh` / `bin/build.sh --release`) compiled cleanly throughout.

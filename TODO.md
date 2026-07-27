@@ -37,9 +37,10 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       `begin_blend_mode`/`end_blend_mode`) are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k) — verified
       both by scripted smoke tests (open a real window, exercise every method, close cleanly; no way to
       visually confirm rendered output from here) and by actually running `lox_examples/defender`, a real
-      multi-file game, to a live game loop under a bounded wall-clock timeout with zero crashes (see Phase
-      6k; its own art assets don't exist in the source repo, so a *visual* run isn't possible from here
-      either way). Still outstanding, each its own real chunk of work: `shader`/`camera`/`batch`/
+      multi-file game, with its real `pngs/` art (copied from `d:/go/glox/lox_examples/defender/pngs/`, not
+      present in `glox_reference`), to a live game loop under a bounded wall-clock timeout with zero crashes
+      (see Phase 6k; no display access here, so a *visual* correctness check still needs a human look).
+      Still outstanding, each its own real chunk of work: `shader`/`camera`/`batch`/
       `batch_instanced`, 3D drawing, shader modes, blend-mode *constants* (`win.BLEND_ADD` etc. — the
       methods exist, the named constants don't yet), `draw_array`. `d:/odin/glox_reference/src/builtin/` is
       the ground truth for each (`obj_builtin_shader.go`, `obj_builtin_camera.go`+`camera_methods.go`,
