@@ -1821,7 +1821,7 @@ print counter   // always exactly 20</code></pre>
 <li>Move hot per-object simulation into native types where available (e.g. <a href="#physics-world"><code>physics_world</code></a>) rather than per-object Lox method dispatch.</li>
 <li>Strings are interned; equality and method/global lookup use integer IDs.</li>
 </ul>
-<p>Interpreter-level optimisations include a reduced 32-byte <code>Value</code> struct, slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>OP_ADD_II</code>/<code>OP_ADD_FF</code>), inline call frames, and a hoisted dispatch-loop frame context.</p>
+<p>Interpreter-level optimisations include a 16-byte <code>Value</code> struct, slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>Add_Ii</code>/<code>Add_Ff</code>/<code>Incr_Const_I</code>/<code>Incr_Const_F</code>), a monomorphic inline cache on property/method access, inline call frames, and a hoisted dispatch-loop frame context.</p>
 
 <footer>
 <p>odlox Language Reference. For implementation details (package layout, value/object representation, GC design) see <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
