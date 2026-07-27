@@ -32,38 +32,20 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `physics_world`, `gfx.window()` + core 2D drawing, `texture`/`image`/
-      `render_texture` (+ `win.draw_texture*`/`draw_texture_pro`/`begin_texture_mode`/`end_texture_mode`/
-      `draw_render_texture`/`draw_render_texture_ex`/`begin_blend_mode`/`end_blend_mode`, plus
-      `render_texture`'s own mirrored 2D primitives — `clear`/`pixel`/`line`/`line_ex`/`triangle`/
-      `rectangle`/`circle`/`circle_fill`/`draw_texture`/`draw_texture_pro`/`get_texture`, each drawn
-      directly on the render texture rather than through `win.begin_texture_mode`), `win.BLEND_*`/`WRAP_*`/
-      `KEY_*` constants, `gfx.shader()` (+ `win.begin_shader_mode`/`end_shader_mode`), `render_texture.draw_array_fast`,
-      `gfx.lox_julia_array`, and `gfx.lox_mandel_array` are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k/6l/
-      6m/6p/6q/6r/6s) — verified both by scripted smoke tests (open a real window, exercise every method,
-      close cleanly; no way to visually confirm rendered output from here) and by actually running several
-      real example scripts (`lox_examples/defender` with its real `pngs/` art copied from
-      `d:/go/glox/lox_examples/defender/pngs/`; `tile_planes.lox`; `cobweb-bifurc.lox`; `kaleido.lox`;
-      `julia.lox`; `mandel_gfx.lox` — the last two now both running end to end) to a live loop under a
-      bounded wall-clock timeout with zero crashes (no display access here, so a *visual* correctness check
-      still needs a human look). `lox_julia_array`/`lox_mandel_array` are both parallelized across CPU cores
-      (`core:thread`, one worker per core, row-band split — see Phase 6r/6s), verified deterministic (not
-      just crash-free) by diffing repeated runs cell-by-cell. Still outstanding, each its own real chunk of
-      work: `render_texture.text()`, `camera`/`batch`/`batch_instanced`, 3D drawing, `draw_array`.
-      `d:/odin/glox_reference/src/builtin/` is the ground truth for each (`obj_builtin_camera.go`+`camera_methods.go`,
-      `obj_builtin_batch.go`+`batch_methods.go`, `obj_builtin_batch_instanced.go`+
-      `batch_instanced_methods.go`, `builtin_draw.go` for `lox_julia_array`/`draw_array_fast`).
-- [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are
-      tested; `wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
+- [ ] Raylib-backed natives: `render_texture.text()`, `camera`, `batch`/`batch_instanced`, 3D drawing,
+      `draw_array`. `d:/odin/glox_reference/src/builtin/` is the ground truth for each
+      (`obj_builtin_camera.go`+`camera_methods.go`, `obj_builtin_batch.go`+`batch_methods.go`,
+      `obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
+- [ ] `process.wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused
       — see `ROADMAP.md`'s Phase 6h section). `test_process.py`/`test_pool.py` are skipped at the whole-file
-      level pending this. `thread`/`sync` remain permanently out of scope, not on this list.
-- [ ] `pool.lox` — blocked on the parked `process.wait_any()` bug above (its `ProcessPool` class needs it
-      working correctly); its `ThreadPool` class is permanently blocked by `thread` being out of scope, so
-      this module can only ever be partially ported even once `wait_any` is fixed. `plot_grey.lox`/
-      `plot_rgb.lox` are blocked on `gfx.draw_png(filename, float_array, is_rgb)` (`builtin_draw.go` in
-      glox — not yet ported, a `float_array`-to-PNG-file writer, separate from the `image`/`texture`/
-      `render_texture` work above); `sprite.lox` is done (Phase 6k), no longer blocked.
+      level pending this. `thread`/`sync` remain permanently out of scope, not tracked here.
+- [ ] `pool.lox`'s `ProcessPool` class is blocked on the `process.wait_any()` bug above; its `ThreadPool`
+      class is permanently blocked by `thread` being out of scope, so this module can only ever be partially
+      ported even once `wait_any` is fixed.
+- [ ] `plot_grey.lox`/`plot_rgb.lox` are blocked on `gfx.draw_png(filename, float_array, is_rgb)`
+      (`builtin_draw.go` in glox — a `float_array`-to-PNG-file writer, separate from the `image`/`texture`/
+      `render_texture` work).
 
 ## Phase 7 — Performance pass
 
