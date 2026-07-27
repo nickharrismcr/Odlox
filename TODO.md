@@ -32,10 +32,12 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 Only after Phases 1–6 are correct and green against the test suite.
 
-- [ ] Confirm the raw-pointer `ip`/stack-top change (Phase 4) actually measures as a win. **Correction: this
-      was never implemented, not just unconfirmed** — `docs/ARCHITECTURE.md` documents it as the design intent
-      but `run.odin`/`vm.odin` still use plain `int` index fields (`fl.f.ip`, `vm.stack_top`), not raw pointer
-      locals. Needs to actually be built, then measured.
+- [ ] `stack_top` hoist — deliberately not done alongside the `ip` hoist (Phase 7d): `push`/`pop`/`peek` are
+      called from a dozen+ files outside `run.odin` (`arithmetic.odin`, `properties.odin`, `call.odin`,
+      natives, ...), all reading/writing the canonical `vm.stack_top` field directly; a `run()`-local mirror
+      would only help the handful of opcodes handled inline in the switch and need a sync before every
+      called-out proc otherwise — much smaller payoff than `ip` got for meaningfully more risk. Revisit only
+      if profiling specifically implicates it.
 - [ ] Object-model cost (map-backed instance fields/methods, `core/obj_instance.odin`'s
       `fields: map[^String_Object]Value`, `core/obj_class.odin`'s `methods`/`statics` maps) is odlox's last
       remaining relative weak spot: after the redundant-intern fix (Phase 7c), `trees`/`binary_trees` improved

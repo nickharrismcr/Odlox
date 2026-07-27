@@ -1836,9 +1836,9 @@ for the full reasoning behind each item; this is the checklist form.
       `-cpuprofile`/`-memprofile` workflow (`core:prof`, or manual
       `time.now()` bracketing plus an allocation counter) against `trees`/
       `method_call`/`fib`/`loop`-equivalent benchmarks.
-- [ ] Build the raw-pointer `ip`/stack-top change (Phase 4 always
-      documented this as done; it never actually was — see Phase 7a
-      below), then measure it.
+- [x] Hoist `ip` as a genuine loop-local in `run()` (Phase 4 always
+      documented this as done; it never actually was) — see Phase 7d
+      below. `stack_top` deliberately left as-is; see the `TODO.md` entry.
 - [x] Stop re-interning already-interned property/method names on every
       `Op_Get_Property`/`Op_Set_Property`/`Op_Invoke`/`Op_Super_Invoke`/
       `Op_Get_Super` access — see Phase 7c below.
@@ -2085,6 +2085,85 @@ pattern over raw allocation cost being the residual driver — but this is
 an inference from the benchmark shapes, not something isolated by
 profiling. That's the compile-time-baked instance field slots item in
 `TODO.md`/the checklist above, still open.
+
+### Phase 7d: hoist `ip` as a genuine loop-local, not a pointer-chased frame field
+
+Built the item `docs/ARCHITECTURE.md`'s VM dispatch loop section had
+described since it was written but that was never actually implemented
+(`run.odin`/`vm.odin` still used a plain `int` field on `Call_Frame`,
+read/written through the `fl.f` pointer on every single opcode and
+operand byte) — see Phase 7a's discovery of this gap during the mandel
+investigation.
+
+**Design deviation from the doc, deliberate**: the doc calls for a raw
+`ip: ^u8` pointer local specifically, reasoning Go can't do this safely
+(no raw-pointer-into-slice idiom) but Odin can. True, but beside the
+point here: under `-no-bounds-check` (already the release flag,
+`bin/build.sh`), `fl.code[ip]` for a hoisted `int` local and `ip^`/
+`ip[0]` for a hoisted `^u8` compile to identical pointer arithmetic —
+bounds checking, not pointer-vs-int, is the only thing that idiom was
+ever buying in C/clox. Implemented as a hoisted `int` instead: same
+"genuine local, not a struct field reached through a pointer, for the
+loop's whole body" property the doc was actually after, with zero
+conversion needed anywhere else in the codebase that already treats ip
+as a plain integer offset (`exceptions.odin`'s stack-trace/handler
+matching, `debug/inspect.odin`'s frame introspection natives, `debug/
+trace.odin`'s disassembler) — a literal pointer would have needed
+pointer-difference conversions at every one of those sites for no
+measurable benefit.
+
+**Correctness**: before writing any code, exhaustively grepped every
+reader of `Call_Frame.ip` outside `run.odin` to enumerate every point
+that needed a sync, rather than discovering gaps by trial and error:
+`exceptions.odin` (stack-trace building reads it, handler dispatch
+writes it — both only reachable via `raise_exception`, called from
+exactly two places in `run.odin`), `debug/inspect.odin` (reads it, only
+reachable via the `inspect` native module through `Op_Invoke`), `debug/
+trace.odin` (reads it only on `.Opcode` events, never `.Return`).
+Confirmed this is the complete set. Sync discipline: `fl.f.ip` is
+written from the local `ip` immediately before every call that could
+transitively read or reposition this frame's ip while suspended
+(`call_value`/`invoke`/`do_super_invoke`, `raise_exception` at both call
+sites, `do_foreach`/`do_next`, and the per-opcode and per-return debug
+hook checks), and read back into `ip` immediately after every existing
+`refresh_frame()` call — the same points the code already synchronized
+frame state at, just now also carrying `ip`.
+
+**Verification**: full `pytest` regression unchanged (218 passed / 0
+failed / 26 skipped) and the isolated `odin test` sweep across
+compiler/vm/core (170/170) both passed cleanly before this was
+considered done — given the size of this change (every opcode case in
+`run.odin` touched), correctness was verified deliberately, not assumed
+from a clean build alone.
+
+**Result** (3-run baseline vs. after, same fixture):
+
+| benchmark | before | after |
+|---|---|---|
+| equality | 0.65x | **0.50x** |
+| invocation | 0.70x | 0.67x |
+| properties | 0.69x | 0.67x |
+| trees | 1.14x | 1.19x |
+| zoo | 0.66x | 0.69x |
+| (everything else) | ~unchanged | ~unchanged |
+
+Smaller and more mixed than Phase 7c's fix: one clear win (`equality`,
+a pure comparison loop with no property access at all — exactly the
+shape that benefits most from cheaper per-instruction dispatch and
+nothing else), most benchmarks flat within run-to-run noise, `trees`/
+`zoo` nudged slightly worse (plausibly just GC/allocation timing
+variance on multi-second runs, not a real regression — not re-measured
+further since neither move is large enough to warrant chasing). Tracks
+with the design-deviation reasoning above: since `-no-bounds-check`
+already captured most of what "raw pointer vs int" would have bought,
+this fix's real contribution was narrower than hoped — removing the
+`fl.f` double indirection, not eliminating bounds checks that were
+already off.
+
+`stack_top` was deliberately not hoisted alongside `ip` — see the
+`TODO.md` entry for why (push/pop/peek's call sites span far more of
+the codebase than ip's readers do, for a much smaller and murkier
+payoff).
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 
