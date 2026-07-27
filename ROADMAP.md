@@ -2311,6 +2311,36 @@ black-screen symptom is actually gone on screen -- this bug was only found at al
 watching the output, and the same kind of look is what would confirm the fix, not a bounded background run.
 `pytest` held at 220/0/26; both build modes compiled cleanly.
 
+### Phase 6o: `vec2/3/4.set(...)`, an odlox-only addition
+
+Trigger: a direct follow-on from the `kaleido.lox`/`tile_planes.lox` allocation-reduction work and the GC
+discussion around it. Both scripts had `Foo.update()` methods hand-rewritten to mutate `this.lastp.x`/
+`this.lastp.y` in place instead of reallocating a fresh `vec2(...)` every frame — a correct but awkward
+two-line workaround. `.set(x, y[, z[, w]])` gives scripts a real API for that instead.
+
+**Not a glox port** — glox's own `VectorMethodCall` (`vm.go`) gives vec2/3/4 exactly one method, `.add(other)`;
+there is no `.set()` anywhere in glox. Added as a genuine new capability, documented as such rather than
+silently presented as ported behavior.
+
+**Implementation** (`vm/call.odin`'s `invoke_vector_method`): extends the *same* function `.add()` already
+lives in, not a new opcode. Considered and rejected: Lox has no static types, so nothing at compile time can
+tell `expr.set(...)` apart from a call to some unrelated user-defined class's own `set` method (nothing stops
+a script writing `class Foo { set(a,b) {...} }`) — only a runtime check of the receiver's actual type can,
+which is exactly what `invoke()`'s existing dispatch into this function already provides for `.add()`. A
+dedicated opcode would need to perform that identical runtime check anyway, so it would just be the same
+logic behind different bytecode plumbing, not a real simplification. `.set()` mutates all fields in place and
+leaves the receiver on the stack as its own return value, matching `.add()`'s exact calling convention (pop
+just the arguments, not a separate collapse-and-push result). Wrong arg count or a non-numeric argument falls
+through to the same generic `"Invalid use of '.' operator"` fallback `.add()` already uses, for consistency.
+
+**Verified**: a smoke test confirmed `.set()` on all three vec types, confirmed a user-defined class's own
+`set()` method is untouched (dispatch only ever reaches `invoke_vector_method` for an actual Vec2/3/4
+receiver), and confirmed genuine in-place mutation (not silent reallocation) via reference-identity: a second
+variable aliasing the same vector observed the mutation. `kaleido.lox`'s `Pen.update()` and
+`tile_planes.lox`'s `Line.update()` were both updated to use `this.lastp.set(...)` in place of their earlier
+workarounds; both re-verified running clean under the same bounded smoke test. `pytest` held at 220/0/26;
+both build modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

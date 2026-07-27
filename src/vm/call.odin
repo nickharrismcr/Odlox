@@ -208,16 +208,31 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 	return false
 }
 
-// invoke_vector_method mirrors glox's own VectorMethodCall (vm.go)
-// exactly: the only method a vec2/3/4 supports at all is `.add(other)` --
-// in-place addition with an argument of the *same* vec type, mutating
-// the receiver and leaving it on the stack as its own return value
-// (popping just the one argument, matching the receiver+args -> single-
-// return-value convention every other Invoke path follows). Anything
-// else -- wrong arg count, a mismatched vec type, or any other method
-// name -- is "Invalid use of '.' operator", matching glox's own fallback
-// error exactly. `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/`.a` on Vec4) are
-// a separate, already-implemented Get/Set_Property fast path
+// invoke_vector_method mirrors glox's own VectorMethodCall (vm.go): the
+// only method glox itself gives a vec2/3/4 is `.add(other)` -- in-place
+// addition with an argument of the *same* vec type, mutating the
+// receiver and leaving it on the stack as its own return value (popping
+// just the argument(s), matching the receiver+args -> single-return-value
+// convention every other Invoke path follows).
+//
+// `.set(x, y[, z[, w]])` below is an odlox-only addition, not a glox
+// port -- glox has no equivalent. Added so a script can update an
+// existing vector's components in place (`this.lastp.set(this.pos.x,
+// this.pos.y)`) instead of allocating a fresh `vec2(...)`/etc. every
+// time, the same low-allocation idiom `.add()` already enables for
+// accumulation. Deliberately dispatched through this exact same runtime
+// type-checked path rather than a dedicated opcode: Lox has no static
+// types, so nothing at compile time can tell `expr.set(...)` apart from
+// a call to some unrelated user-defined class's own `set` method --
+// only checking the receiver's actual runtime type (as this whole
+// function already does for `.add()`) can, which is exactly what
+// Op_Invoke's existing dispatch in `invoke()` above already provides.
+//
+// Anything else -- wrong arg count, a mismatched vec type on `.add()`,
+// a non-numeric argument to `.set()`, or any other method name -- is
+// "Invalid use of '.' operator", matching glox's own fallback error
+// exactly. `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/`.a` on Vec4) are a
+// separate, already-implemented Get/Set_Property fast path
 // (properties.odin) -- not method calls, so not handled here.
 @(private = "file")
 invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_count: int) -> bool {
@@ -250,6 +265,51 @@ invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_co
 				r.w += o.w
 				pop(vm)
 				return true
+			}
+		}
+	} else if name == "set" {
+		#partial switch receiver.type {
+		case .Vec2:
+			if arg_count == 2 {
+				x_val, y_val := peek(vm, 1), peek(vm, 0)
+				if core.is_number(x_val) && core.is_number(y_val) {
+					r := core.as_vec2(receiver)
+					r.x = core.as_float(x_val)
+					r.y = core.as_float(y_val)
+					pop(vm)
+					pop(vm)
+					return true
+				}
+			}
+		case .Vec3:
+			if arg_count == 3 {
+				x_val, y_val, z_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+				if core.is_number(x_val) && core.is_number(y_val) && core.is_number(z_val) {
+					r := core.as_vec3(receiver)
+					r.x = core.as_float(x_val)
+					r.y = core.as_float(y_val)
+					r.z = core.as_float(z_val)
+					pop(vm)
+					pop(vm)
+					pop(vm)
+					return true
+				}
+			}
+		case .Vec4:
+			if arg_count == 4 {
+				x_val, y_val, z_val, w_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+				if core.is_number(x_val) && core.is_number(y_val) && core.is_number(z_val) && core.is_number(w_val) {
+					r := core.as_vec4(receiver)
+					r.x = core.as_float(x_val)
+					r.y = core.as_float(y_val)
+					r.z = core.as_float(z_val)
+					r.w = core.as_float(w_val)
+					pop(vm)
+					pop(vm)
+					pop(vm)
+					pop(vm)
+					return true
+				}
 			}
 		}
 	}
