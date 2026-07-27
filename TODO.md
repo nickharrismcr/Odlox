@@ -32,16 +32,17 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `physics_world` and `gfx.window()` + core 2D drawing (lifecycle, frame
-      begin/end, input, pixel/line/line_ex/triangle/rectangle/circle/circle_fill/text) are both complete
-      (see `ROADMAP.md`'s Phase 6i/6j) — verified by a scripted smoke test that opens a real window, draws
-      every primitive for 10 frames, and closes cleanly (no way to visually confirm rendered output from
-      here; genuinely untested beyond "runs without crashing/hanging and issues the right raylib calls" —
-      a human should eyeball it at least once). Still outstanding, each its own real chunk of work:
-      `texture`/`shader`/`camera`/`render_texture`/`image`/`batch`/`batch_instanced`, 3D drawing,
-      blend/shader modes, `draw_array`. `d:/odin/glox_reference/src/builtin/` is the ground truth for each
-      (`obj_builtin_texture.go`+`texture_methods.go`, `obj_builtin_shader.go`, `obj_builtin_camera.go`+
-      `camera_methods.go`, `obj_builtin_render_texture.go`+`render_texture_methods.go`,
+- [ ] Raylib-backed natives: `physics_world`, `gfx.window()` + core 2D drawing, and `texture`/`image`/
+      `render_texture` (+ `win.draw_texture*`/`begin_texture_mode`/`end_texture_mode`/`draw_render_texture`/
+      `begin_blend_mode`/`end_blend_mode`) are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k) — verified
+      both by scripted smoke tests (open a real window, exercise every method, close cleanly; no way to
+      visually confirm rendered output from here) and by actually running `lox_examples/defender`, a real
+      multi-file game, to a live game loop under a bounded wall-clock timeout with zero crashes (see Phase
+      6k; its own art assets don't exist in the source repo, so a *visual* run isn't possible from here
+      either way). Still outstanding, each its own real chunk of work: `shader`/`camera`/`batch`/
+      `batch_instanced`, 3D drawing, shader modes, blend-mode *constants* (`win.BLEND_ADD` etc. — the
+      methods exist, the named constants don't yet), `draw_array`. `d:/odin/glox_reference/src/builtin/` is
+      the ground truth for each (`obj_builtin_shader.go`, `obj_builtin_camera.go`+`camera_methods.go`,
       `obj_builtin_batch.go`+`batch_methods.go`, `obj_builtin_batch_instanced.go`+
       `batch_instanced_methods.go`).
 - [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are
@@ -52,7 +53,9 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 - [ ] `pool.lox` — blocked on the parked `process.wait_any()` bug above (its `ProcessPool` class needs it
       working correctly); its `ThreadPool` class is permanently blocked by `thread` being out of scope, so
       this module can only ever be partially ported even once `wait_any` is fixed. `plot_grey.lox`/
-      `plot_rgb.lox`/`sprite.lox` are blocked on raylib instead, tracked under the raylib bullet above.
+      `plot_rgb.lox` are blocked on `gfx.draw_png(filename, float_array, is_rgb)` (`builtin_draw.go` in
+      glox — not yet ported, a `float_array`-to-PNG-file writer, separate from the `image`/`texture`/
+      `render_texture` work above); `sprite.lox` is done (Phase 6k), no longer blocked.
 
 ## Phase 7 — Performance pass
 

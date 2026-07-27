@@ -51,6 +51,9 @@ Object_Type :: enum u8 {
 
 	Physics_World,
 	Window,
+	Image,
+	Texture,
+	Render_Texture,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -137,6 +140,15 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		return fmt.aprintf("<PhysicsWorld [%d bodies]>", physics_world_count(pw), allocator = allocator)
 	case .Window:
 		return "<window>"
+	case .Image:
+		i := cast(^Image_Object)obj
+		return fmt.aprintf("<Image %dx%d>", i.width, i.height, allocator = allocator)
+	case .Texture:
+		t := cast(^Texture_Object)obj
+		return fmt.aprintf("<Texture %dx%d>", t.width, t.height, allocator = allocator)
+	case .Render_Texture:
+		rt := cast(^Render_Texture_Object)obj
+		return fmt.aprintf("<RenderTexture %dx%d>", rt.width, rt.height, allocator = allocator)
 	}
 	return "<unknown>"
 }

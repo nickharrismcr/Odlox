@@ -3,6 +3,7 @@ package vm
 import "../core"
 import "core:os"
 import "core:text/regex"
+import rl "vendor:raylib"
 
 // Mark-and-sweep collector -- the design blueprint is
 // docs/ARCHITECTURE.md's Garbage collector section, itself carried over
@@ -348,6 +349,25 @@ free_object :: proc(obj: ^core.Obj) {
 		delete(w.contact_sets[0])
 		delete(w.contact_sets[1])
 		free(w)
+	case .Image:
+		// A deliberate improvement over glox, which never frees the
+		// underlying rl.Image at all (ImageObject has no GCFree/unload) --
+		// safe here because Image's own Lox-facing surface (width/height)
+		// never touches pixel data again once a Texture has been built
+		// from it, so freeing it when unreachable changes no observable
+		// behavior. See core/obj_image.odin's header comment.
+		img := cast(^core.Image_Object)obj
+		rl.UnloadImage(img.image)
+		free(img)
+	case .Texture:
+		t := cast(^core.Texture_Object)obj
+		core.texture_unload(t) // no-op if already .unload()ed, see obj_texture.odin
+		delete(t.frame_rects)
+		free(t)
+	case .Render_Texture:
+		rt := cast(^core.Render_Texture_Object)obj
+		core.render_texture_unload(rt) // no-op if already .unload()ed
+		free(rt)
 	case:
 		free(obj)
 	}
@@ -396,6 +416,16 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		// memory the growth heuristic should actually see.
 		w := cast(^core.Physics_World_Object)obj
 		return size_of(core.Physics_World_Object) + len(w.pos_x) * (6 * size_of(f64) + size_of(core.Shape) + size_of(int) + 2 * size_of(bool))
+	case .Image:
+		// Dominated by the CPU-side pixel buffer, same reasoning as
+		// Float_Array/Physics_World above.
+		img := cast(^core.Image_Object)obj
+		return size_of(core.Image_Object) + img.width * img.height * 4
+	case .Texture:
+		t := cast(^core.Texture_Object)obj
+		return size_of(core.Texture_Object) + len(t.frame_rects) * size_of(rl.Rectangle)
+	case .Render_Texture:
+		return size_of(core.Render_Texture_Object)
 	case:
 		return 32
 	}

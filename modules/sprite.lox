@@ -1,0 +1,65 @@
+from gfx import *
+
+//
+// @file sprite.lox
+// @brief Sprite management system for GLOX graphics
+// 
+// This module provides a Sprite class for managing 2D graphics sprites with
+// support for animation, positioning, and texture management. Useful for
+// 2D games and graphics applications.
+// 
+// Classes:
+// - Sprite - 2D sprite with position, texture, and animation support
+// 
+// Features:
+// - Load sprites from image files
+// - Multi-frame animation support
+// - Position management and movement
+// - Texture frame selection and animation timing
+// 
+// @author GLOX Project
+// @date 2025
+//
+
+class Sprite {
+
+    init(pos, img, frames, start_frame, end_frame) { 
+        this.pos = pos
+        this.width = img.width()
+        this.height = img.height() 
+        this.texture = texture(img,frames,start_frame,end_frame)
+    }
+    move(newpos) {
+      this.pos=newpos 
+    }
+    animate(ticksperframe) {
+        this.texture.animate(ticksperframe)
+    }
+    get_texture() {
+        return this.texture
+    }
+    // Draw the sprite's first frame as a grid of tiles, each pushed away from the
+    // centre by the `disperse` factor: disperse == 1 reassembles the sprite,
+    // larger values scatter it. Ported from pixeldraw_disperse() in the Lua
+    // original; used for NPC materialise (disperse falling 50 -> 1) and explode
+    // (disperse rising 1 -> 60). (sx, sy) is the assembled sprite's top-left on screen.
+    draw_disperse(win, sx, sy, disperse, tint) {
+        var w = this.texture.frame_width()
+        var h = this.texture.height()
+        var cols = 8
+        var rows = 8
+        var tw = w / cols
+        var th = h / rows
+        var cx = sx + w / 2
+        var cy = sy + h / 2
+        foreach (var i in range(0, cols)) {
+            foreach (var j in range(0, rows)) {
+                var srcx = i * tw
+                var srcy = j * th
+                var dx = cx + disperse * (srcx - w / 2)
+                var dy = cy + disperse * (srcy - h / 2)
+                win.draw_texture_rect(this.texture, dx, dy, srcx, srcy, tw, th, tint)
+            }
+        }
+    }
+}

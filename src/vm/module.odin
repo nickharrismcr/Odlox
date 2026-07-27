@@ -126,6 +126,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	module_source_cache[name] = strings.clone(string(data))
 
 	sub := new_vm_raw(path)
+	sub.root_script = vm.root_script
 	// Share (not copy) the parent's builtin registrations -- an
 	// imported module's own top-level code should be able to call
 	// `type()`/`len()`/... and `import sys` itself, same as the
@@ -157,7 +158,9 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 }
 
 // read_module_source tries, in order: `$LOX_PATH/modules/<name>.lox`,
-// then alongside the running script, then a recursive search of the
+// then alongside the *top-level entry* script (vm.root_script -- not
+// vm.script, the module currently being loaded, see the VM struct's
+// doc comment on root_script), then a recursive search of the entry
 // script's own directory tree -- matching glox's own three-tier search
 // (`getPath`/`findModuleInSubdirs` in glox's vm.go) so scripts can
 // group their own modules into subfolders, with one deliberate path
@@ -186,7 +189,7 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 		delete(candidate)
 	}
 
-	// filepath.dir (os.dir) returns a slice *into* vm.script, not a
+	// filepath.dir (os.dir) returns a slice *into* vm.root_script, not a
 	// fresh allocation (see os/path.odin's split_path) -- deleting it
 	// is a bad free of memory this proc doesn't own. Real bug, not
 	// hypothetical: it silently corrupted the heap on every successful
@@ -196,7 +199,7 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 	// allocations changed the heap layout enough to turn latent
 	// corruption into an actual segfault on the very first test of
 	// this phase's subdirectory-search addition.
-	dir := filepath.dir(vm.script)
+	dir := filepath.dir(vm.root_script)
 	if dir == "" {
 		dir = "."
 	}

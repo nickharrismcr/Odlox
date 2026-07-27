@@ -53,8 +53,9 @@ Debug_Event :: enum {
 Debug_Hook :: #type proc(vm: ^VM, event: Debug_Event)
 
 VM :: struct {
-	script: string, // path/name of the running script, for error messages
-	source: string, // its source text, for stack-trace context lines
+	script:      string, // path/name of the running script, for error messages
+	root_script: string, // the top-level entry script's path -- module.odin's read_module_source resolves local (non-stdlib) imports relative to *this*, not `script`, so a nested import (e.g. a module in npc/ importing one that actually lives in game/) still finds it by searching from the entry script's own directory down, matching glox's own vm.Args()-propagation behavior (subvm.SetArgs(vm.Args()) in vm.go's importModule) instead of resolving relative to whichever module happens to be doing the importing.
+	source:      string, // its source text, for stack-trace context lines
 
 	stack:       [STACK_MAX]core.Value,
 	stack_top:   int,
@@ -118,6 +119,7 @@ VM :: struct {
 new_vm_raw :: proc(script: string) -> ^VM {
 	vm := new(VM)
 	vm.script = script
+	vm.root_script = script
 	vm.environment = core.make_environment(script)
 	vm.start_time = time.now()
 	vm.next_gc = INITIAL_GC_THRESHOLD

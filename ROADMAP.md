@@ -2024,19 +2024,27 @@ marker/context struct; raylib's window/GL-context state is process-
 global, so there's no per-object GPU resource to own); `vm/gfx_window.odin`
 (new — `invoke_builtin_window`'s full method dispatch, plus a shared
 `vec4_to_rl_color`/`arg_color` helper every drawing call uses); `natives/gfx.odin`
-(the `gfx.window(width, height)` constructor, plus `register_gfx_key_constants`
-exposing `gfx.KEY_A`..`KEY_Z`/`KEY_0`..`KEY_9`/`KEY_SPACE`/`KEY_ESCAPE`/
-`KEY_ENTER`/`KEY_UP`/`KEY_DOWN`/`KEY_LEFT`/`KEY_RIGHT` — a deliberately
-small subset of glox's ~100-constant `rl.Key*` registration, expandable
-on demand); `vm/builtins.odin` (new `define_builtin_const` — the first
-built-in module constant this port has needed, alongside every function
-registered via `define_builtin`; mirrors that proc's own
-`vm.builtin_modules[...]` lookup, writing straight into the module's
-environment via `core.env_set_var` instead of wrapping a `Builtin_Fn`).
-Colors cross the boundary as `vec4`, each channel 0-255 — confirmed
-against `natives/colour_utils.odin`'s already-shipped convention
+(the `gfx.window(width, height)` constructor). Colors cross the boundary
+as `vec4`, each channel 0-255 — confirmed against
+`natives/colour_utils.odin`'s already-shipped convention
 (`colour_utils_fade`'s `clamp255`/alpha-at-255 usage) before assuming
 it, not guessed.
+
+**Key constants got the wrong home in this pass — corrected in Phase
+6k.** This pass registered `gfx.KEY_A`..`Z`/`0`..`9`/a handful of named
+keys as *module*-level constants (`vm/builtins.odin`'s
+`define_builtin_const`, mirroring `define_builtin`'s own
+`vm.builtin_modules[...]` lookup). Porting a real script in Phase 6k
+(`lox_examples/defender`) showed that's not how glox's own scripts
+actually reach them: `RegisterAllWindowConstants` (`win_methods.go`)
+puts the full `rl.Key*` set directly *on the window object* as
+`win.KEY_*`, and every real script (defender included) calls it that
+way, never `gfx.KEY_*`. Phase 6k replaces this design entirely (removes
+`define_builtin_const` and `register_gfx_key_constants`, adds
+`window_key_constant` + a `.Window` case in `properties.odin`'s
+`get_property`) rather than keeping both — nothing shipped depended on
+the module-constant form, so there was no reason to carry two ways to
+reach the same values.
 
 **No GC-triggered teardown**: unlike `Texture`/`Shader`/`RenderTexture`
 in glox (not implemented in this port yet either), `Window_Object` owns
@@ -2066,6 +2074,111 @@ needs an actual human look, which this environment can't provide.
 Said explicitly rather than claimed as done, matching this project's
 own standing rule for UI/graphics work that can't be tested end-to-end
 from here.
+
+### Phase 6k: `texture`/`image`/`render_texture`, `sprite.lox`, and running `lox_examples/defender`
+
+Trigger: rather than keep adding raylib surface speculatively, `d:/odin/glox_reference/lox_examples/`
+(the original glox project's own example scripts) was copied into `lox_examples/` as a real end-to-end
+target. Its `defender/` game is a genuine multi-file 2D game (not a toy script) — auditing its actual
+`gfx`/window dependency surface via direct grep (not assumption) was the concrete spec for this phase,
+and running it uncovered three real bugs unrelated to graphics at all (see below).
+
+**New native object types**, following the same recipe as every other Phase 6 type
+(`core/obj_image.odin`/`obj_texture.odin`/`obj_render_texture.odin`, `core/object.odin`'s
+`Object_Type`/`object_to_string`, `core/value.odin`'s `as_image`/`as_texture`/`as_render_texture`,
+`vm/gfx_texture.odin`'s `invoke_builtin_image`/`invoke_builtin_texture`/`invoke_builtin_render_texture`,
+`vm/call.odin`'s `invoke()` cases, `vm/builtins.odin`'s `type()` cases, `natives/gfx.odin`'s
+`gfx.image()`/`gfx.texture()`/`gfx.render_texture()` constructors):
+
+- `Image_Object` wraps a CPU-side `rl.Image` (`gfx.image(filename)` — `rl.LoadImage`). **A load failure is
+  a real `runtime_error` here**, not glox's own `panic(...)` (`obj_builtin_image.go`'s `MakeImageObject`) —
+  matches this port's standing "native crash becomes a catchable Lox exception" convention. **A real gap in
+  glox itself, fixed here**: glox's `ImageObject` has no `GCFree`/`unload` at all — the underlying `rl.Image`
+  is never freed, ever. `vm/gc.odin`'s `free_object` frees it here (`rl.UnloadImage`), safe because Image's
+  own Lox-facing surface (`width()`/`height()`) never touches pixel data again once a Texture has been built
+  from it — freeing it when unreachable changes no observable behavior.
+- `Texture_Object` wraps a GPU-loaded `rl.Texture2D`, optionally sliced into `frames` equal-width horizontal
+  animation frames (`gfx.texture(image, frames, start_frame, end_frame)` — validates `frames >= 1` and both
+  frame indices in range, plus a **new `window_created` gate**, mirroring glox's own package-level
+  `windowCreated` bool exactly: a GPU upload needs a live GL context, so `gfx.texture()` before any
+  `gfx.window()` is a real error, not a crash). `.animate(ticks_per_frame)`/`.frame_width()`/
+  `.set_wrap_mode(mode)`/`.unload()`. Idempotent unload via a `freed` bool, same convention as
+  `Process_Object`/`Regex_Pattern_Object` from earlier phases.
+- `Render_Texture_Object` wraps an off-screen `rl.RenderTexture2D` (`gfx.render_texture(width, height)`).
+  Deliberately narrow: only `width()`/`height()`/`unload()` — not `get_texture()` (glox's own version does a
+  GPU-sync roundtrip via `LoadImageFromTexture`/`UnloadImage` specifically to dodge a driver race, not needed
+  here) and not a render-texture-specific mirror of window's drawing methods, since `begin_texture_mode`/
+  `end_texture_mode` redirect the *existing* window drawing methods at this target via raylib's own global GL
+  state — nothing extra needed for that to work.
+
+**New `Window` methods** (`vm/gfx_window.odin`): `draw_texture`/`draw_texture_flip`/`draw_texture_scaled`/
+`draw_texture_rect` (exact raylib call shapes — `DrawTextureRec`/`DrawTexturePro`, the flip-via-negative-width
+and scale-via-`DrawTexturePro`-dest-rect tricks — read from glox's own `win_methods.go` before writing any of
+this, not guessed), `begin_texture_mode`/`end_texture_mode`, and `draw_render_texture` (a **negative source
+height** flips the Y axis — raylib stores render textures upside-down in OpenGL, matching glox's own
+`draw_render_texture` exactly).
+
+**`modules/sprite.lox`** copied verbatim from `glox_reference/src/modules/sprite.lox` (same "copy the stdlib
+module as-is" precedent as `json.lox`/`particle_sys.lox` in earlier phases) — its `Sprite` class is the
+concrete reason `texture`/`image` were needed at all (`this.texture = texture(img, frames, start_frame,
+end_frame)`, `win.draw_texture_rect(...)`).
+
+**Three real bugs found by actually running `defender`, none of them raylib-related**:
+
+1. **Nested module imports resolved relative to the wrong directory.** `import mountains`/`import lander`/
+   etc. from `main.lox` all failed with "Failed to import module" even though every file existed exactly
+   where expected. Root cause: `module.odin`'s `read_module_source` resolved local (non-stdlib) imports
+   relative to `vm.script` — but for a *nested* import (e.g. `npc/lander.lox` importing `game/event.lox`,
+   a sibling directory), the sub-VM created to compile `lander.lox` has `vm.script` pointing at
+   `npc/lander.lox` itself, so the search never looks in `game/` at all. Confirmed against glox's own
+   resolution (`vm.go`'s `getPath`/`importModule`): glox's sub-VMs propagate the *parent's* `args`
+   (`subvm.SetArgs(vm.Args())`), so `args[0]` stays pinned to the original top-level script's path all the
+   way down an arbitrarily deep import chain — module resolution is always relative to the entry script, never
+   to whichever module happens to be doing the importing. Fixed by adding `VM.root_script` (set to `script`
+   in `new_vm_raw`, explicitly propagated in `module.odin`'s `load_module` — `sub.root_script =
+   vm.root_script` — mirroring glox's `SetArgs` propagation), and switching `read_module_source`'s local-
+   resolution tiers from `vm.script` to `vm.root_script`. This was silently wrong for every multi-directory
+   import graph before now; the existing test suite never exercised more than one subdirectory level deep,
+   which is why it hadn't surfaced. Full `pytest` regression re-confirmed at 220/0/26 after the fix.
+2. **`win.KEY_*` constants had the wrong home.** See the note added to Phase 6j above — Phase 6j put them on
+   the `gfx` module (`gfx.KEY_A`); real scripts read them off the *window instance* (`win.KEY_A`), matching
+   glox's `RegisterAllWindowConstants`. Fixed by removing the module-constant path entirely
+   (`define_builtin_const`, `register_gfx_key_constants`) and adding `vm/gfx_window.odin`'s
+   `window_key_constant(name) -> (Value, bool)` (the full `rl.KeyboardKey` set, minus `KEY_BACK`/`KEY_MENU` —
+   Android-only buttons glox's raylib-go binding exposes that `vendor:raylib`'s Odin binding does not) plus a
+   new `.Window` case in `properties.odin`'s `get_property` that calls it. Values are plain immutable ints,
+   identical across every `Window` instance, so no per-object storage is needed.
+3. **`begin_blend_mode`/`end_blend_mode` were entirely missing** — out of scope per Phase 6j's stated
+   boundary ("blend/shader modes... explicitly deferred"), but `defender`'s `fx.lox` calls
+   `win.begin_blend_mode("BLEND_ADD")` around every particle draw. Added as a narrow, deliberate exception to
+   that boundary (full blend-mode *constants*, shader modes, batch, and 3D remain deferred). **Ported with
+   glox's own latent bug intact, not "fixed"**: glox's `begin_blend_mode` passes the argument through
+   `Value.AsInt()` with no type check, and `AsInt()` on a non-numeric `Value` (a string, here — `fx.lox`
+   passes the literal `"BLEND_ADD"`, never the constant) silently returns `0` (`rl.BlendAlpha`) rather than
+   erroring. `core.as_int` has the byte-for-byte identical default-to-0 behavior for a non-numeric `Value`
+   (`core/value.odin`), so `win.begin_blend_mode(mode_val)` here reproduces that exactly — `fx.lox`'s
+   "additive blend" call has, in the actual shipped game, always meant ordinary alpha blending, never additive.
+   Deliberately *not* given the stricter argument-type validation every other method in this file has: doing
+   so would turn a silent content bug into a hard crash for a script that has always run, just not quite as
+   its author intended.
+
+**`lox_examples/defender` itself is not runnable to a *visual* conclusion from here** — its own asset
+directory (`pngs/*.png`, ~15 files) does not exist anywhere in `glox_reference` either (confirmed: not a
+copying mistake, the source repo genuinely ships the game without its art assets). What *was* verified,
+honestly bounded the same way Phase 6j's window work was: with 15 throwaway placeholder PNGs (not committed —
+purely local, deleted after the test), `main.lox` under `LOX_PATH=<repo root>` resolves every one of its ~30
+imports, constructs the full game object graph (entity manager, player, camera, radar, mountains, particle
+system, bullet pool, sprite/texture loading), enters the real `while (!win.should_close() and !game.done)`
+game loop, and runs it under a real raylib window for a bounded 6-second wall-clock window (`timeout 6`) with
+**zero crashes, zero uncaught exceptions, and no orphaned process afterward** — the process was still running
+cleanly when forcibly terminated by the timeout, not stopped by an error. That confirms the whole engine-side
+surface this phase built (texture/image/render_texture, sprite animation, window 2D+texture drawing, blend
+mode, module resolution) is correct and load-bearing for a real, non-trivial game; it does **not** confirm
+correct on-screen visual output (no display access here), and cannot confirm anything about the missing art
+assets since they were never real to begin with.
+
+Full `pytest` regression held at 220/0/26 throughout every fix in this phase (checked after each one, not
+just at the end). Both build modes (`bin/build.sh` / `bin/build.sh --release`) compiled cleanly throughout.
 
 ## Phase 7 — Performance pass
 

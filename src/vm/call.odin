@@ -178,6 +178,12 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_physics_world(vm, core.as_physics_world(receiver), core.string_get(name), arg_count)
 	case .Window:
 		return invoke_builtin_window(vm, core.as_window(receiver), core.string_get(name), arg_count)
+	case .Image:
+		return invoke_builtin_image(vm, core.as_image(receiver), core.string_get(name), arg_count)
+	case .Texture:
+		return invoke_builtin_texture(vm, core.as_texture(receiver), core.string_get(name), arg_count)
+	case .Render_Texture:
+		return invoke_builtin_render_texture(vm, core.as_render_texture(receiver), core.string_get(name), arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;

@@ -2,6 +2,7 @@ package natives
 
 import "../core"
 import "../vm"
+import "core:strings"
 import rl "vendor:raylib"
 
 // gfx: glox's own gfx module (src/vm/builtin.go's makeBuiltInModule(vm,
@@ -28,8 +29,20 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "decode_rgba", gfx_decode_rgba)
 	vm.define_builtin(v, "gfx", "float_array", gfx_float_array)
 	vm.define_builtin(v, "gfx", "window", gfx_window)
-	register_gfx_key_constants(v)
+	vm.define_builtin(v, "gfx", "image", gfx_image)
+	vm.define_builtin(v, "gfx", "texture", gfx_texture)
+	vm.define_builtin(v, "gfx", "render_texture", gfx_render_texture)
 }
+
+// window_created mirrors glox's own package-level `windowCreated` bool
+// (obj_builtin_window.go) exactly: gfx.texture() requires a window to
+// already exist (a GPU texture upload needs a live GL context), checked
+// here rather than in vm/gfx_texture.odin since it's a natives-package-
+// level constructor concern, not something the object itself needs to
+// know. Single-VM-per-process, matching the existing package-level-state
+// precedent in debug/trace.odin's instruction_count_val.
+@(private = "file")
+window_created: bool
 
 @(private = "file")
 gfx_window :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
@@ -45,66 +58,109 @@ gfx_window :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 	}
 	win := core.make_window_object(core.as_int(w_val), core.as_int(h_val))
 	vm.gc_track(v, &win.obj)
+	window_created = true
 	return core.make_object_value(&win.obj, true)
 }
 
-// register_gfx_key_constants exposes the subset of rl.KeyboardKey a
-// real script is actually likely to need (gfx.KEY_A .. gfx.KEY_Z,
-// gfx.KEY_ZERO .. gfx.KEY_NINE, plus the common named keys) as plain
-// module-level constants -- not glox's full ~100-constant enum (glox
-// registers them all on the window object itself as gfx.KEY_*; expand
-// this list on demand rather than blind-porting all of it up front).
+// gfx_image loads an rl.Image from a file into CPU memory. Unlike glox's
+// MakeImageObject, which panics on load failure, a failed load is a
+// proper Lox runtime_error here -- matching this port's established
+// pattern of turning native crash-on-error into a real, catchable Lox
+// exception rather than taking the whole process down.
 @(private = "file")
-register_gfx_key_constants :: proc(v: ^vm.VM) {
-	define_key :: proc(v: ^vm.VM, name: string, key: rl.KeyboardKey) {
-		vm.define_builtin_const(v, "gfx", name, core.make_int_value(int(key), true))
+gfx_image :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 1 {
+		vm.runtime_error(v, "image() expects 1 argument (filename).")
+		return core.NIL_VALUE
 	}
+	filename_val := v.stack[arg_stack_ptr]
+	if !core.is_string(filename_val) {
+		vm.runtime_error(v, "image() argument must be a string.")
+		return core.NIL_VALUE
+	}
+	cfilename := strings.clone_to_cstring(core.string_get(core.as_string(filename_val)))
+	defer delete(cfilename)
+	img := rl.LoadImage(cfilename)
+	if img.data == nil {
+		vm.runtime_error(v, "Failed to load image from '%s'.", core.string_get(core.as_string(filename_val)))
+		return core.NIL_VALUE
+	}
+	o := core.make_image_object(int(img.width), int(img.height), img)
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
+}
 
-	define_key(v, "KEY_SPACE", .SPACE)
-	define_key(v, "KEY_ESCAPE", .ESCAPE)
-	define_key(v, "KEY_ENTER", .ENTER)
-	define_key(v, "KEY_UP", .UP)
-	define_key(v, "KEY_DOWN", .DOWN)
-	define_key(v, "KEY_LEFT", .LEFT)
-	define_key(v, "KEY_RIGHT", .RIGHT)
+// gfx_texture uploads an already-loaded Image to the GPU, optionally
+// sliced into `frames` equal-width horizontal animation frames. Requires
+// a window to already exist (see window_created's doc comment).
+@(private = "file")
+gfx_texture :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if !window_created {
+		vm.runtime_error(v, "Cannot create texture: no window has been created.")
+		return core.NIL_VALUE
+	}
+	if argc != 4 {
+		vm.runtime_error(v, "texture() expects 4 arguments (image, frames, start_frame, end_frame).")
+		return core.NIL_VALUE
+	}
+	img_val := v.stack[arg_stack_ptr]
+	frames_val := v.stack[arg_stack_ptr + 1]
+	start_frame_val := v.stack[arg_stack_ptr + 2]
+	end_frame_val := v.stack[arg_stack_ptr + 3]
+	if img_val.type != .Obj || img_val.obj_type != .Image {
+		vm.runtime_error(v, "texture() first argument must be an image.")
+		return core.NIL_VALUE
+	}
+	if !core.is_int(frames_val) {
+		vm.runtime_error(v, "texture() frames argument must be an integer.")
+		return core.NIL_VALUE
+	}
+	frames := core.as_int(frames_val)
+	if frames < 1 {
+		vm.runtime_error(v, "texture() frames must be at least 1.")
+		return core.NIL_VALUE
+	}
+	if !core.is_int(start_frame_val) {
+		vm.runtime_error(v, "texture() start_frame argument must be an integer.")
+		return core.NIL_VALUE
+	}
+	start_frame := core.as_int(start_frame_val)
+	if start_frame < 1 || start_frame > frames {
+		vm.runtime_error(v, "texture() start_frame must be between 1 and frames.")
+		return core.NIL_VALUE
+	}
+	if !core.is_int(end_frame_val) {
+		vm.runtime_error(v, "texture() end_frame argument must be an integer.")
+		return core.NIL_VALUE
+	}
+	end_frame := core.as_int(end_frame_val)
+	if end_frame < 1 || end_frame > frames {
+		vm.runtime_error(v, "texture() end_frame must be between 1 and frames.")
+		return core.NIL_VALUE
+	}
+	img := core.as_image(img_val)
+	o := core.make_texture_object(img.image, frames, start_frame, end_frame)
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
+}
 
-	define_key(v, "KEY_A", .A)
-	define_key(v, "KEY_B", .B)
-	define_key(v, "KEY_C", .C)
-	define_key(v, "KEY_D", .D)
-	define_key(v, "KEY_E", .E)
-	define_key(v, "KEY_F", .F)
-	define_key(v, "KEY_G", .G)
-	define_key(v, "KEY_H", .H)
-	define_key(v, "KEY_I", .I)
-	define_key(v, "KEY_J", .J)
-	define_key(v, "KEY_K", .K)
-	define_key(v, "KEY_L", .L)
-	define_key(v, "KEY_M", .M)
-	define_key(v, "KEY_N", .N)
-	define_key(v, "KEY_O", .O)
-	define_key(v, "KEY_P", .P)
-	define_key(v, "KEY_Q", .Q)
-	define_key(v, "KEY_R", .R)
-	define_key(v, "KEY_S", .S)
-	define_key(v, "KEY_T", .T)
-	define_key(v, "KEY_U", .U)
-	define_key(v, "KEY_V", .V)
-	define_key(v, "KEY_W", .W)
-	define_key(v, "KEY_X", .X)
-	define_key(v, "KEY_Y", .Y)
-	define_key(v, "KEY_Z", .Z)
-
-	define_key(v, "KEY_0", .ZERO)
-	define_key(v, "KEY_1", .ONE)
-	define_key(v, "KEY_2", .TWO)
-	define_key(v, "KEY_3", .THREE)
-	define_key(v, "KEY_4", .FOUR)
-	define_key(v, "KEY_5", .FIVE)
-	define_key(v, "KEY_6", .SIX)
-	define_key(v, "KEY_7", .SEVEN)
-	define_key(v, "KEY_8", .EIGHT)
-	define_key(v, "KEY_9", .NINE)
+@(private = "file")
+gfx_render_texture :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 2 {
+		vm.runtime_error(v, "render_texture() expects 2 arguments (width, height).")
+		return core.NIL_VALUE
+	}
+	w_val, h_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1]
+	if !core.is_int(w_val) || !core.is_int(h_val) {
+		vm.runtime_error(v, "render_texture() arguments must be integers.")
+		return core.NIL_VALUE
+	}
+	o := core.make_render_texture_object(core.as_int(w_val), core.as_int(h_val))
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
 }
 
 @(private = "file")
