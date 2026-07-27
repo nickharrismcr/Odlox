@@ -85,6 +85,40 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 	fl := refresh_frame(vm)
 
+	// ip is a genuine loop-local mirror of fl.f.ip -- not a struct field
+	// read through the fl.f pointer on every single opcode/operand byte
+	// the way `fl.f.ip` was before. See docs/ARCHITECTURE.md's VM
+	// dispatch loop section: the documented design called for a raw
+	// `ip: ^u8` pointer specifically, reasoning that Go can't do this
+	// (no safe raw-pointer-into-slice idiom) but Odin can. That's true,
+	// but beside the point once `-no-bounds-check` is already the
+	// release flag (see bin/build.sh): `fl.code[ip]` for a hoisted `int`
+	// local and `ip^`/`ip[0]` for a hoisted `^u8` compile to identical
+	// pointer arithmetic either way -- bounds checking, not pointer-vs-
+	// int, is the only thing that idiom was ever buying in C/clox. The
+	// actual, load-bearing property is just "a genuine local, not a
+	// pointer-chased struct field, for the loop's whole body" -- Odin
+	// has no aliasing reason to reload a plain local from fl.f between
+	// sync points, so the optimizer keeps it register-resident, and an
+	// int stays a drop-in match for every other place in the codebase
+	// that already treats ip as a plain offset (exceptions.odin,
+	// debug/inspect.odin, chunk line lookups) with zero conversion.
+	//
+	// Sync discipline: every existing point in this loop that already
+	// called refresh_frame() (because frame_count might have changed)
+	// re-seeds `ip` from the new fl.f.ip right after; every call this
+	// loop makes into anything that could transitively read or
+	// reposition *this* frame's ip while it's suspended --
+	// call_value/invoke/do_super_invoke, raise_exception,
+	// do_foreach/do_next, and the per-opcode debug hook -- writes
+	// `fl.f.ip = ip` immediately before the call. Verified exhaustively
+	// against every other reader of Call_Frame.ip in the codebase
+	// (exceptions.odin's stack-trace/handler-matching, debug/
+	// inspect.odin's frame introspection natives, debug/trace.odin's
+	// disassembler): all of them are only ever reached via one of these
+	// same call points, so this set of sync points is complete.
+	ip := fl.f.ip
+
 	for {
 		// Safe to collect here, and only here -- see gc.odin's
 		// maybe_collect_garbage doc comment on why checking between
@@ -93,11 +127,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		maybe_collect_garbage(vm)
 
 		if vm.debug_hook != nil {
+			fl.f.ip = ip
 			vm.debug_hook(vm, .Opcode)
 		}
 
-		instr := core.Op_Code(fl.code[fl.f.ip])
-		fl.f.ip += 1
+		instr := core.Op_Code(fl.code[ip])
+		ip += 1
 
 		#partial switch instr {
 
@@ -105,8 +140,8 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Noop:
 		// nothing
 		case .Constant:
-			idx := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			idx := fl.code[ip]
+			ip += 1
 			push(vm, fl.constants[idx])
 		case .Nil:
 			push(vm, core.NIL_VALUE)
@@ -147,10 +182,10 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// refresh_frame), so the patch is a real, persistent bytecode
 		// rewrite, not a per-call cache.
 		case .Add_Nn:
-			op_ip := fl.f.ip - 1
-			slot_a := fl.code[fl.f.ip]
-			slot_b := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Int && b.type == .Int {
@@ -163,24 +198,24 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
 		case .Add_Ii:
-			slot_a := fl.code[fl.f.ip]
-			slot_b := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) + core.as_int(b))
 		case .Add_Ff:
-			slot_a := fl.code[fl.f.ip]
-			slot_b := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 		case .Incr_Const_N:
-			op_ip := fl.f.ip - 1
-			slot := fl.code[fl.f.ip]
-			const_idx := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			if a.type == .Int && b.type == .Int {
@@ -193,16 +228,16 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
 		case .Incr_Const_I:
-			slot := fl.code[fl.f.ip]
-			const_idx := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) + core.as_int(b))
 		case .Incr_Const_F:
-			slot := fl.code[fl.f.ip]
-			const_idx := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip += 2
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
@@ -211,8 +246,8 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			// compiler/rules.odin's note on Plus_Plus meaning vector
 			// add, not increment) -- implemented for completeness
 			// since the opcode exists, unreachable from real programs.
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			v := vm.stack[fl.f.slots + int(slot)]
 			#partial switch v.type {
 			case .Int:
@@ -262,8 +297,10 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			} else if v.type == .Obj && v.obj_type == .Instance {
 				inst := core.as_instance(v)
 				if method_val, ok := inst.class.methods[core.intern_string("toString")]; ok {
+					fl.f.ip = ip
 					if call_value(vm, method_val, 0) {
 						fl = refresh_frame(vm)
+						ip = fl.f.ip
 					}
 				} else {
 					pop(vm)
@@ -302,26 +339,26 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// there is set to the same vm.environment Compile() was called
 		// with in the first place.
 		case .Define_Global:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			core.env_set_global(fl.fn.environment, int(slot), pop(vm))
 		case .Define_Global_Const:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			v := pop(vm)
 			v.immutable = true
 			core.env_set_global(fl.fn.environment, int(slot), v)
 		case .Get_Global:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			if int(slot) >= len(fl.fn.environment.defined) || !fl.fn.environment.defined[slot] {
 				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
 			} else {
 				push(vm, fl.fn.environment.globals[slot])
 			}
 		case .Set_Global:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			if int(slot) >= len(fl.fn.environment.defined) || !fl.fn.environment.defined[slot] {
 				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
 			} else if fl.fn.environment.globals[slot].immutable {
@@ -332,20 +369,20 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 		// --- locals / upvalues ---
 		case .Get_Local:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			push(vm, vm.stack[fl.f.slots + int(slot)])
 		case .Set_Local:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			vm.stack[fl.f.slots + int(slot)] = peek(vm, 0)
 		case .Get_Upvalue:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			push(vm, fl.f.closure.upvalues[slot].location^)
 		case .Set_Upvalue:
-			slot := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			slot := fl.code[ip]
+			ip += 1
 			fl.f.closure.upvalues[slot].location^ = peek(vm, 0)
 		case .Close_Upvalue:
 			close_upvalues(vm, vm.stack_top - 1)
@@ -353,49 +390,55 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 		// --- jumps ---
 		case .Jump_If_False:
-			offset := read_u16(fl.code, fl.f.ip)
-			fl.f.ip += 2
+			offset := read_u16(fl.code, ip)
+			ip += 2
 			if is_falsey(peek(vm, 0)) {
-				fl.f.ip += offset
+				ip += offset
 			}
 		case .Jump:
-			offset := read_u16(fl.code, fl.f.ip)
-			fl.f.ip += 2
-			fl.f.ip += offset
+			offset := read_u16(fl.code, ip)
+			ip += 2
+			ip += offset
 		case .Loop:
-			offset := read_u16(fl.code, fl.f.ip)
-			fl.f.ip += 2
-			fl.f.ip -= offset
+			offset := read_u16(fl.code, ip)
+			ip += 2
+			ip -= offset
 		case .Jump_If_Defined:
-			slot := fl.code[fl.f.ip]
-			offset := read_u16(fl.code, fl.f.ip + 1)
-			fl.f.ip += 3
+			slot := fl.code[ip]
+			offset := read_u16(fl.code, ip + 1)
+			ip += 3
 			if vm.stack[fl.f.slots + int(slot)].type != .Undefined {
-				fl.f.ip += offset
+				ip += offset
 			}
 
 		// --- calls ---
 		case .Call:
-			arg_count := int(fl.code[fl.f.ip])
-			fl.f.ip += 1
+			arg_count := int(fl.code[ip])
+			ip += 1
+			fl.f.ip = ip
 			if call_value(vm, peek(vm, arg_count), arg_count) {
 				fl = refresh_frame(vm)
+				ip = fl.f.ip
 			}
 		case .Invoke:
-			name_const := fl.code[fl.f.ip]
-			arg_count := int(fl.code[fl.f.ip + 1])
-			fl.f.ip += 2
+			name_const := fl.code[ip]
+			arg_count := int(fl.code[ip + 1])
+			ip += 2
 			name := core.as_string(fl.constants[name_const])
+			fl.f.ip = ip
 			if invoke(vm, name, arg_count) {
 				fl = refresh_frame(vm)
+				ip = fl.f.ip
 			}
 		case .Super_Invoke:
-			name_const := fl.code[fl.f.ip]
-			arg_count := int(fl.code[fl.f.ip + 1])
-			fl.f.ip += 2
+			name_const := fl.code[ip]
+			arg_count := int(fl.code[ip + 1])
+			ip += 2
 			name := core.as_string(fl.constants[name_const])
+			fl.f.ip = ip
 			if do_super_invoke(vm, name, arg_count) {
 				fl = refresh_frame(vm)
+				ip = fl.f.ip
 			}
 
 		case .Return:
@@ -403,6 +446,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			close_upvalues(vm, fl.f.slots)
 			vm.frame_count -= 1
 			if vm.debug_hook != nil {
+				fl.f.ip = ip
 				vm.debug_hook(vm, .Return)
 			}
 			if mode == .Current_Function && vm.frame_count == start_frame - 1 {
@@ -416,18 +460,19 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			vm.stack_top = fl.f.slots
 			push(vm, result)
 			fl = refresh_frame(vm)
+			ip = fl.f.ip
 
 		// --- closures ---
 		case .Closure:
-			const_idx := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			const_idx := fl.code[ip]
+			ip += 1
 			fn := core.as_function(fl.constants[const_idx])
 			closure := core.make_closure_object(fn)
 			gc_track(vm, &closure.obj)
 			for i in 0 ..< fn.upvalue_count {
-				is_local := fl.code[fl.f.ip]
-				index := fl.code[fl.f.ip + 1]
-				fl.f.ip += 2
+				is_local := fl.code[ip]
+				index := fl.code[ip + 1]
+				ip += 2
 				if is_local == 1 {
 					closure.upvalues[i] = capture_upvalue(vm, fl.f.slots + int(index))
 				} else {
@@ -438,16 +483,16 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 		// --- collections (see collections.odin) ---
 		case .Create_List:
-			count := int(fl.code[fl.f.ip])
-			fl.f.ip += 1
+			count := int(fl.code[ip])
+			ip += 1
 			create_list(vm, count, false)
 		case .Create_Tuple:
-			count := int(fl.code[fl.f.ip])
-			fl.f.ip += 1
+			count := int(fl.code[ip])
+			ip += 1
 			create_list(vm, count, true)
 		case .Create_Dict:
-			count := int(fl.code[fl.f.ip])
-			fl.f.ip += 1
+			count := int(fl.code[ip])
+			ip += 1
 			create_dict(vm, count)
 		case .Index:
 			do_index(vm)
@@ -460,56 +505,58 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .In:
 			do_in(vm)
 		case .Unpack:
-			count := int(fl.code[fl.f.ip])
-			fl.f.ip += 1
+			count := int(fl.code[ip])
+			ip += 1
 			do_unpack(vm, count)
 
 		// --- classes / properties (see properties.odin) ---
 		case .Class:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			do_class(vm, core.string_get(core.as_string(fl.constants[name_const])))
 		case .Inherit:
 			do_inherit(vm)
 		case .Method:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			do_method(vm, core.string_get(core.as_string(fl.constants[name_const])), false)
 		case .Static_Method:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			do_method(vm, core.string_get(core.as_string(fl.constants[name_const])), true)
 		case .Class_Var:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			do_class_var(vm, core.string_get(core.as_string(fl.constants[name_const])))
 		case .Get_Property:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			get_property(vm, core.as_string(fl.constants[name_const]))
 		case .Set_Property:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			set_property(vm, core.as_string(fl.constants[name_const]))
 		case .Get_Super:
-			name_const := fl.code[fl.f.ip]
-			fl.f.ip += 1
+			name_const := fl.code[ip]
+			ip += 1
 			do_get_super(vm, core.as_string(fl.constants[name_const]))
 
 		// --- foreach (see foreach.odin) ---
 		case .Foreach:
-			var_slot := fl.code[fl.f.ip]
-			iter_slot := fl.code[fl.f.ip + 1]
-			end_offset := read_u16(fl.code, fl.f.ip + 2)
-			fl.f.ip += 4
-			fl.f.ip += do_foreach(vm, fl.f.slots, var_slot, iter_slot, end_offset)
+			var_slot := fl.code[ip]
+			iter_slot := fl.code[ip + 1]
+			end_offset := read_u16(fl.code, ip + 2)
+			ip += 4
+			fl.f.ip = ip
+			ip += do_foreach(vm, fl.f.slots, var_slot, iter_slot, end_offset)
 		case .Next:
-			jump_offset := read_u16(fl.code, fl.f.ip)
-			var_slot := fl.code[fl.f.ip + 2]
-			iter_slot := fl.code[fl.f.ip + 3]
-			fl.f.ip += 4
+			jump_offset := read_u16(fl.code, ip)
+			var_slot := fl.code[ip + 2]
+			iter_slot := fl.code[ip + 3]
+			ip += 4
+			fl.f.ip = ip
 			if do_next(vm, fl.f.slots, var_slot, iter_slot) {
-				fl.f.ip -= jump_offset
+				ip -= jump_offset
 			}
 		case .End_Foreach:
 		// no-op landing marker
@@ -517,10 +564,10 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// --- exceptions (see exceptions.odin; bytecode shape in
 		// compiler/stmt.odin's try_except_statement) ---
 		case .Try:
-			offset := read_u16(fl.code, fl.f.ip)
-			fl.f.ip += 2
+			offset := read_u16(fl.code, ip)
+			ip += 2
 			h := new(Exception_Handler)
-			h.except_ip = fl.f.ip + offset
+			h.except_ip = ip + offset
 			h.stack_top = vm.stack_top
 			h.prev = fl.f.handlers
 			fl.f.handlers = h
@@ -542,9 +589,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			// clause raised a bogus uncaught exception on perfectly
 			// normal completion. Fixed to actually jump, same pattern
 			// as Op_Jump.
-			offset := read_u16(fl.code, fl.f.ip)
-			fl.f.ip += 2
-			fl.f.ip += offset
+			offset := read_u16(fl.code, ip)
+			ip += 2
+			ip += offset
 			pop_handler(vm)
 		case .End_Except, .Finally:
 		// no-op landing markers -- reached only by normal fallthrough;
@@ -552,30 +599,32 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// repositions frame.ip directly rather than "executing into" it.
 		case .Raise:
 			err := ensure_exception_instance(vm, pop(vm))
+			fl.f.ip = ip
 			if !raise_exception(vm, err) {
 				vm.error_msg = format_uncaught_exception(err)
 				return .Runtime_Error, core.NIL_VALUE
 			}
 			fl = refresh_frame(vm)
+			ip = fl.f.ip
 
 		// --- imports (see module.odin) ---
 		case .Import:
-			name_const := fl.code[fl.f.ip]
-			alias_const := fl.code[fl.f.ip + 1]
-			fl.f.ip += 2
+			name_const := fl.code[ip]
+			alias_const := fl.code[ip + 1]
+			ip += 2
 			do_import(
 				vm,
 				core.string_get(core.as_string(fl.constants[name_const])),
 				core.string_get(core.as_string(fl.constants[alias_const])),
 			)
 		case .Import_From:
-			module_const := fl.code[fl.f.ip]
-			count := int(fl.code[fl.f.ip + 1])
-			fl.f.ip += 2
+			module_const := fl.code[ip]
+			count := int(fl.code[ip + 1])
+			ip += 2
 			names := make([dynamic]string, count)
 			for i in 0 ..< count {
-				names[i] = core.string_get(core.as_string(fl.constants[fl.code[fl.f.ip]]))
-				fl.f.ip += 1
+				names[i] = core.string_get(core.as_string(fl.constants[fl.code[ip]]))
+				ip += 1
 			}
 			do_import_from(vm, core.string_get(core.as_string(fl.constants[module_const])), names[:])
 			delete(names)
@@ -598,11 +647,13 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			vm.error_msg = ""
 			vm.pending_exception_class = ""
 			err_inst := make_named_error_instance(vm, class_name, msg)
+			fl.f.ip = ip
 			if !raise_exception(vm, err_inst) {
 				vm.error_msg = format_uncaught_exception(err_inst)
 				return .Runtime_Error, core.NIL_VALUE
 			}
 			fl = refresh_frame(vm)
+			ip = fl.f.ip
 		}
 	}
 }
