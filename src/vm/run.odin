@@ -346,7 +346,22 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Define_Global:
 			slot := fl.code[ip]
 			ip += 1
-			core.env_set_global(fl.fn.environment, int(slot), pop(vm))
+			// A plain (non-const) declaration always stores a mutable
+			// binding, regardless of whether the value itself happens to
+			// carry an immutable tag (e.g. a texture/window/tuple/regex-
+			// match object -- see natives/gfx.odin's constructors, which
+			// return immutable=true Values for reasons unrelated to
+			// variable-reassignment semantics entirely). Without this,
+			// `tex = canvas.get_texture()` followed later by a second
+			// `tex = canvas.get_texture()` failed with "Cannot assign to
+			// const variable 'tex'" -- Set_Global below refuses to
+			// overwrite a slot whose *currently stored value* is tagged
+			// immutable, and the first assignment had stored one uncleared.
+			// Matches glox's own OP_DEFINE_GLOBAL exactly (`core.Mutable(vm.pop())`,
+			// vm.go) -- only OP_DEFINE_GLOBAL_CONST forces the tag on.
+			v := pop(vm)
+			v.immutable = false
+			core.env_set_global(fl.fn.environment, int(slot), v)
 		case .Define_Global_Const:
 			slot := fl.code[ip]
 			ip += 1
@@ -369,7 +384,14 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			} else if fl.fn.environment.globals[slot].immutable {
 				runtime_error(vm, "Cannot assign to const variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
 			} else {
-				core.env_set_global(fl.fn.environment, int(slot), peek(vm, 0))
+				// Same reasoning as Define_Global above: an ordinary `=`
+				// assignment always leaves the slot mutable, even if the
+				// newly assigned value itself happens to carry an
+				// immutable tag -- matches glox's OP_SET_GLOBAL exactly
+				// (`core.Mutable(vm.Peek(0))`, vm.go).
+				v := peek(vm, 0)
+				v.immutable = false
+				core.env_set_global(fl.fn.environment, int(slot), v)
 			}
 
 		// --- locals / upvalues ---

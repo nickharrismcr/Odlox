@@ -33,21 +33,21 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 ## Phase 6 — Native/builtin functions & standard library
 
 - [ ] Raylib-backed natives: `physics_world`, `gfx.window()` + core 2D drawing, `texture`/`image`/
-      `render_texture` (+ `win.draw_texture*`/`begin_texture_mode`/`end_texture_mode`/`draw_render_texture`/
-      `draw_render_texture_ex`/`begin_blend_mode`/`end_blend_mode`, plus `render_texture`'s own mirrored
-      2D primitives — `clear`/`pixel`/`line`/`line_ex`/`triangle`/`rectangle`/`circle`/`circle_fill`/
-      `draw_texture`, each drawn directly on the render texture rather than through `win.begin_texture_mode`),
-      and `win.BLEND_*`/`WRAP_*`/`KEY_*` constants are all complete (see `ROADMAP.md`'s
-      Phase 6i/6j/6k/6l) — verified both by scripted smoke tests (open a real window, exercise every method,
-      close cleanly; no way to visually confirm rendered output from here) and by actually running several
-      real example scripts (`lox_examples/defender` with its real `pngs/` art copied from
-      `d:/go/glox/lox_examples/defender/pngs/`; `tile_planes.lox`; `cobweb-bifurc.lox`) to a live loop under
-      a bounded wall-clock timeout with zero crashes (no display access here, so a *visual* correctness
-      check still needs a human look). Still outstanding, each its own real chunk of work:
-      `render_texture.get_texture()`/`draw_texture_pro` (window + render_texture — found needed by
-      `kaleido.lox`, not yet implemented), `render_texture.text()`/`draw_array_fast`, `shader`/`camera`/
-      `batch`/`batch_instanced`, 3D drawing, shader modes, `draw_array`. `d:/odin/glox_reference/src/builtin/`
-      is the ground truth for each (`obj_builtin_shader.go`, `obj_builtin_camera.go`+`camera_methods.go`,
+      `render_texture` (+ `win.draw_texture*`/`draw_texture_pro`/`begin_texture_mode`/`end_texture_mode`/
+      `draw_render_texture`/`draw_render_texture_ex`/`begin_blend_mode`/`end_blend_mode`, plus
+      `render_texture`'s own mirrored 2D primitives — `clear`/`pixel`/`line`/`line_ex`/`triangle`/
+      `rectangle`/`circle`/`circle_fill`/`draw_texture`/`draw_texture_pro`/`get_texture`, each drawn
+      directly on the render texture rather than through `win.begin_texture_mode`), and `win.BLEND_*`/
+      `WRAP_*`/`KEY_*` constants are all complete (see `ROADMAP.md`'s Phase 6i/6j/6k/6l/6m) — verified both
+      by scripted smoke tests (open a real window, exercise every method, close cleanly; no way to visually
+      confirm rendered output from here) and by actually running several real example scripts
+      (`lox_examples/defender` with its real `pngs/` art copied from `d:/go/glox/lox_examples/defender/pngs/`;
+      `tile_planes.lox`; `cobweb-bifurc.lox`; `kaleido.lox`) to a live loop under a bounded wall-clock timeout
+      with zero crashes (no display access here, so a *visual* correctness check still needs a human look).
+      Still outstanding, each its own real chunk of work: `render_texture.text()`/`draw_array_fast`,
+      `shader`/`camera`/`batch`/`batch_instanced`, 3D drawing, shader modes, `draw_array`.
+      `d:/odin/glox_reference/src/builtin/` is the ground truth for each (`obj_builtin_shader.go`,
+      `obj_builtin_camera.go`+`camera_methods.go`,
       `obj_builtin_batch.go`+`batch_methods.go`, `obj_builtin_batch_instanced.go`+
       `batch_instanced_methods.go`).
 - [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are

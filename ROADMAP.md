@@ -2224,6 +2224,53 @@ render_texture-side) — real, still-open gaps, not attempted this round (tracke
 next slice, not blocking anything already shipped). `pytest` held at 220/0/26 throughout; both build modes
 compiled cleanly.
 
+### Phase 6m: `render_texture.get_texture()`/`draw_texture_pro`, and a real global-mutability bug
+
+Trigger: the `kaleido.lox` gap Phase 6l left open. Implementing it surfaced a genuine, pre-existing
+correctness bug in global-variable assignment, unrelated to graphics.
+
+**`render_texture.get_texture()`** (`vm/gfx_texture.odin`): does the same GPU-sync pixel readback glox's own
+version does (`LoadImageFromTexture`/`UnloadImage`, result discarded — the render_texture's own drawing
+methods each open and close their own texture-mode context, so without an explicit sync point here the GPU
+can still be mid-flight on writes to it when the returned `Texture` starts getting sampled elsewhere), then
+wraps the render texture's underlying `rl.Texture2D` via `core.make_texture_object_from_texture2d` — a
+constructor added back in Phase 6k specifically for this, unused until now.
+
+**`draw_texture_pro`** added on both `render_texture` (brackets its call in `BeginTextureMode`/
+`EndTextureMode`, like its other drawing methods) and `Window` (draws straight to whatever the current GL
+target already is, no bracketing — and, matching glox's own `win_methods.go` exactly, accepts *either* a
+`Texture` or a `Render_Texture` as its source, type-checked at runtime rather than requiring one specific
+kind).
+
+**The real bug**: `kaleido.lox` re-samples its render texture into a fresh `Texture` every frame
+(`tex = canvas.get_texture()`, first at top level, then again inside the main loop). The *second* assignment
+failed with `"Cannot assign to const variable 'tex'"` even though `tex` was never declared `const` anywhere.
+Root cause, found by direct comparison against glox's own `OP_SET_GLOBAL`/`OP_DEFINE_GLOBAL` (`vm.go`):
+odlox's `Set_Global` opcode (correctly) refuses to overwrite a global slot whose *currently stored value* is
+tagged immutable — but odlox's `Define_Global` (an ordinary, non-`const` declaration) was storing whatever
+value it was given *as-is*, immutable tag and all, rather than clearing it first. Several native constructors
+(`gfx.window()`/`texture()`/`render_texture()`/`physics_world()`, tuples, regex matches, ...) return
+`Value{immutable: true}` for reasons that have nothing to do with variable-reassignment semantics — that tag
+was never meant to describe "this identifier can never be reassigned," only "this particular value instance
+is conceptually read-only." The moment a plain (non-`const`) variable happened to be *first* assigned one of
+these values, it became permanently frozen — every prior script here only ever assigned such values to a
+variable *once*, so this had never surfaced. glox's own `vm.go` never has this problem: `OP_DEFINE_GLOBAL`
+calls `core.Mutable(vm.pop())`, unconditionally stripping the tag before storing, and `OP_SET_GLOBAL` does
+the identical `core.Mutable(vm.Peek(0))` on every ordinary assignment too — only `OP_DEFINE_GLOBAL_CONST`
+(`core.Immutable(...)`) ever forces the tag on. odlox's `Define_Global`/`Set_Global` (`vm/run.odin`) now do
+the same — clear `immutable` on the value before storing, in both opcodes — restoring the actual invariant:
+whether a global can be reassigned is a property of *how it was declared* (`const` vs. not), never of
+whichever value currently happens to sit in the slot. Local variables were never affected — `const` locals
+are enforced at compile time via a separate `is_const` flag on the compiler's own local-slot tracking
+(`compiler/stmt.odin`), not this runtime value-tag mechanism.
+
+**Verified**: full `pytest` regression (220/0/26, including the existing `const` rejection tests, confirming
+the fix didn't loosen real `const` enforcement) after the fix. `kaleido.lox` now runs its full loop under the
+same bounded `timeout 6` smoke test with zero crashes; `tile_planes.lox`, `cobweb-bifurc.lox`, and
+`defender/main.lox` (with its real assets) were all re-run afterward too, specifically because this fix
+touches every global assignment in the interpreter — all three still ran clean, no orphaned process in any
+case. Both build modes compiled cleanly throughout.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

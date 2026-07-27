@@ -445,6 +445,49 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		rl.DrawTextureRec(t.texture, rect, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
 		core.texture_animate(t)
 		result = core.NIL_VALUE
+	case "draw_texture_pro":
+		// Unlike every other draw_texture* method here, the source can be
+		// either a Texture *or* a Render_Texture -- matches glox's own
+		// win_methods.go exactly (it type-switches on both). Draws straight
+		// to whatever the current GL target already is, no BeginTextureMode
+		// wrapping (unlike render_texture's own draw_texture_pro). Found
+		// needed by lox_examples/kaleido.lox, which uses it to blit a
+		// triangle-masked, blend-moded render_texture segment onto the
+		// window every frame.
+		if arg_count != 13 {
+			runtime_error(
+				vm,
+				"draw_texture_pro() expects 13 arguments (texture, src_x, src_y, src_w, src_h, dest_x, dest_y, dest_w, dest_h, origin_x, origin_y, rotation, color).",
+			)
+			return false
+		}
+		tex_val, src_x, src_y, src_w, src_h, dst_x, dst_y, dst_w, dst_h, org_x, org_y, rot_val, col_val :=
+			peek(vm, 12), peek(vm, 11), peek(vm, 10), peek(vm, 9), peek(vm, 8), peek(vm, 7), peek(vm, 6),
+			peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		texture: rl.Texture2D
+		if tex_val.type == .Obj && tex_val.obj_type == .Texture {
+			texture = core.as_texture(tex_val).texture
+		} else if tex_val.type == .Obj && tex_val.obj_type == .Render_Texture {
+			texture = core.as_render_texture(tex_val).render_texture.texture
+		} else {
+			runtime_error(vm, "draw_texture_pro() first argument must be a texture or render_texture.")
+			return false
+		}
+		if !core.is_number(src_x) || !core.is_number(src_y) || !core.is_number(src_w) || !core.is_number(src_h) ||
+		   !core.is_number(dst_x) || !core.is_number(dst_y) || !core.is_number(dst_w) || !core.is_number(dst_h) ||
+		   !core.is_number(org_x) || !core.is_number(org_y) || !core.is_number(rot_val) {
+			runtime_error(vm, "draw_texture_pro() coordinate/rotation arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "draw_texture_pro")
+		if !ok {
+			return false
+		}
+		src := rl.Rectangle{f32(core.as_float(src_x)), f32(core.as_float(src_y)), f32(core.as_float(src_w)), f32(core.as_float(src_h))}
+		dst := rl.Rectangle{f32(core.as_float(dst_x)), f32(core.as_float(dst_y)), f32(core.as_float(dst_w)), f32(core.as_float(dst_h))}
+		origin := rl.Vector2{f32(core.as_float(org_x)), f32(core.as_float(org_y))}
+		rl.DrawTexturePro(texture, src, dst, origin, f32(core.as_float(rot_val)), col)
+		result = core.NIL_VALUE
 
 	// begin_blend_mode/end_blend_mode: a narrow, deliberate exception to
 	// "blend modes are out of scope this pass" (see this file's header

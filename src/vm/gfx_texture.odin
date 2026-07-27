@@ -94,24 +94,26 @@ invoke_builtin_texture :: proc(vm: ^VM, t: ^core.Texture_Object, name: string, a
 	return true
 }
 
-// invoke_builtin_render_texture: width/height/unload, plus a mirror of
-// Window's own 2D primitive set (clear/pixel/line/line_ex/triangle/
-// rectangle/circle/circle_fill/draw_texture) -- found needed by
-// lox_examples/tile_planes.lox ("frame.line_ex(...)"/"this.texture.clear(...)")
-// and confirmed against several other example scripts (cobweb-bifurc.lox,
-// kaleido.lox, cube_stack_fly2.lox, textured_batch_demo2.lox) that draw
-// directly onto a render_texture the same way, not only via
+// invoke_builtin_render_texture: width/height/unload, a mirror of Window's
+// own 2D primitive set (clear/pixel/line/line_ex/triangle/rectangle/circle/
+// circle_fill/draw_texture) -- found needed by lox_examples/tile_planes.lox
+// ("frame.line_ex(...)"/"this.texture.clear(...)") and confirmed against
+// several other example scripts (cobweb-bifurc.lox, kaleido.lox,
+// cube_stack_fly2.lox, textured_batch_demo2.lox) that draw directly onto a
+// render_texture the same way, not only via
 // win.begin_texture_mode/end_texture_mode/win.<primitive> (defender's own
-// pattern, still supported separately in gfx_window.odin). Matches glox's
-// own render_texture_methods.go exactly: each call brackets *just that one
-// draw* in its own BeginTextureMode/EndTextureMode, not a persistent mode
-// switch -- unlike Window's methods, which draw against whatever the
-// current global GL target already is. Deliberately still not implemented:
-// text() (glox's own RenderTexture.text() takes a different, narrower
-// argument list -- (x, y, string) only, fixed font size 10, hardcoded
-// white -- than Window's text(), and no example script here calls it, so
-// there's nothing to verify that mismatch against), get_texture() (GPU-sync
-// roundtrip, not needed by anything ported so far), draw_texture_pro(), and
+// pattern, still supported separately in gfx_window.odin) -- plus
+// get_texture()/draw_texture_pro() (found needed by kaleido.lox, which
+// re-samples a live-painted canvas into a Texture every frame and blits
+// triangle-masked, blend-moded segments of it via draw_texture_pro). Matches
+// glox's own render_texture_methods.go exactly: each drawing call brackets
+// *just that one draw* in its own BeginTextureMode/EndTextureMode, not a
+// persistent mode switch -- unlike Window's own drawing methods, which draw
+// against whatever the current global GL target already is. Deliberately
+// still not implemented: text() (glox's own RenderTexture.text() takes a
+// different, narrower argument list -- (x, y, string) only, fixed font size
+// 10, hardcoded white -- than Window's text(), and no example script here
+// calls it, so there's nothing to verify that mismatch against), and
 // draw_array_fast() (float_array-to-texture upload, needed by julia.lox/
 // mandel_gfx.lox but those are also blocked on unimplemented batch_instanced
 // features regardless).
@@ -313,6 +315,60 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		t := core.as_texture(tex_val)
 		rl.BeginTextureMode(rt.render_texture)
 		rl.DrawTexture(t.texture, c.int(int(core.as_float(x_val))), c.int(int(core.as_float(y_val))), rl.WHITE)
+		rl.EndTextureMode()
+		result = core.NIL_VALUE
+	case "get_texture":
+		// A pixel readback (LoadImageFromTexture/UnloadImage, result
+		// discarded) forces the GPU driver to finish any prior writes to
+		// this render texture before the caller starts sampling it
+		// elsewhere -- matches glox's own get_texture() exactly, including
+		// its own doc comment's rationale: the render_texture's own
+		// drawing methods each open and close their own texture-mode
+		// context, so without an explicit sync point here the GPU can
+		// still be mid-flight on those writes when the returned Texture
+		// starts getting drawn from. Found needed by kaleido.lox, which
+		// re-samples a live-painted canvas every frame
+		// (`tex = canvas.get_texture()`).
+		if arg_count != 0 {
+			runtime_error(vm, "get_texture() takes no arguments.")
+			return false
+		}
+		sync_img := rl.LoadImageFromTexture(rt.render_texture.texture)
+		rl.UnloadImage(sync_img)
+		t := core.make_texture_object_from_texture2d(rt.render_texture.texture)
+		gc_track(vm, &t.obj)
+		result = core.make_object_value(&t.obj, true)
+	case "draw_texture_pro":
+		if arg_count != 13 {
+			runtime_error(
+				vm,
+				"draw_texture_pro() expects 13 arguments (texture, src_x, src_y, src_w, src_h, dest_x, dest_y, dest_w, dest_h, origin_x, origin_y, rotation, color).",
+			)
+			return false
+		}
+		tex_val, src_x, src_y, src_w, src_h, dst_x, dst_y, dst_w, dst_h, org_x, org_y, rot_val, col_val :=
+			peek(vm, 12), peek(vm, 11), peek(vm, 10), peek(vm, 9), peek(vm, 8), peek(vm, 7), peek(vm, 6),
+			peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if tex_val.type != .Obj || tex_val.obj_type != .Texture {
+			runtime_error(vm, "draw_texture_pro() first argument must be a texture.")
+			return false
+		}
+		if !core.is_number(src_x) || !core.is_number(src_y) || !core.is_number(src_w) || !core.is_number(src_h) ||
+		   !core.is_number(dst_x) || !core.is_number(dst_y) || !core.is_number(dst_w) || !core.is_number(dst_h) ||
+		   !core.is_number(org_x) || !core.is_number(org_y) || !core.is_number(rot_val) {
+			runtime_error(vm, "draw_texture_pro() coordinate/rotation arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "draw_texture_pro")
+		if !ok {
+			return false
+		}
+		t := core.as_texture(tex_val)
+		src := rl.Rectangle{f32(core.as_float(src_x)), f32(core.as_float(src_y)), f32(core.as_float(src_w)), f32(core.as_float(src_h))}
+		dst := rl.Rectangle{f32(core.as_float(dst_x)), f32(core.as_float(dst_y)), f32(core.as_float(dst_w)), f32(core.as_float(dst_h))}
+		origin := rl.Vector2{f32(core.as_float(org_x)), f32(core.as_float(org_y))}
+		rl.BeginTextureMode(rt.render_texture)
+		rl.DrawTexturePro(t.texture, src, dst, origin, f32(core.as_float(rot_val)), col)
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case:
