@@ -2341,6 +2341,52 @@ variable aliasing the same vector observed the mutation. `kaleido.lox`'s `Pen.up
 workarounds; both re-verified running clean under the same bounded smoke test. `pytest` held at 220/0/26;
 both build modes compiled cleanly.
 
+### Phase 6p: `gfx.shader()`, and a real multi-line-string scanner bug
+
+Trigger: direct request to implement shader support. Ported glox's `obj_builtin_shader.go` faithfully --
+`Shader_Object` (`core/obj_shader.odin`), `invoke_builtin_shader` (`vm/gfx_shader.odin`), and `win.begin_shader_mode`/
+`end_shader_mode` (`vm/gfx_window.odin`), following the same construction/dispatch split every other native
+gfx type in this port uses.
+
+**Two construction paths, matching glox exactly**: `gfx.shader(vertex_file, fragment_file)` loads compiled
+GLSL from disk immediately (`rl.LoadShader`); `gfx.shader()` (no arguments) constructs an empty,
+not-yet-loaded shader (`rl.Shader{}`) for a script to fill in afterward via `.load_from_memory(vertex_code,
+fragment_code)` -- the shape real scripts (`lox_examples/julia.lox`) actually use, embedding GLSL source as
+Lox string literals rather than reading it from a file. Methods: `load_from_memory`, `get_location(name)`,
+`set_value_float`/`set_value_vec2`/`set_value_vec3`/`set_value_vec4` (each validates the location is an int
+and the value is the matching type before calling `rl.SetShaderValue` with the right `ShaderUniformDataType`
+and a stack-local scratch value/array -- `#any_int` on raylib's own `SetShaderValue` signature means the
+location argument needs no `ShaderLocationIndex` wrapping, just a plain `c.int`), `is_valid()`, `unload()`
+(idempotent via a `freed` bool, same convention as `Texture_Object`/`Render_Texture_Object`). `win.begin_shader_mode(shader)`/
+`win.end_shader_mode()` redirect subsequent draws through the shader, matching glox's own win_methods.go --
+only affects draws using raylib's currently-bound shader (2D primitives, `draw_texture*`, `draw_render_texture*`);
+`batch_instanced` (not implemented here either) would ignore it entirely, per glox's own documented caveat.
+
+**Real bug found and fixed, unrelated to graphics**: writing a smoke test that embedded GLSL source as a
+Lox string literal (the same pattern `julia.lox` uses: `var vs = "\n#version 330\n...\n"`) failed to parse at
+all -- `"Unterminated string."` on the very first embedded newline. `compiler/scanner.odin`'s `scan_string`
+treated any literal `\n` inside a string as an immediate error, unconditionally. Confirmed against glox's own
+scanner (`scanner.go`'s `string` method: its `c == "\n"` case just increments the line counter and continues,
+the same as any other character) that this is a real, load-bearing language feature odlox was missing
+entirely, not a deliberate exclusion -- multi-line string literals are exactly how `julia.lox` embeds its
+vertex/fragment shader source. Fixed by removing the newline special-case from the unterminated-string check
+and incrementing `s.line` when a literal `\n` is encountered, letting it fall through to the same
+write-byte-and-advance path every other character already takes.
+
+**Verified**: a smoke test exercised both construction paths (from files using `lox_examples/shaders/rainbow.vs`/
+`.fs`, and empty + `load_from_memory` with inline multi-line GLSL matching `julia.lox`'s own shaders),
+`is_valid()`, `get_location()`, all four `set_value_*` variants, `begin_shader_mode`/`end_shader_mode`
+wrapping real draw calls across several frames, a type-check error path (passing a non-shader to
+`begin_shader_mode`, caught via `try`/`except`), and `.unload()` idempotency -- ran to completion, exit 0, no
+orphaned process. Separately confirmed against a real, unmodified script: `lox_examples/julia.lox` now runs
+all the way through window setup, both shader construction paths (including its own multi-line embedded GLSL,
+previously impossible to even parse), `render_texture`, and `float_array` creation, stopping only at
+`lox_julia_array` -- a native Julia-set computation helper unrelated to shaders/graphics, not implemented and
+out of scope for this pass (tracked in `TODO.md`, alongside `render_texture.draw_array_fast`, `julia.lox`'s
+other remaining gap). `pytest` held at 220/0/26 throughout (including whatever existing string-literal tests
+already existed, confirming the scanner fix didn't regress single-line string handling); both build modes
+compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

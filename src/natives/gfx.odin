@@ -7,13 +7,13 @@ import rl "vendor:raylib"
 
 // gfx: glox's own gfx module (src/vm/builtin.go's makeBuiltInModule(vm,
 // "gfx")) is a large raylib-dependent surface -- window/image/texture/
-// render_texture/shader/camera/batch. This pass covers window lifecycle
-// and core 2D drawing (see vm/gfx_window.odin for the real logic);
-// texture/image/shader/camera/render_texture/batch/batch_instanced, 3D
-// drawing, blend/shader modes, and draw_array are still not implemented
-// (ROADMAP.md/TODO.md track them as explicit follow-on work). Calling
-// any of those still fails with "<name> is not a member of module
-// 'gfx'", same as any other not-yet-registered name.
+// render_texture/shader/camera/batch. Window lifecycle, core 2D drawing,
+// texture/image/render_texture, and shader are implemented (see
+// vm/gfx_window.odin, vm/gfx_texture.odin, vm/gfx_shader.odin for the
+// real logic); camera/batch/batch_instanced, 3D drawing, and draw_array
+// are still not (ROADMAP.md/TODO.md track them as explicit follow-on
+// work). Calling any of those still fails with "<name> is not a member
+// of module 'gfx'", same as any other not-yet-registered name.
 //
 // gfx.window(width, height) only constructs the Window_Object -- it
 // does *not* call raylib's InitWindow itself. Matches glox's own API
@@ -32,6 +32,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "image", gfx_image)
 	vm.define_builtin(v, "gfx", "texture", gfx_texture)
 	vm.define_builtin(v, "gfx", "render_texture", gfx_render_texture)
+	vm.define_builtin(v, "gfx", "shader", gfx_shader)
 }
 
 // window_created mirrors glox's own package-level `windowCreated` bool
@@ -161,6 +162,38 @@ gfx_render_texture :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> cor
 	o := core.make_render_texture_object(core.as_int(w_val), core.as_int(h_val))
 	vm.gc_track(v, &o.obj)
 	return core.make_object_value(&o.obj, true)
+}
+
+// gfx_shader mirrors glox's own ShaderBuiltIn exactly: 0 arguments
+// constructs an empty, not-yet-loaded shader (rl.Shader{}) for a script
+// to fill in via .load_from_memory(vertex_code, fragment_code); 2
+// arguments (vertex_file, fragment_file) loads compiled GLSL from disk
+// immediately via rl.LoadShader.
+@(private = "file")
+gfx_shader :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	switch argc {
+	case 0:
+		o := core.make_shader_object(rl.Shader{})
+		vm.gc_track(v, &o.obj)
+		return core.make_object_value(&o.obj, true)
+	case 2:
+		vs_val, fs_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1]
+		if !core.is_string(vs_val) || !core.is_string(fs_val) {
+			vm.runtime_error(v, "shader() expects string arguments for vertex and fragment shader files.")
+			return core.NIL_VALUE
+		}
+		cvs := strings.clone_to_cstring(core.string_get(core.as_string(vs_val)))
+		defer delete(cvs)
+		cfs := strings.clone_to_cstring(core.string_get(core.as_string(fs_val)))
+		defer delete(cfs)
+		o := core.make_shader_object(rl.LoadShader(cvs, cfs))
+		vm.gc_track(v, &o.obj)
+		return core.make_object_value(&o.obj, true)
+	case:
+		vm.runtime_error(v, "shader() expects 0 or 2 arguments.")
+		return core.NIL_VALUE
+	}
 }
 
 @(private = "file")

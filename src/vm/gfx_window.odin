@@ -521,6 +521,32 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		rl.EndBlendMode()
 		result = core.NIL_VALUE
 
+	// begin_shader_mode/end_shader_mode: redirect subsequent draw calls
+	// through a custom GLSL shader, matching glox's own win_methods.go.
+	// Only affects draws that use raylib's currently-bound shader --
+	// plain 2D primitives, win.draw_texture*, and win.draw_render_texture*
+	// all qualify; batch_instanced (not implemented here) always renders
+	// with its own fixed shader regardless, per glox's own doc note.
+	case "begin_shader_mode":
+		if arg_count != 1 {
+			runtime_error(vm, "begin_shader_mode() expects 1 argument (shader).")
+			return false
+		}
+		shader_val := peek(vm, 0)
+		if shader_val.type != .Obj || shader_val.obj_type != .Shader {
+			runtime_error(vm, "begin_shader_mode() argument must be a shader.")
+			return false
+		}
+		rl.BeginShaderMode(core.as_shader(shader_val).shader)
+		result = core.NIL_VALUE
+	case "end_shader_mode":
+		if arg_count != 0 {
+			runtime_error(vm, "end_shader_mode() takes no arguments.")
+			return false
+		}
+		rl.EndShaderMode()
+		result = core.NIL_VALUE
+
 	// --- render-texture (off-screen target) mode ---
 	case "begin_texture_mode":
 		// Redirects every ordinary window drawing call (clear/pixel/

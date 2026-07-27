@@ -489,13 +489,27 @@ scan_string :: proc(s: ^Scanner, quote: u8) -> Token {
 	has_escape := false
 
 	for {
-		if is_at_end(s) || peek(s) == '\n' {
+		if is_at_end(s) {
 			return error_token(s, "Unterminated string.")
 		}
 		c := peek(s)
 		if c == quote {
 			advance_char(s)
 			break
+		}
+		if c == '\n' {
+			// A literal newline inside a string is content, not an error --
+			// matches glox's own scanner.go (`string`, its Peek() == "\n"
+			// case just increments s.Line and continues). Found missing via
+			// gfx.shader()'s natural usage pattern: a script embeds GLSL
+			// source as a multi-line string literal
+			// (`var vs = "\n#version 330\n..."`), same shape
+			// lox_examples/julia.lox actually uses. Every other character
+			// in this loop already falls through to the generic
+			// write-and-advance below; '\n' just also needs the line
+			// counter bumped so later tokens/error messages still report
+			// accurate line numbers.
+			s.line += 1
 		}
 		if c == '$' && peek_next(s) == '$' {
 			has_escape = true

@@ -368,6 +368,10 @@ free_object :: proc(obj: ^core.Obj) {
 		rt := cast(^core.Render_Texture_Object)obj
 		core.render_texture_unload(rt) // no-op if already .unload()ed
 		free(rt)
+	case .Shader:
+		s := cast(^core.Shader_Object)obj
+		core.shader_unload(s) // no-op if already .unload()ed, and for a never-loaded gfx.shader() -- rl.UnloadShader(Shader{}) is a safe no-op in raylib itself
+		free(s)
 	case:
 		free(obj)
 	}
@@ -426,6 +430,8 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size_of(core.Texture_Object) + len(t.frame_rects) * size_of(rl.Rectangle)
 	case .Render_Texture:
 		return size_of(core.Render_Texture_Object)
+	case .Shader:
+		return size_of(core.Shader_Object)
 	case:
 		return 32
 	}
