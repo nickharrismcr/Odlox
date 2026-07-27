@@ -34,8 +34,6 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `render_texture.text()`, `batch_instanced`. `d:/odin/glox_reference/src/builtin/`
-      is the ground truth (`obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
 - [ ] `process.wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused
       — see `ROADMAP.md`'s Phase 6h section). `test_process.py`/`test_pool.py` are skipped at the whole-file

@@ -32,7 +32,7 @@ func init(col1,col2) {
     // anonymous closure over lifemax/speedmax/sizemax/cols
     return func(particle) {
         particle.dpos = vec2(1,1); // Initial velocity
-        var angle = random.float(0, 2 * math.PI); // Random angle
+        var angle = random.float(0, 2 * PI); // Random angle
         particle.dpos = rotate2d(particle.dpos, angle); // Rotate the initial velocity
         particle.dpos = scale2(particle.dpos, random.float(0.01, speedmax)); // Scale the velocity
 

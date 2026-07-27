@@ -2583,6 +2583,77 @@ precomputed sine-table heights) with an orbiting camera and alpha blending, and 
 bounded wall-clock smoke test with zero crashes on both build modes. `pytest` held at 220/0/26; both build
 modes compiled cleanly.
 
+### Phase 6v: `gfx.batch_instanced()`, `render_texture.text()`, and a real vector-subtraction gap
+
+Trigger: continuing "do the rest of the raylib stuff" — the last two items on TODO.md's Phase 6 raylib
+bullet. Ported from glox's `obj_builtin_batch_instanced.go`/`batch_instanced_methods.go`.
+
+**`gfx.batch_instanced(texture, cube_size, max_instances)`**: GPU-instanced rendering of one textured cube
+mesh, for scenes with too many identical cubes for `win.cube()`/`gfx.batch()` to keep up (tens of thousands
+at once) — `rl.DrawMeshInstanced` in a single draw call instead of one call per cube. A `Batch_Instanced_Object`
+(`core/obj_batch_instanced.odin`) owns its own `rl.Mesh`/`rl.Material` (via `rl.GenMeshCube`), a fixed-capacity
+`entries` list (translation + rotation matrices, precomputed on `add`), and a parallel `transforms` array
+rebuilt from `entries` by an explicit `make_transforms()` call — a real, two-phase API matching glox's own
+exactly (`add` every instance, call `make_transforms()` once, *then* start drawing every frame; adding more
+instances after drawing has started needs another explicit `make_transforms()` to pick them up).
+
+**Shared instancing shader**: glox loads `src/shaders/instanced/base_lighting_instanced.vs`/`lighting.fs`
+from disk paths relative to the process's working directory, as a lazy package-level singleton shared by
+every `BatchInstancedObject`. This port embeds both shader sources directly into the binary via Odin's
+`#load` (`src/shaders/instanced/*`, loaded once through `rl.LoadShaderFromMemory`) instead — a deliberate
+improvement, not a faithfulness gap: this is an internal implementation asset a Lox script never supplies or
+edits, so tying it to CWD serves no purpose and would just be a way for `batch_instanced()` to mysteriously
+fail depending on where a script is launched from. The shader's `MATRIX_MODEL` location slot is repurposed to
+hold the `instanceTransform` vertex attribute location (`rl.GetShaderLocationAttrib`), matching how raylib's
+own instancing shaders work — `DrawMeshInstanced` looks up that slot as the per-instance attribute location,
+not a per-draw uniform, since instancing has no single model matrix to send. No lights are ever enabled
+(`lights[i].enabled` is never set), so the fragment shader's lighting term is always zero and only the
+ambient term (hardcoded to 10.0, i.e. full brightness after the shader's own `ambient/10.0` normalization)
+contributes — ported as-is, since that's genuinely glox's own current rendered output, not a shortfall in
+this port.
+
+**`Draw(camera)` takes a camera argument it never reads**: confirmed by reading `obj_builtin_batch_instanced.go`
+in full — `BatchInstancedObject.Draw` never touches its `camera` parameter; the MVP `rl.DrawMeshInstanced`
+uses comes from whatever `BeginMode3D(camera)` call is already active. Ported faithfully: `batch_instanced_draw`
+(the `core` package proc) takes no camera parameter at all, but the dispatch layer (`vm/gfx_batch_instanced.odin`)
+still validates and requires one, preserving the real script-facing call shape (`.draw(camera)`,
+`lox_examples/cube_stack_fly2.lox`/`textured_batch_demo2.lox` both call it that way).
+
+**No GC-triggered GPU teardown** — confirmed via grep that glox itself never calls `UnloadMesh`/
+`UnloadMaterial`/`UnloadShader` for `BatchInstancedObject` or its shader singleton either; `free_object` only
+releases the two Odin-side dynamic arrays (`entries`/`transforms`), matching the "no GC-triggered teardown for
+GPU resources" convention already established for `Window_Object`'s `cube_mesh` and `Batch_Object`'s
+`circle_mesh` (Phase 6t/6u).
+
+**`render_texture.text(x, y, string)`**: ported to match glox's real, narrower signature — fixed font size
+10, hardcoded white, no color argument — confirmed against glox's own `render_texture_methods.go`, distinct
+from `Window`'s own `text(string, x, y, size, color)`. glox itself has no argument-count or type validation
+on this method at all; this port adds it (a deliberate improvement, same as every other native method here),
+raising a runtime error rather than a Go-style type-assertion panic on the wrong argument shape.
+
+**Real, pre-existing bug found and fixed**: verifying `batch_instanced` against `cube_stack_fly2.lox` (not a
+batch_instanced-specific script — it's a general 3D scene that happens to use `batch_instanced` for its cube
+city) hit `"Operands must be numbers."` on `this.targetWorldPos - this.worldPos` inside `Controller.update()`.
+glox's own `binarySubtract` (`vm.go`) handles `VAL_VEC2`/`VEC3`/`VEC4` directly under the plain `-` operator —
+unlike `+`, which this port (matching glox) deliberately splits into a numeric-only `Add_Numeric` and a
+vector-only `Add_Vector` (`++`) at the compiler level, `-` has no such split in glox at all (no `--` token
+exists), so `-` stays one operator that dispatches on runtime operand type. `vm/arithmetic.odin`'s
+`numeric_binop` only ever handled numeric operands for `.Subtract`/`.Multiply`/`.Divide`/`.Modulus` — vector
+subtraction was simply never ported. Fixed by adding a vector-operand carve-out to `numeric_binop`, mirroring
+`add_vector`'s own same-type-required, per-component approach (`glox`'s `Multiply`/`Divide`/`Modulus` do *not*
+handle vectors at all — confirmed by reading `binaryMultiply`/`binaryDivide`/`binaryModulus` in full — so only
+`Subtract` needed this).
+
+**Verified**: a smoke test covered `batch_instanced`'s full method surface (`add`/`make_transforms`/`draw`/
+`count`), the max-instances-exceeded error path, and the wrong-argument-type error path on `draw()`; a second
+smoke test covered `render_texture.text()`'s two argument-validation error paths. `pytest` held at 220/0/26
+throughout (including after the vector-subtraction fix). Confirmed against two real, unmodified, substantial
+scripts on both build modes: `lox_examples/cube_stack_fly2.lox` (a 305×305 procedural city of instanced
+textured cubes, orbiting/pathfinding camera controller, ~30k-cube stacks) and
+`lox_examples/textured_batch_demo2.lox` (27,000 textured cubes across two instanced batches, orbiting camera,
+distance-hue shader post-process) — both generate their full scene and run their animated loop under a
+bounded wall-clock smoke test with zero crashes, zero orphaned processes.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

@@ -2,6 +2,7 @@ package vm
 
 import "../core"
 import "core:c"
+import "core:strings"
 import rl "vendor:raylib"
 
 // gfx_texture: method dispatch for Image_Object/Texture_Object/
@@ -96,7 +97,7 @@ invoke_builtin_texture :: proc(vm: ^VM, t: ^core.Texture_Object, name: string, a
 
 // invoke_builtin_render_texture: width/height/unload, a mirror of Window's
 // own 2D primitive set (clear/pixel/line/line_ex/triangle/rectangle/circle/
-// circle_fill/draw_texture) -- found needed by lox_examples/tile_planes.lox
+// circle_fill/text/draw_texture) -- found needed by lox_examples/tile_planes.lox
 // ("frame.line_ex(...)"/"this.texture.clear(...)") and confirmed against
 // several other example scripts (cobweb-bifurc.lox, kaleido.lox,
 // cube_stack_fly2.lox, textured_batch_demo2.lox) that draw directly onto a
@@ -112,11 +113,10 @@ invoke_builtin_texture :: proc(vm: ^VM, t: ^core.Texture_Object, name: string, a
 // drawing call brackets *just that one draw* in its own
 // BeginTextureMode/EndTextureMode, not a persistent mode switch -- unlike
 // Window's own drawing methods, which draw against whatever the current
-// global GL target already is. Deliberately still not implemented: text()
-// (glox's own RenderTexture.text() takes a different, narrower argument
-// list -- (x, y, string) only, fixed font size 10, hardcoded white -- than
-// Window's text(), and no example script here calls it, so there's nothing
-// to verify that mismatch against).
+// global GL target already is. text() is genuinely narrower than Window's
+// own -- glox's own RenderTexture.text() takes (x, y, string) only, fixed
+// font size 10, hardcoded white, not Window's (string, x, y, size, color) --
+// ported to match that real shape, not Window's.
 invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
@@ -291,6 +291,30 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		}
 		rl.BeginTextureMode(rt.render_texture)
 		rl.DrawCircle(c.int(int(core.as_float(x_val))), c.int(int(core.as_float(y_val))), f32(core.as_float(r_val)), col)
+		rl.EndTextureMode()
+		result = core.NIL_VALUE
+	case "text":
+		// glox's RenderTexture.text() is narrower than Window's own
+		// text(): (x, y, string) only, fixed font size 10, hardcoded
+		// white -- ported to match that exactly, not Window's
+		// (string, x, y, size, color) shape.
+		if arg_count != 3 {
+			runtime_error(vm, "text() expects 3 arguments (x, y, text).")
+			return false
+		}
+		x_val, y_val, text_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_number(x_val) || !core.is_number(y_val) {
+			runtime_error(vm, "text() x/y arguments must be numbers.")
+			return false
+		}
+		if !core.is_string(text_val) {
+			runtime_error(vm, "text() third argument must be a string.")
+			return false
+		}
+		ctext := strings.clone_to_cstring(core.string_get(core.as_string(text_val)))
+		defer delete(ctext)
+		rl.BeginTextureMode(rt.render_texture)
+		rl.DrawText(ctext, c.int(int(core.as_float(x_val))), c.int(int(core.as_float(y_val))), 10, rl.WHITE)
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case "draw_texture":

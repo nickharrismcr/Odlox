@@ -7,13 +7,11 @@ import rl "vendor:raylib"
 
 // gfx: glox's own gfx module (src/vm/builtin.go's makeBuiltInModule(vm,
 // "gfx")) is a large raylib-dependent surface -- window/image/texture/
-// render_texture/shader/camera/batch. Window lifecycle, core 2D drawing,
-// texture/image/render_texture, and shader are implemented (see
-// vm/gfx_window.odin, vm/gfx_texture.odin, vm/gfx_shader.odin for the
-// real logic); camera/batch/batch_instanced, 3D drawing, and draw_array
-// are still not (ROADMAP.md/TODO.md track them as explicit follow-on
-// work). Calling any of those still fails with "<name> is not a member
-// of module 'gfx'", same as any other not-yet-registered name.
+// render_texture/shader/camera/batch/batch_instanced. Window lifecycle,
+// 2D and 3D drawing, texture/image/render_texture, shader, camera, and
+// batch/batch_instanced are all implemented -- see vm/gfx_window.odin,
+// vm/gfx_texture.odin, vm/gfx_shader.odin, vm/gfx_camera.odin,
+// vm/gfx_batch.odin, vm/gfx_batch_instanced.odin for the real logic.
 //
 // gfx.window(width, height) only constructs the Window_Object -- it
 // does *not* call raylib's InitWindow itself. Matches glox's own API
@@ -35,6 +33,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "shader", gfx_shader)
 	vm.define_builtin(v, "gfx", "camera", gfx_camera)
 	vm.define_builtin(v, "gfx", "batch", gfx_batch)
+	vm.define_builtin(v, "gfx", "batch_instanced", gfx_batch_instanced)
 	vm.define_builtin(v, "gfx", "lox_julia_array", gfx_lox_julia_array)
 	vm.define_builtin(v, "gfx", "lox_mandel_array", gfx_lox_mandel_array)
 }
@@ -248,6 +247,36 @@ gfx_batch :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 		return core.NIL_VALUE
 	}
 	o := core.make_batch_object(core.Batch_Primitive(core.as_int(type_val)))
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
+}
+
+// gfx_batch_instanced mirrors glox's own BatchInstancedBuiltIn exactly:
+// (texture, cube_size: float, max_instances: int) -- a fixed-capacity
+// instanced batch of one textured cube mesh, for scenes with too many
+// identical cubes for win.cube()/gfx.batch() to keep up.
+@(private = "file")
+gfx_batch_instanced :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 3 {
+		vm.runtime_error(v, "batch_instanced() expects 3 arguments (texture, cube_size, max_instances).")
+		return core.NIL_VALUE
+	}
+	tex_val, size_val, max_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1], v.stack[arg_stack_ptr + 2]
+	if tex_val.type != .Obj || tex_val.obj_type != .Texture {
+		vm.runtime_error(v, "batch_instanced() first argument must be a texture.")
+		return core.NIL_VALUE
+	}
+	if !core.is_float(size_val) {
+		vm.runtime_error(v, "batch_instanced() second argument must be a float (cube_size).")
+		return core.NIL_VALUE
+	}
+	if !core.is_int(max_val) {
+		vm.runtime_error(v, "batch_instanced() third argument must be an int (max_instances).")
+		return core.NIL_VALUE
+	}
+	texture := core.as_texture(tex_val).texture
+	o := core.make_batch_instanced_object(texture, f32(core.as_float(size_val)), core.as_int(max_val))
 	vm.gc_track(v, &o.obj)
 	return core.make_object_value(&o.obj, true)
 }

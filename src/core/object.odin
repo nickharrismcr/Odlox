@@ -57,6 +57,7 @@ Object_Type :: enum u8 {
 	Shader,
 	Camera,
 	Batch,
+	Batch_Instanced,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -166,6 +167,11 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		case .Circle3: type_name = "CIRCLE3"
 		}
 		return fmt.aprintf("<Batch %s [%d entries]>", type_name, batch_count(b), allocator = allocator)
+	case .Batch_Instanced:
+		// glox's own String() for BatchInstancedObject returns this
+		// literal, unembellished string (not the "<Type ...>" bracket
+		// convention every other native type here uses) -- ported as-is.
+		return "BatchInstancedObject"
 	}
 	return "<unknown>"
 }

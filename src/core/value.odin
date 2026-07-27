@@ -192,6 +192,9 @@ as_camera :: proc(v: Value) -> ^Camera_Object {
 as_batch :: proc(v: Value) -> ^Batch_Object {
 	return cast(^Batch_Object)v.obj
 }
+as_batch_instanced :: proc(v: Value) -> ^Batch_Instanced_Object {
+	return cast(^Batch_Instanced_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

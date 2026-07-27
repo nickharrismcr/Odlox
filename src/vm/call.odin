@@ -190,6 +190,8 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_camera(vm, core.as_camera(receiver), core.string_get(name), arg_count)
 	case .Batch:
 		return invoke_builtin_batch(vm, core.as_batch(receiver), core.string_get(name), arg_count)
+	case .Batch_Instanced:
+		return invoke_builtin_batch_instanced(vm, core.as_batch_instanced(receiver), core.string_get(name), arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;

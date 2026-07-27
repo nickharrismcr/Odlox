@@ -187,7 +187,7 @@ type_name :: proc(v: core.Value) -> string {
 			// Matches glox's own type() exactly -- WindowObject.GetType()
 			// (obj_builtin_window.go) also returns OBJECT_NATIVE.
 			return "builtin"
-		case .Image, .Texture, .Render_Texture, .Shader, .Camera, .Batch:
+		case .Image, .Texture, .Render_Texture, .Shader, .Camera, .Batch, .Batch_Instanced:
 			// Matches glox's own type() exactly -- ImageObject/TextureObject/
 			// RenderTextureObject/ShaderObject/CameraObject/BatchObject.GetType()
 			// (obj_builtin_image.go, obj_builtin_texture.go,

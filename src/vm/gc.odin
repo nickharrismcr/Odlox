@@ -378,6 +378,16 @@ free_object :: proc(obj: ^core.Obj) {
 		delete(bt.triangles)
 		delete(bt.circles)
 		free(bt)
+	case .Batch_Instanced:
+		// No GC-triggered GPU teardown here either -- confirmed via grep
+		// that glox itself never calls UnloadMesh/UnloadMaterial/
+		// UnloadShader for BatchInstancedObject or its shader singleton,
+		// same "no GC-triggered teardown" convention already established
+		// for Window_Object's cube_mesh and Batch_Object's circle_mesh.
+		bi := cast(^core.Batch_Instanced_Object)obj
+		delete(bi.entries)
+		delete(bi.transforms)
+		free(bi)
 	case:
 		free(obj)
 	}
@@ -452,6 +462,11 @@ object_size :: proc(obj: ^core.Obj) -> int {
 			len(bt.entries) * size_of(core.Batch_Entry) +
 			len(bt.triangles) * size_of(core.Triangle_Batch_Entry) +
 			len(bt.circles) * size_of(core.Circle_Batch_Entry)
+	case .Batch_Instanced:
+		bi := cast(^core.Batch_Instanced_Object)obj
+		return size_of(core.Batch_Instanced_Object) +
+			len(bi.entries) * size_of(core.Batch_Instanced_Entry) +
+			len(bi.transforms) * size_of(rl.Matrix)
 	case:
 		return 32
 	}

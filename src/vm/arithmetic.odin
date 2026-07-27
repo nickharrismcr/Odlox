@@ -113,6 +113,38 @@ string_multiply :: proc(s: string, count: int) -> string {
 numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 	b := pop(vm)
 	a := pop(vm)
+	// Vector subtraction -- glox's own binarySubtract (vm.go) handles
+	// VAL_VEC2/VEC3/VEC4 directly under the plain `-` operator, unlike
+	// `+` which is split into a numeric-only Add_Numeric and a
+	// vector-only Add_Vector (`++`) at the compiler level (see
+	// compiler/expr.odin's binary doc comment). `-` has no such split in
+	// glox -- there is no `--` token at all -- so it stays one operator
+	// that dispatches on runtime operand type here, same as there. Found
+	// via lox_examples/cube_stack_fly2.lox's `this.targetWorldPos -
+	// this.worldPos` (Controller.update), which this proc previously
+	// rejected outright with "Operands must be numbers."
+	if op == .Subtract {
+		a_is_vec := a.type == .Vec2 || a.type == .Vec3 || a.type == .Vec4
+		b_is_vec := b.type == .Vec2 || b.type == .Vec3 || b.type == .Vec4
+		if a_is_vec || b_is_vec {
+			if a.type != b.type {
+				runtime_error(vm, "Vector operands must be the same type.")
+				return false
+			}
+			#partial switch a.type {
+			case .Vec2:
+				av, bv := core.as_vec2(a), core.as_vec2(b)
+				push_vec2(vm, av.x - bv.x, av.y - bv.y)
+			case .Vec3:
+				av, bv := core.as_vec3(a), core.as_vec3(b)
+				push_vec3(vm, av.x - bv.x, av.y - bv.y, av.z - bv.z)
+			case .Vec4:
+				av, bv := core.as_vec4(a), core.as_vec4(b)
+				push_vec4(vm, av.x - bv.x, av.y - bv.y, av.z - bv.z, av.w - bv.w)
+			}
+			return true
+		}
+	}
 	// String*int / int*string repetition -- glox's own binaryMultiply
 	// (vm.go) special-cases this before its own "operands must be
 	// numbers" check, same as here. Found via list_slice.lox's `"-"*50`
