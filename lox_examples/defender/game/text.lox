@@ -1,0 +1,83 @@
+from gfx import *
+
+// Bitmap text drawn from the alphanumeric atlas (pngs/font.png).
+//
+// The atlas is a single row of 38 glyphs on a 30px pitch. Each glyph's ink is
+// 20px wide and 30px tall, with 10px of trailing padding in its cell -- drawing
+// the ink width rather than the full cell keeps the last glyph ('Z', which ends
+// exactly at the atlas edge) from sampling past the texture.
+//
+// A character maps to its cell by index into CHARS.
+
+const CHARS   = "0123456789:?ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+const PITCH   = 30    // distance between glyph cells in the atlas
+const INK_W   = 20    // drawn width of a glyph
+const INK_H   = 30    // glyph height
+const ADVANCE = 25    // pen advance per character
+
+class Font {
+    init(img) {
+        this.tex = texture(img, 1, 1, 1)   // sliced manually, so a single frame
+        this.index = {}
+        i = 0
+        foreach (var c in CHARS) {
+            this.index[c] = i
+            i = i + 1
+        }
+        this.chars = this.index.keys()
+    }
+
+    width(s) {
+        return len(s) * ADVANCE
+    }
+
+    // Draw s at screen (x, y), tinted col. Characters outside the atlas (a space,
+    // say) draw nothing but still advance the pen.
+    draw(win, s, x, y, col) {
+        cx = x
+        foreach (var c in s) {
+            if (c in this.chars) {
+                win.draw_texture_rect(this.tex, cx, y, this.index[c] * PITCH, 0, INK_W, INK_H, col)
+            }
+            cx = cx + ADVANCE
+        }
+    }
+}
+
+// Smoothly cycles a colour through a palette, taking `steps` frames per leg.
+class ColourCycle {
+    init(palette, steps) {
+        this.palette = palette
+        this.steps = steps
+        this.i = 0
+        this.t = 0
+    }
+
+    update() {
+        this.t = this.t + 1
+        if (this.t >= this.steps) {
+            this.t = 0
+            this.i = (this.i + 1) % len(this.palette)
+        }
+    }
+
+    // linear blend from the current palette entry toward the next
+    get() {
+        a = this.palette[this.i]
+        b = this.palette[(this.i + 1) % len(this.palette)]
+        f = float(this.t) / float(this.steps)     // float(): int/int would truncate to 0
+        return vec4(a.x + (b.x - a.x) * f,
+                    a.y + (b.y - a.y) * f,
+                    a.z + (b.z - a.z) * f,
+                    255)
+    }
+}
+
+// Left-pad n with zeros to width w.
+func zero_pad(n, w) {
+    s = str(n)
+    while (len(s) < w) {
+        s = "0" & s
+    }
+    return s
+}

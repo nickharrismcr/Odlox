@@ -1,0 +1,98 @@
+import colour
+
+class Radar {
+    init(screenwidth, screenheight, worldwidth ) {
+        this.width= screenwidth/2
+        this.screenwidth = screenwidth
+        this.pos= screenwidth/2 - this.width/2
+        this.end = this.pos + this.width
+        this.height = 100
+
+        this.wxscale = float(this.width) / worldwidth
+        this.wyscale = float(this.height) / screenheight
+        this.worldwidth = worldwidth
+        this.line1=(this.pos,0, this.pos, this.height)
+        this.line2=(this.pos+this.width,0, this.pos+this.width, this.height)
+        this.line3=(0,this.height, this.screenwidth, this.height)
+        this.line4=(this.screenwidth/2-(this.width)*this.wxscale, 0, this.screenwidth/2-(this.width)*this.wxscale, 100)
+        this.line5=(this.screenwidth/2+(this.width)*this.wxscale, 0, this.screenwidth/2+(this.width)*this.wxscale, 100)
+
+        // Colours are cached here since draw() runs every frame and its
+        // terrain loop runs ~worldwidth/30 times -- a fresh vec4 per
+        // call/iteration would be a steady per-frame GC-pressure source.
+        this.border_colour = colour.RED
+        this.crosshair_colour = colour.WHITE
+        this.terrain_colour = colour.TERRAIN_ORANGE
+    }
+    draw(win, cam, entities, mountains ) {
+
+        win.line(this.line1[0], this.line1[1], this.line1[2], this.line1[3], this.border_colour)
+        win.line(this.line2[0], this.line2[1], this.line2[2], this.line2[3], this.border_colour)
+        win.line(this.line3[0], this.line3[1], this.line3[2], this.line3[3], this.border_colour)
+        win.line(this.line4[0], this.line4[1], this.line4[2], this.line4[3], this.crosshair_colour)
+        win.line(this.line5[0], this.line5[1], this.line5[2], this.line5[3], this.crosshair_colour)
+
+        // radar
+        // translate
+        c = 0
+        ww2= this.worldwidth / 2
+        sw2 = this.screenwidth / 2
+        while (c < this.worldwidth) {
+            idx = ( c + ww2 + cam.x ) + sw2
+            mh = mountains.get(idx)
+            rh = mh * this.wyscale
+            ry = this.height - 2 - rh
+            rx = this.pos + c * this.wxscale
+            win.pixel(rx, ry, this.terrain_colour)
+            c = c + 30
+        }
+
+        foreach (var entity in entities.get_all()) {
+
+            if (!entity.alive or entity.radar == nil) {
+                continue
+            }
+
+
+
+            ex = entity.pos.x
+            ey = entity.pos.y
+            screenx  = ex - cam.x - sw2
+            scx  = screenx * this.wxscale
+            rx = sw2 + scx
+            if ( rx > this.end ) {
+                rx = rx - this.width
+            }
+            if (rx < this.pos) {
+                rx = rx + this.width
+            }
+            ry = ey * this.wyscale
+
+            if (entity.type == "lander") {
+                // two-tone dot: yellow upper half, green lower half
+                win.rectangle(rx, ry, 5, 2, colour.YELLOW)
+                win.rectangle(rx, ry + 2, 5, 3, colour.GREEN)
+            } else {
+                c = entity.radar
+                win.rectangle(rx, ry, 5, 5, c)
+            }
+        }
+
+        // player: a distinct white blob (not part of entities.get_all())
+        if (entities.player != nil and entities.player.alive) {
+            ex = entities.player.pos.x
+            ey = entities.player.pos.y
+            screenx  = ex - cam.x - sw2
+            scx  = screenx * this.wxscale
+            rx = sw2 + scx
+            if ( rx > this.end ) {
+                rx = rx - this.width
+            }
+            if (rx < this.pos) {
+                rx = rx + this.width
+            }
+            ry = ey * this.wyscale
+            win.circle_fill(rx + 2, ry + 2, 3, colour.WHITE)
+        }
+    }
+}

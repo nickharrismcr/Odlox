@@ -1,0 +1,44 @@
+from gfx import *
+from npc import NPC, seek_player
+import random
+
+// Swarmer: released when a pod is destroyed. Homes in on the player at speed,
+// re-aiming several times a second, and occasionally fires.
+
+class Swarmer < NPC {
+
+    init(pos, img) {
+        super.init(pos, img, 1, 1, 1, "swarmer")   // swarmer.png = single 20x16 frame
+        this.radar = vec4(255, 80, 0, 255)
+        this.update_func = state_chase
+        this.maxspeed = random.float(13.0, 17.0)
+        this.nextthink = 0
+
+        // disperse rises by disperse_rate each frame up to disperse_max, over
+        // ~3 seconds, so swarmers burst apart at varying spreads
+        ddisp = random.float(10.0, 50.0)
+        this.disperse_rate = ddisp / 60.0
+        this.disperse_max = ddisp * 3
+    }
+}
+
+func state_chase(e, width, height) {
+    player = e.mgr.player
+    if (player == nil) {
+        return
+    }
+    e.nextthink = e.nextthink - 1
+    if (e.nextthink < 0) {
+        e.dp = seek_player(e, player, e.maxspeed, 60,
+                           random.integer(-500, 500), random.integer(-300, 300))
+        e.nextthink = 12                       // re-aim every 0.2s
+        if (e.counter > 60 and random.integer(0, 100) == 1) {
+            e.fire_bullet_at(player)
+        }
+    }
+    e.pos.add(e.dp)
+
+    // keep inside the play area vertically
+    if (e.pos.y < 110) { e.pos.y = 110 }
+    if (e.pos.y > height - 40) { e.pos.y = height - 40 }
+}

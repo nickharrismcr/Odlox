@@ -1,0 +1,50 @@
+from sprite import Sprite
+import random
+import colour
+ 
+
+class Bullet < Sprite {
+    init(pos, img, frames, start_frame, end_frame) {
+        super.init(pos, img, frames, start_frame, end_frame)
+        this.animate(10)
+        this.ticks_to_live = 0
+        // use the per-frame size for collision, not the whole sprite sheet
+        this.width = this.texture.frame_width()
+        this.height = this.texture.height()
+    }
+    position() {
+        return (this.x, this.y)
+    }
+    dead() {
+        return this.ticks_to_live <= 0
+    }
+    kill() {
+        this.ticks_to_live = 0
+    }
+    reset(p,v,life=100) {
+
+        this.pos = vec2(p.x, p.y)
+        this.dp = vec2(v.x, v.y)
+        this.ticks_to_live = life
+    }
+
+    update(width,height) {
+        if (this.dead()) {
+            return;
+        }
+        this.pos.add(this.dp)
+        this.ticks_to_live = this.ticks_to_live - 1
+        if (this.pos.y < 100 or this.pos.y > height) {
+            this.ticks_to_live = 0
+        }   
+    }
+    draw(win,cam) {
+        if (this.dead()) {
+            return;
+        }
+        spos = cam.translate(this.pos.x)
+        if (spos != nil) {
+            win.draw_texture(this.texture, spos, this.pos.y, colour.WHITE)
+        }
+    }
+}

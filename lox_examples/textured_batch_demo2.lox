@@ -1,0 +1,128 @@
+from gfx import *
+// textured cube batch performance demo
+// Shows thousands of textured cubes with camera orbit and culling
+import math;
+import sys;
+import colour;
+
+// Grid parameters for thousands of cubes
+grid_size = 30  // 30 x 30 x 30 = 27000 cubes
+cube_spacing = 30
+cube_size = 10
+
+win = window(1024, 768)
+win.init()
+win.toggle_fullscreen()
+
+screenwidth = win.get_screen_width()
+screenheight = win.get_screen_height()
+
+screen_buffer = render_texture(int(screenwidth), int(screenheight))
+screen_buffer.clear(vec4(0, 0, 0, 255))  //
+
+// Load shader after window initialization (OpenGL context must exist)
+rainbow_shader = shader("lox_examples/shaders/distance_hue.vs", "lox_examples/shaders/distance_hue.fs")
+time_location = -1      // Rainbow shader time uniform (for color animation)
+hue_scale_location = -1 // Hue scale uniform
+max_distance_location = -1 // Max distance uniform
+ 
+if (rainbow_shader.is_valid()) {
+    time_location = rainbow_shader.get_location("time")
+    hue_scale_location = rainbow_shader.get_location("hueScale")
+    max_distance_location = rainbow_shader.get_location("maxDistance")
+ 
+    
+    // Set initial values for gradual effect
+    rainbow_shader.set_value_float(hue_scale_location, 0.5)  // Very gradual hue shift
+    rainbow_shader.set_value_float(max_distance_location, 2000.0)  // Expected max distance
+    
+} else {
+    print("Warning: Rainbow shader failed to load. Using default rendering.")
+}
+
+// Camera parameters for orbiting
+camera_distance = 480.0
+camera_height = 140.0
+camera_angle = 0.0
+camera_target = vec3(0, 0, 0)
+
+// Create single texture for all cubes
+texture1 = render_texture(32, 32)
+texture1.clear(vec4(0, 0, 0, 255))  // Gray background
+texture1.rectangle(4, 4, 24, 24, vec4(255, 200, 0, 255))  // Orange square
+texture1.circle_fill(16, 16, 8, vec4(255, 0, 0, 255))  // Red circle
+
+texture2 = render_texture(32, 32)
+texture2.clear(vec4(0, 0, 0, 255))  // Gray background
+texture2.rectangle(4, 4, 24, 24, vec4(0, 200, 0, 255))  // Green square
+texture2.circle_fill(16, 16, 8, vec4(0, 0, 255, 255))  // Blue circle
+
+batch_size=30000
+textured_batch1 = batch_instanced(texture1.get_texture(),float(cube_size),batch_size)
+textured_batch2 = batch_instanced(texture2.get_texture(),float(cube_size),batch_size)
+
+grid_offset = -(grid_size * cube_spacing) / 2.0
+
+print format("Generating %d textured cubes...", grid_size * grid_size * grid_size)
+
+// Add textured cubes in a large grid pattern
+rot=vec3(0, 1, 0)  // Rotation axis for cubes
+for (x = 0; x < grid_size; x+=1) {
+    for (z = 0; z < grid_size; z+=1) {
+        for ( y = 0; y < grid_size; y+=1) {
+            pos = vec3(
+                grid_offset + x * cube_spacing, 
+                grid_offset + y * cube_spacing,
+                grid_offset + z * cube_spacing
+            )
+            if ((x + y + z) % 2 == 0) {
+                textured_batch1.add(vec3(pos.x, pos.y, pos.z), rot, 0.0)
+            } else {
+                textured_batch2.add(vec3(pos.x, pos.y, pos.z), rot, 0.0)
+            }
+        }
+    }
+}
+textured_batch1.make_transforms()
+textured_batch2.make_transforms()
+
+ 
+// Performance tracking
+frame_count = 0
+ 
+
+while (!win.should_close()) {
+    frame_count = frame_count + 1
+   
+    camera_angle = camera_angle + 0.2 
+    // Calculate camera position after angle update
+    cam_x = camera_target.x + camera_distance * 0.75 * math.cos(math.radians(camera_angle))
+    cam_z = camera_target.z + camera_distance * 1.5 * math.sin(math.radians(camera_angle))
+    cam_y = camera_target.y + camera_height * 3* math.sin(math.radians(camera_angle / 2.0))
+    cam = camera(vec3(cam_x, cam_y, cam_z), camera_target, vec3(0, 1, 0))
+    
+    win.begin()
+    win.begin_texture_mode(screen_buffer)
+    win.clear(colour.WHITE)
+    
+    win.begin_3d(cam) 
+    textured_batch1.draw(cam)
+    textured_batch2.draw(cam)
+    win.end_3d()
+    win.end_texture_mode()
+    
+    
+    rainbow_shader.set_value_float(time_location, float(frame_count) * 0.001)  // Much slower time animation
+     
+    win.begin_shader_mode(rainbow_shader)
+    win.draw_render_texture(screen_buffer, 0, 0,colour.WHITE)
+    win.end()
+    win.end_shader_mode()
+    
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+}
+
+ 
+win.close()

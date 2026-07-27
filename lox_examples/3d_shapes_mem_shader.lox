@@ -1,0 +1,271 @@
+from gfx import *
+// Shader Loading from Memory Demo - Animated Rotating Cylinders with Basic Lighting
+// Demonstrates loading shaders from code strings rather than files
+// Shows cylinders rotating in all 3 planes with Phong lighting model (ambient + diffuse + specular)
+
+import colour as col
+import colour_utils
+import random
+import math
+
+SHAPES=1500
+
+win = window(1,1)
+win.init()
+win.toggle_fullscreen()
+
+cam = camera(vec3(20, 10, 10), vec3(0, 0, 0), vec3(0, 1, 0))
+
+// Define simple shader code with basic lighting and translation
+vertex_code = "#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec4 vertexColor;
+in vec3 vertexNormal;
+uniform mat4 mvp;
+uniform mat4 matModel;
+uniform mat4 matNormal;
+uniform vec3 translation;
+uniform vec3 rotation;
+out vec2 fragTexCoord;
+out vec4 fragColor;
+out vec3 fragPosition;
+out vec3 fragNormal;
+void main() {
+    // Apply manual rotation around X, Y, and Z axes (fixed trigonometry)
+    vec3 pos = vertexPosition;
+    vec3 norm = vertexNormal;
+    
+    // Rotate around X-axis
+    float cosX = cos(rotation.x);
+    float sinX = sin(rotation.x);
+    vec3 rotatedX = vec3(pos.x, pos.y * cosX - pos.z * sinX, pos.y * sinX + pos.z * cosX);
+    vec3 normalRotatedX = vec3(norm.x, norm.y * cosX - norm.z * sinX, norm.y * sinX + norm.z * cosX);
+    
+    // Rotate around Y-axis
+    float cosY = cos(rotation.y);
+    float sinY = sin(rotation.y);
+    vec3 rotatedXY = vec3(rotatedX.x * cosY + rotatedX.z * sinY, rotatedX.y, -rotatedX.x * sinY + rotatedX.z * cosY);
+    vec3 normalRotatedXY = vec3(normalRotatedX.x * cosY + normalRotatedX.z * sinY, normalRotatedX.y, -normalRotatedX.x * sinY + normalRotatedX.z * cosY);
+    
+    // Rotate around Z-axis
+    float cosZ = cos(rotation.z);
+    float sinZ = sin(rotation.z);
+    vec3 rotatedPos = vec3(rotatedXY.x * cosZ - rotatedXY.y * sinZ, rotatedXY.x * sinZ + rotatedXY.y * cosZ, rotatedXY.z);
+    vec3 rotatedNormal = vec3(normalRotatedXY.x * cosZ - normalRotatedXY.y * sinZ, normalRotatedXY.x * sinZ + normalRotatedXY.y * cosZ, normalRotatedXY.z);
+    
+    // Apply translation
+    vec3 transformedPos = rotatedPos + translation;
+    
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    fragPosition = vec3(matModel * vec4(transformedPos, 1.0));
+    fragNormal = normalize(vec3(matNormal * vec4(rotatedNormal, 0.0)));
+    gl_Position = mvp * vec4(transformedPos, 1.0);
+}"
+
+ 
+
+fragment_code = "#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+in vec3 fragPosition;
+in vec3 fragNormal;
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform float brightness;
+uniform vec3 lightPos;
+uniform vec3 viewPos;
+out vec4 finalColor;
+void main() {
+    vec3 ambient = vec3(0.05, 0.05, 0.05);
+    
+    vec3 norm = normalize(fragNormal);
+    vec3 lightDir = normalize(lightPos - fragPosition);
+    vec3 viewDir = normalize(viewPos - fragPosition);
+    
+    // Diffuse (Lambert) - increased intensity
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * vec3(2.5, 2.5, 2.5);
+    
+    // Blinn-Phong specular (more realistic than Phong) - increased intensity & shininess
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(norm, halfwayDir), 0.0), 256);
+    vec3 specular = spec * vec3(12.0, 12.0, 12.0);
+    
+    // Distance attenuation
+    float distance = length(lightPos - fragPosition);
+    float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+    
+    vec4 texelColor = texture(texture0, fragTexCoord);
+    vec3 lighting = (ambient + (diffuse + specular) * attenuation);
+    finalColor = vec4(lighting, 1.0) * texelColor * fragColor * colDiffuse * brightness;
+}"
+
+// Create shader and load from memory
+memory_shader = shader()
+memory_shader.load_from_memory(vertex_code, fragment_code)
+
+brightness_loc = -1
+light_pos_loc = -1
+view_pos_loc = -1
+translation_loc = -1
+rotation_loc = -1
+
+if (memory_shader.is_valid()) {
+    brightness_loc = memory_shader.get_location("brightness")
+    light_pos_loc = memory_shader.get_location("lightPos")
+    view_pos_loc = memory_shader.get_location("viewPos")
+    translation_loc = memory_shader.get_location("translation")
+    rotation_loc = memory_shader.get_location("rotation")
+} else {
+    print("Failed to load shader from memory")
+}
+
+angle = 0.0
+cam_angle = 0.0
+frame_count = 0
+brightness = 1.0  // Fixed brightness value
+// Dynamic light position - will move randomly
+light_angle_x = 0.0
+light_angle_y = 0.0
+light_angle_z = 0.0
+light_speed_x = random.float(0.008, 0.025)
+light_speed_y = random.float(0.012, 0.035)
+light_speed_z = random.float(0.006, 0.02)
+
+class BrightObject {
+    init(size, color) {
+        this.size = size
+        this.color = color
+        this.rotation_x = 0.0
+        this.rotation_y = 0.0
+        this.rotation_z = 0.0
+        this.rotation_speed_x = random.float(-0.05, 0.05)
+        this.rotation_speed_y = random.float(-0.05, 0.05)
+        this.rotation_speed_z = random.float(-0.05, 0.05)
+        
+        // Orbital parameters
+        this.orbit_radius = random.float(5, 255)
+        this.orbit_speed = random.float(0.005, 0.02) * (1.0 / this.orbit_radius)  // Closer objects orbit faster
+        this.orbit_angle = random.float(0, 6.28)  // Random starting angle
+        this.orbit_height = 10.0  // Fixed Y position for all  
+        
+        // Calculate initial position
+        this.pos = vec3(math.cos(this.orbit_angle) * this.orbit_radius, this.orbit_height, math.sin(this.orbit_angle) * this.orbit_radius)
+    }
+    
+    update() {
+        // Update orbital motion
+        this.orbit_angle = this.orbit_angle + this.orbit_speed
+        
+        // Calculate new position based on orbit - all at same Y height
+        this.pos.x = math.cos(this.orbit_angle) * this.orbit_radius
+        this.pos.z = math.sin(this.orbit_angle) * this.orbit_radius
+        this.pos.y = this.orbit_height
+        
+        // Update rotations
+        this.rotation_x = this.rotation_x + this.rotation_speed_x
+        this.rotation_y = this.rotation_y + this.rotation_speed_y
+        this.rotation_z = this.rotation_z + this.rotation_speed_z
+    }
+    
+    draw(win) {
+        if (memory_shader.is_valid()) {
+            win.begin_shader_mode(memory_shader)
+            
+            // Set translation and rotation uniforms
+            if (translation_loc >= 0) {
+                memory_shader.set_value_vec3(translation_loc, this.pos)
+            }
+            if (rotation_loc >= 0) {
+                memory_shader.set_value_vec3(rotation_loc, vec3(this.rotation_x, this.rotation_y, this.rotation_z))
+            }
+        }
+        
+        // Draw shape at origin since translation is handled by shader
+        win.cylinder(vec3(0, 0, 0), this.size*0.5,0, 1.5, this.color)
+        
+        if (memory_shader.is_valid()) {
+            win.end_shader_mode()
+        }
+    }
+}
+
+// Create objects
+objects = []
+for (i = 0; i < SHAPES; i = i + 1) {
+    size = random.float(0.3, 2.0)
+    color = colour_utils.random()  
+    objects.append(BrightObject(size, color))
+}
+
+while (!win.should_close()) {
+    angle = angle + 0.01
+    cam_angle = cam_angle + 0.03
+    x = math.cos(angle) * 30
+    z = math.sin(angle) * 30
+    // Add slow vertical camera movement - oscillate between y=5 and y=15
+    y = 10 + 50 * math.sin(cam_angle * 0.1)
+    cam.set_position(vec3(x, y, z))
+    // Keep camera pointed at center of action
+    cam.set_target(vec3(0, 10, 0))
+    
+    frame_count = frame_count + 1
+    
+    // Update dynamic light position with complex 3D movement
+    light_angle_x = light_angle_x + light_speed_x
+    light_angle_y = light_angle_y + light_speed_y
+    light_angle_z = light_angle_z + light_speed_z
+    
+    // Create complex 3D light movement pattern
+    light_pos = vec3(15 * math.cos(light_angle_x) + 8 * math.sin(light_angle_y * 0.7),12 + 6 * math.sin(light_angle_z) + 4 * math.cos(light_angle_x * 1.3),15 * math.sin(light_angle_x) + 8 * math.cos(light_angle_z * 0.9))
+    
+    // Update shader uniforms
+    if (memory_shader.is_valid()) {
+        if (brightness_loc >= 0) {
+            memory_shader.set_value_float(brightness_loc, brightness)
+        }
+        if (light_pos_loc >= 0) {
+            memory_shader.set_value_vec3(light_pos_loc, light_pos)
+        }
+        if (view_pos_loc >= 0) {
+            memory_shader.set_value_vec3(view_pos_loc, vec3(x, y, z))
+        }
+    }
+    
+    // Update objects
+    foreach (obj in objects) {
+        obj.update()
+    }
+    
+    win.begin()
+    win.begin_blend_mode(win.BLEND_ALPHA)  
+    
+    // Slowly changing background hue - smooth HSV color cycling
+    hue_time = frame_count * 0.001  // Very slow color change
+    hue = hue_time - math.floor(hue_time / 6.28) * 6.28  // Keep hue in 0-2π range for smooth cycling
+    
+    // Convert HSV to RGB for smooth hue transitions (S=0.6, V=0.3 for dark background)
+    bg_color = colour_utils.hsv_to_rgb(hue * 57.2958, 0.6, 0.3)  // Convert radians to degrees for native function
+    
+    win.clear(vec4(bg_color.x, bg_color.y, bg_color.z, 255))
+    win.begin_3d(cam)
+    
+    // Draw light position indicator
+    win.sphere(light_pos, 0.1, vec4(255, 255, 0, 255))
+    
+    // Draw objects
+    foreach (obj in objects) {
+        obj.draw(win)
+    }
+    
+    win.end_3d()
+    win.end()
+}
+
+// Cleanup
+if (memory_shader.is_valid()) {
+    memory_shader.unload()
+}
+win.close()

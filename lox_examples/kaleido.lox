@@ -1,0 +1,252 @@
+from gfx import *
+// kaleidoscope driven by a live-painted canvas (bouncing pens), not loaded images
+
+import colour,math,random
+
+
+const speed = 1.0
+
+
+class Rect{
+    init(v1x,v1y, v2x, v2y ) {
+        this.v1 = vec2(v1x, v1y)
+        this.v2 = vec2(v2x, v2y)
+    }
+}
+
+// --- TextureSampler class ---
+class TextureSampler {
+    init(tex, sampleWidth, sampleHeight) {
+        this.tex = tex
+        this.TextureWidth = tex.width()
+        this.TextureHeight = tex.height()
+        this.SampleX = 0
+        this.SampleY = 0
+        this.SampleWidth = sampleWidth
+        this.SampleHeight = sampleHeight
+        this.VelX = speed
+        this.VelY = speed
+    }
+
+    update() {
+        this.SampleX = this.SampleX + this.VelX
+        this.SampleY = this.SampleY + this.VelY
+
+        if (this.SampleX <= 0) {
+            this.SampleX = 0
+            this.VelX = -this.VelX
+        } else if (this.SampleX >= this.TextureWidth - this.SampleWidth) {
+            this.SampleX = this.TextureWidth - this.SampleWidth
+            this.VelX = -this.VelX
+        }
+
+        if (this.SampleY <= 0) {
+            this.SampleY = 0
+            this.VelY = -this.VelY
+        } else if (this.SampleY >= this.TextureHeight - this.SampleHeight) {
+            this.SampleY = this.TextureHeight - this.SampleHeight
+            this.VelY = -this.VelY
+        }
+    }
+
+    get() {
+        return Rect(
+            this.SampleX, this.SampleY,
+            this.SampleX + this.SampleWidth, this.SampleY + this.SampleHeight
+        )
+    }
+}
+
+// --- Pen: a bouncing brush that paints onto the live canvas, same movement scheme as tile_planes.lox's Line ---
+class Pen {
+    init(width, height, margin) {
+        this.margin = margin
+        this.width = width
+        this.height = height
+        this.pos = vec2(margin + random.integer(0, width - 2 * margin), margin + random.integer(0, height - 2 * margin))
+        this.lastp = vec2(this.pos.x, this.pos.y)
+        this.angle = math.PI / 4
+        this.dir = this.angle * float(random.integer(0, 8))
+        this.maxspeed = random.integer(15, 60)
+        this.speed = random.integer(8, 15)
+        this.dspeed = random.integer(2, 5)
+        this.counter = 0
+        this.change = random.integer(5, 60)
+        this.thickness = random.integer(1, 5)
+        this.col = colour.random_rgb()
+        this.col.a = 220
+    }
+
+    update() {
+        this.lastp = vec2(this.pos.x, this.pos.y)
+        this.pos.x = this.pos.x + this.speed * math.cos(this.dir)
+        this.pos.y = this.pos.y + this.speed * math.sin(this.dir)
+
+        // Clamp to inner rectangle
+        if (this.pos.x > this.width - this.margin) {
+            this.pos.x = this.width - this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.x < this.margin) {
+            this.pos.x = this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.y > this.height - this.margin) {
+            this.pos.y = this.height - this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.y < this.margin) {
+            this.pos.y = this.margin
+            this.dir = this.dir + math.PI
+        }
+
+        this.counter = this.counter + 1
+        if (this.counter > this.change) {
+            this.counter = 0
+            this.change = random.integer(2, 10)
+            this.dir = this.dir + this.angle * random.choice([-1, 1])
+        }
+
+        this.speed = this.speed + this.dspeed
+        if (this.speed > this.maxspeed or this.speed < 1) {
+            this.dspeed = -this.dspeed
+        }
+    }
+
+    draw(canvas) {
+        canvas.line_ex(this.lastp.x, this.lastp.y, this.pos.x, this.pos.y, this.thickness, this.col)
+    }
+}
+
+fun make_pens(n, width, height, margin) {
+    pens = []
+    i = 0
+    while (i < n) {
+        pens.append(Pen(width, height, margin))
+        i += 1
+    }
+    return pens
+}
+
+// --- Helper for triangle width ---
+fun get_width(segmentCount, screenHeight) {
+    segmentAngle = 2 * math.PI / segmentCount
+    radius = screenHeight
+    triangleWidth = 2 * radius * math.tan(segmentAngle / 2)
+    triangleWidth = triangleWidth * 1.1 // generous overlap
+    return [radius, triangleWidth]
+}
+
+// --- Draw a single segment ---
+fun draw_segment(win, rt, tex, sampler, posX, posY, rotation, flip) {
+    // Draw triangle mask to render texture
+    win.begin_blend_mode(win.BLEND_ALPHA)
+
+    rt.clear(vec4(0,0,0,0))
+    sw = sampler.SampleWidth
+    sh = sampler.SampleHeight
+
+    // Triangle vertices (mask)
+    v1 = vec2(sw/2, -20)
+    v2 = vec2(-5, sh+5)
+    v3 = vec2(sw+5, sh+5)
+    rt.triangle(v1.x, v1.y, v2.x, v2.y, v3.x, v3.y, colour.WHITE)
+
+    win.end_blend_mode()
+
+    // Masked texture
+    win.begin_blend_mode(win.BLEND_MULTIPLY)
+    src = sampler.get()
+    srcX = src.v1.x
+    srcY = src.v1.y
+    srcW = src.v2.x - src.v1.x
+    srcH = src.v2.y - src.v1.y
+    flipW = srcW
+    if (flip) {
+        flipW = -srcW
+    }
+    // tex comes straight from a render texture (canvas.get_texture()), whose GPU
+    // storage is vertically flipped relative to the top-left coordinates it was
+    // painted in. Flip the source rect back to match (negative height, y measured
+    // from the bottom) the same way draw_texture_pro(rt, ...) does below for rt.
+    storageY = tex.height() - srcY - srcH
+    // draw_texture_pro: (texture, src_x, src_y, src_w, src_h, dst_x, dst_y, dst_w, dst_h, origin_x, origin_y, rotation, color)
+    rt.draw_texture_pro(tex, srcX, storageY, flipW, -srcH, 0, 0, sw, sh, 0, 0, 0, colour.WHITE)
+    win.end_blend_mode()
+
+    win.begin_blend_mode(win.BLEND_ALPHA)
+    //Draw the masked segment to the window
+    win.draw_texture_pro(rt, 0, 0, sw, -sh, posX, posY, sw, sh, sw/2, 0, rotation, colour.WHITE)
+
+    win.end_blend_mode()
+}
+
+// --- Kaleidoscope function ---
+fun kaleido(win,rt, segmentCount, centerX, centerY, tex, sampler) {
+    i = 0
+    seg_angle = 2 * math.PI / segmentCount
+    deg_factor = 180 / math.PI
+    while (i < segmentCount) {
+        angle = i * seg_angle
+        segmentRotation = angle * deg_factor
+        segmentRotation = segmentRotation + 20
+        flip = (i % 2) == 0
+        draw_segment(win,rt, tex, sampler, centerX, centerY, segmentRotation, flip)
+        i+=1
+    }
+}
+
+
+// --- Main ---
+win = window(800, 600)
+win.init()
+win.toggle_fullscreen()
+screenHeight = win.get_screen_height()
+screenWidth = win.get_screen_width()
+
+segmentCount = 32
+radius,triangleWidth = get_width(segmentCount, screenHeight)
+
+// Live-painted canvas: bigger than the sample window so the sampler has room to
+// scroll around inside the ever-changing painting.
+canvasWidth = int(triangleWidth * 3)
+canvasHeight = int(radius * 3)
+canvas = render_texture(canvasWidth, canvasHeight)
+canvas.clear(colour.BLACK)
+
+penCount = 24
+margin = 20
+pens = make_pens(penCount, canvasWidth, canvasHeight, margin)
+
+rt = render_texture(int(triangleWidth), int(radius))
+tex = canvas.get_texture()
+tex.set_wrap_mode(win.WRAP_REPEAT)  // set once: get_texture() keeps re-wrapping the same GPU texture
+sampler = TextureSampler(tex, triangleWidth, radius)
+
+centerX = screenWidth / 2
+centerY = screenHeight / 2
+
+counter=0
+while (!win.should_close()) {
+    // Paint this frame's stroke from every pen onto the canvas...
+    foreach (pen in pens) {
+        pen.update()
+        pen.draw(canvas)
+    }
+    // ...then re-sync a texture view of it so the kaleidoscope samples the freshly
+    // painted canvas while it is still being drawn on.
+    tex = canvas.get_texture()
+    sampler.tex = tex
+
+    sampler.update()
+    win.begin()
+    win.clear(colour.BLACK)
+    kaleido(win, rt, segmentCount, centerX, centerY, tex, sampler)
+    win.end()
+    counter += 1
+    if (counter >= 480 ) {
+        canvas.clear(colour.BLACK)
+        pens = make_pens(penCount, canvasWidth, canvasHeight, margin)
+        counter = 0
+    }
+}

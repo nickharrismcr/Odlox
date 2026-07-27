@@ -1,0 +1,205 @@
+from gfx import *
+// Triangle3 Batch Demo - demonstrates batched triangles with 3 arbitrary points
+// Creates a large undulating terrain mesh using thousands of small triangles
+import colour
+import math
+
+win = window(1200, 800)
+win.init()
+win.set_target_fps(60)
+win.toggle_fullscreen()
+
+camera = camera(vec3(0, 15, 20), vec3(0, 0, 0), vec3(0, 1, 0))
+
+// Create a batch for storing triangles with three arbitrary points
+batch = batch(win.BATCH_TRIANGLE3)
+
+// Terrain configuration
+const TERRAIN_SIZE = 62;
+const TERRAIN_SCALE = 0.8;  // Distance between vertices
+const WAVE_HEIGHT = 4.0;    // Maximum height of waves
+const WAVE_FREQUENCY = 0.30; // Frequency of terrain waves
+const COLOR_TABLE_SIZE = 256; // Number of color entries in lookup table
+const CELLS_PER_ROW = TERRAIN_SIZE - 1;
+const NUM_CELLS = CELLS_PER_ROW * CELLS_PER_ROW;
+
+// Precompute color table for height-to-color mapping
+colorTable = []
+foreach (i in range(COLOR_TABLE_SIZE)) {
+    normalizedHeight = float(i) / float(COLOR_TABLE_SIZE - 1)
+    // Map height to hue: 220 (blue) to 0 (red)
+    hue = 220 - 220 * normalizedHeight
+    sat = 1.0
+    val = 1.0
+    rgb = colour.hsv_to_rgb(hue, sat, val) // returns vec3
+    colorTable.append(vec4(rgb.x, rgb.y, rgb.z, 255))
+}
+
+func heightToColor(height) {
+    normalizedHeight = (height + WAVE_HEIGHT) / (2.0 * WAVE_HEIGHT)
+    if (normalizedHeight < 0) normalizedHeight = 0
+    if (normalizedHeight > 1) normalizedHeight = 1
+
+    // Convert to table index
+    tableIndex = int(normalizedHeight * float(COLOR_TABLE_SIZE - 1))
+    return colorTable[tableIndex]
+}
+
+print(format("Generating terrain with %d triangles...", NUM_CELLS * 2))
+
+// Per-quad static data, laid out as flat lists indexed by cell = x * CELLS_PER_ROW + z.
+// Precomputing world positions and grid-lookup indices here means the per-frame loop
+// below does zero math.round()/division work - it only does table lookups and adds.
+x1List = []
+x2List = []
+z1List = []
+z2List = []
+xi1List = []
+xi2List = []
+zi1List = []
+zi2List = []
+
+grid_factor = ( TERRAIN_SIZE / 2.0 * TERRAIN_SCALE )
+
+foreach (x in range(TERRAIN_SIZE - 1)) {
+    foreach (z in range(TERRAIN_SIZE - 1)) {
+        // Precompute and store static world positions for this quad
+        x1 = (x - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+        x2 = (x + 1 - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+        z1 = (z - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+        z2 = (z + 1 - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+
+        x1List.append(x1)
+        x2List.append(x2)
+        z1List.append(z1)
+        z2List.append(z2)
+
+        // Grid indices into the sinX/cosZ tables - constant per quad, so computed once
+        xi1List.append(math.round((x1 + grid_factor) / TERRAIN_SCALE))
+        xi2List.append(math.round((x2 + grid_factor) / TERRAIN_SCALE))
+        zi1List.append(math.round((z1 + grid_factor) / TERRAIN_SCALE))
+        zi2List.append(math.round((z2 + grid_factor) / TERRAIN_SCALE))
+
+        // Two triangles per quad, added in order so their batch indices are
+        // always 2*cell and 2*cell+1 - no need to track indices at runtime.
+        batch.add_triangle3(vec3(0,0,0), vec3(0,0,0), vec3(0,0,0), vec4(0,0,0,255))
+        batch.add_triangle3(vec3(0,0,0), vec3(0,0,0), vec3(0,0,0), vec4(0,0,0,255))
+    }
+}
+
+print(format("Generated %d triangles!", batch.count()))
+
+
+// Animation variables
+cameraAngle = 0.0
+frameCount = 0
+
+// Precompute sine/cosine tables for all grid points and all frames in a cycle
+const N_FRAMES = 1000; // 12 seconds at 30fps
+sinXTable = []
+cosZTable = []
+foreach (f in range(N_FRAMES)) {
+    t = f * (1.0 / 30.0)
+    sinXRow = []
+    foreach (xi in range(TERRAIN_SIZE)) {
+        xw = (xi - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+        sinXRow.append(math.sin(xw * WAVE_FREQUENCY + t))
+    }
+    sinXTable.append(sinXRow)
+    cosZRow = []
+    foreach (zi in range(TERRAIN_SIZE)) {
+        zw = (zi - TERRAIN_SIZE / 2) * TERRAIN_SCALE
+        cosZRow.append(math.cos(zw * WAVE_FREQUENCY + t))
+    }
+    cosZTable.append(cosZRow)
+}
+
+// Precompute camera movement tables
+const CAMERA_TABLE_SIZE = 3600; // 360 degrees * 10 for fine resolution
+cameraSinTable = []
+cameraCosTable = []
+foreach (angle in range(CAMERA_TABLE_SIZE)) {
+    radians = math.radians(angle * 0.1) // Convert back to degrees then radians
+    cameraSinTable.append(math.sin(radians))
+    cameraCosTable.append(math.cos(radians))
+}
+
+// Precompute time-based sine table for camera height oscillation
+const TIME_TABLE_SIZE = 1000;
+timeSinTable = []
+foreach (t in range(TIME_TABLE_SIZE)) {
+    timeValue = t * (1.0 / 30.0) * 0.3 // Same as time * 0.3 in the loop
+    timeSinTable.append(math.sin(timeValue))
+}
+
+while (!win.should_close()) {
+    frameCount += 1
+    time = frameCount * (1.0 / 30.0); // Use frame count for animation, targeting 30fps
+    cameraAngle += 0.3; // Slower rotation for better viewing
+
+    // Animate camera in a circle high above the terrain using lookup tables
+    radius = 35.0; // Closer to terrain for better visibility
+
+    // Use lookup tables for camera positioning
+    timeIdx = (frameCount % TIME_TABLE_SIZE)
+    height = 15.0 + timeSinTable[timeIdx] * 5.0; // Lower height, gentler oscillation
+
+    // Convert camera angle to table index
+    angleIdx = int(cameraAngle * 10.0) % CAMERA_TABLE_SIZE
+    camX = radius * cameraCosTable[angleIdx]
+    camZ = radius * cameraSinTable[angleIdx]
+
+    camera.set_position(vec3(camX, height, camZ))
+    camera.set_target(vec3(0, 0, 0)); // Always look at center of terrain
+
+    //--- DYNAMIC WAVE UPDATE (Precomputed trig tables) ---
+    frameIdx = frameCount % N_FRAMES
+    sinX = sinXTable[frameIdx]
+    cosZ = cosZTable[frameIdx]
+
+    // Update all triangles with new heights for animation.
+    // Each cell holds 2 triangles that share the same 4 corner heights, so
+    // compute those once per cell instead of once per triangle.
+    foreach (c in range(NUM_CELLS)) {
+        x1 = x1List[c]
+        x2 = x2List[c]
+        z1 = z1List[c]
+        z2 = z2List[c]
+
+        xi1 = xi1List[c]
+        xi2 = xi2List[c]
+        zi1 = zi1List[c]
+        zi2 = zi2List[c]
+
+        y1 = sinX[xi1] * cosZ[zi1] * WAVE_HEIGHT
+        y2 = sinX[xi2] * cosZ[zi1] * WAVE_HEIGHT
+        y3 = sinX[xi1] * cosZ[zi2] * WAVE_HEIGHT
+        y4 = sinX[xi2] * cosZ[zi2] * WAVE_HEIGHT
+
+        idx1 = c * 2
+        idx2 = idx1 + 1
+
+        // Triangle 1 (v1, v3, v2)
+        avgHeight1 = (y1 + y2 + y3) / 3.0
+        color1 = heightToColor(avgHeight1)
+        batch.set_triangle3_full(idx1, x1, y1, z1, x1, y3, z2, x2, y2, z1, color1)
+
+        // Triangle 2 (v2, v3, v4)
+        avgHeight2 = (y2 + y3 + y4) / 3.0
+        color2 = heightToColor(avgHeight2)
+        batch.set_triangle3_full(idx2, x2, y2, z1, x1, y3, z2, x2, y4, z2, color2)
+    }
+
+
+    win.begin()
+    win.clear(vec4(20, 30, 50, 255)); // Dark blue sky
+    win.begin_blend_mode(win.BLEND_ALPHA)
+    win.begin_3d(camera)
+    batch.draw();
+    win.end_3d()
+    // End the blend mode
+    win.end_blend_mode()
+    win.end()
+}
+
+win.close()

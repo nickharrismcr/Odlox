@@ -1,0 +1,286 @@
+from gfx import *
+from sprite import Sprite
+import random
+import math
+import colour
+import event
+from npc import aim_bullet_at, shortest_dx
+
+class Lander < Sprite {
+
+    init(pos, img, frames, start_frame, end_frame) { 
+        super.init(pos, img, frames, start_frame, end_frame)
+        this.type = "lander"
+        this.animate(10)
+        this.update_func=state_materialize
+        this.draw_func=draw_exp
+        this.disperse=50
+        this.g = vec4(0,200,0,255)
+        this.r = vec4(255,0,0,255)
+        this.b = vec4(0,0,255,255)
+        this.m = vec4(255,0,255,255)
+        this.radar = this.g
+        this.counter = 0
+        this.mgr = nil
+        this.human = nil          // the human it has chosen / grabbed, if any
+        this.alive = true
+        this.shootable = true     // player lasers can destroy it
+        this.deadly = true        // touching it hurts the player
+        this.width = this.texture.frame_width()
+        this.height = this.texture.height()
+    }
+    position() {
+        return this.pos 
+    }
+    update(width,height) {
+        if (!this.alive) {
+            return
+        }   
+        this.counter = this.counter + 1
+        f=this.update_func 
+        f(this,width,height) 
+
+        if (this.pos.x > this.mgr.worldwidth) {
+            this.pos.x = 0
+        }
+        if (this.pos.x < 0) {
+            this.pos.x = this.mgr.worldwidth
+        }
+    }
+    draw(win,cam) {
+        if (!this.alive) {
+            return
+        }
+        f=this.draw_func 
+        f(this,win,cam) 
+    }
+    near(x1, x2) {
+        return (math.abs(x1 - x2) < 5)
+    }   
+    // Fires a shot aimed at the player, gated by a small random per-frame
+    // chance. time_mult scales the aim's time-to-target (used by search() for
+    // a slower, more lenient shot while wandering) -- see npc.aim_bullet_at().
+    // Never fires while off-screen.
+    maybe_fire_bullet(time_mult=1.0) {
+        if (this.mgr.cam != nil and this.mgr.cam.translate(this.pos.x) == nil) {
+            return
+        }
+        if (random.integer(0,200) == 1) {
+            if (this.mgr.player != nil) {
+                aim_bullet_at(this, this.mgr.player, time_mult)
+            }
+        }
+    }
+    // shot by a player laser: start the death/explode sequence, unless already exploding.
+    hit() {
+        if (this.update_func != state_die) {
+            enter_die(this)
+        }
+    }
+}
+
+// State chain: materialize -> descend -> search -> grab -> abduct -> mutated -> die.
+// Every transition into a state (other than the initial one, set in init()) goes
+// through a matching enter_<state>(e) function.
+
+func state_materialize(e, width, height) {
+    // converge the dispersed tiles into the assembled sprite (disperse 50 -> 1)
+    e.disperse = e.disperse - 0.7
+    if (e.disperse <= 1) {
+        enter_descend(e)
+    }
+}
+
+func enter_descend(e) {
+    e.disperse = 1
+    e.draw_func = draw_
+    e.dp = vec2(random.choice((-5,-5)),5)
+    e.counter = 0
+    e.update_func = state_descend
+}
+
+func state_descend(e, width, height) {
+    e.pos.add(e.dp)
+
+    mh = e.mgr.mountains.get(e.pos.x)
+    msh = e.mgr.height - mh
+
+    if (e.pos.y > msh - 200 ) {
+        enter_search(e)
+    }
+
+    e.maybe_fire_bullet()
+}
+
+func enter_search(e) {
+    e.human = e.mgr.pick_a_human()
+    e.dp.x = -e.mgr.config.lander_search_speed
+    e.dp.y = 0
+    e.update_func = state_search
+    e.mgr.events.emit("lander_searching", e)
+}
+
+func state_search(e, width, height) {
+    e.pos.add(e.dp)
+    mh = e.mgr.mountains.get(e.pos.x)
+    msh = e.mgr.height - mh
+    e.pos.y = msh - 200
+    e.maybe_fire_bullet(2.0)   // slower, more lenient shot while wandering/searching
+
+    if (e.human != nil and (e.human.state == "dying" or !e.human.alive)) {
+        e.human = e.mgr.pick_a_human()   // target died before being grabbed -- find another
+    }
+
+    if (e.human != nil) {
+        if (e.near(e.human.pos.x, e.pos.x)) {
+            enter_grab(e)
+        }
+    }
+
+}
+
+func enter_grab(e) {
+    e.dp.x = 0
+    e.dp.y = 3
+    e.update_func = state_grab
+    // a single decisive shot right at the player the instant it commits to the
+    // grab -- but only if on screen (landers should never fire while off-screen)
+    on_screen = e.mgr.cam == nil or e.mgr.cam.translate(e.pos.x) != nil
+    if (e.mgr.player != nil and on_screen) {
+        aim_bullet_at(e, e.mgr.player)
+    }
+}
+
+func state_grab(e,width, height) {
+    e.pos.add(e.dp)
+    if (e.human == nil or e.human.state == "dying" or !e.human.alive) {
+        enter_search(e)   // target died before being grabbed -- find another
+        return
+    }
+    if (e.pos.y > e.human.pos.y  ) {
+        enter_abduct(e)
+    }
+    e.maybe_fire_bullet()
+}
+
+func enter_abduct(e) {
+    e.pos.y = e.human.pos.y - 50
+    e.human.grab(e)                           // human now follows this lander
+    e.dp.y = -e.mgr.config.lander_ascend_speed
+    e.update_func = state_abduct
+}
+
+func state_abduct(e,width, height) {
+    // the human tracks us itself now (its `grabbed` state), so just ascend
+    e.pos.y = e.pos.y + e.dp.y
+    if (e.pos.y < 150 ) {
+        enter_mutated(e)
+    }
+    e.maybe_fire_bullet()
+}
+
+func enter_mutated(e) {
+    e.image = image
+    // may be nil here if forced to mutate before it ever grabbed anyone (see
+    // EntityMgr.trigger_world_explode())
+    if (e.human != nil) {
+        e.human.eat()                              // the carried human is eaten
+        e.human = nil
+    }
+    img = image("pngs/mutant.png")
+    e.type = "mutant"
+    e.img = img
+    e.texture = texture(img,6,1,6)
+    e.animate(2)
+    e.dp.x = 0            // mutated() aims this at the player every frame
+    e.dp.y = 0
+    e.counter = 0
+    e.update_func = state_mutated
+    e.mgr.events.emit("lander_mutated", e)        // lander reached the top and became a mutant
+}
+
+func state_mutated(e,width, height) {
+    e.radar = random.choice([e.r,e.g,e.b,e.m])
+    // chase the player horizontally, taking the shorter way around the world
+    // wrap rather than a naive x1-x2 (which breaks near the seam)
+    if (e.mgr.player != nil) {
+        mutant_speed = e.mgr.config.player_maxspeed * e.mgr.config.mutant_speed_pct
+        dx = shortest_dx(e.pos.x, e.mgr.player.pos.x, e.mgr.worldwidth)
+        e.dp.x = mutant_speed
+        if (dx < 0) {
+            e.dp.x = -mutant_speed
+        }
+    }
+    e.pos.add(e.dp)
+    if (e.counter%20 == 0) {
+        e.dp.y = random.choice((-5,5))
+    }
+    if (e.pos.y < 100 ) {
+        e.pos.y = 100
+        if (e.dp.y < 0) {
+            e.dp.y = 5
+        }
+    }
+    if (e.pos.y > height - 40) {
+        e.pos.y = height - 40
+        if (e.dp.y > 0) {
+            e.dp.y = -5
+        }
+    }
+
+    // fixed cadence rather than the random-chance maybe_fire_bullet() other
+    // lander states use -- a mutant is already fully hostile and committed
+    if (e.counter % 60 == 0 and e.mgr.player != nil) {
+        on_screen = e.mgr.cam == nil or e.mgr.cam.translate(e.pos.x) != nil
+        if (on_screen) {
+            aim_bullet_at(e, e.mgr.player)
+        }
+    }
+}
+
+func enter_die(e) {
+    e.draw_func = draw_exp
+    e.disperse = 1
+    e.dp = vec2(0, 0)
+    e.radar = nil
+    e.shootable = false
+    e.deadly = false
+    // if carrying/holding a human, drop a grabbed one, otherwise free a chosen one
+    if (e.human != nil) {
+        if (e.human.state == "grabbed") {
+            e.human.drop()
+        } else {
+            e.human.release()
+        }
+        e.human = nil
+    }
+    e.update_func = state_die
+    e.mgr.events.emit(e.type & "_killed", e)     // lander_killed / mutant_killed
+}
+
+func state_die(e,width, height) {
+    // scatter the tiles apart (disperse 1 -> 60), then the entity is gone
+    e.disperse = e.disperse + 1.3
+    if (e.disperse >= 60) {
+        e.alive = false
+    }
+}
+
+func draw_exp(e,win,cam) {
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)
+    }
+}
+
+func draw_(e,win,cam){
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
+    }
+
+}
+
+
+
+

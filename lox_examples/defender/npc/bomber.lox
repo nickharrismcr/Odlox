@@ -1,0 +1,44 @@
+from gfx import *
+from npc import NPC
+import random
+
+// Bomber: drifts diagonally, bouncing off the top and bottom of the play area,
+// scattering bombs as it goes.
+//
+// bomber.png: a violet-bordered, blue-bodied icon with a pulsing yellow core,
+// 3 frames of 24x24, at the same 4x-per-source-pixel scale as
+// pod.png/swarmer.png/baiter.png.
+
+class Bomber < NPC {
+
+    init(pos, img, top) {
+        super.init(pos, img, 3, 1, 3, "bomber")
+        this.animate(8)
+        this.radar = vec4(0, 150, 255, 255)
+        this.update_func = state_bomb
+        this.dp = vec2(1.7, 1.7)     // ~100 px/s each axis, at 60fps
+        this.top = top
+    }
+}
+
+func state_bomb(e, width, height) {
+    e.pos.add(e.dp)
+
+    // bounce off the ceiling / floor of the play area
+    if (e.pos.y < e.top) {
+        e.pos.y = e.top
+        e.dp.y = -e.dp.y
+    }
+    if (e.pos.y > height - 60) {
+        e.pos.y = height - 60
+        e.dp.y = -e.dp.y
+    }
+
+    // ~1 in 20 chance per frame of dropping a bomb.
+    if (random.integer(0, 100) < 5) {
+        // dropped bombs sit where they land (zero velocity) and auto-expire via
+        // Bullet's own ticks_to_live countdown, with double the usual bullet
+        // lifetime, so they linger as hazards.
+        e.mgr.fire_bullet(e.pos, vec2(0, 0), 200)
+    }
+}

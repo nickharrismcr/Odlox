@@ -1,0 +1,81 @@
+from gfx import *
+from npc import NPC, draw_normal, draw_dispersed, seek_player
+import random
+import colour
+
+// Baiter: lurks unseen, then materialises next to the player and hunts it down.
+
+class Baiter < NPC {
+
+    init(pos, img, wait_frames) {
+        super.init(pos, img, 2, 1, 2, "baiter")   // baiter.png = 2 frames of 44x16
+        this.animate(10)
+        this.radar = colour.GREEN
+        this.update_func = state_wait
+        this.wait_frames = wait_frames
+        this.x_to_player = 0
+        this.nextthink = 0
+        this.maxspeed = 33.0
+
+        // hidden and harmless until it materialises
+        this.visible = false
+        this.shootable = false
+        this.deadly = false
+    }
+}
+
+func state_wait(e, width, height) {
+    if (e.mgr.player == nil or e.counter < e.wait_frames) {
+        return
+    }
+    enter_materialize(e)
+}
+
+func enter_materialize(e) {
+    // pop into existence somewhere near the player
+    e.x_to_player = random.integer(-500, 500)
+    e.pos.y = random.integer(200, e.mgr.height - 100)
+    e.disperse = 50
+    e.visible = true
+    e.draw_func = draw_dispersed
+    e.update_func = state_materialize
+}
+
+func state_materialize(e, width, height) {
+    // re-anchors x to the player every frame while coalescing
+    e.pos.x = e.mgr.player.pos.x + e.x_to_player
+    e.disperse = e.disperse - 0.67
+    if (e.disperse <= 1) {
+        e.disperse = 1
+        enter_chase(e)
+    }
+}
+
+func enter_chase(e) {
+    e.draw_func = draw_normal
+    e.update_func = state_chase
+    e.shootable = true
+    e.deadly = true
+    e.nextthink = 0
+}
+
+func state_chase(e, width, height) {
+    player = e.mgr.player
+    if (player == nil) {
+        return
+    }
+    e.nextthink = e.nextthink - 1
+    if (e.nextthink < 0) {
+        e.dp = seek_player(e, player, e.maxspeed, 60,
+                           random.integer(-200, 0), random.integer(-100, 100))
+        e.nextthink = 30                    // re-aim every 0.5s
+    }
+    e.pos.add(e.dp)
+
+    if (e.pos.y < 110) { e.pos.y = 110 }
+    if (e.pos.y > height - 40) { e.pos.y = height - 40 }
+
+    if (random.integer(0, 150) == 1) {
+        e.fire_bullet_at(player)
+    }
+}

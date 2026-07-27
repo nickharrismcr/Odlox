@@ -1,0 +1,64 @@
+from gfx import *
+import random
+import math
+import particle_sys
+import colour
+
+// One-shot explosion bursts, built on the shared particle_sys module.
+//
+// Particles fly outward from the blast point starting white-hot, cool through
+// red as they age, then fade out and die. Positions are in world coordinates,
+// so drawing translates through the camera.
+
+func explosion_init(p) {
+    angle = random.float(0, 2 * math.PI)
+    speed = random.float(1.0, 14.0)          // wide spread: some fast, some slow
+    p.dpos = vec2(math.cos(angle) * speed, math.sin(angle) * speed)
+    p.life = random.integer(30, 85)
+    p.size = random.float(3.0, 7.5)      // chunky debris
+    p.col = colour.WHITE     // white-hot at birth
+}
+
+func explosion_update(p) {
+    // float() matters here: age and life are ints, and int/int truncates to 0.
+    t = float(p.age) / float(p.life)          // 0 .. 1 over the particle's life
+
+    // white -> red: pull green and blue down toward zero
+    gb = int(255 * (1.0 - t))
+
+    // hold full brightness, then fade out over the last 40% of life
+    a = 255
+    if (t > 0.6) {
+        a = int(255 * (1.0 - t) / 0.4)
+    }
+    p.col = vec4(255, gb, gb, a)
+    p.dpos = vec2(p.dpos.x * 0.985, p.dpos.y * 0.985)   // light drag: particles carry further
+}
+
+// Queue a one-shot burst at world (x, y). Once its particles die, particle_sys
+// drops the emitter automatically. Uses square particles for a chunky,
+// pixel-debris look.
+func explosion(emitters, x, y, count) {
+    em = particle_sys.Emitter(vec2(x, y), explosion_init, explosion_update)
+    em.shape = "square"
+    emitters.queue(em, count, 0)
+}
+
+func draw(emitters, win, cam) {
+    win.begin_blend_mode("BLEND_ADD")
+    foreach (var e in emitters.get()) {
+        square = e.shape == "square"
+        foreach (var p in e.get_particles()) {
+            spos = cam.translate(p.pos.x)
+            if (spos != nil) {
+                if (square) {
+                    s = int(p.size * 2)                 // side length
+                    win.rectangle(int(spos) - s / 2, int(p.pos.y) - s / 2, s, s, p.col)
+                } else {
+                    win.circle_fill(spos, p.pos.y, p.size, p.col)
+                }
+            }
+        }
+    }
+    win.end_blend_mode()
+}

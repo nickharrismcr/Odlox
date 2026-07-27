@@ -1,0 +1,144 @@
+from gfx import *
+import mountains 
+import stars 
+import random
+import lander 
+import entity_mgr 
+import itertools
+import radar
+import player
+import camera
+import event
+import colour
+import text
+import score
+import config
+import controller
+import game_controller
+
+// --- Game events -------------------------------------------------------------
+// Emitted via entities.events; subscribe with entities.events.on(name, fn).
+// For systems that want to react to gameplay events (audio, scoring, particles,
+// HUD). Payload in ( ):
+//   "lander_spawn" / "human_spawn" (entity) - materialised into the world
+//   "lander_searching"  (lander)  - began searching for a human
+//   "human_grabbed"     (lander)  - latched onto a human (lander.human)
+//   "human_caught"       (human)   - scooped up by the player
+//   "human_saved"        (human)   - reached the ground safely
+//   "lander_mutated"    (lander)  - reached the top and became a mutant
+//   "lander_killed" / "mutant_killed" (entity) - destroyed
+//   "bullet_fire"       (pos)     - an NPC fired a bullet
+//   "laser_fire"        (pos)     - the player fired the laser
+//   "player_hit"        (player)  - struck by a deadly NPC
+//   "pod_killed"        (pod)     - a pod burst open, releasing swarmers
+//   "<type>_spawn/_killed"        - also for pod, swarmer, baiter, bomber
+//   "player_die"        (player)  - death sequence began (ship freezes, flashes red)
+//   "player_explode"    (player)  - ship vanished; explosion particles burst
+//   "player_start"      (player)  - ship respawned (brief invulnerability)
+//   "player_hyperspace" (player)  - warped to a random spot; rematerialising
+const GAME_EVENTS = ["lander_spawn", "human_spawn", "lander_searching",
+                     "human_grabbed", "human_caught", "human_saved", "lander_mutated", "lander_killed",
+                     "mutant_killed", "bullet_fire", "laser_fire", "player_hit",
+                     "pod_spawn", "pod_killed", "swarmer_spawn", "swarmer_killed",
+                     "baiter_spawn", "baiter_killed", "bomber_spawn", "bomber_killed",
+                     "player_die", "player_explode", "player_start", "player_hyperspace"]
+
+// Debug: log every game event to the console.  
+func make_event_logger(name) {
+    func log(data) {
+        print("[event] ${name} ${data}")
+    }
+    return log
+}
+
+
+
+// All tunable state lives in config.lox; a level controller will set it per level.
+cfg = config.Config()
+const width = cfg.width
+const height = cfg.height
+const worldwidth = cfg.worldwidth()
+win = window(width,height)
+win.init()
+win.set_target_fps(cfg.target_fps)
+if (cfg.fullscreen) {
+    win.toggle_fullscreen()
+}
+
+input = controller.Controller()
+
+// The game draws at the logical width x height play-area size into this
+// offscreen buffer; only the final blit onto the actual (possibly much larger,
+// fullscreen) OS window needs to know the real screen size, to center the
+// play area within it.
+play_area = render_texture(width, height)
+
+cam=camera.Camera(width, worldwidth, 0)
+
+mountain=mountains.Mountain(worldwidth, height*0.3)
+starfield=stars.Stars(width, height*0.7, 30)
+entities= entity_mgr.EntityMgr(cfg)
+entities.mountains = mountain
+entities.cam = cam
+mountain.attach(entities.events)   // hides itself for the level_finish banner
+radar=radar.Radar(width, height, worldwidth)
+
+if (cfg.log_events) {
+    foreach (var ev in GAME_EVENTS) {
+        entities.events.on(ev, make_event_logger(ev))
+    }
+}
+
+ship_img = image("pngs/ship.png")
+thrust_img = image("pngs/thrust.png")
+shipw_img = image("pngs/shipw.png")     // white ship silhouette, tinted for the death flash
+smartbomb_img = image("pngs/smartbomb.png")
+ship = player.Player(vec2(worldwidth/2, height/2), ship_img, thrust_img, shipw_img, cfg)
+ship.mgr = entities
+entities.player = ship          // NPCs hunt the player
+
+// drives intro -> level_start -> level -> level_finish (-> level_start | game_over);
+// spawns each level's landers/pods/bombers/humans at level_start
+game = game_controller.GameController(cfg, entities, ship, ship_img, smartbomb_img)
+
+// HUD: score driven by the NPC kill events, drawn from the font atlas
+font = text.Font(image("pngs/font.png"))
+hud_score = score.Score(font, 10, 10)  // left of the radar strip
+hud_score.attach(entities.events)
+
+while (!win.should_close() and !game.done) {
+
+    input.update(win)
+    game.update(win, input)
+
+    if (game.gameplay_active()) {
+        ship.update(input)          // also handles firing the laser and the smart bomb
+        cam.move(ship.camera_x())
+        starfield.update(-ship.vx/5)
+        entities.update_particles()   // keeps animating even while entities.update() is frozen
+        entities.update(worldwidth, height)
+        entities.check_collisions(ship, cam)
+        hud_score.update()
+    }
+
+    // draw the whole game into the fixed-size play_area texture
+    win.begin_texture_mode(play_area)
+    win.clear(colour.BLACK)
+    mountain.draw(win, height, cam, width)   // no-ops while hidden, see Mountain.attach()
+    starfield.draw(win)
+    entities.draw(win, cam)
+    ship.draw(win, cam)
+    radar.draw(win, cam, entities, mountain)
+    hud_score.draw(win)
+    game.draw(win, width, height, font)
+    win.end_texture_mode()
+
+    // blit it centered onto the real (fullscreen) window
+    win.begin()
+    win.clear(colour.BLACK)
+    offset_x = (win.get_screen_width() - width) / 2
+    offset_y = (win.get_screen_height() - height) / 2
+    win.draw_render_texture(play_area, offset_x, offset_y, colour.WHITE)
+    win.end()
+}
+win.close()

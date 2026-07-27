@@ -1,0 +1,100 @@
+from gfx import *
+import colour
+
+// Floating bonus-score popup, shown when a human is rescued: spawns a
+// "250"/"500" graphic (pngs/250.png, pngs/500.png -- each a 3-frame, 45x20
+// flash-cycle strip) above the rescued human, and tracks the player for its
+// whole life.
+
+class Bonus {
+    init(tex, dy, life) {
+        this.tex = tex
+        this.dy = dy          // vertical offset above the player; staggers stacked popups
+        this.life = life
+        this.pos = vec2(0, 0)
+    }
+    dead() {
+        return this.life <= 0
+    }
+    update(player) {
+        // centred horizontally on the ship
+        this.pos.x = player.pos.x + player.width / 2 - this.tex.frame_width() / 2
+        this.pos.y = player.pos.y + this.dy
+        this.life = this.life - 1
+    }
+    draw(win, cam) {
+        spos = cam.translate(this.pos.x)
+        if (spos != nil) {
+            win.draw_texture(this.tex, spos, this.pos.y, colour.WHITE)
+        }
+    }
+}
+
+class BonusDisplay {
+    init(img250, img500, life) {
+        this.tex250 = texture(img250, 3, 1, 3)
+        this.tex500 = texture(img500, 3, 1, 3)
+        this.tex250.animate(6)
+        this.tex500.animate(6)
+        this.life = life
+        this.bonuses = []
+    }
+
+    // Spawn a floating "250" or "500" that follows the player for a few seconds.
+    spawn(value) {
+        tex = this.tex250
+        if (value == 500) {
+            tex = this.tex500
+        }
+        // stack multiple simultaneous popups above the ship rather than overlapping
+        dy = -60 - len(this.bonuses) * 24
+        this.bonuses.append(Bonus(tex, dy, this.life))
+    }
+
+    // Subscribe to the human-rescue events: "human_caught" fires the instant the
+    // player scoops a falling human up (the big reward); "human_saved" fires once
+    // a human reaches the ground safely, whether unaided or carried down (the
+    // smaller reward).
+    attach(events) {
+        events.on("human_caught", this.on_caught())
+        events.on("human_saved", this.on_saved())
+    }
+    on_caught() {
+        func handler(h) {
+            this.spawn(500)
+        }
+        return handler
+    }
+    on_saved() {
+        func handler(h) {
+            this.spawn(250)
+        }
+        return handler
+    }
+
+    update(player) {
+        if (player == nil) {
+            return
+        }
+        // swap-with-last removal, as in particle_sys: O(1) per dead popup
+        i = 0
+        n = len(this.bonuses)
+        while (i < n) {
+            b = this.bonuses[i]
+            b.update(player)
+            if (b.dead()) {
+                n = n - 1
+                this.bonuses[i] = this.bonuses[n]
+                this.bonuses.remove(n)
+            } else {
+                i = i + 1
+            }
+        }
+    }
+
+    draw(win, cam) {
+        foreach (var b in this.bonuses) {
+            b.draw(win, cam)
+        }
+    }
+}

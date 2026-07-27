@@ -1,0 +1,32 @@
+class Camera {
+    init(screenwidth,width,pos ) {
+        this.width = width
+        this.x = pos
+        this.screenwidth = screenwidth
+    }
+    move(x) {
+        this.x = x
+    }
+    // Translate a world x to a screen x, or nil if off-screen. The world
+    // wraps at this.width, so a position can be visible via its "natural"
+    // offset from the camera, or by wrapping a full world-width forward/back
+    // -- e.g. camera near the end of the world and a sprite that has already
+    // wrapped to a low x near 0 (or vice versa). Try all three; screenwidth is
+    // always far smaller than the world width, so at most one wrap can ever
+    // land in range.
+    translate(wp) {
+        p = wp - this.x
+        if (p >= 0 and p <= this.screenwidth) {
+            return p
+        }
+        p2 = p + this.width
+        if (p2 >= 0 and p2 <= this.screenwidth) {
+            return p2
+        }
+        p3 = p - this.width
+        if (p3 >= 0 and p3 <= this.screenwidth) {
+            return p3
+        }
+        return nil
+    }
+}

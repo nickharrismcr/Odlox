@@ -1,0 +1,66 @@
+from gfx import *
+//fast mandelbrot PNG using native plotter 
+ 
+ 
+import colour;
+import math; 
+ 
+ 
+ 
+ 
+func calc(array,width,height,max_iteration,zoom,xoff,yoff) {
+    lox_mandel_array(array,height,width,max_iteration,float(xoff),float(yoff),float(zoom))
+}
+
+var max_iteration = 500;
+ 
+var win=window(1,1);
+
+win.init();
+win.toggle_fullscreen();
+width=int(win.get_screen_width())/2
+height=int(win.get_screen_height())/2
+posx= (win.get_screen_width() - width) / 2
+posy= (win.get_screen_height() - height) / 2
+
+// Create render texture for fast array drawing
+rt = render_texture(width, height)
+ 
+var scale=4;
+ 
+ 
+var xOffset= -0.7269;
+var yOffset= 0.1889;
+
+ 
+var array_rgb=float_array(width,height)
+var max_iterations = 5000;
+var zoom_speed = 0.98;  
+ 
+
+while (!win.should_close()) {
+ 
+    // Get current FPS for display
+    var current_fps = win.get_fps();
+ 
+   
+    calc(array_rgb,width,height,max_iterations,scale,xOffset,yOffset);
+    
+    // Use fast array drawing method
+    rt.clear(vec4(0, 0, 0, 255))
+    rt.draw_array_fast(array_rgb)
+    
+    win.begin();
+    win.clear(colour.BLACK);
+    win.draw_render_texture(rt, posx, posy, vec4(255, 255, 255, 255))
+    win.text(format("Max Iteration: %d", max_iterations), 10, 40, 20, vec4(255, 255, 255, 255));
+    win.text(format("Scale: %g", math.round_places(scale, 10)), 10, 70, 16, vec4(200, 200, 200, 255));
+    win.text(format("Zoom Speed: %g", zoom_speed), 10, 130, 16, vec4(200, 200, 200, 255));
+    win.end();
+    scale=scale*zoom_speed;
+    //max_iterations += 5
+ 
+}
+win.close();
+
+    

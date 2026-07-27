@@ -1,0 +1,75 @@
+// Central configuration -- every tunable knob in one place. game_controller.lox
+// overrides the level-specific fields (landers_per_wave, pods, bombers,
+// npc_bullet_time, max_baiters) at the start of each level; see levels.lox.
+
+class Config {
+    init() {
+        // --- display / world ---
+        this.width       = 1300     // play area width in pixels (logical, not the OS window)
+        this.height      = 1000      // play area height in pixels (logical, not the OS window)
+        this.fullscreen  = true     // if true, OS window fills the screen; the width x height
+                                     // play area is rendered to a texture and centered within it
+        this.world_scale = 10       // world is this many screens wide
+        this.target_fps  = 60
+
+        // --- lander waves --- (matches the Lua reference's game/levels.lua;
+        // landers_per_wave/pods/bombers/npc_bullet_time/max_baiters below are
+        // just the level-1 baseline -- game_controller.lox overrides them
+        // every level via levels.apply_level(), see levels.lox)
+        this.lander_waves      = 3   // landers arrive in this many waves...
+        this.landers_per_wave  = 5   // ...of this many landers each
+        this.lander_wave_delay = 600 // frames between waves (10s at 60fps)
+        this.lander_search_speed = 2.5 // px/frame drift while hunting for a human
+        this.mutant_speed_pct = 0.7  // horizontal chase speed once mutated, as a fraction of player_maxspeed
+        this.lander_ascend_speed = 2.5 // px/frame carrying a grabbed human up to the top
+
+        // --- other enemies ---
+        this.pods             = 0    // pods drifting at the start of the level
+        this.bombers          = 0
+        this.swarmers_per_pod = 10   // swarmers released when a pod is shot
+
+        // --- baiters (spawned dynamically once the landers thin out) ---
+        this.baiter_threshold = 3    // start sending baiters at <= this many landers
+        this.baiter_delay     = 600  // frames between baiter spawns
+        this.max_baiters      = 1    // cap on simultaneous baiters
+
+        // --- humans ---
+        this.humans = 20
+        this.human_drop_accel = 0.05 // px/frame^2 gravity while falling, uncaught
+
+        // --- levels / lives ---
+        this.starting_lives = 3
+        this.starting_bombs = 5   // smart bombs (Backspace); EntityMgr.trigger_smart_bomb() decrements
+
+        // --- player ship ---
+        this.player_maxspeed = 28
+        this.player_accel    = 0.7
+        this.player_friction = 0.96
+        this.player_vspeed   = 7
+        this.player_lean_speed = 1.5 // px/frame the ship's screen lean eases in/out by while thrusting (see player.lox)
+        this.nodie = false // if true, the player ship cannot die (for testing)
+        this.hyperspace_death_chance = 8 // 1-in-N chance of dying on hyperspace arrival
+
+        // --- weapon pools (simultaneous projectiles) ---
+        this.laser_pool  = 12
+        this.bullet_pool = 100
+
+        // Aimed shots (swarmer/baiter/lander grab-shot) home in on the player.
+        // TIME to target is the invariant, not speed -- each shot's x/y
+        // velocity is solved so it arrives at the player's projected position
+        // in exactly t frames, t randomised between half and full of this
+        // value each shot. See aim_bullet_at() in npc.lox.
+        this.npc_bullet_time = 180   // 3s at 60fps (level 1's value; see levels.lox)
+
+        // --- fx ---
+        this.explosion_particles = 140
+        this.bonus_life = 90         // frames a floating bonus-score popup stays on screen
+
+        this.log_events = false // if true, log all game events to the console (for testing)
+    }
+
+    // Total world width in pixels. Derived so changing width/world_scale is enough.
+    worldwidth() {
+        return this.width * this.world_scale
+    }
+}

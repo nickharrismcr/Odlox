@@ -1,0 +1,141 @@
+from gfx import *
+import colour
+import math
+import random
+
+// The player's laser: a horizontal beam that shoots from the ship nose in the
+// facing direction, extends across the screen, cycles colour, and expires
+// after a short life. Drawn as filled rectangles (a bright core plus a
+// translucent glow), not a sprite -- with small black gaps punched into the
+// glow band, randomised every 6 frames (~0.1s at 60fps), giving the beam a
+// crackling look instead of a smooth glow.
+
+const NUM_GAPS = 10
+
+class Laser {
+    init() {
+        this.active = false
+        this.pos = vec2(0, 0)
+        this.dir = 1
+        this.len = 0
+        this.speed = 0
+        this.alive = 0
+        this.color = colour.YELLOW
+        this.gaps = []
+    }
+    dead() {
+        return !this.active
+    }
+    // struck an NPC: die immediately and free up this slot in the pool, so a
+    // single laser can't punch through and kill more than one target.
+    kill() {
+        this.active = false
+    }
+    reset(x, y, dir, speed, color) {
+        this.active = true
+        this.pos = vec2(x, y)
+        this.dir = dir
+        this.len = 20 * dir
+        this.speed = speed + 14        // beam travels faster than the ship
+        this.alive = 0
+        this.color = color
+        this.gaps = []
+        foreach (var i in range(0, NUM_GAPS)) {
+            this.gaps.append((0, 0))     // invisible until the first re-roll
+        }
+    }
+    // Randomise the black gap segments cut into the glow band: a new (offset,
+    // width) pair per gap, offset within the beam's current width, width in
+    // [2, 15). Re-rolled every 6 frames, not every frame, so the gaps hold
+    // still long enough to read as a crackle rather than pure noise.
+    reroll_gaps() {
+        w = math.abs(this.len)
+        gaps = []
+        foreach (var i in range(0, NUM_GAPS)) {
+            gaps.append((random.float(0, w), random.float(2, 15)))
+        }
+        this.gaps = gaps
+    }
+    update(width, height) {
+        if (!this.active) {
+            return
+        }
+        this.pos.x = this.pos.x + this.dir * this.speed
+        // extend the beam until it spans (up to) the screen width
+        if (math.abs(this.len) < width) {
+            this.len = this.len + this.dir * this.speed * 2
+        }
+        if (this.alive % 6 == 0) {
+            this.reroll_gaps()
+        }
+        this.alive = this.alive + 1
+        if (this.alive > 90) {
+            this.active = false
+        }
+    }
+    draw(win, cam) {
+        if (!this.active) {
+            return
+        }
+        spos = cam.translate(this.pos.x)
+        if (spos == nil) {
+            return
+        }
+        // normalise so width is positive when firing left (negative len)
+        x = spos
+        w = this.len
+        if (w < 0) {
+            x = spos + w
+            w = -w
+        }
+        ix = int(x)
+        iy = int(this.pos.y)
+        iw = int(w)
+        c = this.color
+        // translucent glow above/below, then the bright core
+        win.rectangle(ix, iy - 4, iw, 8, colour.fade(c, 0.15))
+        win.rectangle(ix, iy - 2, iw, 4, colour.fade(c, 0.3))
+        win.rectangle(ix, iy, iw, 2, c)
+        // black gaps cut into the glow band, for the crackling-beam look
+        foreach (var gap in this.gaps) {
+            gx = int(gap[0])
+            gw = int(gap[1])
+            win.rectangle(ix + gx, iy - 4, gw, 8, colour.BLACK)
+        }
+    }
+}
+
+class LaserPool {
+    init(size) {
+        this.lasers = []
+        this.colors = [colour.YELLOW, colour.CYAN, colour.GREEN, colour.BLUE]
+        this.ci = 0
+        for (i = 0; i < size; i = i + 1) {
+            this.lasers.append(Laser())
+        }
+    }
+    fire(x, y, dir, speed) {
+        foreach (var l in this.lasers) {
+            if (l.dead()) {
+                this.ci = (this.ci + 1) % 4
+                l.reset(x, y, dir, speed, this.colors[this.ci])
+                break
+            }
+        }
+    }
+    update(width, height) {
+        foreach (var l in this.lasers) {
+            l.update(width, height)
+        }
+    }
+    clear() {
+        foreach (var l in this.lasers) {
+            l.kill()
+        }
+    }
+    draw(win, cam) {
+        foreach (var l in this.lasers) {
+            l.draw(win, cam)
+        }
+    }
+}

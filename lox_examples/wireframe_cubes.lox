@@ -1,0 +1,131 @@
+from gfx import *
+// Wireframe Cubes Demo
+//
+// 100 wireframe cubes of random size and hue, tumbling and drifting inside
+// a large cubic arena, bouncing off the walls like balls would. An
+// orbiting camera looks at the arena center, same style as
+// 3d_balls_physics_shaders.lox. Pure Lox, no physics_world -- only ~100
+// objects, wall-bounce only, no cube-cube collision, so plain per-object
+// state is simpler than reaching for the native simulation.
+
+import colour as col
+import random
+import math
+
+const WIDTH = 1000
+const HEIGHT = 700
+
+win = window(WIDTH, HEIGHT)
+
+win.init()
+win.toggle_fullscreen()
+
+const DISTANCE = 40.0   // Camera orbital distance from arena center
+const ARENA_SIZE = 35.0 // Arena half-extent (30x30x30 total space)
+const CUBE_COUNT = 200
+const MIN_SIZE = 0.5
+const MAX_SIZE = 5.5
+const MIN_SPEED = -0.15
+const MAX_SPEED = 0.15
+const MIN_SPIN = 0.5     // degrees/frame magnitude -- biased away from
+const MAX_SPIN = 3.0     // zero so every cube visibly tumbles
+
+cam = camera(vec3(DISTANCE, 10, 0), vec3(0, 0, 0), vec3(0, 1, 0))
+orbit_angle = 0.0
+
+// Represents one tumbling, bouncing wireframe cube. Wall collision treats
+// the cube as a bounding sphere (half_diag, its corner-to-center distance)
+// so a rotating corner never visibly pokes through a wall -- "bounce off
+// the walls the same way a ball would," taken literally.
+class WireCube {
+    init(pos, vel, size, axis, angular_speed, color) {
+        this.pos = pos
+        this.vel = vel
+        this.size = size
+        this.axis = axis
+        this.angle = random.float(0, 360)
+        this.angular_speed = angular_speed
+        this.color = color
+        this.half_diag = size.x * math.sqrt(3.0) / 2.0
+    }
+
+    // Reflect one axis's position/velocity off the arena bounds -- same
+    // shape as physics_world's internal clampAxis, written directly here
+    // since there's no native simulation object backing this demo.
+    bounce_axis(pos_axis, vel_axis) {
+        lo = -ARENA_SIZE + this.half_diag
+        hi = ARENA_SIZE - this.half_diag
+        if (pos_axis < lo) {
+            return (lo, -vel_axis)
+        }
+        if (pos_axis > hi) {
+            return (hi, -vel_axis)
+        }
+        return (pos_axis, vel_axis)
+    }
+
+    update() {
+        x = this.pos.x + this.vel.x
+        y = this.pos.y + this.vel.y
+        z = this.pos.z + this.vel.z
+
+        rx = this.bounce_axis(x, this.vel.x)
+        ry = this.bounce_axis(y, this.vel.y)
+        rz = this.bounce_axis(z, this.vel.z)
+
+        this.pos = vec3(rx[0], ry[0], rz[0])
+        this.vel = vec3(rx[1], ry[1], rz[1])
+
+        this.angle = this.angle + this.angular_speed
+    }
+
+    draw() {
+        win.cube_wires_rotated(this.pos, this.size, this.axis, this.angle, this.color)
+    }
+}
+
+cubes = []
+foreach (i in range(CUBE_COUNT)) {
+    s = random.float(MIN_SIZE, MAX_SIZE)
+    size = vec3(s, s, s)
+    half_diag = s * math.sqrt(3.0) / 2.0
+    bound = ARENA_SIZE - half_diag
+
+    pos = vec3(random.float(-bound, bound), random.float(-bound, bound), random.float(-bound, bound))
+    vel = vec3(random.float(MIN_SPEED, MAX_SPEED), random.float(MIN_SPEED, MAX_SPEED), random.float(MIN_SPEED, MAX_SPEED))
+    axis = vec3(random.float(-1, 1), random.float(-1, 1), random.float(-1, 1))
+    spin = random.choice((-1, 1)) * random.float(MIN_SPIN, MAX_SPIN)
+    color = col.hsv_to_rgb(random.float(0, 360), 1.0, 1.0)
+
+    cubes.append(WireCube(pos, vel, size, axis, spin, color))
+}
+
+arena_color = vec4(80, 80, 80, 255)
+
+while (!win.should_close()) {
+    // ===== CAMERA CONTROL =====
+    orbit_angle = orbit_angle + 0.005
+    x = math.cos(orbit_angle) * DISTANCE
+    z = math.sin(orbit_angle) * DISTANCE
+    cam.set_position(vec3(x, 10, z))
+
+    foreach (cube in cubes) {
+        cube.update()
+    }
+
+    win.begin()
+    win.clear(vec4(0, 0, 0, 255))
+    win.begin_3d(cam)
+
+    win.cube_wires(vec3(0, 0, 0), vec3(ARENA_SIZE * 2, ARENA_SIZE * 2, ARENA_SIZE * 2), arena_color)
+
+    foreach (cube in cubes) {
+        cube.draw()
+    }
+
+    win.end_3d()
+    win.end()
+}
+
+win.close()
+print("wireframe_cubes demo terminated")

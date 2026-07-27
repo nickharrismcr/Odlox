@@ -1,0 +1,58 @@
+from gfx import *
+import text
+import colour
+
+// Points per kill. A mutated lander is still the same underlying entity, just
+// renamed to "mutant" on mutation, so it keeps a lander's value.
+// human_caught/human_saved are the rescue bonuses, also shown as a floating
+// popup by bonus.BonusDisplay.
+const SCORES = {
+    "lander_killed":  150,
+    "mutant_killed":  150,
+    "swarmer_killed": 150,
+    "baiter_killed":  200,
+    "bomber_killed":  250,
+    "pod_killed":     1000,
+    "human_caught":   500,
+    "human_saved":    250
+}
+
+class Score {
+
+    init(font, x, y) {
+        this.value = 0
+        this.font = font
+        this.x = x
+        this.y = y
+        // the score text cycles colour
+        this.cycle = text.ColourCycle([colour.RED, colour.BLUE, colour.PURPLE, colour.YELLOW], 45)
+    }
+
+    // Scoring is driven by the game's own kill events rather than polled, so a
+    // new NPC only needs an entry in SCORES to start scoring.
+    attach(events) {
+        foreach (var ev in SCORES.keys()) {
+            events.on(ev, this.handler_for(SCORES[ev]))
+        }
+    }
+
+    // Returns a listener closed over `this` and this event's point value.
+    handler_for(points) {
+        func on_kill(entity) {
+            this.add(points)
+        }
+        return on_kill
+    }
+
+    add(points) {
+        this.value = this.value + points
+    }
+
+    update() {
+        this.cycle.update()
+    }
+
+    draw(win) {
+        this.font.draw(win, text.zero_pad(this.value, 7), this.x, this.y, this.cycle.get())
+    }
+}

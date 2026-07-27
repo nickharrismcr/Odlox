@@ -1,0 +1,64 @@
+
+import random
+import colour
+import math
+
+class Star {
+    init(pos,col){
+        this.pos = pos
+        this.col = col
+    }
+    get(){
+        return (this.pos,this.col)
+    }   
+}
+
+class Stars { 
+    init(width,height,num_stars) {
+        this.width = width
+        this.height = height
+        this.num_stars = num_stars
+        this.stars = []
+        this.add_stars()  
+    }
+    add_stars() {
+        foreach (var i in range(0,this.num_stars)) {
+            x = random.integer(0, this.width)
+            y = random.integer(100, this.height)
+            this.stars.append(Star(vec2(x, y),colour.random_rgb() ))  
+        }
+    }
+
+    update(dx){
+        a = random.integer(0, 10)
+        if (a < 1) {
+            x = random.integer(0, this.width)
+            y = random.integer(100, this.height)
+            which = random.integer(0, len(this.stars)-1)
+            this.stars[which].pos = vec2(x, y)
+        }
+        foreach (var star in this.stars) {
+            pos = star.get()[0]
+            pos.x = pos.x + dx
+            if (pos.x > this.width) {
+                pos.y = random.integer(100, this.height)
+                pos.x = 0
+            }
+            if (pos.x < 0) {
+                pos.y = random.integer(100, this.height)
+                pos.x = this.width
+            }
+            star.pos = pos
+        }
+    }
+    draw(win ) {
+        foreach (var star in this.stars) {
+            s= star.get()
+            pos=s[0]
+            col=s[1]
+            win.circle_fill(pos.x, pos.y, 2, col)
+            
+        }
+    }
+}
+        

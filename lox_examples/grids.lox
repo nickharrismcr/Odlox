@@ -1,0 +1,200 @@
+from gfx import *
+// draw some nice animated grids with a colour shift
+
+
+import random
+import colour
+import math; 
+
+class Siner {
+    init(min,max,rate) {
+        this.x = 0
+        this.rate = rate
+        this.min = min
+        this.max = max
+        this.c = 0 
+    }
+    update() {
+        this.c= this.c + this.rate  
+        if (this.c > 100000) {
+            this.c = 0
+        } 
+        this.x = math.sin(this.c / 100.0) * (this.max - this.min) / 2 + (this.max + this.min) / 2
+    }
+    get() {
+        return this.x
+    }
+}
+
+class Bouncer {
+    init(min,max,dx) {
+        this.x= random.integer(min, max)
+        this.dx = dx
+        this.min=min
+        this.max=max       
+    }
+    update() {
+        this.x = this.x + this.dx
+        if (this.x < this.min) {
+            this.x = this.min
+            this.dx = -this.dx
+        }
+        if (this.x > this.max) {
+            this.x = this.max
+            this.dx = -this.dx
+        }
+    }
+    copy() {
+        return Bouncer(this.min, this.max, this.dx)
+    }
+    get() {
+        return this.x
+    }
+    set(value) {
+        this.x = value
+    }
+}
+
+class ColourShift {
+    init() {
+        this.r = Bouncer(0, 255,1)
+        this.g = Bouncer(0, 255,2)
+        this.b = Bouncer(0, 255,3)
+         
+    }
+    update() {
+        this.r.update()
+        this.g.update()
+        this.b.update()
+       
+    }
+    get() {
+        return vec4(this.r.get(), this.g.get(), this.b.get(), 255)
+    }
+
+}
+
+
+const width=1500
+const height=900
+var win = window(width,height)
+win.init()
+win.toggle_fullscreen()
+
+class Grid {
+    init(cx, cy, size, cells, angle, col,speed) {
+        this.cx = cx
+        this.cy = cy
+        this.size = size
+        this.cells = cells
+        this.angle = angle
+        this.col = col
+        this.c = 0
+        this.speed = speed
+    }
+    copy() {
+        return Grid(this.cx, this.cy, this.size, this.cells , this.angle, vec4(this.col.x, this.col.y, this.col.z, this.col.w), this.speed)
+    }
+    update(x,y,size) {
+        
+        this.c = this.c + 1
+        if (this.c > 100000) {
+            this.c = 0
+        }
+        this.angle = math.sin(this.c/200.0*this.speed)
+        this.cx = x
+        this.cy = y
+        this.size = size
+    }
+    draw(win,alpha=255,scale=1.0) {
+        n = this.cells 
+        sz=this.size*scale 
+        a=this.angle
+        sp = float(sz) / n
+        for (var i = -n; i <= n; i = i + 1) {
+            // Vertical lines
+            var x0 = i * sp;
+            var y0 = -sz;
+            var x1 = i * sp;
+            var y1 = sz;
+            // Rotate and translate
+            var rx0 = this.cx + x0 * math.cos(a) - y0 * math.sin(a);
+            var ry0 = this.cy + x0 * math.sin(a) + y0 * math.cos(a);
+            var rx1 = this.cx + x1 * math.cos(a) - y1 * math.sin(a);
+            var ry1 = this.cy + x1 * math.sin(a) + y1 * math.cos(a);
+            win.line(rx0, ry0, rx1, ry1, this.col)
+
+            // Horizontal lines
+            var x2 = -sz;
+            var y2 = i * sp;
+            var x3 = sz;
+            var y3 = i * sp;
+            var rx2 = this.cx + x2 * math.cos(a) - y2 * math.sin(a);
+            var ry2 = this.cy + x2 * math.sin(a) + y2 * math.cos(a);
+            var rx3 = this.cx + x3 * math.cos(a) - y3 * math.sin(a);
+            var ry3 = this.cy + x3 * math.sin(a) + y3 * math.cos(a);
+            win.line(rx2, ry2, rx3, ry3, this.col)
+        }
+    }
+}
+
+func enumerate(list) {
+    var result = []
+    for (var i = 0; i < len(list); i = i + 1) {
+        result.append((i, list[i]))
+    }
+    return result
+}
+ 
+
+idx=0 
+gridcount=200
+ 
+posx = random.integer(300, width-300)
+posy = random.integer(300, height-300)
+size = Siner(550,2500,1)
+x=Bouncer(0, width, 5)
+y=Bouncer(0, height, 5)
+cells = 3
+speed = random.integer(1, 5)
+rot=random.float(0, 2*math.PI)
+grids=[Grid(posx, posy, size.get(), cells, rot, vec4(255, 255, 255, 255),speed)]
+shift = ColourShift()
+for (var i = 1; i < gridcount; i = i + 1) {
+    grids.append(false)
+}
+
+c=0 
+while (!win.should_close()) {
+
+    win.begin()
+    win.clear(vec4(50,10,10, 255))
+    win.begin_blend_mode("BLEND_ADD") 
+    size.update()
+    x.update()
+    y.update()
+    grids[0].update(x.get(), y.get(), size.get())
+    shift.update()
+    grids[0].col = shift.get()
+    grids[0].draw(win)
+
+    
+    for (var i = len(grids) - 1; i > 0; i = i - 1) {
+        if (grids[i-1] == false) {
+            continue
+        }
+        grids[i] = grids[i-1].copy()
+        if ( i%6==0) {
+            lg=float(len(grids))  
+            fi=float(i+1)
+            scale = 1.0 - (float(i) / float(len(grids)))*0.7
+            grids[i].draw(win,255*((1-float(i)/len(grids))),scale)
+
+        }
+        
+    }
+ 
+    win.end_blend_mode()
+    win.end()
+}
+win.close()

@@ -1,0 +1,25 @@
+// Single place all keyboard polling happens. update(win) is called once per
+// frame from main.lox; everything else (Player, the smart bomb, ...) reads
+// the resulting flags rather than calling win.key_down/key_pressed itself.
+
+class Controller {
+    init() {
+        this.thrust = false        // held: accelerate in the facing direction
+        this.reverse = false       // edge-triggered: flip facing, zero speed
+        this.up = false            // held: move up
+        this.down = false          // held: move down
+        this.fire = false          // edge-triggered: fire the laser
+        this.smart_bomb = false    // edge-triggered: kill everything on screen
+        this.hyperspace = false    // edge-triggered: warp to a random spot
+    }
+
+    update(win) {
+        this.thrust = win.key_down(win.KEY_RIGHT_SHIFT)
+        this.reverse = win.key_pressed(win.KEY_SPACE)
+        this.up = win.key_down(win.KEY_Q)
+        this.down = win.key_down(win.KEY_A)
+        this.fire = win.key_pressed(win.KEY_ENTER)
+        this.smart_bomb = win.key_pressed(win.KEY_BACKSPACE)
+        this.hyperspace = win.key_pressed(win.KEY_LEFT_SHIFT)
+    }
+}

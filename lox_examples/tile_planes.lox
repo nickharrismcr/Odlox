@@ -1,0 +1,243 @@
+from gfx import *
+import random as rn
+import math  
+import colour as col 
+import inspect
+
+func ceil(x) {
+    var ix = int(x)
+    return x > float(ix) ? ix + 1 : ix
+}
+
+func floor(x) {
+    var ix = int(x)
+    return x < float(ix) ? ix - 1 : ix
+}
+
+class Line {
+    init(pos, col, width, height, angle, margin) {
+        this.margin = margin
+        this.pos = vec2(margin + rn.integer(0, width - 2 * margin),margin + rn.integer(0, height - 2 * margin))
+        this.dr=1.03 
+        this.col = col
+        this.angle = angle
+        this.dir = math.PI/4 * float(rn.integer(0,4))
+        this.maxspeed = rn.integer(3,35)
+        this.speed = 1 
+        this.dspeed = 1 
+        this.counter = 0 
+        this.width = width
+        this.height = height
+        this.change = rn.integer(5,60)
+        this.lastp = vec2(this.pos.x, this.pos.y)
+        this.thickness = rn.integer(1,6)
+    } 
+    update() {
+        this.lastp = vec2(this.pos.x, this.pos.y)
+        this.pos.x = this.pos.x + this.speed * math.cos(this.dir)
+        this.pos.y = this.pos.y + this.speed * math.sin(this.dir)
+        // Clamp to inner square
+        if (this.pos.x > this.width - this.margin) {
+            this.pos.x = this.width - this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.x < this.margin) {
+            this.pos.x = this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.y > this.height - this.margin) {
+            this.pos.y = this.height - this.margin
+            this.dir = this.dir + math.PI
+        }
+        if (this.pos.y < this.margin) {
+            this.pos.y = this.margin
+            this.dir = this.dir + math.PI
+        }
+        this.counter = this.counter + 1
+        if (this.counter > this.change ) {
+            this.counter = 0
+            this.change = rn.integer(2,10)
+            this.dir = this.dir + this.angle * rn.choice([-1,1])
+        }
+        this.speed = this.speed + this.dspeed
+        if (this.speed > this.maxspeed or this.speed < 1) {
+            this.dspeed = -this.dspeed
+        }         
+    }
+    draw(frame) {
+        frame.line_ex(this.pos.x, this.pos.y, this.lastp.x, this.lastp.y, this.thickness, this.col)
+    }
+}
+
+class Tile {
+    init(width, height, lines, margin) {
+        this.width = width
+        this.height = height
+        this.rotation = 0.0
+        this.margin = margin
+        this.pos= vec2(rn.integer(0,W-width), rn.integer(0,H-height))
+        this.dpos= vec2(rn.integer(-1,1), rn.integer(-1,1))
+        this.texture = render_texture(width, height)
+        this.lines = lines // now a list of Line objects
+        this.counter=0
+        this.change = rn.integer(150,400)
+    }
+    update( ){
+ 
+        foreach (line in this.lines) {
+            line.update()
+            line.draw(this.texture)
+        }
+    }
+    move(pos) {
+        this.pos = vec2(pos.x, pos.y)
+    }
+    clear(col) {
+        this.texture.clear(col)
+    }
+    draw(win) {
+        win.draw_render_texture_ex(this.texture, this.pos.x, this.pos.y, this.rotation, this.scale, vec4(255, 255, 255, 255))
+    }
+}
+
+class Tiler {
+    init(scale, speed) {
+        this.tile = nil
+        this.offset = vec2(0, 0) // scrolling offset in pixels
+        this.scale = scale
+        this.speed = speed
+        this.scroll_angle = math.atan2(speed.y, speed.x)
+        this.scroll_speed = math.sqrt(speed.x * speed.x + speed.y * speed.y)
+        this.target_angle = this.scroll_angle
+    }
+    add(tile) {
+        this.tile = tile
+        this.tile.scale = this.scale
+        this.tiles_w = ceil(W / (this.tile.width * this.scale)) + 2
+        this.tiles_h = ceil(H / (this.tile.height * this.scale)) + 2
+    }
+    set_speed(vec2speed) {
+        this.scroll_speed = math.sqrt(vec2speed.x * vec2speed.x + vec2speed.y * vec2speed.y)
+        this.target_angle = math.atan2(vec2speed.y, vec2speed.x)
+    }
+    update() {
+        // Smoothly interpolate scroll_angle toward target_angle
+        var delta = this.target_angle - this.scroll_angle
+        // Wrap delta to [-PI, PI]
+        if (delta > math.PI) delta = delta - 2 * math.PI
+        if (delta < -math.PI) delta = delta + 2 * math.PI
+        this.scroll_angle = this.scroll_angle + 0.05 * delta // 0.05 controls smoothness
+        // Update speed vector
+        this.speed.x = this.scroll_speed * math.cos(this.scroll_angle)
+        this.speed.y = this.scroll_speed * math.sin(this.scroll_angle)
+        this.tile.update()
+        this.offset = this.offset ++ this.speed 
+ 
+    }
+    draw(win) {
+        var tw = this.tile.width * this.scale
+        var th = this.tile.height * this.scale
+        var ox = - (( (int(this.offset.x) % int(tw)) + int(tw) ) % int(tw) )
+        var oy = - (( (int(this.offset.y) % int(th)) + int(th) ) % int(th) )
+        for (var j = 0; j < this.tiles_h; j = j + 1) {
+            for (var i = 0; i < this.tiles_w; i = i + 1) {
+                var sx = ox + i * tw
+                var sy = oy + j * th
+                this.tile.move(vec2(sx, sy))
+                this.tile.draw(win)
+            }
+        }
+    }
+}
+ 
+
+func make_lines(n, width, height, alpha,margin) {
+    var lines = []
+   
+    for (var i = 0; i < n; i = i + 1) {
+        var c = col.random_rgb()
+        c.a = alpha
+        var angle = math.PI / 4
+        lines.append(Line(vec2(0, 0), c, width, height, angle, margin))
+    }
+    return lines
+}
+
+func get_tilers()
+{
+    var margin = 20 // adjust as needed for inner square size
+    tilers= [] 
+    t=Tiler(1.0,vec2(4,4))
+    t.add(Tile(ww, wh, make_lines(5, ww, wh, 255, margin), margin))
+    tilers.append(t) 
+    t=Tiler(0.5,vec2(2,2))
+    t.add(Tile(ww, wh, make_lines(5, ww, wh, 200, margin), margin))
+    tilers.append(t)
+    t=Tiler(0.25,vec2(1,1))
+    t.add(Tile(ww, wh, make_lines(5, ww, wh, 150, margin), margin))
+    tilers.append(t)
+    return tilers
+}
+
+func clear_tilers(tilers) {
+    margin = 20
+    for (i = 0; i < len(tilers); i = i + 1) {
+        t = tilers[i]
+        t.tile.clear(vec4(0, 0, 0, 0)) // Use transparent clear, not black
+        t.tile.lines = make_lines(5, ww, wh, 255-(i*50), margin) // Reset lines
+    }
+}   
+
+ww=400
+wh=400
+ 
+frame_count=50
+
+W=0
+H=0
+
+win=window(900,900)
+win.init() 
+win.toggle_fullscreen()
+W=win.get_screen_width()
+H=win.get_screen_height()
+win.begin()
+win.clear(col.BLACK)
+win.end()
+counter = 0 
+counter2 = 0
+tilers = get_tilers()
+
+while (!win.should_close()) {
+
+    win.begin() 
+    win.begin_blend_mode(win.BLEND_ALPHA)
+    win.clear(col.BLACK)
+     
+    for ( i = 2; i >= 0; i = i - 1) {
+         
+        tiler = tilers[i]
+        tiler.update()
+        tiler.draw(win)
+    }   
+    counter+=1
+    if (counter > 320 ){
+        counter = 0
+        speedx=rn.choice((-4,4))
+        speedy=rn.choice((-4,4))
+        tilers[0].set_speed(vec2(speedx,speedy))
+        tilers[1].set_speed(vec2(speedx/2,speedy/2))
+        tilers[2].set_speed(vec2(speedx/4,speedy/4))
+    }
+    win.end_blend_mode()
+    win.end()
+    counter2+=1
+    if ( counter2 > 600) {
+       counter2 = 0
+       counter = 0 
+       clear_tilers(tilers)
+    }
+
+}
+win.close()
+

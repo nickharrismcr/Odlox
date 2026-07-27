@@ -1,0 +1,448 @@
+from gfx import *
+from sprite import Sprite
+from npc import shortest_dx
+import math
+import random
+import colour
+
+// Thrust flame is drawn smaller than the source art and offset from the hull
+// (not flush against it).
+const THRUST_SCALE = 0.75
+const THRUST_GAP = 6
+
+// Hyperspace: warps to a random spot away from the current enemies, dispersed
+// like a materialising lander while it coalesces. Uses the same disperse
+// range/rate as NPC materialise (see npc.lox / lander.lox) for a consistent look.
+const HYPERSPACE_DISPERSE_START = 50
+const HYPERSPACE_MATERIALISE_RATE = 0.7
+const HYPERSPACE_MIN_NPC_DIST = 400   // stay at least this far from any non-human NPC
+const HYPERSPACE_MAX_ATTEMPTS = 20    // give up and use the last candidate after this many tries
+
+const SAFE_START_FRAMES = 60   // 1s at 60fps
+
+// The player ship.
+//
+// Controls (classic Defender):
+//   R-SHIFT (hold) : thrust in the facing direction
+//   SPACE   (tap)  : reverse facing and reset speed
+//   Q / A          : move up / down within the play area
+//   ENTER          : fire
+//   L-SHIFT (tap)  : hyperspace
+//
+// A small state machine of swappable update functions, matching the NPC
+// idiom (enter_<state>/state_<state>). The player's own states, and what
+// they mean for the enemy NPCs (via EntityMgr.{hide,show,freeze,unfreeze}_
+// enemies(), called directly from the enter_/state_ functions below rather
+// than through an event, since the coupling here is tight and this keeps
+// cause and effect in one place):
+//
+//   safe_start : ship visible and already flyable, enemies hidden AND
+//                frozen. 1s. Entered on construction and after every
+//                respawn. Input is skipped for just its first frame, since
+//                that's the one frame SPACE might still be registering as
+//                having just started the game rather than as a "reverse"
+//                command here.
+//   play       : normal gameplay. Enemies visible and active.
+//   die        : just hit -- frozen in place, flashing red. Enemies stay
+//                visible but freeze too. 2s, then -> explode.
+//   explode    : ship gone, particle burst plays. Enemies hidden AND
+//                frozen. 3s, then -> safe_start (or game_controller ends
+//                the game first, if this was the last life -- see its
+//                on_player_start()).
+//   hyperspace : warped to a random spot, rematerialising. Enemies are
+//                NOT hidden/frozen for this one -- it's the player's own
+//                choice to jump into danger, not a death. On arrival,
+//                either -> play or -> die (misjump).
+//
+// The camera follows the ship, keeping it at a fixed screen offset that shifts
+// to look ahead in the facing direction.
+
+class Player < Sprite {
+
+    init(pos, img, thrust_img, shipw_img, config) {
+        // ship.png is a 5-frame animation strip; thrust.png is a 2-frame flame;
+        // shipw.png is an all-white ship silhouette (2 frames, same 60px frame
+        // width as ship.png). Being pure white it can be tinted to any colour, so
+        // the death flash draws it tinted alternately white and red.
+        super.init(pos, img, 5, 1, 5)
+        this.type = "player"
+        this.animate(8)
+        this.width = this.texture.frame_width()
+        this.height = this.texture.height()
+        this.thrust_tex = texture(thrust_img, 2, 1, 2)
+        this.thrust_tex.animate(6)
+        this.thrust_width = this.thrust_tex.frame_width()
+        this.thrust_height = this.thrust_tex.height()
+        this.flash_tex = texture(shipw_img, 2, 1, 2)
+
+        // Classic Defender: a persistent facing (dir) plus a scalar speed. Thrust
+        // accelerates in the facing direction; reverse flips facing and zeroes speed.
+        // vx is the derived signed velocity (used for parallax / laser inheritance).
+        this.dir = 1
+        this.speed = 0
+        this.vx = 0
+        this.vy = 0
+        this.maxspeed = config.player_maxspeed
+        this.accel = config.player_accel
+        this.friction = config.player_friction   // closer to 1 => less friction, longer coast
+        this.vspeed = config.player_vspeed
+        this.nodie = config.nodie
+        this.hyperspace_death_chance = config.hyperspace_death_chance
+
+        // purely visual: while thrusting, the drawn ship eases forward (in the
+        // facing direction) up to one ship-width, then eases back at the same
+        // speed once thrust is released. World position/physics are untouched.
+        this.lean = 0
+        this.lean_speed = config.player_lean_speed
+
+        // camera look-ahead: ship sits at screen x == offset, which lerps between
+        // leftoffset (facing right -> ship near the left edge, seeing ahead right)
+        // and rightoffset (facing left -> ship near the right edge).
+        width = config.width
+        this.leftoffset = width * 0.15
+        this.rightoffset = width - width * 0.15
+        this.offset = this.leftoffset
+        this.offsetspeed = 10
+
+        this.worldwidth = config.worldwidth()
+        this.top = config.height * 0.16   // keep clear of the radar strip at the top
+        this.bottom = config.height - 50
+        this.thrusting = false
+        this.alive = true
+        this.mgr = nil
+
+        // death / respawn state -- initial state only (see enter_safe_start()
+        // for every later entry), set directly rather than via enter_
+        // since this.mgr isn't wired up yet at construction time.
+        this.update_func = state_safe_start
+        this.timer = SAFE_START_FRAMES
+        this.flash = false           // draw the red ship this frame
+        this.visible = true
+        this.invuln = 0              // frames of blink-protected grace once state_play resumes
+    }
+
+    dying() {
+        return this.update_func != state_play
+    }
+
+    // Struck by a deadly NPC: begin the death sequence, unless we are already
+    // dying or still invulnerable from a respawn.
+    hit() {
+        if (this.nodie or this.invuln > 0 or this.dying()) {
+            return
+        }
+        this.mgr.events.emit("player_hit", this)
+        enter_die(this)
+    }
+
+    handle_input(input) {
+        this.thrusting = false
+
+        // reverse (edge-triggered): flip facing and kill speed
+        if (input.reverse) {
+            this.dir = -this.dir
+            this.speed = 0
+        }
+
+        // thrust (held): accelerate in the facing direction, else coast to a stop
+        if (input.thrust) {
+            this.speed = math.min(this.speed + this.accel, this.maxspeed)
+            this.thrusting = true
+        } else {
+            this.speed = this.speed * this.friction
+        }
+
+        vy = 0
+        if (input.up) { vy = -this.vspeed }
+        if (input.down) { vy = this.vspeed }
+        this.vy = vy
+    }
+
+    fire(input) {
+        if (input.fire and this.mgr != nil) {
+            // draw_texture is top-left anchored: the nose is at the front edge
+            // (front in the facing direction) and the vertical centre of the sprite.
+            nose_x = this.pos.x + (this.width / 2) + this.dir * (this.width / 2)
+            nose_y = this.pos.y + (this.height / 2)
+            this.mgr.fire_laser(nose_x, nose_y, this.dir, math.abs(this.vx))
+        }
+    }
+
+    smart_bomb(input) {
+        if (input.smart_bomb and this.mgr != nil) {
+            this.mgr.trigger_smart_bomb()
+        }
+    }
+
+    update(input) {
+        f = this.update_func
+        f(this, input)
+    }
+
+    // Camera x that keeps the ship drawn at screen x == this.offset.
+    camera_x() {
+        return this.pos.x - this.offset
+    }
+
+    draw(win, cam) {
+        if (!this.visible) {
+            return
+        }
+        // blink while invulnerable after a respawn
+        if (this.invuln > 0 and (this.invuln / 4) % 2 == 0) {
+            return
+        }
+        spos = cam.translate(this.pos.x)
+        if (spos == nil) {
+            return
+        }
+
+        if (this.update_func == state_hyperspace) {
+            this.draw_disperse(win, spos, this.pos.y, this.disperse, colour.WHITE)
+            return
+        }
+
+        // shift the drawn (screen-space only) position by the current lean,
+        // forward in the facing direction -- world pos.x is untouched
+        draw_x = spos + this.lean * this.dir
+        flip = this.dir == -1     // ship art faces right; mirror it when facing left
+        white = colour.WHITE
+
+        if (this.update_func == state_die) {
+            // death flash: alternate an all-white and an all-red ship. The white
+            // silhouette is tinted, so both colours come from one texture.
+            tint = white
+            if (!this.flash) {
+                tint = colour.RED
+            }
+            win.draw_texture_flip(this.flash_tex, draw_x, this.pos.y, tint, flip)
+            return
+        }
+
+        if (this.thrusting) {
+            // thrust flame: scaled down and offset from the hull by a small
+            // gap (not flush against it). Ship occupies [draw_x, draw_x+width]
+            // on screen; facing right the tail is at draw_x, facing left it
+            // is at draw_x+width. Vertically re-centred on the unscaled frame
+            // so shrinking it doesn't drift it toward the top.
+            flame_w = this.thrust_width * THRUST_SCALE
+            flame_h = this.thrust_height * THRUST_SCALE
+            ty = this.pos.y + (this.thrust_height - flame_h) / 2
+            tx = draw_x - flame_w - THRUST_GAP     // facing right: flame left of ship
+            if (this.dir == -1) {
+                tx = draw_x + this.width + THRUST_GAP  // facing left: flame right of ship
+            }
+            win.draw_texture_scaled(this.thrust_tex, tx, ty, white, flip, THRUST_SCALE)
+        }
+        win.draw_texture_flip(this.texture, draw_x, this.pos.y, white, flip)
+    }
+}
+
+// --- states -------------------------------------------------------------------
+
+// Ship visible, input ignored, enemies hidden and frozen. Entered directly by
+// init() for the very first spawn, and by enter_safe_start() after every
+// respawn. The player can already fly around during this window -- input is
+// skipped for exactly the first frame (see the e.timer check below), since
+// that's the one frame SPACE might still be registering as having just
+// started the game (read by game_controller's intro state) rather than as a
+// "reverse" command here.
+func state_safe_start(e, input) {
+    if (e.mgr != nil) {
+        e.mgr.hide_enemies()
+        e.mgr.freeze_enemies()
+    }
+    if (e.timer < SAFE_START_FRAMES) {
+        move(e, input)
+    }
+    e.timer = e.timer - 1
+    if (e.timer <= 0) {
+        enter_play(e)
+    }
+}
+
+func enter_safe_start(e) {
+    e.update_func = state_safe_start
+    e.timer = SAFE_START_FRAMES
+    e.visible = true
+    e.flash = false
+    e.speed = 0
+    e.vx = 0
+    e.dir = 1
+    e.offset = e.leftoffset
+    e.invuln = 0
+    e.mgr.events.emit("player_start", e)
+}
+
+func state_play(e, input) {
+    if (input.hyperspace) {
+        enter_hyperspace(e)
+        return
+    }
+    move(e, input)
+}
+
+// Shared per-frame flight physics: input handling, thrust-lean easing,
+// movement, world wrap, vertical clamp, and camera-offset easing. Used by
+// both state_play and state_safe_start (the latter counts down to state_play
+// underneath, but the player can already fly around while it does).
+func move(e, input) {
+    e.handle_input(input)
+    e.fire(input)
+    e.smart_bomb(input)
+
+    // ease the visual lean toward full (thrusting) or zero (not thrusting),
+    // at the same speed in both directions
+    lean_target = 0
+    if (e.thrusting) {
+        lean_target = e.width
+    }
+    if (e.lean < lean_target) {
+        e.lean = math.min(e.lean + e.lean_speed, lean_target)
+    } else if (e.lean > lean_target) {
+        e.lean = math.max(e.lean - e.lean_speed, lean_target)
+    }
+
+    if (e.invuln > 0) {
+        e.invuln = e.invuln - 1
+    }
+
+    e.vx = e.speed * e.dir           // signed velocity for parallax / laser
+    e.pos.x = e.pos.x + e.vx
+    e.pos.y = e.pos.y + e.vy
+
+    // horizontal world wrap-around
+    if (e.pos.x > e.worldwidth) { e.pos.x = e.pos.x - e.worldwidth }
+    if (e.pos.x < 0) { e.pos.x = e.pos.x + e.worldwidth }
+
+    // clamp to the vertical play area
+    if (e.pos.y < e.top) { e.pos.y = e.top }
+    if (e.pos.y > e.bottom) { e.pos.y = e.bottom }
+
+    // slide the camera offset to look ahead in the facing direction
+    target = e.leftoffset
+    if (e.dir == -1) { target = e.rightoffset }
+    if (e.offset < target) {
+        e.offset = math.min(e.offset + e.offsetspeed, target)
+    } else if (e.offset > target) {
+        e.offset = math.max(e.offset - e.offsetspeed, target)
+    }
+}
+
+// Warp to a random spot away from the current enemies and start rematerialising.
+// Deliberately does not touch enemy visibility/freeze -- this is the player's
+// own choice to jump into danger, not a death.
+func enter_hyperspace(e) {
+    e.pos = random_hyperspace_pos(e)
+    e.update_func = state_hyperspace
+    e.disperse = HYPERSPACE_DISPERSE_START
+    e.speed = 0
+    e.vx = 0
+    e.vy = 0
+    e.thrusting = false
+    e.lean = 0
+    e.mgr.events.emit("player_hyperspace", e)
+}
+
+// Coalesces the same way a materialising lander does (disperse falling to 1).
+// On arrival there's a chance of a fatal misjump.
+func state_hyperspace(e, input) {
+    e.disperse = e.disperse - HYPERSPACE_MATERIALISE_RATE
+    if (e.disperse <= 1) {
+        e.disperse = 1
+        if (random.integer(1, e.hyperspace_death_chance) == 1) {
+            enter_die(e)
+        } else {
+            enter_play(e)
+        }
+    }
+}
+
+// Random world position at least HYPERSPACE_MIN_NPC_DIST from every alive,
+// non-human NPC, giving up after HYPERSPACE_MAX_ATTEMPTS and using the last
+// candidate (better than looping forever if the world is crowded).
+func random_hyperspace_pos(e) {
+    x = random.integer(0, e.worldwidth)
+    y = random.integer(e.top, e.bottom)
+    attempts = 0
+    while (attempts < HYPERSPACE_MAX_ATTEMPTS and !far_from_npcs(e, x, y)) {
+        x = random.integer(0, e.worldwidth)
+        y = random.integer(e.top, e.bottom)
+        attempts = attempts + 1
+    }
+    return vec2(x, y)
+}
+
+func far_from_npcs(e, x, y) {
+    foreach (var other in e.mgr.get_all()) {
+        if (!other.alive or other.type == "human") {
+            continue
+        }
+        dx = shortest_dx(x, other.pos.x, e.worldwidth)
+        dy = y - other.pos.y
+        if (dx * dx + dy * dy < HYPERSPACE_MIN_NPC_DIST * HYPERSPACE_MIN_NPC_DIST) {
+            return false
+        }
+    }
+    return true
+}
+
+// Frozen in place, flashing red before it blows. Enemies stay visible but
+// freeze too.
+func enter_die(e) {
+    e.update_func = state_die
+    e.timer = 120                    // 2 seconds, frozen
+    e.speed = 0
+    e.vx = 0
+    e.vy = 0
+    e.thrusting = false
+    e.lean = 0
+    if (e.mgr != nil) {
+        e.mgr.freeze_enemies()
+        e.mgr.clear_lasers()
+    }
+    e.mgr.events.emit("player_die", e)
+}
+
+func state_die(e, input) {
+    e.timer = e.timer - 1
+    e.flash = (e.timer / 3) % 2 == 0     // rapid alternation, ~10Hz
+    if (e.timer <= 0) {
+        enter_explode(e)
+    }
+}
+
+// Ship is gone, particle burst plays. Enemies hidden as well as frozen.
+func enter_explode(e) {
+    e.update_func = state_explode
+    e.timer = 150                    // 3 seconds before the safe-start window begins
+    e.visible = false
+    e.flash = false
+    if (e.mgr != nil) {
+        e.mgr.hide_enemies()
+        e.mgr.freeze_enemies()   // already frozen since enter_die(); stays that way
+        e.mgr.clear_bullets()
+    }
+    // burst from the centre of the ship
+    e.mgr.explode_at(e.pos.x + e.width / 2, e.pos.y + e.height / 2)
+    e.mgr.events.emit("player_explode", e)
+}
+
+// Ship is gone; the particle burst plays out while we wait to respawn.
+func state_explode(e, input) {
+    e.timer = e.timer - 1
+    if (e.timer <= 0) {
+        enter_safe_start(e)
+    }
+}
+
+// Enemies become visible and active again; a brief blink-protected grace
+// period covers the player for a bit further into real play.
+func enter_play(e) {
+    e.update_func = state_play
+    e.invuln = 120
+    if (e.mgr != nil) {
+        e.mgr.show_enemies()
+        e.mgr.unfreeze_enemies()
+    }
+}

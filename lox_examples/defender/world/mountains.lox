@@ -1,0 +1,111 @@
+
+import random
+import colour
+import math;
+
+// per-frame terrain points perturbed while exploding: jittered, and
+// occasionally sent flying off-screen for good.
+const EXPLODE_POINTS_PER_FRAME = 2000
+const EXPLODE_JITTER_MAX = 25          // random +/- kick per touch
+const EXPLODE_COLLAPSE_CHANCE = 40     // 1-in-N chance per touched point of vanishing for good
+const EXPLODE_COLLAPSE_HEIGHT = 100000 // sentinel: draws far off the top of the screen
+
+class Mountain {
+    init(width,max_height) {
+        this.width = width
+        this.max_height = max_height
+        this.points = []
+        this.generate_points()
+        this.exploding = false
+        this.hidden = false   // set/cleared by level_finish/level_start, see attach()
+        // Cached here since draw() runs every frame and iterates the screen
+        // width -- a fresh vec4 per iteration would be a steady per-frame
+        // GC-pressure source. Same shade as radar.lox's terrain dot.
+        this.terrain_colour = colour.TERRAIN_ORANGE
+    }
+    // Hidden for the duration of the level-complete banner (game_controller
+    // emits these via entities.events).
+    attach(events) {
+        events.on("level_finish", this.on_level_finish())
+        events.on("level_start", this.on_level_start())
+    }
+    on_level_finish() {
+        func handler(e) {
+            this.hidden = true
+        }
+        return handler
+    }
+    on_level_start() {
+        func handler(e) {
+            this.hidden = false
+        }
+        return handler
+    }
+    // All humans are lost: the terrain starts crumbling and never stops for
+    // the rest of the game (no reset back).
+    explode() {
+        this.exploding = true
+    }
+    update() {
+        if (!this.exploding) {
+            return
+        }
+        foreach (var i in range(0, EXPLODE_POINTS_PER_FRAME)) {
+            idx = random.integer(0, len(this.points) - 1)
+            this.points[idx] = this.points[idx] + random.integer(-EXPLODE_JITTER_MAX, EXPLODE_JITTER_MAX)
+            if (random.integer(0, EXPLODE_COLLAPSE_CHANCE) == 0) {
+                this.points[idx] = EXPLODE_COLLAPSE_HEIGHT
+            }
+        }
+    }
+    generate_points() {
+        x = 0
+        h = 0
+        dh = 1  
+        while (x < this.width) {
+            x=x+1
+            this.points.append(h)
+            h = h + dh 
+            if (h <= 0 or h >= this.max_height) {
+                dh = -dh
+                h = h + dh
+            }
+            if (random.integer(0, 100) == 0) {
+                dh = -dh
+            }
+        }
+        h=0
+        dh = 1
+        i=this.width-1 
+        while (i > 0 ){
+            i=i-1 
+            if (h >= this.points[i]) {
+                break
+            }
+            this.points[i] = h
+            h = h + dh     
+        }
+    }
+    get(x){
+        return this.points[int(x)%len(this.points)] 
+    }    
+    draw(win,height,cam,width){
+        if (this.hidden) {
+            return
+        }
+        r = 2
+        if (this.exploding) {
+            r = 4   // chunkier debris once the terrain starts crumbling
+        }
+        // draw from screen x start to screen end
+        foreach ( var x in range(0,width)){
+            if (x%5==0){
+                h = this.get(x + cam.x)
+                win.circle_fill(x, height-h, r, this.terrain_colour)
+            }
+        }
+    }
+}
+ 
+
+ 

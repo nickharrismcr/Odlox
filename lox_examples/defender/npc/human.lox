@@ -1,0 +1,218 @@
+import sprite
+import random
+import math
+import colour
+from sprite import Sprite
+
+// Human colonist. A small state machine of swappable update functions:
+//
+//   walking  : strolls along the mountain surface (default)
+//   grabbed  : a lander has it; hangs just below its carrier as it is lifted
+//   dropping : the carrier was killed; falls under gravity
+//   caught   : the player scooped it up mid-fall; rides below the ship
+//   dying    : dropped from too high; explodes (disperse) then is lost
+//   eaten    : the carrier reached the top and mutated; lost instantly
+//
+// `dying` and `eaten` set `alive = false`, so EntityMgr's per-frame live-human
+// recount (humans_left) drops -- a human that lands or is caught survives and
+// returns to walking. `state` is a readable string the lander and entity
+// manager test across module boundaries.
+
+class Human < Sprite {
+
+    init(pos,img, frames, start_frame, end_frame) {
+        super.init(pos, img, frames, start_frame, end_frame)
+        this.type = "human"
+        this.img = img
+        this.state = "walking"
+        this.update_func = state_walk
+        this.draw_func = draw_normal
+        this.dx = random.choice([-1, 1])
+        this.dy = 0                  // vertical speed while dropping
+        this.disperse = 1
+        this.drop_start_y = 0
+        this.carrier = nil           // lander while grabbed, player while caught
+        this.radar = colour.GRAY
+        this.counter = 0
+        this.mgr = nil
+        this.chosen = false
+        this.alive = true
+        this.shootable = true       // humans can be shot by mistake 
+        this.deadly = false
+        this.width = this.texture.frame_width()
+        this.height = this.texture.height()
+    }
+
+    position() {
+        return (this.pos.x, this.pos.y)
+    }
+
+    // --- transitions, driven by the lander / entity manager ---
+    // Each of these sets whatever data the target state needs, then hands off to
+    // a matching enter_<state>(e) free function that installs update_func (and,
+    // for grabbed/caught/dying, emits the relevant event) as state_<state>.
+    // Mirrors the enter_<state>/state_<state> convention used in npc.lox,
+    // lander.lox and player.lox.
+    grab(carrier) {                  // a lander latched on
+        this.carrier = carrier
+        this.chosen = true
+        enter_grabbed(this)
+    }
+    drop() {                         // the carrier was killed
+        this.carrier = nil
+        enter_dropping(this)
+    }
+    catch_by(player) {               // the player scooped it up mid-fall
+        this.carrier = player
+        enter_caught(this)
+    }
+    eat() {                          // the carrier mutated; lost instantly
+        if (!this.alive) {
+            return
+        }
+        this.state = "eaten"
+        this.alive = false
+    }
+    // a lander that had chosen but not yet grabbed this human died: free it up
+    release() {
+        this.chosen = false
+        this.carrier = nil
+    }
+
+    // shot by a player laser: start the death/explode sequence, unless already exploding.
+    hit() {
+        if (this.state != "dying") {
+            enter_dying(this)
+        }
+    }
+
+    ground_y() {
+        return this.mgr.height - this.mgr.mountains.get(this.pos.x)
+    }
+
+    update(width,height) {
+        if (!this.alive) {
+            return
+        }
+        this.counter = this.counter + 1
+        f = this.update_func
+        if (f != nil) {
+            f(this, width, height)
+        }
+    }
+
+    draw(win,cam) {
+        if (!this.alive) {
+            return
+        }
+        f = this.draw_func
+        f(this, win, cam)
+    }
+}
+
+// --- draw functions -----------------------------------------------------------
+
+func draw_normal(e, win, cam) {
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
+    }
+}
+
+func draw_dispersed(e, win, cam) {
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)
+    }
+}
+
+// --- states -------------------------------------------------------------------
+
+func state_walk(e, width, height) {
+    if (e.counter % 10 == 0) {
+        e.pos.x = e.pos.x + e.dx
+        e.pos.y = e.ground_y()
+    }
+}
+
+func enter_grabbed(e) {
+    e.state = "grabbed"
+    e.update_func = state_grabbed
+    e.mgr.events.emit("human_grabbed", e)
+}
+
+func state_grabbed(e, width, height) {
+    // hang centred below the carrier lander (sprites are top-left anchored, so
+    // the lander's own centre is offset by half its width) as it lifts us
+    if (e.carrier != nil) {
+        e.pos.x = e.carrier.pos.x + e.carrier.width / 2 - e.width / 2
+        e.pos.y = e.carrier.pos.y + 30
+    }
+}
+
+func enter_dropping(e) {
+    e.state = "dropping"
+    e.dy = 0
+    e.drop_start_y = e.pos.y
+    e.update_func = state_dropping
+}
+
+func state_dropping(e, width, height) {
+    e.dy = e.dy + e.mgr.config.human_drop_accel     // gravity
+    e.pos.y = e.pos.y + e.dy
+    ground = e.ground_y()
+    if (e.pos.y >= ground) {
+        e.pos.y = ground
+        if (e.drop_start_y < height / 3 ) {
+            enter_dying(e)           // dropped from above the middle: fatal
+        } else {
+            enter_walking(e)         // survived the fall
+        }
+    }
+}
+
+func enter_caught(e) {
+    e.state = "caught"
+    e.update_func = state_caught
+    e.mgr.events.emit("human_caught", e)
+}
+
+func state_caught(e, width, height) {
+    // ride below the ship until we reach the ground, then walk free
+    if (e.carrier != nil) {
+        e.pos.x = e.carrier.pos.x
+        e.pos.y = e.carrier.pos.y + 40
+    }
+    if (e.pos.y >= e.ground_y()) {
+        e.pos.y = e.ground_y()
+        enter_walking(e)
+    }
+}
+
+// Reached the ground safely, whether unaided (from dropping) or carried down
+// by the player (from caught) -- both lead here, so the outcome is shared.
+func enter_walking(e) {
+    e.release()                      // no longer a child of a lander/the player ship
+    e.state = "walking"
+    e.update_func = state_walk
+    e.mgr.events.emit("human_saved", e)
+}
+
+func enter_dying(e) {
+    e.draw_func = draw_dispersed
+    e.state = "dying"
+    e.disperse = 1
+    e.dp = vec2(0, 0)
+    e.radar = nil
+    e.shootable = false
+    e.deadly = false
+    e.update_func = state_dying
+    e.mgr.events.emit("human_killed", e)
+}
+
+func state_dying(e, width, height) {
+    e.disperse = e.disperse + 1.3
+    if (e.disperse >= 60) {
+        e.alive = false
+    }
+}

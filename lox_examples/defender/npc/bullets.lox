@@ -1,0 +1,38 @@
+from gfx import *
+import sprite
+import random
+import bullet
+
+class BulletPool {
+    init(size) {
+        img = image("pngs/bullet.png")
+        this.bullets = []
+        for (i = 0; i < size; i=i+1) {
+            this.bullets.append(bullet.Bullet(vec2(0,0), img, 2,1,2))
+        }
+    }
+    fire(p,v,life=100) {
+        foreach (var b in this.bullets) {
+            if (b.dead()) {
+                b.reset(p,v,life)
+                break
+            }
+        }
+    }
+    update(width, height) {
+        foreach (var b in this.bullets) {
+            b.update(width, height)
+        }
+    }
+    clear() {
+        foreach (var b in this.bullets) {
+            b.kill()
+        }
+    }
+
+    draw(win,cam) {
+        foreach (var b in this.bullets) {
+            b.draw(win, cam)
+        }
+    }
+}

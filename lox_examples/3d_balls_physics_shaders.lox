@@ -1,0 +1,488 @@
+from gfx import *
+from physics import *
+// 3D Physics Simulation with Shaders
+
+import colour  as col
+import random
+import math
+
+// Initialize graphics system
+win = window(800,600)
+win.init()
+win.toggle_fullscreen()
+
+// Create a 3D camera with orbital view
+// Position: (20, 10, 10), Target: origin, Up: Y-axis
+cam = camera(vec3(20, 10, 10), vec3(0, 0, 0), vec3(0, 1, 0))
+
+// ========== SHADER SYSTEM SETUP ==========
+// Load custom GLSL shaders for visual effects
+rainbow_shader = shader("lox_examples/shaders/rainbow.vs", "lox_examples/shaders/rainbow.fs")
+pulse_shader = shader("lox_examples/shaders/pulse.vs", "lox_examples/shaders/pulse.fs")
+
+// Shader uniform locations (retrieved from GPU)
+// These are handles to shader variables that we can update in real-time
+time_location = -1      // Rainbow shader time uniform (for color animation)
+pulse_time_loc = -1     // Pulse shader time uniform (for pulse animation)
+pulse_center_loc = -1   // Pulse shader center position uniform (vec3)
+
+// Validate rainbow shader and get uniform location
+if (rainbow_shader.is_valid()) {
+    time_location = rainbow_shader.get_location("time")
+    print("Rainbow shader loaded successfully! Time location:", time_location)
+} else {
+    print("Warning: Rainbow shader failed to load. Using default rendering.")
+}
+
+// Validate pulse shader and get uniform locations
+if (pulse_shader.is_valid()) {
+    pulse_time_loc = pulse_shader.get_location("time")
+    pulse_center_loc = pulse_shader.get_location("center")
+    print("Pulse shader loaded. Time location:", pulse_time_loc, "Center location:", pulse_center_loc)
+}
+
+// ========== SIMULATION VARIABLES ==========
+angle = 0.0                    // Camera orbital angle
+frame_count = 0                // Frame counter for timing
+floor_flash_timer = 0          // Explosion floor flash effect timer
+time_value = 0.0               // Time in seconds (for shader uniforms)
+pulse_center = vec3(0, 5, 0)   // Moving center point for pulse shader effect
+
+// ========== PHYSICS SIMULATION CONSTANTS ==========
+const GRID_SIZE = 30.0         // Half-size of simulation boundary (60x60x60 total space)
+const WORLD_TOP = 1000.0       // Upper Y bound for physics_world -- far above anything
+                                // reachable, so balls never hit a "ceiling" (matches the
+                                // original script, which only ever bounced off the ground).
+const PHYS_CELL_SIZE = 2.0     // physics_world broad-phase grid cell size; must exceed
+                                // max ball diameter (0.7 * 2 = 1.4), 2.0 gives clear margin.
+const BOUNCE_DAMPING = 0.5     // Energy loss factor on boundary collisions (0.9 = 10% loss).
+                                // physics_world uses one restitution value for both wall
+                                // bounces and ball-ball collisions (combined via sqrt), so
+                                // ball-ball impacts are now ~50% restitution instead of the
+                                // original script's separate 70% -- a minor visual difference.
+const AIR_DAMPING = 0.9999       // Per-step velocity multiplier (air resistance). Originally
+                                // applied to horizontal velocity only; physics_world applies
+                                // it uniformly to all three axes each step.
+const SHAPES = 500            // Total number of balls to spawn in the simulation - 500 is max to get 60fps on my machine.
+const FORCE = 0.6             // Explosion force multiplier (affects blast radius impact)
+const DISTANCE = 40.0          // Camera orbital distance from center
+const NORMAL=0
+const RAINBOW=1
+const PULSE=2
+const EXP_MIN=400                // Minimum frames before explosion
+const EXP_MAX=6000                // Maximum frames before explosion
+
+// Static edge ramps -- see STATIC RAMPS setup below.
+const RAMP_ANGLE = 15.0                  // Tilt in degrees
+const RAMP_SIZE = (GRID_SIZE * 2) * 0.2  // Cube side length: 20% of the floor square's side
+const RAMP_HALF = RAMP_SIZE / 2.0
+
+// ========== MOVING OBJECT CLASS ==========
+// Represents a rendering/gameplay wrapper around one physics_world body.
+// Integration, boundary bounce, and ball-ball collision now happen natively
+// inside physics_world (see world.step() in the main loop below); this class
+// only tracks what physics_world doesn't: rendering data (size/color/shader),
+// explosion timer/state, and the position synced from the world each frame.
+class MovingObject {
+    init(id, size, color) {
+        this.id = id                                        // Handle into physics_world
+        this.pos = vec3(0, 0, 0)                            // Synced from world each frame
+        this.size = size                                    // Size dimensions (vec3, but we use .x for radius)
+        this.color = color                                  // RGBA color (vec4)
+        this.radius = this.get_collision_radius()          // Collision radius, mirrors what was passed to world.add()
+        this.explosion_timer = random.float(EXP_MIN, EXP_MAX)    // Random countdown to explosion
+        this.is_exploded = false                            // Explosion state flag
+        this.shader_type = random.choice((NORMAL, RAINBOW, PULSE))
+    }
+
+    // Calculate collision radius from size
+    get_collision_radius() {
+        return this.size.x
+    }
+
+    // Check if object should explode (timer reached zero)
+    should_explode() {
+        return this.explosion_timer <= 0 and !this.is_exploded
+    }
+
+    // Mark object as exploded and remove it from the physics simulation
+    explode(world) {
+        this.is_exploded = true
+        world.remove(this.id)
+    }
+
+    // Apply explosion force from a blast at explosion_pos. The distance
+    // check/falloff curve stay here in Lox (gameplay policy); only the
+    // resulting velocity nudge goes through physics_world's add_impulse,
+    // since velocities now live in the native SoA simulation.
+    apply_explosion_force(world, explosion_pos, explosion_force) {
+        // Skip force application for already exploded objects
+        if (this.is_exploded) {
+            return
+        }
+
+        if (math.abs(this.pos.x - explosion_pos.x) > 8.0) {
+            return
+        }
+        if (math.abs(this.pos.z - explosion_pos.z) > 8.0) {
+            return
+        }
+
+        // Calculate direction and distance from explosion center
+        dx = this.pos.x - explosion_pos.x
+        dy = this.pos.y - explosion_pos.y
+        dz = this.pos.z - explosion_pos.z
+        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
+
+        // Define explosion radius and check if object is within range
+        explosion_radius = 8.0
+        if (dist > explosion_radius or dist < 0.1) {
+            return  // Too far away or too close (avoid division by zero)
+        }
+
+        // Normalize direction vector (from explosion to object)
+        nx = dx / dist
+        ny = dy / dist
+        nz = dz / dist
+
+        // Calculate force strength based on distance (inverse relationship)
+        force_strength = explosion_force * (1.0 - (dist / explosion_radius))
+
+        // Apply the resulting impulse via physics_world
+        world.add_impulse(this.id, vec3(nx * force_strength, ny * force_strength, nz * force_strength))
+    }
+
+    // Add a ground shadow in a single native call using BATCH_CIRCLE3. The
+    // shadow is a shared quad mesh textured with a pre-rendered filled
+    // circle (see shadow_texture setup below), tilted and positioned to
+    // match whatever's directly below -- a ramp's sloped top face if the
+    // ball is over one (ground_at()), otherwise the flat floor.
+    add_shadow(shadow_batch) {
+        // Don't render shadows for exploded objects
+        if (this.is_exploded) {
+            return
+        }
+
+        ground = ground_at(this.pos.x, this.pos.z)
+        ground_y = ground[0]
+        ground_axis = ground[1]
+        ground_angle = ground[2]
+
+        // Shadow grows with height above whatever it's resting on, simulating
+        // an overhead point light source: the higher the ball, the closer it
+        // is to the light and the more its shadow spreads out below -- capped
+        // at 2x so it doesn't grow unboundedly for balls high above the arena.
+        height_factor = math.min(2.0, 1.0 + (this.pos.y - ground_y) / 14.0)
+        r = this.radius * height_factor
+
+        // Slightly above the surface to avoid z-fighting
+        center = vec3(this.pos.x, ground_y + 0.01, this.pos.z)
+
+        // Gray shadow color with fixed transparency
+        shadow_color = vec4(50, 50, 50, 255)
+
+        shadow_batch.add_circle3(center, r, ground_axis, ground_angle, shadow_color)
+    }
+}
+
+
+objects = []
+
+// ===== PHYSICS WORLD SETUP =====
+// Native simulation: body storage, gravity integration, boundary bounce,
+// broad-phase grid, and impulse-based collision resolution all happen in
+// Go now (see docs/PLAN_physics_world.md) -- this replaces the old
+// per-object MovingObject.update() plus the hand-rolled spatial hash that
+// used to live in this script.
+world = physics_world(
+    vec3(-GRID_SIZE, 0, -GRID_SIZE),
+    vec3(GRID_SIZE, WORLD_TOP, GRID_SIZE),
+    PHYS_CELL_SIZE,
+    vec3(0, -0.01, 0)  // Gravity: matches the original -0.01 units/frame^2
+)
+mat_id = world.add_material(BOUNCE_DAMPING, 0.3, AIR_DAMPING)  // restitution, friction (unused for now), damping
+
+// ===== STATIC RAMPS (one at each edge of the arena) =====
+// Four RAMP_SIZE cubes, one on each wall, tilted so their low edge (at
+// y=0) faces the arena's interior and their high edge meets the wall.
+// Rotation axis sets which way a ramp slopes (Z axis -> along X, X axis
+// -> along Z); the angle's sign picks which of the two symmetric top
+// edges ends up low vs. high. RAMP_Y sits the lower edge exactly at
+// floor level, burying the rest of each cube below ground.
+ramp_angle_rad = math.radians(RAMP_ANGLE)
+ramp_y = -RAMP_HALF * (math.cos(ramp_angle_rad) - math.sin(ramp_angle_rad))
+ramp_inset = GRID_SIZE - RAMP_HALF  // wall-side ramps sit flush with the arena boundary
+
+ramp_configs = [
+    (vec3(ramp_inset, ramp_y, 0), vec3(0, 0, 1), RAMP_ANGLE),    // +X wall, slopes along X
+    (vec3(-ramp_inset, ramp_y, 0), vec3(0, 0, 1), -RAMP_ANGLE),  // -X wall, slopes along X
+    (vec3(0, ramp_y, -ramp_inset), vec3(1, 0, 0), RAMP_ANGLE),   // -Z wall, slopes along Z
+    (vec3(0, ramp_y, ramp_inset), vec3(1, 0, 0), -RAMP_ANGLE)    // +Z wall, slopes along Z
+]
+
+ramp_color = vec4(20, 90, 40, 255)
+
+// Static geometry never moves, so each draw transform is fetched once
+// rather than every frame -- get_box_transform() is the single source of
+// truth (see docs/md/plans/NOTES_box_physics.md) shared by physics and drawing.
+ramp_draws = []
+foreach (cfg in ramp_configs) {
+    ramp_id = world.add_static_box(cfg[0], vec3(RAMP_HALF, RAMP_HALF, RAMP_HALF), cfg[1], cfg[2], mat_id)
+    t = world.get_box_transform(ramp_id)
+    ramp_draws.append((t[0], vec3(t[1].x * 2, t[1].y * 2, t[1].z * 2), t[2], t[3]))
+}
+
+// Precompute per-ramp ground data once (static geometry never changes):
+// each ramp only rotates about one horizontal axis, so its top face's own
+// footprint (seen from directly above -- NOT the whole box's silhouette,
+// which is wider) is a plain rectangle, foreshortened *asymmetrically* on
+// the sloped axis. Height is a linear function of that same sloped axis.
+// Reused every frame by ground_at() instead of redoing trig per ball per
+// ramp. The two rotation axes foreshorten with opposite sign structure
+// (Z-axis rotation mixes X/Y with a "-sin" cross term, X-axis rotation
+// mixes Y/Z with a "+sin" cross term), so the offset formulas below are
+// deliberately different per branch, not just relabeled.
+ramp_ground = []
+foreach (cfg in ramp_configs) {
+    pos = cfg[0]
+    ax = cfg[1]
+    ang = cfg[2]
+    rad = math.radians(ang)
+    c = math.cos(rad)
+    s = math.sin(rad)
+    tilts_along_x = (ax.z == 1.0)  // Z-axis rotation tilts along X; X-axis rotation tilts along Z
+    p0y = pos.y + RAMP_HALF * c
+    if (tilts_along_x) {
+        offset_a = -RAMP_HALF * (c + s)
+        offset_b = RAMP_HALF * (c - s)
+        along_lo = math.min(offset_a, offset_b)
+        along_hi = math.max(offset_a, offset_b)
+        p0_along = pos.x - RAMP_HALF * s
+        ramp_ground.append((true, pos.x + along_lo, pos.x + along_hi, pos.z, RAMP_HALF, p0y, p0_along, s / c, ax, ang))
+    } else {
+        offset_a = -RAMP_HALF * (c - s)
+        offset_b = RAMP_HALF * (c + s)
+        along_lo = math.min(offset_a, offset_b)
+        along_hi = math.max(offset_a, offset_b)
+        p0_along = pos.z + RAMP_HALF * s
+        ramp_ground.append((false, pos.z + along_lo, pos.z + along_hi, pos.x, RAMP_HALF, p0y, p0_along, -(s / c), ax, ang))
+    }
+}
+
+// Returns (height, axis, angle) for the ground surface directly below
+// world (x, z): a ramp's tilted top face if (x, z) is within one of the
+// four ramps' footprints, otherwise the flat floor.
+fun ground_at(x, z) {
+    foreach (rg in ramp_ground) {
+        tilts_along_x = rg[0]
+        along = x
+        cross = z
+        if (!tilts_along_x) {
+            along = z
+            cross = x
+        }
+        if (along >= rg[1] and along <= rg[2] and math.abs(cross - rg[3]) <= rg[4]) {
+            height = rg[5] + rg[7] * (along - rg[6])
+            return (height, rg[8], rg[9])
+        }
+    }
+    return (0.0, vec3(0, 1, 0), 0.0)
+}
+
+// ===== BATCH RENDERING SETUP =====
+// One sphere batch per shader pass. Populating a batch is still a per-ball
+// Lox-level call, but batch.draw() then renders every entry in a single
+// native Go loop -- replacing 3 full Lox-level foreach passes (one per
+// shader type, each doing a method call + shader-type check per ball) with
+// exactly one sort-and-fill pass plus three native draw calls.
+normal_batch = batch(win.BATCH_SPHERE)
+rainbow_batch = batch(win.BATCH_SPHERE)
+pulse_batch = batch(win.BATCH_SPHERE)
+// Shadows are flat circles, batched natively the same way. Each entry is a
+// shared quad textured with a filled circle rendered once here -- cheaper
+// than rebuilding a triangle-fan approximation of a circle every frame.
+shadow_batch = batch(win.BATCH_CIRCLE3)
+shadow_rt = render_texture(64, 64)
+shadow_rt.clear(vec4(0, 0, 0, 0))
+shadow_rt.circle_fill(32, 32, 30, vec4(255, 255, 255, 255))
+shadow_batch.set_circle_texture(shadow_rt.get_texture())
+
+// ===== SPAWN ALL BALLS AT ONCE =====
+foreach (spawn_i in range(SHAPES)) {
+    pos = vec3(random.float(-GRID_SIZE, GRID_SIZE), random.float(10, 18), random.float(-GRID_SIZE, GRID_SIZE))
+    vel = vec3(random.float(-0.15, 0.15), random.float(-0.05, 0.05), random.float(-0.15, 0.15))
+    s = random.float(0.3,0.7)
+    size = vec3(s, s, s)
+    id = world.add(pos, vel, s, mat_id)
+    objects.append(MovingObject(id, size, col.random_rgb()))
+}
+
+while (!win.should_close()) {
+
+    // ===== CAMERA CONTROL =====
+    angle = angle + 0.005  // Rotation speed (radians per frame)
+    x = math.cos(angle) * DISTANCE  // Calculate X position on circle
+    z = math.sin(angle) * DISTANCE  // Calculate Z position on circle
+    cam.set_position(vec3(x, 10, z))  // Update camera position (Y=10 for elevated view)
+
+    // ===== TIMING AND ANIMATION =====
+    frame_count = frame_count + 1
+    time_value = frame_count * 0.016  // Convert frames to seconds (assuming 60 FPS)
+    rainbow_shader.set_value_float(time_location, time_value)
+
+    // ===== PHYSICS STEP =====
+    // Single native call replaces the old per-object update() loop and the
+    // hand-rolled spatial-hash collision pass entirely.
+    world.step(1.0)
+
+    // Sync rendered/gameplay position from the physics world. Skipping
+    // exploded objects is safe -- their bodies were already removed from
+    // world when they exploded.
+    foreach (obj in objects) {
+        if (obj.is_exploded) continue
+        obj.pos = world.get_position(obj.id)
+    }
+
+    // ===== EXPLOSION MECHANICS =====
+    // Countdown to explosion (decrements each frame)
+    foreach (obj in objects) {
+        if (obj.is_exploded) continue
+        obj.explosion_timer = obj.explosion_timer - 1
+    }
+
+    // Check for objects whose explosion timers have expired
+    explosions = []
+    foreach (obj in objects) {
+        if (obj.should_explode()) {
+            // Record explosion position for force propagation
+            explosions.append(vec3(obj.pos.x, obj.pos.y, obj.pos.z))
+            obj.explode(world)  // Mark object as exploded and remove from physics
+        }
+    }
+
+    // Trigger floor flash effect when any explosions occur
+    if (explosions.length() > 0) {
+        floor_flash_timer = 5 // Flash duration in frames
+    }
+
+    // Countdown floor flash timer
+    if (floor_flash_timer > 0) {
+        floor_flash_timer = floor_flash_timer - 1
+    }
+
+    // Apply explosion forces to all nearby objects (optimized)
+    foreach (explosion_pos in explosions) {
+        foreach (obj in objects) {
+            // Skip exploded objects early
+            if (obj.is_exploded) {
+                continue
+            }
+            // Fast distance culling before expensive force calculation
+            dx = obj.pos.x - explosion_pos.x
+            dy = obj.pos.y - explosion_pos.y
+            dz = obj.pos.z - explosion_pos.z
+            // Skip if outside explosion radius (64 = 8^2)
+            if (dx*dx + dy*dy + dz*dz > 64) {
+                continue
+            }
+            obj.apply_explosion_force(world, explosion_pos, FORCE)
+        }
+    }
+
+    // ===== RENDERING PHASE =====
+    win.begin()
+    win.begin_blend_mode(win.BLEND_ALPHA)  // Enable alpha blending for transparency effects
+    win.clear(vec4(100,100,150,255))        // Clear to blue-gray background
+
+    // ===== 3D SCENE RENDERING =====
+    win.begin_3d(cam)  // Enter 3D coordinate system with camera transformation
+
+    // ===== ENVIRONMENT RENDERING =====
+    // Draw floor plane with explosion flash effect
+    if (floor_flash_timer > 0) {
+        // Calculate flash intensity (1.0 = full flash, 0.0 = normal)
+        flash_intensity = floor_flash_timer / 10.0
+        flash_white = int(150 + (255 - 150) * flash_intensity)  // Lerp from gray to white
+        floor_color = vec4(flash_white, flash_white, flash_white, 255)
+        win.plane(vec3(0, 0, 0), vec2(GRID_SIZE*2, GRID_SIZE*2), floor_color)
+    } else {
+        // Normal gray floor when no explosions are occurring
+        win.plane(vec3(0, 0, 0), vec2(GRID_SIZE*2, GRID_SIZE*2), vec4(100, 100, 100, 255))
+    }
+
+    // Static ramps -- see STATIC RAMPS setup above for how their transforms were derived
+    foreach (rd in ramp_draws) {
+        win.cube_rotated(rd[0], rd[1], rd[2], rd[3], ramp_color)
+        // Just a hair larger than the ramp itself so the wireframe is
+        // visible rather than z-fighting with the solid cube's own faces.
+        wire_size = vec3(rd[1].x + 0.02, rd[1].y + 0.02, rd[1].z + 0.02)
+        win.cube_wires_rotated(rd[0], wire_size, rd[2], rd[3], vec4(0, 0, 0, 255))
+    }
+
+    // ===== SHADOW PASS (BATCHED) =====
+    // Render all object shadows first (depth layering). Each ball adds one
+    // shadow quad into shadow_batch via a single add_circle3() call; the
+    // circular shape comes from shadow_texture (a pre-rendered filled
+    // circle set on the batch once via set_circle_texture), not CPU geometry.
+    shadow_batch.clear()
+    foreach (obj in objects) {
+        obj.add_shadow(shadow_batch)
+    }
+    shadow_batch.draw()
+
+    // ===== BOUNDARY VISUALIZATION =====
+    // Draw wireframe boundary cube to show simulation limits
+    win.cube_wires(vec3(0, 5, 0), vec3(GRID_SIZE*2, 10, GRID_SIZE*2), vec4(100, 100, 100, 100))
+
+
+    // ===== OBJECT RENDERING PASS (BATCHED) =====
+    // Single pass sorts each live ball into its shader's batch; batch.draw()
+    // then renders every entry natively in one loop (see BATCH RENDERING SETUP above).
+    normal_batch.clear()
+    rainbow_batch.clear()
+    pulse_batch.clear()
+    foreach (obj in objects) {
+        if (obj.is_exploded) continue
+        if (obj.explosion_timer > 0 and obj.explosion_timer < 5) {
+            // Pre-explosion visual warning: flash white and expand size
+            expanded_size = obj.size.x * 3.0
+            normal_batch.add(obj.pos, vec3(expanded_size, expanded_size, expanded_size), col.WHITE)
+            continue
+        }
+        if (obj.shader_type == NORMAL) {
+            normal_batch.add(obj.pos, obj.size, obj.color)
+        } else if (obj.shader_type == RAINBOW) {
+            rainbow_batch.add(obj.pos, obj.size, obj.color)
+        } else {
+            pulse_batch.add(obj.pos, obj.size, obj.color)
+        }
+    }
+
+    normal_batch.draw()
+    win.begin_shader_mode(rainbow_shader)
+    rainbow_batch.draw()
+    win.end_shader_mode()
+    win.begin_shader_mode(pulse_shader)
+    pulse_batch.draw()
+    win.end_shader_mode()
+
+    // ===== EXIT 3D RENDERING =====
+    win.end_3d()  // Return to 2D coordinate system
+
+    win.end()  // Present frame to screen
+}
+
+// ===== CLEANUP AND RESOURCE MANAGEMENT =====
+// Properly unload GPU shader resources to prevent memory leaks
+if (rainbow_shader.is_valid()) {
+    rainbow_shader.unload()
+    print("Rainbow shader unloaded successfully")
+}
+if (pulse_shader.is_valid()) {
+    pulse_shader.unload()
+    print("Pulse shader unloaded successfully")
+}
+
+// Close graphics window and terminate application
+win.close()
+print("3D Physics Demo with Shaders terminated")

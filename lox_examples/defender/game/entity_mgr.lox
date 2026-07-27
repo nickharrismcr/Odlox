@@ -1,0 +1,441 @@
+from gfx import *
+from bullets import BulletPool
+from laser import LaserPool
+import lander
+from lander import enter_mutated, state_search, state_grab, state_abduct, state_die, state_mutated
+import human
+import pod
+import swarmer
+import baiter
+import bomber
+import random
+import functools
+import event
+import collide
+import particle_sys
+import fx
+import bonus
+
+// Smart bomb: fires twice in quick succession (BOMB_PASS_DELAY frames apart)
+// so the second pass catches swarmers released by any pod killed in the
+// first. Each pass flashes the screen white for BOMB_FLASH_FRAMES frames.
+const BOMB_PASS_DELAY = 5
+const BOMB_FLASH_FRAMES = 8
+
+class EntityMgr {
+
+    init(config) {
+        this.config = config
+        this.worldwidth = config.worldwidth()
+        this.height = config.height
+        this.screenwidth = config.width
+        this.top = config.height * 0.16   // ceiling of the play area (below the radar)
+        this.mountains = nil
+        this.player = nil               // set by main; NPCs hunt it
+        this.cam = nil                   // set by main; lets entities check on-screen visibility
+        this.entities = []
+        this.queue = []
+        this.bullets = BulletPool(config.bullet_pool)
+        this.lasers = LaserPool(config.laser_pool)
+        this.particles = particle_sys.Emitters()   // one-shot explosion bursts
+        this.events = event.EventDispatcher()
+
+        this.landers_alive = 0
+
+        // Baiters are spawned dynamically, not up front: once the landers are
+        // nearly cleared, a baiter is sent in every baiter_delay frames to keep
+        // the pressure on.
+  
+        this.baiter_threshold = config.baiter_threshold
+        this.baiter_delay = config.baiter_delay
+        this.baiter_timer = this.baiter_delay
+
+        this.swarmers_per_pod = config.swarmers_per_pod
+        this.explosion_particles = config.explosion_particles
+
+        this.humans_left = 0            // recounted from the live entity list every frame
+        this.world_exploding = false    // latches once, when humans_left first hits 0
+
+        this.bombs = config.starting_bombs   // remaining smart bomb uses
+        this.bomb_pending = 0     // frames until the smart bomb's second pass fires
+        this.bomb_flash = 0       // frames left to show the white screen flash
+
+        // Set/cleared directly by Player's own enter_/state_ functions (see
+        // player.lox) as it moves through its states -- not event-driven,
+        // since the coupling between "what the player is doing" and "what
+        // the enemies should be doing" is tight enough that it's clearer to
+        // read at the call site than to chase through an event handler.
+        this.enemies_hidden = false   // draw() skips non-human entities while true
+        this.frozen = false           // update()/check_collisions() no-op while true
+
+        // sprite sheets, loaded once and shared by every instance
+        this.img_lander  = image("pngs/lander.png")
+        this.img_human   = image("pngs/human.png")
+        this.img_pod     = image("pngs/pod.png")
+        this.img_swarmer = image("pngs/swarmer.png")
+        this.img_baiter  = image("pngs/baiter.png")
+        this.img_bomber  = image("pngs/bomber.png")
+        this.img_250     = image("pngs/250.png")
+        this.img_500     = image("pngs/500.png")
+
+        // floating bonus-score popups, spawned when a human is rescued
+        this.bonus = bonus.BonusDisplay(this.img_250, this.img_500, config.bonus_life)
+        this.bonus.attach(this.events)
+    }
+    hide_enemies() {
+        this.enemies_hidden = true
+    }
+    show_enemies() {
+        this.enemies_hidden = false
+    }
+    freeze_enemies() {
+        this.frozen = true
+    }
+    unfreeze_enemies() {
+        this.frozen = false
+    }
+    // Stops any laser shots still in flight -- called when the player dies,
+    // since they can't still be firing.
+    clear_lasers() {
+        this.lasers.clear()
+    }
+    // Stops any NPC bullets/dropped bombs still in flight -- called when the
+    // player explodes, so nothing lingers waiting to hit an already-gone ship.
+    clear_bullets() {
+        this.bullets.clear()
+    }
+    get_all() {
+        return this.entities
+    }
+    add_to_queue(entity,delay) {
+        entity.mgr = this                  // set the entity's mgr so it can call back to the manager (e.g. to spawn swarmers)
+        this.queue.append([entity,delay])
+    }
+    add_landers(num,delay) {
+        foreach (var i in range(0, num)) {
+            e = lander.Lander(vec2(random.integer(0, this.worldwidth), random.integer(100, this.height/2)), this.img_lander, 3, 1, 3)
+            this.add_to_queue(e,delay)
+            this.landers_alive += 1
+        }
+    }
+    // Spawn a single lander near world-x cx, so at least one materialises within
+    // the player's view rather than somewhere off in the 10k-wide world.
+    add_lander_near(cx, delay) {
+        x = cx + random.integer(-60, 60)
+        e = lander.Lander(vec2(x, random.integer(120, this.height/2)), this.img_lander, 3, 1, 3)
+        this.add_to_queue(e, delay)
+        this.landers_alive   += 1
+    }
+    // Pods drift near the player, waiting to be shot open.
+    add_pods(num, cx) {
+        foreach (var i in range(0, num)) {
+            x = cx + random.integer(0, 1500)
+            y = random.integer(this.top, this.height - 400)
+            this.add_to_queue(pod.Pod(vec2(x, y), this.img_pod), 0)
+        }
+    }
+    // Released when a pod is destroyed; they burst out from the pod's position.
+    add_swarmers(num, x, y) {
+        foreach (var i in range(0, num)) {
+            p = vec2(x + random.integer(-20, 20), y + random.integer(-20, 20))
+            this.add_to_queue(swarmer.Swarmer(p, this.img_swarmer), 0)
+        }
+    }
+    add_bombers(num) {
+        foreach (var i in range(0, num)) {
+            x = random.integer(0, this.worldwidth)
+            y = random.integer(this.top, this.height - 200)
+            this.add_to_queue(bomber.Bomber(vec2(x, y), this.img_bomber, this.top), 0)
+        }
+    }
+    // A baiter lurks invisibly, then materialises next to the player.
+    add_baiter(wait_frames) {
+        this.add_to_queue(baiter.Baiter(vec2(0, 0), this.img_baiter, wait_frames), 0)
+    }
+    add_humans(num) {
+        foreach ( i in range ( 0,num )) {
+            e = human.Human(vec2(random.integer(0, this.worldwidth), this.height ), this.img_human, 1, 1, 1)
+            this.add_to_queue(e,0)
+        }
+    }
+    pick_a_human() {
+ 
+        foreach (var e in this.entities) {
+            if (e.type == "human") {
+                if (e.chosen == false) {
+                    e.chosen = true
+                    return e
+                }
+            }
+        }
+        return nil
+    }
+
+    count_type(type) {
+
+        func check(e) {
+            return e.type == type
+        }
+        lst=functools.filter(this.entities, check)
+        return len(lst)
+    }
+
+    // Removes every non-human entity, clears the spawn queue, and kills every
+    // active bullet (including dropped bombs, which are just slow bullets)
+    // and laser -- used at the end of a level so nothing lingers on screen
+    // behind the level-complete banner. Humans are left alone: they persist
+    // across levels (rescued or still on the ground), unlike enemies and
+    // projectiles, which belong to the finished wave.
+    clear_wave() {
+        func is_human(e) {
+            return e.type == "human"
+        }
+        this.entities = functools.filter(this.entities, is_human)
+        this.queue = []
+        this.bullets.clear()
+        this.lasers.clear()
+    }
+
+  
+
+    // Baiters currently in play: alive plus queued-but-not-yet-materialised
+    // (the latter matters if baiter_delay is ever set low enough that more than
+    // one could be queued before the first actually spawns).
+    baiter_count() {
+        n = 0
+        foreach (var e in this.entities) {
+            if (e.alive and e.type == "baiter") {
+                n = n + 1
+            }
+        }
+        foreach (var q in this.queue) {
+            if (q[0].type == "baiter") {
+                n = n + 1
+            }
+        }
+        return n
+    }
+
+    // Send in a baiter every baiter_delay frames once the landers are nearly
+    // cleared, up to max_baiters simultaneously. While plenty of landers remain
+    // (or the cap is reached) the timer is held at its reset value, so the next
+    // baiter arrives baiter_delay frames after a spawn slot opens up.
+    update_baiters() {
+        // pick up a shortened delay (e.g. from a level controller) right away
+        if (this.baiter_timer > this.baiter_delay) {
+            this.baiter_timer = this.baiter_delay
+        }
+        gated = this.landers_alive <= this.baiter_threshold and this.baiter_count() < this.config.max_baiters
+        if (gated) {
+            this.baiter_timer = this.baiter_timer - 1
+            if (this.baiter_timer <= 0) {
+                this.add_baiter(0)
+                this.baiter_timer = this.baiter_delay
+            }
+        } else {
+            this.baiter_timer = this.baiter_delay
+        }
+    }
+
+
+    // Kept separate from update() (which no-ops while this.frozen) so the
+    // player's own death explosion keeps animating even while everything
+    // else is frozen -- main.lox calls this unconditionally every gameplay
+    // frame.
+    update_particles() {
+        this.particles.update()
+    }
+
+    // No-ops while the player's death sequence plays out (see on_player_die/
+    // on_player_start above) -- everything freezes in place until they
+    // respawn.
+    update(worldwidth,height) {
+        if (this.frozen) {
+            return
+        }
+
+        this.landers_alive = 0
+        this.humans_left = 0
+        // Process the queue
+        i=0
+        foreach( var q in this.queue ) {
+
+            e = q[0]
+            delay = q[1]
+            delay = delay - 1
+            if (delay <= 0) {
+                e.alive = true
+                this.entities.append(e)
+                this.queue.remove(i)
+                this.events.emit(e.type & "_spawn", e)   // e.g. lander_spawn, human_spawn
+            }
+            q[1] = delay
+            i=i+1
+        }
+
+        foreach (var e in this.entities) {
+            e.update(worldwidth,height)
+            if (e.alive and e.type == "human") {
+                this.humans_left += 1
+            }
+            if (e.alive and e.type == "lander") {
+                this.landers_alive += 1
+            }
+        }
+        this.mountains.update()
+        this.bullets.update(worldwidth, height)
+        this.lasers.update(this.screenwidth, height)
+        this.bonus.update(this.player)
+        this.update_baiters()
+
+        if (this.bomb_pending > 0) {
+            this.bomb_pending = this.bomb_pending - 1
+            if (this.bomb_pending <= 0) {
+                this.smart_bomb_pass()
+            }
+        }
+        if (this.bomb_flash > 0) {
+            this.bomb_flash = this.bomb_flash - 1
+        }
+
+        if (this.humans_left <= 0 and !this.world_exploding) {
+            this.world_exploding = true
+            this.trigger_world_explode()
+        }
+    }
+    // All humans are gone: force every actively-hunting lander to mutate
+    // immediately (landers not yet actively engaged are just removed, no
+    // death animation -- already-mutant or already-dying landers are left
+    // alone), and start the mountains crumbling for the rest of the game.
+    trigger_world_explode() {
+        this.mountains.explode()
+        foreach (var e in this.entities) {
+            if (!e.alive or e.type != "lander") {
+                continue
+            }
+            f = e.update_func
+            if (f == state_search or f == state_grab or f == state_abduct) {
+                enter_mutated(e)
+            } else if (f != state_die and f != state_mutated) {
+                e.alive = false
+            }
+        }
+        this.events.emit("no_humans", nil)
+    }
+    // Backspace: kill every enemy on screen (humans are spared), twice in
+    // quick succession -- the second pass catches swarmers released by any
+    // pod killed in the first (pods don't spawn them until on_die() -> queue
+    // -> next frame's queue-drain, so they don't exist yet for the first pass).
+    // A no-op once this.bombs runs out.
+    trigger_smart_bomb() {
+        if (this.bombs <= 0) {
+            return
+        }
+        this.bombs = this.bombs - 1
+        this.smart_bomb_pass()
+        this.bomb_pending = BOMB_PASS_DELAY
+    }
+    smart_bomb_pass() {
+        if (this.cam == nil) {
+            return
+        }
+        foreach (var e in this.entities) {
+            if (e.alive and e.type != "human" and this.cam.translate(e.pos.x) != nil) {
+                e.hit()
+            }
+        }
+        this.bomb_flash = BOMB_FLASH_FRAMES
+    }
+    // One-shot explosion burst at a world position.
+    explode_at(x, y) {
+        fx.explosion(this.particles, x, y, this.explosion_particles)
+    }
+    fire_bullet(p,v,life=100) {
+        this.bullets.fire(p,v,life)
+        this.events.emit("bullet_fire", p)      // an NPC fired a bullet
+    }
+    fire_laser(x, y, dir, speed) {
+        this.lasers.fire(x, y, dir, speed)
+        this.events.emit("laser_fire", vec2(x, y))   // the player fired the laser
+    }
+
+    // Player lasers destroy shootable NPCs; deadly NPCs hit the player, and
+    // ramming one kills it right back (humans are never deadly, so this never
+    // touches them -- they're only ever picked up, via the dropping-state
+    // check below). Driven by per-entity flags rather than type, so every NPC
+    // (and a mutated lander) takes part without special-casing. cam is used so
+    // the laser only damages NPCs that are actually on screen -- the beam can
+    // reach a screen's width into off-screen world space, and hitting things
+    // you can't see is unfair.
+    check_collisions(player, cam) {
+        if (this.frozen) {
+            return
+        }
+        pbox = collide.entity_box(player)
+        foreach (var e in this.entities) {
+            if (!e.alive or !(e.shootable or e.deadly)) {
+                continue
+            }
+            ebox = collide.entity_box(e)
+            if (e.shootable and cam.translate(e.pos.x) != nil) {
+                foreach (var l in this.lasers.lasers) {
+                    if (l.active and collide.overlap(collide.laser_box(l), ebox, this.worldwidth)) {
+                        l.kill()      // consumed by this hit -- can't punch through to another NPC
+                        e.hit()
+                    }
+                }
+            }
+            // hit() clears `deadly`, so an already-dying NPC can't also kill the player
+            if (e.deadly and collide.overlap(pbox, ebox, this.worldwidth)) {
+                was_dying = player.dying()
+                player.hit()
+                e.hit()
+                // If this collision is what actually killed the player (not
+                // just a graze while already invulnerable/dying), remove the
+                // entity outright rather than let it play out its own
+                // disperse-death animation -- that would otherwise sit
+                // frozen for the whole death sequence, since freeze_enemies()
+                // pauses every entity together. e.hit() already ran its
+                // normal enter_die() (score event, on_die() side effects
+                // like a pod's swarmers), so nothing is skipped, it just
+                // finishes instantly instead of over several frames.
+                if (!was_dying and player.dying()) {
+                    e.alive = false
+                }
+            }
+        }
+
+        // NPC bullets die when they strike the player (and damage it).
+        foreach (var b in this.bullets.bullets) {
+            if (!b.dead() and collide.overlap(collide.entity_box(b), pbox, this.worldwidth)) {
+                b.kill()
+                player.hit()
+            }
+        }
+
+        // the player scoops up a falling human on contact
+        foreach (var e in this.entities) {
+            if (e.alive and e.type == "human" and e.state == "dropping") {
+                if (collide.overlap(collide.entity_box(e), pbox, this.worldwidth)) {
+                    e.catch_by(player)
+                }
+            }
+        }
+    }
+    draw(g,cam) {
+        foreach (var e in this.entities) {
+            if (this.enemies_hidden and e.type != "human") {
+                continue
+            }
+            e.draw(g,cam)
+        }
+        this.bullets.draw(g, cam)
+        this.lasers.draw(g, cam)
+        fx.draw(this.particles, g, cam)
+        this.bonus.draw(g, cam)
+        if (this.bomb_flash > 0) {
+            alpha = int(255.0 * this.bomb_flash / BOMB_FLASH_FRAMES)
+            g.rectangle(0, 0, this.screenwidth, this.height, vec4(255, 255, 255, alpha))
+        }
+    }
+}

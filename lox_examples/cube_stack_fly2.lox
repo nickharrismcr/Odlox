@@ -1,0 +1,482 @@
+from gfx import *
+// city of stacks with colored cubes
+
+import math
+import random
+import colour_utils
+import colour
+
+const FULLSCREEN = true 
+
+// Configuration constants
+const CITY_SIZE = 305    // Reduced from 45 for better performance
+const STACK_SPACING = 10
+const MIN_STACK_HEIGHT = 3
+const MAX_STACK_HEIGHT = 30
+const BASE_CUBE_SIZE = 10
+const CAMERA_HEIGHT = 2.0
+const MAX_CAMERA_SPEED = 0.1  
+const CAMERA_ACCELERATION = MAX_CAMERA_SPEED / 30.0  // Much gentler acceleration
+const ROTATION_SPEED = 0.01  // Much slower rotation for smoothness
+const MAX_COLOURS = 50
+const TEXTURE_GRID_SIZE = 6 // NxN grid of coloured rectangles per cube texture
+
+// Direction constants
+const NORTH = 0
+const EAST = 1
+const SOUTH = 2
+const WEST = 3
+
+// Controller states
+const STATE_STARTING = 0
+const STATE_MOVING = 1
+const STATE_STOPPING = 2
+const STATE_ROTATING = 3
+
+// Window setup
+const WIDTH = 1000
+const HEIGHT = 700
+
+DIRECTIONS = {
+    NORTH: 0.0,        // 0 - move forward in Z direction
+    EAST: 1.5707963,   // PI/2 - move right in X direction  
+    SOUTH: 3.1415927,  // PI - move backward in Z direction
+    WEST: -1.5707963   // -PI/2 - move left in X direction
+}
+
+MOVEMENTS = {
+    NORTH: vec3(0, 0, 1),  // Move north (positive Z)
+    EAST: vec3(1, 0, 0),   // Move east (positive X)
+    SOUTH: vec3(0, 0, -1), // Move south (negative Z)
+    WEST: vec3(-1, 0, 0)   // Move west (negative X)
+}
+
+DIRECTION_NAMES= {
+    NORTH: "NORTH",
+    EAST: "EAST",           
+    SOUTH: "SOUTH",
+    WEST: "WEST"
+}
+
+
+// Add this function before the main program
+func createColoredTextures(count) {
+    textures = []
+    
+    for (i = 0; i < count; i = i + 1) {
+        // Create a TEXTURE_GRID_SIZE x TEXTURE_GRID_SIZE grid of rectangles with different hues
+        rectSize = 2  // Fixed per-window pixel size
+        spacing = 1   // Fixed pixel gap between windows
+
+        // Texture resolution scales with the grid size, so window size stays
+        // consistent regardless of how many are packed in
+        textureSize = TEXTURE_GRID_SIZE * (rectSize + spacing) + spacing
+
+        // Create render texture
+        texture = render_texture(textureSize, textureSize)
+
+        // Clear with dark background
+        texture.clear(colour.BLACK)
+
+        // Calculate positions for the grid of rectangles
+        positions = []
+        for (row = 0; row < TEXTURE_GRID_SIZE; row = row + 1) {
+            for (col = 0; col < TEXTURE_GRID_SIZE; col = col + 1) {
+                x = spacing + col * (rectSize + spacing)
+                y = spacing + row * (rectSize + spacing)
+                positions.append(vec2(x, y))
+            }
+        }
+        
+       
+        foreach (pos in positions) {
+            if (random.integer(0,2) != 0) {
+                continue  // Skip some rectangles randomly
+            }   
+            hue = random.integer(0, 360)  // Different random hue for each rectangle
+              
+            // Generate base HSV values
+            saturation = random.float(0.9,1.0)  // High saturation for vibrant colors
+            value = random.float(0.01, 0.4)     // Random brightness for variety
+            if (random.integer(0, 3) == 0) {
+                 saturation = 0.1 
+                 hue = 60.0
+            }
+            rectColor = colour.hsv_to_rgb(hue, saturation, value)
+            texture.rectangle(int(pos.x), int(pos.y), rectSize, rectSize, rectColor)
+        }
+ 
+        textures.append(texture)
+    }
+    return textures
+}
+
+func even(value) {
+    value = int(value)
+    // Ensure value is even
+    return value % 2 == 1 ? value - 1 : value
+}
+
+class Batches {
+    init() {
+        this.batches = []
+        this.sizes = []
+        this.textures = createColoredTextures(MAX_COLOURS)  // Create textures for cubes
+        foreach (i in range(0,MAX_COLOURS)){
+            size = BASE_CUBE_SIZE * random.float(0.85, 1.15)  // Randomize size slightly
+            batch = batch_instanced(this.textures[i].get_texture(),size,10000)  // Create batch for each texture
+            this.batches.append(batch)
+            this.sizes.append(size)  // Store size for each batch
+        }
+    }
+    get_random_batch() {
+        // Get a random batch and its size
+        which = random.integer(0, MAX_COLOURS - 1)  // Randomly select a texture
+        return (this.batches[which], this.sizes[which])  // Return batch and size
+    }
+    
+
+    make_transforms() {
+        // Generate transforms for all batches
+        foreach (batch in this.batches) {
+            batch.make_transforms()
+        }
+    }   
+ 
+    draw(cam){
+        // Draw all batches
+        foreach (batch in this.batches) {
+         
+            batch.draw(cam)
+        }
+    }
+}
+
+// Cube class - represents a single textured cube instance
+class Cube {
+    init(position) {
+        this.position = vec3(position.x, position.y, position.z)
+    }
+    add_to_batch(batch) {  
+       
+        return batch.add(this.position, vec3(1,0,0), 0.0 )
+    }
+}
+
+ 
+
+// Stack class - a vertical stack of CompositeCubes
+class Stack {
+    init(gridX, gridZ, height, cubeBatches) {
+        this.gridX = gridX
+        this.gridZ = gridZ
+        this.height = height
+ 
+          // Convert grid position to world coordinates
+        halfSize = int(CITY_SIZE / 2)
+        worldX = (gridX - halfSize) * STACK_SPACING
+        worldZ = (gridZ - halfSize) * STACK_SPACING
+        currentY = 0.0        // Create stack of composite cubes
+        for (i = 0; i < height; i = i + 1) {
+            
+            batch,cubeSize=cubeBatches.get_random_batch()  // Get a random batch from the cubeBatches
+            position = vec3(worldX, currentY + cubeSize/2, worldZ)  // Center cube at currentY + half size
+            nextY = currentY + cubeSize  // Capture increment before any call reuses cubeSize's slot
+            cube = Cube(position)
+            cube.add_to_batch(batch)  // Add cube to batch and get size
+            currentY = nextY  // Use actual cube size to eliminate gaps
+        }
+    }
+    
+ 
+}
+
+// Grid class - manages the city layout with stacks and streets
+class Grid {
+    init(size, cubeBatch) {
+        this.size = size
+        this.stacks = []
+          // Create stacks only at odd grid positions (leaving even positions as streets)
+        for (x = 1; x < size; x = x + 2) {  // Odd positions only
+            for (z = 1; z < size; z = z + 2) {  // Odd positions only
+
+                stackHeight = random.integer(MIN_STACK_HEIGHT, MAX_STACK_HEIGHT + 1)
+                stack = Stack(x, z, stackHeight,cubeBatch)  // Create stack at (x, z) with random height
+                this.stacks.append(stack)
+            }
+        }
+        stackCount = len(this.stacks)
+    }
+    
+    
+      // Check if a grid position is valid for camera movement (even positions = streets)
+    isValidStreetPosition(gridX, gridZ) {
+        validX = (gridX >= 0 and gridX < this.size)
+        validZ = (gridZ >= 0 and gridZ < this.size)
+        evenX = (gridX % 2 == 0)
+        evenZ = (gridZ % 2 == 0)
+        return (validX and validZ and evenX and evenZ)
+    }
+      // Check if position is at grid boundary (will hit boundary in next move)
+    isAtBoundary(gridX, gridZ) {
+        // Return true if the grid position is on the boundary (first or last row/col)
+        print ("isAtBoundary?",gridX,gridZ, this.size)
+        if (gridX <= 2 or gridX >= this.size - 2) {
+            return true
+        }
+        if (gridZ <= 2 or gridZ >= this.size - 2) {
+            return true
+        }
+        return false
+    }
+}
+
+// Controller class - manages camera movement through the city
+class Controller {
+    init(grid) {
+        this.grid = grid
+       
+        this.direction = NORTH
+        this.frameCount = 0
+        this.counter = 0 
+        
+        // Grid-based position and targeting
+        this.gridPos = vec3(even(grid.size / 2), 0, even(grid.size / 2))  // Current grid position
+        this.targetGridPos = this.gridPos  // Target grid position to move to
+        
+        // World coordinate positions (interpolated from grid positions)
+        this.worldPos = this.gridToWorld(this.gridPos)
+        this.targetWorldPos = this.worldPos
+        
+        // Camera angle management
+        this.currentAngle = this.directionToAngle(this.direction)
+        this.targetAngle = this.currentAngle
+        this.angleDelta = 0.0  // Start with no rotation delta
+        this.newDirection = this.direction
+        this.turnNext = false 
+        
+        this.speed = 0 
+        this.targetSpeed = MAX_CAMERA_SPEED
+        
+        // Initialize first target
+        this.nextTarget()
+    }
+    
+    gridToWorld(gridPos) {
+        // Convert grid coordinates to world coordinates
+        halfSize = int(this.grid.size / 2)
+        wx = (gridPos.x - halfSize) * STACK_SPACING
+        wz = (gridPos.z - halfSize) * STACK_SPACING
+        return vec3(wx, 0, wz)
+    }
+
+    distance_to_edge(gridPos, direction) {
+        // Calculate distance to edge of grid in current direction
+        // Streets are at even positions from 2 to (grid.size - 3)
+        
+        if (direction == NORTH) {
+            return (this.grid.size - 3) - gridPos.z
+        } else if (direction == SOUTH) {
+            return gridPos.z - 2
+        } else if (direction == EAST) {
+            return (this.grid.size - 3) - gridPos.x
+        } else if (direction == WEST) {
+            return gridPos.x - 2
+        }
+        return 0
+    }
+    
+    nextTarget() {
+        // Plan the next single grid step in current direction
+        distance_to_edge = this.distance_to_edge(this.gridPos, this.direction)
+      
+        
+        if ( this.turnNext or distance_to_edge < 4 ){
+            this.newDirection = ((this.direction + random.choice([1, -1])) % 4)
+            if (this.newDirection < 0) {
+                this.newDirection += 4
+            }
+            this.turnNext = false  
+            
+            // Randomly choose movement style for more dynamic camera behavior
+            moveStyle = random.integer(0, 3)  // 0, 1, or 2
+            if (moveStyle == 0) {
+                // Style 1: Update direction immediately - camera moves toward where it's looking
+                this.direction = this.newDirection
+                this.targetAngle = this.directionToAngle(this.newDirection)
+                this.targetGridPos = this.gridPos ++ MOVEMENTS[ this.newDirection ]
+            } else if (moveStyle == 1) {
+                // Style 2: Keep old direction - camera strafes while turning (cinematic)
+                this.targetAngle = this.directionToAngle(this.newDirection)
+                this.targetGridPos = this.gridPos ++ MOVEMENTS[ this.direction ]
+            } else {
+                // Style 3: Diagonal movement - blend of both directions
+                this.targetAngle = this.directionToAngle(this.newDirection)
+                this.targetGridPos = this.gridPos ++ MOVEMENTS[ this.direction ] ++ MOVEMENTS[ this.newDirection ]
+            }
+            
+            // Reset angle delta for smooth gradual rotation
+            this.angleDelta = 0.0
+            
+            // Clamp target position to valid street boundaries
+            this.targetGridPos = vec3(math.max(2, math.min(this.grid.size - 3, this.targetGridPos.x)), 0, math.max(2, math.min(this.grid.size - 3, this.targetGridPos.z)))
+            
+        } else {
+            steps=math.min(distance_to_edge - 2, random.integer(1, 8))
+            this.targetGridPos = this.gridPos ++ math.scale3(MOVEMENTS[ this.direction ], steps)
+            
+            // Clamp target position to valid street boundaries
+            this.targetGridPos = vec3(math.max(2, math.min(this.grid.size - 3, this.targetGridPos.x)), 0, math.max(2, math.min(this.grid.size - 3, this.targetGridPos.z)))
+           
+            this.turnNext = true 
+        }
+        this.targetWorldPos = this.gridToWorld(this.targetGridPos)
+    }
+
+    update() {
+        this.frameCount += 1
+        this.counter += 1
+       
+        
+        // Check if we're close to target and need a new one
+        distanceToTarget = math.length3(this.targetWorldPos - this.worldPos)
+        if (distanceToTarget < 2.0) {  // Start planning next target early
+            this.gridPos = this.targetGridPos  // Update grid position
+            this.nextTarget()
+            this.counter = 0 
+        }
+        this.distanceToTarget = distanceToTarget
+        // Always keep moving towards target
+        this.targetSpeed = MAX_CAMERA_SPEED
+        
+        // Update camera position and angle
+        this.updateCameraPosition()
+    }
+    
+ 
+
+    updateCameraPosition() {
+        // Smooth speed interpolation
+        speedDiff = this.targetSpeed - this.speed
+        this.speed = math.abs(speedDiff) > 0.001 ? this.speed + speedDiff * 0.1 : this.targetSpeed
+
+        // Smooth angle interpolation with gradual acceleration
+        angleDiff = this.targetAngle - this.currentAngle
+        
+        // Handle angle wrapping (shortest path)
+        if (angleDiff > 3.14159) {
+            angleDiff = angleDiff - 6.28318
+        } else if (angleDiff < -3.14159) {
+            angleDiff = angleDiff + 6.28318
+        }
+        
+        if (math.abs(angleDiff) > 0.001) {
+            // Gradually increase the rotation delta from 0 to smooth the start
+            this.angleDelta = math.min(this.angleDelta + 0.002, 0.05)  // Accelerate up to max speed
+            this.currentAngle += angleDiff * this.angleDelta
+        } else {
+            this.currentAngle = this.targetAngle
+            this.angleDelta = 0.0  // Reset delta when rotation completes
+            // Update direction when turn completes (for strafe and diagonal styles)
+            this.direction = this.newDirection
+        }
+        
+        // Smooth movement towards target world position
+        this.diff = this.targetWorldPos - this.worldPos
+        ln = math.length3(this.diff)
+ 
+        if (ln > 0.01) {
+            // Smooth movement with constant speed
+            normalizedDir = math.scale3(this.diff, 1.0 / ln)
+            moveVec = math.scale3(normalizedDir, this.speed)
+            this.worldPos = this.worldPos ++ moveVec
+        } else {
+            // Very close to target, ease in smoothly
+            this.worldPos = this.worldPos ++ math.scale3(this.diff, 0.01)
+        }
+    }
+
+ 
+
+    directionToAngle(direction) {
+        return DIRECTIONS[direction]
+    }
+
+    getCamera() {
+        // Simple camera pointing in current direction with gentler vertical movement
+        camY = 8* CAMERA_HEIGHT + math.sin(this.frameCount * 0.005) * 8.0  // Slower, smaller oscillation
+        
+        lookDistance = 25.0
+        lookX = this.worldPos.x + math.sin(this.currentAngle) * lookDistance
+        lookZ = this.worldPos.z + math.cos(this.currentAngle) * lookDistance
+        camPos = vec3(this.worldPos.x, camY, this.worldPos.z)
+        lookPos = vec3(lookX, camY, lookZ)
+        upVec = vec3(0, 1, 0)
+        return camera(camPos, lookPos, upVec)
+    }
+}
+
+// MAIN PROGRAM
+ 
+win = window(WIDTH, HEIGHT)
+win.init()
+win.set_target_fps(60)   
+if (FULLSCREEN) {
+    win.toggle_fullscreen()
+}  
+
+sw = win.get_screen_width()
+sh = win.get_screen_height() 
+// Create framebuffer for rendering
+fb = render_texture(int(sw), int(sh))   
+fb.clear(colour.BLACK)   
+
+// Load shader after window initialization (OpenGL context must exist)
+rainbow_shader = shader("lox_examples/shaders/rainbow.vs", "lox_examples/shaders/rainbow.fs")
+time_location = rainbow_shader.get_location("time")
+
+cubeBatch = Batches() 
+// Create grid and populate with stacks
+grid = Grid(CITY_SIZE,cubeBatch)   
+cubeBatch.make_transforms()  // Prepare batch instance transforms 
+
+controller = Controller(grid)
+
+// Main render loop
+frameCounter = 0
+groundSize = CITY_SIZE * STACK_SPACING * 2
+
+
+
+while (!win.should_close()) {
+
+    frameCounter = frameCounter + 1
+    rainbow_shader.set_value_float(time_location, float(frameCounter) * 0.003)  // Update shader time uniform
+    
+    win.begin()
+    win.begin_texture_mode(fb)
+    win.begin_blend_mode(win.BLEND_ALPHA)
+    win.clear(vec4(10, 10, 50, 255))   
+
+    controller.update()
+    cam = controller.getCamera()
+    
+    win.begin_3d(cam)
+    win.plane(vec3(0, -1, 0), vec2(groundSize, groundSize), vec4(5, 5, 5, 255))
+    
+    cubeBatch.draw(cam)
+    win.end_3d()
+    win.end_texture_mode() 
+
+    win.begin_shader_mode(rainbow_shader)  // Use rainbow shader for rendering
+    win.draw_render_texture(fb,0,0,colour.WHITE)  // Draw framebuffer to window
+    gridPosText = format("Target Grid Position: (%d, %d)", int(controller.targetGridPos.x), int(controller.targetGridPos.z))
+    win.text(gridPosText, 10, 40, 18, vec4(255, 255, 255, 255))
+    distanceText = format("Distance to Target: %d", int(controller.distanceToTarget))
+    win.text(distanceText, 10, 65, 18, vec4(255, 255, 255, 255))
+    win.end_shader_mode()
+     
+    win.end()
+}
+
+win.close()

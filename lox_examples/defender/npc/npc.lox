@@ -1,0 +1,185 @@
+from gfx import *
+from sprite import Sprite
+import math
+import random
+import colour
+
+// Shared base for the NPC roster (pod, swarmer, bomber, baiter).
+//
+// Behaviour is a state machine of swappable function pointers, matching the
+// established idiom: `update_func` / `draw_func` are free functions taking the
+// entity. Death is common to every NPC -- the sprite disperses (1 -> 60) and
+// the entity is removed -- so it lives here.
+//
+// Naming convention (see also lander.lox, human.lox, player.lox): every state
+// has a per-frame update function named `state_<state>` (e.g. `state_die`),
+// and any transition INTO that state -- other than the initial state, set
+// directly in init() -- goes through a matching `enter_<state>(e)` function
+// that performs the one-off setup (flags, event emits, etc.) before
+// installing it as `update_func`. Callers trigger a transition by calling
+// `enter_<state>`, never by poking `update_func` directly.
+//
+// Subclasses set `update_func` in init and may override `on_die()` for
+// death side-effects (e.g. a pod releasing swarmers).
+
+class NPC < Sprite {
+
+    init(pos, img, frames, start_frame, end_frame, type) {
+        super.init(pos, img, frames, start_frame, end_frame)
+        this.type = type
+        this.width = this.texture.frame_width()
+        this.height = this.texture.height()
+        this.dp = vec2(0, 0)
+        this.disperse = 1          // 1 == assembled; rises while exploding
+        this.alive = true
+        this.visible = true
+        this.dying = false
+        this.shootable = true      // player lasers can destroy it
+        this.deadly = true         // touching it hurts the player
+        this.mgr = nil
+        this.counter = 0
+        this.radar = colour.WHITE
+        this.update_func = nil
+        this.draw_func = draw_normal
+        this.disperse_rate = 1.3   // explode speed
+        this.disperse_max = 60
+    }
+
+    update(width, height) {
+        if (!this.alive) {
+            return
+        }
+        this.counter = this.counter + 1
+        f = this.update_func
+        if (f != nil) {
+            f(this, width, height)
+        }
+        // horizontal world wrap-around
+        ww = this.mgr.worldwidth
+        if (this.pos.x > ww) { this.pos.x = this.pos.x - ww }
+        if (this.pos.x < 0)  { this.pos.x = this.pos.x + ww }
+    }
+
+    draw(win, cam) {
+        if (!this.alive or !this.visible) {
+            return
+        }
+        f = this.draw_func
+        if (f != nil) {
+            f(this, win, cam)
+        }
+    }
+
+    // struck by a player laser
+    hit() {
+        enter_die(this)
+    }
+
+    // hook for death side-effects; overridden by e.g. Pod
+    on_die() {
+    }
+
+    // Fire a bullet that homes in on player -- see aim_bullet_at(). time_mult
+    // scales the configured time-to-target (e.g. a slower, more lenient shot).
+    fire_bullet_at(player, time_mult=1.0) {
+        aim_bullet_at(this, player, time_mult)
+    }
+}
+
+// --- shared state functions ---------------------------------------------------
+
+func draw_normal(e, win, cam) {
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
+    }
+}
+
+// Used for both materialise (disperse falling to 1) and explode (rising).
+func draw_dispersed(e, win, cam) {
+    spos = cam.translate(e.pos.x)
+    if (spos != nil) {
+        e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)
+    }
+}
+
+func enter_die(e) {
+    if (e.dying) {
+        return
+    }
+    e.dying = true
+    e.draw_func = draw_dispersed
+    e.update_func = state_die
+    e.disperse = 1
+    e.dp = vec2(0, 0)
+    e.shootable = false
+    e.deadly = false
+    e.radar = nil
+    e.on_die()
+    e.mgr.events.emit(e.type & "_killed", e)
+}
+
+func state_die(e, width, height) {
+    e.disperse = e.disperse + e.disperse_rate
+    if (e.disperse >= e.disperse_max) {
+        e.alive = false
+    }
+}
+
+// --- helpers ------------------------------------------------------------------
+
+// Fire a bullet from e that homes in on the player. Free function (not an NPC
+// method) so entities that don't extend NPC, e.g. Lander, can use it too.
+// NPC.fire_bullet_at() is a thin wrapper around this.
+//
+// The invariant is TIME, not speed: pick a fixed time-to-target t (frames),
+// then set this shot's velocity on EACH axis independently to whatever
+// distance/t requires:
+//   tx = player.pos.x + player.vx * t   -- player's projected x; y is NOT led
+//   ty = player.pos.y
+//   vx = (tx - e.pos.x) / t
+//   vy = (ty - e.pos.y) / t
+// Because x and y share the same t, they are guaranteed to arrive together --
+// a stationary player is hit dead-on, a moving one is led correctly in x.
+// Velocity per axis is just distance/time, naturally bounded, exact for any
+// geometry, and the two axes are inherently synchronised.
+//
+// time_mult scales the configured time-to-target: > 1 gives a slower, more
+// lenient shot (e.g. a lander in its search state, which is more of a
+// suppressing-fire threat than a precision shot); 1.0 (the default) is the
+// straight configured value.
+func aim_bullet_at(e, player, time_mult=1.0) {
+    cfg = e.mgr.config
+    t = random.float(cfg.npc_bullet_time / 2, cfg.npc_bullet_time) * time_mult
+
+    tx = player.pos.x + player.vx * t
+    ty = player.pos.y
+
+    vx = shortest_dx(e.pos.x, tx, e.mgr.worldwidth) / t
+    vy = (ty - e.pos.y) / t
+
+    e.mgr.fire_bullet(e.pos, vec2(vx, vy))
+}
+
+// Signed x-distance from a to b, taking the shorter way around the wrapped world.
+func shortest_dx(from_x, to_x, worldwidth) {
+    d = to_x - from_x
+    half = worldwidth / 2
+    if (d > half)  { d = d - worldwidth }
+    if (d < -half) { d = d + worldwidth }
+    return d
+}
+
+func clamp(v, lo, hi) {
+    return math.max(lo, math.min(v, hi))
+}
+
+// Per-frame velocity toward where the player will be in `lead` frames, clamped to
+// maxspeed.
+func seek_player(e, player, maxspeed, lead, xoff, yoff) {
+    tx = player.pos.x + player.vx * lead + xoff
+    ty = player.pos.y + yoff
+    dx = shortest_dx(e.pos.x, tx, e.mgr.worldwidth) / lead
+    dy = (ty - e.pos.y) / lead
+    return vec2(clamp(dx, -maxspeed, maxspeed), clamp(dy, -maxspeed, maxspeed))
+}

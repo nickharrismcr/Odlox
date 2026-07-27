@@ -1,0 +1,37 @@
+// Axis-aligned box collision. Boxes are [x1, y1, x2, y2] in world coordinates.
+//
+// Sprites are top-left anchored (draw_texture draws at pos), so an entity's box
+// is [pos.x, pos.y, pos.x+width, pos.y+height]. A laser is a horizontal beam
+// from pos.x extending `len` (which may be negative when firing left).
+
+import math
+
+func entity_box(e) {
+    return [e.pos.x, e.pos.y, e.pos.x + e.width, e.pos.y + e.height]
+}
+
+func laser_box(l) {
+    x1 = l.pos.x
+    x2 = l.pos.x + l.len
+    if (x2 < x1) {
+        t = x1
+        x1 = x2
+        x2 = t
+    }
+    return [x1, l.pos.y - 4, x2, l.pos.y + 4]
+}
+
+// Do two boxes overlap, allowing the world to wrap horizontally at worldwidth?
+func overlap(a, b, worldwidth) {
+    // vertical ranges must overlap
+    if (!(a[1] < b[3] and b[1] < a[3])) {
+        return false
+    }
+    // horizontal ranges, trying b shifted by -world, 0, +world for wrap-around
+    foreach (var off in [-worldwidth, 0, worldwidth]) {
+        if (a[0] < b[2] + off and b[0] + off < a[2]) {
+            return true
+        }
+    }
+    return false
+}

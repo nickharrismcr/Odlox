@@ -1,0 +1,110 @@
+from gfx import *
+// 2d particle system fireworks demo
+
+
+import random;
+import colour;
+from math import * 
+import particle_sys;
+
+MIN_PARTICLES=20
+MAX_PARTICLES=200
+MIN_DELAY=10
+MAX_DELAY=50
+
+ 
+// particle update function
+func move(particle) {
+    var dpos = particle.dpos;
+    dpos.x = dpos.x * 0.98;  
+    dpos.y = dpos.y + 0.1;  //gravity
+    particle.size = particle.size * 0.97; // Gradually reduce size
+}
+
+// return a particle initialisation closure
+func init(col1,col2) {
+
+    var lifemax=random.integer(20,1000);
+    var speedmax=random.integer(1,7);
+    var sizemax=random.integer(5,10);
+    var cols=[col1,col2]; // built once per emitter, captured by the closure
+
+    // anonymous closure over lifemax/speedmax/sizemax/cols
+    return func(particle) {
+        particle.dpos = vec2(1,1); // Initial velocity
+        var angle = random.float(0, 2 * math.PI); // Random angle
+        particle.dpos = rotate2d(particle.dpos, angle); // Rotate the initial velocity
+        particle.dpos = scale2(particle.dpos, random.float(0.01, speedmax)); // Scale the velocity
+
+        particle.life = random.integer(1, lifemax); // Random life
+        particle.size = random.float(1, sizemax);
+        particle.col = random.choice(cols);
+    };
+}
+
+func random_vec_2D(xmin,xmax,ymin,ymax) {
+  return vec2(random.integer(xmin,xmax),random.integer(ymin,ymax))
+}
+
+func queue_random_emitter(width,height,delay){
+    var pos=random_vec_2D(200,width-200,0,height/2);
+    var pcols=colour.primary_colours();
+    var ecol1 = pcols[random.choice(pcols.keys())];
+    var ecol2 = pcols[random.choice(pcols.keys())];
+    
+    emitters.queue(particle_sys.Emitter(pos, init(ecol1,ecol2), move), random.integer(MIN_PARTICLES, MAX_PARTICLES), delay); 
+}
+STARS=300 
+func make_stars(){
+    var stars=[];
+    for ( var i = 0; i < STARS ; i=i+1 ){
+        var pos=random_vec_2D(0,width,0,height);
+        var size=1;
+        var a=random.integer(1,255);
+        stars.append([pos,size,a]);
+    }
+    return stars;
+}
+
+func update_stars(stars) {
+    foreach (var s in stars) {
+
+        if (random.integer(0,1000) < 4) {
+            s[2] = random.integer(1, 255); // Randomly change alpha
+        }
+        pos,size,a = s
+        win.circle_fill(pos.x, pos.y, size, vec4(255,255,255,a))
+    }
+}   
+
+const width=1500;
+const height=900;
+var win = window(width,height);
+win.init();
+win.toggle_fullscreen()
+ 
+var emitters = particle_sys.Emitters();
+ 
+stars = make_stars();
+ 
+while (!win.should_close()) {
+
+    win.begin();
+    win.begin_blend_mode("BLEND_ADD");
+    win.clear(colour.BLACK); // Clear the window with black
+    if (!emitters.update() and emitters.queue_length() < 3 ) {
+        queue_random_emitter(width,height,random.integer(MIN_DELAY, MAX_DELAY));
+    }  
+    foreach ( var e in emitters.get()) {
+        foreach (var p in e.get_particles()) {
+            
+            win.circle_fill(p.pos.x, p.pos.y, p.size, p.col);
+        }
+    }
+    update_stars(stars);
+    win.end_blend_mode();
+    win.end();
+    
+}
+
+win.close();
