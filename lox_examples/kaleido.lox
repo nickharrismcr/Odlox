@@ -5,14 +5,8 @@ import colour,math,random
 
 
 const speed = 1.0
+const TRANSPARENT = vec4(0,0,0,0)  // reused every frame by draw_segment's rt.clear() -- never mutated
 
-
-class Rect{
-    init(v1x,v1y, v2x, v2y ) {
-        this.v1 = vec2(v1x, v1y)
-        this.v2 = vec2(v2x, v2y)
-    }
-}
 
 // --- TextureSampler class ---
 class TextureSampler {
@@ -48,13 +42,6 @@ class TextureSampler {
             this.VelY = -this.VelY
         }
     }
-
-    get() {
-        return Rect(
-            this.SampleX, this.SampleY,
-            this.SampleX + this.SampleWidth, this.SampleY + this.SampleHeight
-        )
-    }
 }
 
 // --- Pen: a bouncing brush that paints onto the live canvas, same movement scheme as tile_planes.lox's Line ---
@@ -78,7 +65,8 @@ class Pen {
     }
 
     update() {
-        this.lastp = vec2(this.pos.x, this.pos.y)
+        this.lastp.x = this.pos.x
+        this.lastp.y = this.pos.y
         this.pos.x = this.pos.x + this.speed * math.cos(this.dir)
         this.pos.y = this.pos.y + this.speed * math.sin(this.dir)
 
@@ -142,25 +130,23 @@ fun draw_segment(win, rt, tex, sampler, posX, posY, rotation, flip) {
     // Draw triangle mask to render texture
     win.begin_blend_mode(win.BLEND_ALPHA)
 
-    rt.clear(vec4(0,0,0,0))
+    rt.clear(TRANSPARENT)
     sw = sampler.SampleWidth
     sh = sampler.SampleHeight
 
-    // Triangle vertices (mask)
-    v1 = vec2(sw/2, -20)
-    v2 = vec2(-5, sh+5)
-    v3 = vec2(sw+5, sh+5)
-    rt.triangle(v1.x, v1.y, v2.x, v2.y, v3.x, v3.y, colour.WHITE)
+    // Triangle vertices (mask) -- passed straight as numbers, never
+    // needed as vec2 objects (each was only ever read back as .x/.y one
+    // line later).
+    rt.triangle(sw/2, -20, -5, sh+5, sw+5, sh+5, colour.WHITE)
 
     win.end_blend_mode()
 
     // Masked texture
     win.begin_blend_mode(win.BLEND_MULTIPLY)
-    src = sampler.get()
-    srcX = src.v1.x
-    srcY = src.v1.y
-    srcW = src.v2.x - src.v1.x
-    srcH = src.v2.y - src.v1.y
+    srcX = sampler.SampleX
+    srcY = sampler.SampleY
+    srcW = sampler.SampleWidth
+    srcH = sampler.SampleHeight
     flipW = srcW
     if (flip) {
         flipW = -srcW
