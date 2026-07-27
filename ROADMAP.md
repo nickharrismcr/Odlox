@@ -2181,6 +2181,49 @@ on-screen visual output — no display access here, so that still needs an actua
 Full `pytest` regression held at 220/0/26 throughout every fix in this phase (checked after each one, not
 just at the end). Both build modes (`bin/build.sh` / `bin/build.sh --release`) compiled cleanly throughout.
 
+### Phase 6l: `win.BLEND_*`/`WRAP_*` constants, `render_texture`'s own 2D primitives, `draw_render_texture_ex`
+
+Trigger: running `tile_planes.lox` (`win.begin_blend_mode(win.BLEND_ALPHA)`) hit `"Undefined window property
+'BLEND_ALPHA'"` — Phase 6k added `begin_blend_mode`/`end_blend_mode` as *methods* but never the named
+constants a script actually passes to them. Fixing that and then actually running the script (rather than
+stopping at "compiles") surfaced two more real gaps in the same pass.
+
+**`window_key_constant` renamed `window_constant`, extended with `BLEND_*`/`WRAP_*`** (`vm/gfx_window.odin`):
+`BLEND_ADD`/`BLEND_ALPHA`/`BLEND_MULTIPLY`/`BLEND_SUBCOLOR`/`BLEND_ADDCOLOR` (`rl.BlendMode`) and
+`WRAP_REPEAT`/`WRAP_CLAMP`/`WRAP_MIRROR_REPEAT`/`WRAP_MIRROR_CLAMP` (`rl.TextureWrap`), matching glox's
+`RegisterAllWindowConstants` exactly. `BATCH_*` deliberately still excluded — `gfx.batch()`/`batch_instanced()`
+aren't implemented, so those constants would have no consumer yet.
+
+**`render_texture` gets its own mirrored 2D primitive set** (`vm/gfx_texture.odin`'s
+`invoke_builtin_render_texture`): `clear`/`pixel`/`line`/`line_ex`/`triangle`/`rectangle`/`circle`/
+`circle_fill`/`draw_texture`. This is a genuinely different usage pattern from what Phase 6k's
+`win.begin_texture_mode(rt)` + `win.<primitive>` + `win.end_texture_mode()` supported: `tile_planes.lox`
+(`frame.line_ex(...)`, `this.texture.clear(col)`), `cobweb-bifurc.lox`, `cube_stack_fly2.lox`, and
+`textured_batch_demo2.lox` all call drawing methods *directly on the render_texture object itself*. Confirmed
+against glox's own `render_texture_methods.go`: each of these methods brackets just that one draw call in its
+own `BeginTextureMode`/`EndTextureMode` — a different shape from Window's methods (which draw against
+whatever the current global GL target already is) — ported to match exactly, reusing the `vec4_to_rl_color`/
+`arg_color` helpers Phase 6j built (promoted from file-private to package-visible for this). Deliberately
+still not ported: `text()` (glox's `RenderTexture.text()` takes a different, narrower argument list than
+Window's `text()` — `(x, y, string)` only, fixed size 10, hardcoded white — and no example script here calls
+it, so there's nothing to verify that mismatch against), `get_texture()` (a GPU-sync roundtrip, not yet
+needed by anything that also has its other dependencies satisfied), `draw_texture_pro()`, and
+`draw_array_fast()`.
+
+**`win.draw_render_texture_ex(rt, x, y, rotation, scale, color)` added** (`vm/gfx_window.odin`) — found needed
+by `tile_planes.lox`. Ported with a real, faithfully-preserved quirk: unlike `draw_render_texture` (which
+negates the source rectangle's height to correct for OpenGL storing render textures upside-down), glox's own
+`draw_render_texture_ex` (`win_methods.go`) calls plain `rl.DrawTextureEx` with **no** such correction — so it
+draws upside-down relative to `draw_render_texture`. Not "fixed" to be consistent; ported exactly as glox
+has it.
+
+**Verified**: `tile_planes.lox` and `cobweb-bifurc.lox` both now run their full loop under a bounded
+wall-clock smoke test (`timeout 6`) with zero crashes and no orphaned process. Spot-checking `kaleido.lox` in
+the same pass found it needs `render_texture.get_texture()` and `draw_texture_pro` (both window- and
+render_texture-side) — real, still-open gaps, not attempted this round (tracked in `TODO.md`; a reasonable
+next slice, not blocking anything already shipped). `pytest` held at 220/0/26 throughout; both build modes
+compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

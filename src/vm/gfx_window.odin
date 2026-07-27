@@ -29,7 +29,9 @@ import "core:strings"
 // down only by an explicit .close() call (idempotent via the closed
 // bool), never implicitly by garbage collection.
 
-@(private = "file")
+// vec4_to_rl_color/arg_color are package-visible (not file-private): both
+// gfx_window.odin (Window's own drawing methods) and gfx_texture.odin
+// (Render_Texture's mirrored drawing methods) need them.
 vec4_to_rl_color :: proc(v: ^core.Vec4_Object) -> rl.Color {
 	return rl.Color{
 		u8(clamp(v.x, 0, 255)),
@@ -41,7 +43,6 @@ vec4_to_rl_color :: proc(v: ^core.Vec4_Object) -> rl.Color {
 
 // arg_color validates and extracts the color argument every drawing
 // method below takes as its last parameter.
-@(private = "file")
 arg_color :: proc(vm: ^VM, v: core.Value, method: string) -> (rl.Color, bool) {
 	if !core.is_vec4(v) {
 		runtime_error(vm, "%s() color argument must be a vec4.", method)
@@ -527,6 +528,37 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		src := rl.Rectangle{0, 0, f32(target.width), -f32(target.height)}
 		rl.DrawTextureRec(target, src, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
 		result = core.NIL_VALUE
+	case "draw_render_texture_ex":
+		// Unlike draw_render_texture, glox's own draw_render_texture_ex
+		// (win_methods.go) draws via plain rl.DrawTextureEx with no
+		// Y-flip correction at all -- ported to match exactly, upside-down
+		// quirk included, not "fixed" to be consistent with the non-ex
+		// version. Found needed by lox_examples/tile_planes.lox.
+		if arg_count != 6 {
+			runtime_error(vm, "draw_render_texture_ex() expects 6 arguments (render_texture, x, y, rotation, scale, color).")
+			return false
+		}
+		rt_val, x_val, y_val, rot_val, scale_val, col_val := peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if rt_val.type != .Obj || rt_val.obj_type != .Render_Texture {
+			runtime_error(vm, "draw_render_texture_ex() first argument must be a render_texture.")
+			return false
+		}
+		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(rot_val) || !core.is_number(scale_val) {
+			runtime_error(vm, "draw_render_texture_ex() x/y/rotation/scale arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "draw_render_texture_ex")
+		if !ok {
+			return false
+		}
+		target := core.as_render_texture(rt_val).render_texture.texture
+		rl.DrawTextureEx(
+			target,
+			rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))},
+			f32(core.as_float(rot_val)), f32(core.as_float(scale_val)),
+			col,
+		)
+		result = core.NIL_VALUE
 
 	case:
 		runtime_error(vm, "Undefined Window method '%s'.", name)
@@ -536,18 +568,34 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	return true
 }
 
-// window_key_constant answers a `win.KEY_*` property read (properties.odin's
-// get_property .Window case) -- glox registers these directly on the
-// window object (RegisterAllWindowConstants, win_methods.go), not as
-// module-level constants; a real script (found via porting the
-// lox_examples/defender game) accesses them as `win.KEY_SPACE` etc., not
-// `gfx.KEY_SPACE`, so that's the surface this ports. Full rl.KeyboardKey
-// coverage except KEY_BACK/KEY_MENU (Android-only buttons glox's own
-// raylib-go binding exposes that vendor:raylib's Odin binding does not) --
-// values are plain immutable ints, identical across every Window
-// instance, so this is a pure function of the name rather than per-object
-// state.
-window_key_constant :: proc(name: string) -> (core.Value, bool) {
+// window_constant answers a `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` property
+// read (properties.odin's get_property .Window case) -- glox registers all
+// of these directly on the window object (RegisterAllWindowConstants,
+// win_methods.go), not as module-level constants; a real script (found via
+// porting the lox_examples/defender game, and BLEND_ALPHA/BLEND_MULTIPLY/
+// WRAP_REPEAT via tile_planes.lox) accesses them as `win.KEY_SPACE`/
+// `win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`, so that's the surface this
+// ports. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
+// (Android-only buttons glox's own raylib-go binding exposes that
+// vendor:raylib's Odin binding does not); full BLEND_*/WRAP_* coverage.
+// BATCH_* deliberately not included -- gfx.batch()/batch_instanced()
+// themselves aren't implemented yet (see TODO.md), so those constants
+// would have no consumer. Values are plain immutable ints, identical
+// across every Window instance, so this is a pure function of the name
+// rather than per-object state.
+window_constant :: proc(name: string) -> (core.Value, bool) {
+	switch name {
+	case "BLEND_ADD": return core.make_int_value(int(rl.BlendMode.ADDITIVE), true), true
+	case "BLEND_ALPHA": return core.make_int_value(int(rl.BlendMode.ALPHA), true), true
+	case "BLEND_MULTIPLY": return core.make_int_value(int(rl.BlendMode.MULTIPLIED), true), true
+	case "BLEND_SUBCOLOR": return core.make_int_value(int(rl.BlendMode.SUBTRACT_COLORS), true), true
+	case "BLEND_ADDCOLOR": return core.make_int_value(int(rl.BlendMode.ADD_COLORS), true), true
+	case "WRAP_REPEAT": return core.make_int_value(int(rl.TextureWrap.REPEAT), true), true
+	case "WRAP_CLAMP": return core.make_int_value(int(rl.TextureWrap.CLAMP), true), true
+	case "WRAP_MIRROR_REPEAT": return core.make_int_value(int(rl.TextureWrap.MIRROR_REPEAT), true), true
+	case "WRAP_MIRROR_CLAMP": return core.make_int_value(int(rl.TextureWrap.MIRROR_CLAMP), true), true
+	}
+
 	key: rl.KeyboardKey
 	switch name {
 	case "KEY_NULL": key = .KEY_NULL

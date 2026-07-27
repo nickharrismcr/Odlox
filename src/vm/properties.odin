@@ -73,11 +73,12 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 			runtime_error(vm, "Undefined module property '%s'.", core.string_get(name))
 			return false
 		case .Window:
-			// `win.KEY_*` -- glox registers these directly on the window
-			// object (RegisterAllWindowConstants), not as module-level
-			// constants; see gfx_window.odin's window_key_constant doc
-			// comment for how this was found (porting lox_examples/defender).
-			if v, ok := window_key_constant(core.string_get(name)); ok {
+			// `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` -- glox registers these
+			// directly on the window object (RegisterAllWindowConstants),
+			// not as module-level constants; see gfx_window.odin's
+			// window_constant doc comment for how this was found (porting
+			// lox_examples/defender and tile_planes.lox).
+			if v, ok := window_constant(core.string_get(name)); ok {
 				pop(vm)
 				push(vm, v)
 				return true
