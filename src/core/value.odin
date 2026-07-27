@@ -130,7 +130,7 @@ as_bool :: proc(v: Value) -> bool {
 as_int :: proc(v: Value) -> int {
 	#partial switch v.type {
 	case .Int:
-		return int(transmute(i64)v.data)
+		return int(cast(i64)v.data)
 	case .Float:
 		return int(transmute(f64)v.data)
 	}
@@ -140,7 +140,7 @@ as_int :: proc(v: Value) -> int {
 as_float :: proc(v: Value) -> f64 {
 	#partial switch v.type {
 	case .Int:
-		return f64(transmute(i64)v.data)
+		return f64(cast(i64)v.data)
 	case .Float:
 		return transmute(f64)v.data
 	}
@@ -222,7 +222,7 @@ values_equal :: proc(a, b: Value, types_must_match: bool) -> bool {
 			if types_must_match {
 				return false
 			}
-			return f64(transmute(i64)a.data) == transmute(f64)b.data
+			return f64(cast(i64)a.data) == transmute(f64)b.data
 		}
 		return false
 	case .Float:
@@ -231,7 +231,7 @@ values_equal :: proc(a, b: Value, types_must_match: bool) -> bool {
 			if types_must_match {
 				return false
 			}
-			return transmute(f64)a.data == f64(transmute(i64)b.data)
+			return transmute(f64)a.data == f64(cast(i64)b.data)
 		case .Float:
 			return a.data == b.data
 		}

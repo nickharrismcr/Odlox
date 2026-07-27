@@ -9,8 +9,14 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 0 — Project scaffolding
 
-- [ ] Decide and record the Odin build flags for debug vs. release (`-debug`, `-vet`, `-strict-style` for
-      dev; `-o:speed -disable-assert -no-bounds-check` for release/benchmark).
+- [ ] `odin test src/vm -all-packages` currently segfaults (exit 139) partway through the compiler-package
+      tests, reproducibly, both single- and multi-threaded (`-define:ODIN_TEST_THREADS=1`) — confirmed
+      **pre-existing and unrelated to any change in this session** by reproducing it on a clean worktree at
+      the last commit before today's build-script work. `python -m pytest tests/new_tests/` (the project's
+      primary correctness gate) is unaffected and passes cleanly. Root cause not investigated — worth a
+      closer look (this Odin dev-build's version, memory-tracking overhead, or a genuine bug surfaced by one
+      of the newer test files) before relying on the isolated `odin test` sweep this project used in prior
+      sessions as a secondary verification step.
 
 ## Phase 6 — Native/builtin functions & standard library
 

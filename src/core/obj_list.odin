@@ -1,6 +1,5 @@
 package core
 
-import "core:fmt"
 import "core:strings"
 
 // string_depth/MAX_STRING_DEPTH guard List_Object/Dict_Object's own

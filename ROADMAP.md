@@ -23,11 +23,12 @@ glox that exists solely to support them. See `ARCHITECTURE.md`'s
       `ARCHITECTURE.md` § [Package layout](docs/ARCHITECTURE.md#package-layout)).
       `compiler/` and `main.odin` exist as of Phase 1; the rest are created
       as their phases start.
-- [ ] Decide and record the Odin build flags for debug vs. release
+- [x] Decide and record the Odin build flags for debug vs. release
       (`-debug`, `-vet`, `-strict-style` for dev; `-o:speed
       -disable-assert -no-bounds-check` for a release/benchmark build) —
       mirrors glox's own fast-vs-debug build split
-      (`bin/build_debug.sh`/`core.HotLoopDebugHookCompiled`).
+      (`bin/build_debug.sh`/`core.HotLoopDebugHookCompiled`). See the
+      "Build script: debug vs. release" note below.
 - [x] `git init`-equivalent housekeeping already done (repo exists);
       `.gitignore` covers build output (`*.exe`/`*.bin`/`*.pdb`/`*.dll`)
       and, added alongside the test-suite copy below, `__pycache__/`/
@@ -45,6 +46,60 @@ glox that exists solely to support them. See `ARCHITECTURE.md`'s
       port — see this file's header). See
       [Testing](#testing-every-phase) below for the first real run's
       results and the infinite-loop bug it immediately found.
+
+### Build script: debug vs. release
+
+`bin/build.sh` takes an explicit mode instead of only ever building one
+configuration: `bin/build.sh --release` builds `-o:speed -disable-assert
+-no-bounds-check` (the exact flags every Phase 7 benchmark baseline in
+this document was measured against — see `bin/benchmarks.sh`); plain
+`bin/build.sh` (no args) now builds `-debug -vet -strict-style` and is
+the new default. `-debug` enables Odin's `ODIN_DEBUG` constant, which is
+what actually gates `debug/trace.odin`'s `Trace_Hook`/`Instrument_Hook`
+(the `--debug`/`--instrument` CLI flags are otherwise silently inert —
+see `main.odin`'s warning for that case) — without it, day-to-day
+development had no working way to get a debug build at all beyond
+manually typing the `odin build` invocation. Simpler than glox's own
+`bin/build.sh`/`bin/build_debug.sh` split: Odin's `when ODIN_DEBUG` is
+real conditional compilation, so there's no glox-style temporary
+source-edit-then-restore dance needed to toggle the hot-loop debug hook
+in and out of the binary, just a different flag set.
+
+`-vet -strict-style` (without `-warnings-as-errors`) turned out to
+produce hard build **errors**, not just warnings, contrary to the
+initial assumption going in — this is not the `examples/` sibling
+project's CI-grade `-warnings-as-errors` regime, but Odin's vet/style
+checks are apparently errors by default regardless. Six real, pre-
+existing violations surfaced and were fixed rather than working around
+them: an unused `import "core:fmt"` (`core/obj_list.odin`), three unused
+loop variables in `core/pickle.odin`'s decode paths (`for i in
+0..<count` → `for _ in 0..<count`, `i` genuinely never read), and five
+`transmute(i64)`/`transmute(u64)` uses on same-width, same-endianness
+integer conversions (`core/value.odin`, `core/pickle.odin`) that Odin's
+vet prefers as `cast` instead. Verified the substitution is behavior-
+identical before applying it, not just because vet said so: an isolated
+throwaway Odin program confirmed `cast(i64)` and `transmute(i64)` on a
+`u64` produce bit-identical results, including for values with the high
+bit set (`0xFFFFFFFFFFFFFFFF` → `-1` either way) — `cast`/`transmute`
+diverge for genuinely different-kind conversions (e.g. `f64`↔`u64`,
+still correctly `transmute` throughout this file), just not for same-
+size int-to-int, which is exactly the case vet flagged.
+
+**Verification**: full `pytest` regression (218/0/26) passed against
+*both* the release and the new debug build, not just release as before.
+
+**Unrelated finding, recorded but not fixed here**: `odin test src/vm
+-all-packages` (the isolated unit-test sweep used as a secondary
+verification step in prior sessions) segfaults partway through the
+compiler-package tests, reproducibly, both single- and multi-threaded.
+Confirmed via a throwaway `git worktree` at the commit immediately
+before this session's changes that this is **pre-existing and
+unrelated** — not caused by the vet/style fixes above (also confirmed
+directly: an isolated Odin program proved `cast`/`transmute` are
+behaviorally identical here, ruling out the obvious suspect before
+reaching for the worktree test). `pytest`, the project's actual
+correctness gate, is unaffected. Tracked in `TODO.md`; not investigated
+further as part of this Phase 0 item.
 
 ## Phase 1 — Scanner
 

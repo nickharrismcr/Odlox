@@ -97,7 +97,7 @@ pickle_encode_value :: proc(e: ^Encoder, v: Value) -> (err: string, ok: bool) {
 		return "", true
 	case .Int:
 		enc_byte(e, u8(Pickle_Tag.Int))
-		enc_u64(e, transmute(u64)i64(as_int(v)))
+		enc_u64(e, cast(u64)i64(as_int(v)))
 		return "", true
 	case .Float:
 		enc_byte(e, u8(Pickle_Tag.Float))
@@ -344,7 +344,7 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 		if !nok {
 			return NIL_VALUE, TRUNCATED, false
 		}
-		return make_int_value(int(transmute(i64)n)), "", true
+		return make_int_value(int(cast(i64)n)), "", true
 	case .Float:
 		f, fok := dec_f64(d)
 		if !fok {
@@ -388,7 +388,7 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			return NIL_VALUE, TRUNCATED, false
 		}
 		items: [dynamic]Value
-		for i in 0 ..< count {
+		for _ in 0 ..< count {
 			item, ierr, iok := pickle_decode_value(d, resolve, ctx)
 			if !iok {
 				return NIL_VALUE, ierr, false
@@ -403,7 +403,7 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			return NIL_VALUE, TRUNCATED, false
 		}
 		dict := make_dict_object()
-		for i in 0 ..< count {
+		for _ in 0 ..< count {
 			key, kok := dec_string(d)
 			if !kok {
 				return NIL_VALUE, TRUNCATED, false
@@ -422,7 +422,7 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			return NIL_VALUE, TRUNCATED, false
 		}
 		fields := make(map[^String_Object]Value, count)
-		for i in 0 ..< count {
+		for _ in 0 ..< count {
 			key, kok := dec_string(d)
 			if !kok {
 				delete(fields)
