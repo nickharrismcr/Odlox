@@ -56,6 +56,7 @@ Object_Type :: enum u8 {
 	Render_Texture,
 	Shader,
 	Camera,
+	Batch,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -156,6 +157,15 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		return fmt.aprintf("<Shader ID:%d>", s.shader.id, allocator = allocator)
 	case .Camera:
 		return "<Camera3D>"
+	case .Batch:
+		b := cast(^Batch_Object)obj
+		type_name := "CUBE"
+		#partial switch b.batch_type {
+		case .Sphere: type_name = "SPHERE"
+		case .Triangle3: type_name = "TRIANGLE3"
+		case .Circle3: type_name = "CIRCLE3"
+		}
+		return fmt.aprintf("<Batch %s [%d entries]>", type_name, batch_count(b), allocator = allocator)
 	}
 	return "<unknown>"
 }

@@ -34,6 +34,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "render_texture", gfx_render_texture)
 	vm.define_builtin(v, "gfx", "shader", gfx_shader)
 	vm.define_builtin(v, "gfx", "camera", gfx_camera)
+	vm.define_builtin(v, "gfx", "batch", gfx_batch)
 	vm.define_builtin(v, "gfx", "lox_julia_array", gfx_lox_julia_array)
 	vm.define_builtin(v, "gfx", "lox_mandel_array", gfx_lox_mandel_array)
 }
@@ -222,6 +223,31 @@ gfx_camera :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 		rl.Vector3{f32(target.x), f32(target.y), f32(target.z)},
 		rl.Vector3{f32(up.x), f32(up.y), f32(up.z)},
 	)
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
+}
+
+// gfx_batch mirrors glox's own BatchBuiltIn: the single argument is a
+// win.BATCH_* constant (a plain int -- core.Batch_Primitive's own
+// ordinal values match glox's BatchPrimitive iota order exactly, see
+// gfx_window.odin's window_constant), not validated against a fixed
+// enum range here any more strictly than glox validates it either
+// (an out-of-range int just becomes an unreachable Batch_Primitive
+// value that every dispatch site's own switch statement falls through
+// on harmlessly).
+@(private = "file")
+gfx_batch :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 1 {
+		vm.runtime_error(v, "batch() expects 1 argument (a win.BATCH_* constant).")
+		return core.NIL_VALUE
+	}
+	type_val := v.stack[arg_stack_ptr]
+	if !core.is_int(type_val) {
+		vm.runtime_error(v, "batch() argument must be a win.BATCH_* constant.")
+		return core.NIL_VALUE
+	}
+	o := core.make_batch_object(core.Batch_Primitive(core.as_int(type_val)))
 	vm.gc_track(v, &o.obj)
 	return core.make_object_value(&o.obj, true)
 }

@@ -30,11 +30,12 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       build/version to see if the instability follows) rather than further ad hoc bisection before this is
       trustworthy as a verification step again.
 
+- [ ] lox_examples/fireworks.lox segfaults after several seconds. possible garbage collector issue? investigate and diagnose 
+
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `render_texture.text()`, `batch`/`batch_instanced`. `d:/odin/glox_reference/src/builtin/`
-      is the ground truth for each (`obj_builtin_batch.go`+`batch_methods.go`,
-      `obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
+- [ ] Raylib-backed natives: `render_texture.text()`, `batch_instanced`. `d:/odin/glox_reference/src/builtin/`
+      is the ground truth (`obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
 - [ ] `process.wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused
       — see `ROADMAP.md`'s Phase 6h section). `test_process.py`/`test_pool.py` are skipped at the whole-file

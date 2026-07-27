@@ -372,6 +372,12 @@ free_object :: proc(obj: ^core.Obj) {
 		s := cast(^core.Shader_Object)obj
 		core.shader_unload(s) // no-op if already .unload()ed, and for a never-loaded gfx.shader() -- rl.UnloadShader(Shader{}) is a safe no-op in raylib itself
 		free(s)
+	case .Batch:
+		bt := cast(^core.Batch_Object)obj
+		delete(bt.entries)
+		delete(bt.triangles)
+		delete(bt.circles)
+		free(bt)
 	case:
 		free(obj)
 	}
@@ -440,6 +446,12 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size
 	case .Shader:
 		return size_of(core.Shader_Object)
+	case .Batch:
+		bt := cast(^core.Batch_Object)obj
+		return size_of(core.Batch_Object) +
+			len(bt.entries) * size_of(core.Batch_Entry) +
+			len(bt.triangles) * size_of(core.Triangle_Batch_Entry) +
+			len(bt.circles) * size_of(core.Circle_Batch_Entry)
 	case:
 		return 32
 	}

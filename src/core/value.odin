@@ -189,6 +189,9 @@ as_shader :: proc(v: Value) -> ^Shader_Object {
 as_camera :: proc(v: Value) -> ^Camera_Object {
 	return cast(^Camera_Object)v.obj
 }
+as_batch :: proc(v: Value) -> ^Batch_Object {
+	return cast(^Batch_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

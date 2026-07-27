@@ -961,12 +961,10 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 // `win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`, so that's the surface this
 // ports. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
 // (Android-only buttons glox's own raylib-go binding exposes that
-// vendor:raylib's Odin binding does not); full BLEND_*/WRAP_* coverage.
-// BATCH_* deliberately not included -- gfx.batch()/batch_instanced()
-// themselves aren't implemented yet (see TODO.md), so those constants
-// would have no consumer. Values are plain immutable ints, identical
-// across every Window instance, so this is a pure function of the name
-// rather than per-object state.
+// vendor:raylib's Odin binding does not); full BLEND_*/WRAP_*/BATCH_*
+// coverage. Values are plain immutable ints, identical across every
+// Window instance, so this is a pure function of the name rather than
+// per-object state.
 window_constant :: proc(name: string) -> (core.Value, bool) {
 	switch name {
 	case "BLEND_ADD": return core.make_int_value(int(rl.BlendMode.ADDITIVE), true), true
@@ -978,6 +976,12 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "WRAP_CLAMP": return core.make_int_value(int(rl.TextureWrap.CLAMP), true), true
 	case "WRAP_MIRROR_REPEAT": return core.make_int_value(int(rl.TextureWrap.MIRROR_REPEAT), true), true
 	case "WRAP_MIRROR_CLAMP": return core.make_int_value(int(rl.TextureWrap.MIRROR_CLAMP), true), true
+	// Ordinal values match core.Batch_Primitive exactly (Cube=0, Sphere=1,
+	// Triangle3=2, Circle3=3), same as glox's own BatchPrimitive iota order.
+	case "BATCH_CUBE": return core.make_int_value(int(core.Batch_Primitive.Cube), true), true
+	case "BATCH_SPHERE": return core.make_int_value(int(core.Batch_Primitive.Sphere), true), true
+	case "BATCH_TRIANGLE3": return core.make_int_value(int(core.Batch_Primitive.Triangle3), true), true
+	case "BATCH_CIRCLE3": return core.make_int_value(int(core.Batch_Primitive.Circle3), true), true
 	}
 
 	key: rl.KeyboardKey

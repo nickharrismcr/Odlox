@@ -2538,6 +2538,51 @@ construction/`set_position` every frame, `begin_3d`/`end_3d`, `cube_wires`, `cub
 `batch`/`batch_instanced` needed at all) runs its full loop under a bounded wall-clock smoke test with zero
 crashes on both build modes. `pytest` held at 220/0/26; both build modes compiled cleanly.
 
+### Phase 6u: `gfx.batch()`
+
+Trigger: direct request to continue closing raylib gaps. Ported from glox's `obj_builtin_batch.go`/
+`batch_methods.go` — the largest single native type in this port, ~1450 lines of glox source.
+
+**Data model**: a `Batch_Object` (`core/obj_batch.odin`) holds a `Batch_Primitive` type tag (`Cube`/`Sphere`/
+`Triangle3`/`Circle3`, ordinal values matching glox's own `BatchPrimitive` iota order exactly, since
+`win.BATCH_CUBE` etc. cross the boundary as plain ints) and one of three parallel entry lists depending on
+type — `entries` (position/size/color, shared by CUBE and SPHERE, `size.x` doubling as radius for spheres)
+plus separate `triangles` and `circles` lists. Full method surface: `add`/`add_triangle3`/`add_circle3`,
+`set_position`/`set_color`/`set_size`/`set_triangle3`/`set_triangle3_full`/`set_triangle3_color`/
+`set_circle3_full`/`set_circle3_color`/`set_circle_texture`, `get_position`/`get_color`/`get_size`,
+`draw`/`draw_frustum_culled`, `clear`/`count`/`reserve`/`is_valid_index`. `add_textured_cube` is genuinely
+absent from glox itself (commented out, dead code in `batch_methods.go`), so not ported here either — not an
+omission, glox's own real current state.
+
+**One field deliberately dropped, not ported**: glox's own `BatchEntry` carries a `Rotation` field that is
+initialized to zero on construction and then never read *or* written anywhere else in glox — no method sets
+it, `Draw()` never applies it. Structurally dead state with zero observable effect from Lox. Confirmed this
+by grepping glox's own source for every reference to it, not assumed from the field merely looking unused —
+omitted here rather than ported as an unreachable field with nothing to read or write it.
+
+**Two things ported with real substance, not simplified**:
+- **`BATCH_CIRCLE3`** draws each entry as a shared, lazily-created unit quad mesh (`rl.GenMeshPlane`,
+  cached per-batch) scaled/rotated/translated per entry via `rl.DrawMesh` — `set_circle_texture` supplies
+  what makes it read as a circle rather than a flat-colored square (a pre-rendered filled circle, typically
+  from a `render_texture`). Its `draw()` path flushes `rlgl`'s own internal render batch and disables depth
+  writes for the duration before drawing any circles, exactly matching glox's own `Draw()` — required because
+  `rl.DrawMesh` doesn't flush that batch itself, and without the explicit flush a translucent shadow quad can
+  rasterize before something it should sit on top of, becoming a permanent visual gap once depth-tested
+  against later (alpha=0 still writes to the depth buffer).
+- **`draw_frustum_culled(camera_position, camera_forward, max_distance, fov_degrees)`** — an approximate
+  view-cone visibility test (not a real clip-space frustum), applied per entry before each draw call. Only
+  supports `BATCH_CUBE`/`BATCH_SPHERE`, same as glox's own switch statement (no `TRIANGLE3`/`CIRCLE3` case
+  exists there either) — ported as real, existing behavior a script could depend on, not treated as a bug to
+  fix by extending it.
+
+**Verified**: a smoke test covered all three batch types, every method (including both wrong-batch-type and
+out-of-range-index error paths), and `draw`/`draw_frustum_culled` across several frames — zero crashes.
+Confirmed against a real, unmodified, substantial script: `lox_examples/triangle3_batch_demo.lox` generates
+7442 animated terrain triangles (`add_triangle3` at startup, `set_triangle3_full` every frame from
+precomputed sine-table heights) with an orbiting camera and alpha blending, and runs its full loop under a
+bounded wall-clock smoke test with zero crashes on both build modes. `pytest` held at 220/0/26; both build
+modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See
