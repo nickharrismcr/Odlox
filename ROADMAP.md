@@ -2421,6 +2421,36 @@ other script Phase 6k/6m/6p noted as also needing `draw_array_fast`) in the same
 Mandelbrot-set equivalent of `lox_julia_array`, not attempted this round (not part of what was asked; noted
 in `TODO.md`). `pytest` held at 220/0/26; both build modes compiled cleanly.
 
+### Phase 6r: parallelizing `gfx.lox_julia_array`
+
+Trigger: direct follow-on request — glox's own goroutine-per-block version is meaningfully faster; asked
+whether matching that in odlox was a big lift, answered "no, and here's why" (self-contained inside one
+native call, embarrassingly parallel, no VM/GC interaction), then asked to actually do it.
+
+**Implementation** (`natives/gfx_julia.odin`): splits the image into flat row bands, one per available CPU
+core (`os.get_processor_core_count()`, clamped to `[1, height]` so a tiny image never spawns more workers
+than it has rows), each running the identical per-pixel loop that was already there — no math changed, only
+how the row range is partitioned. Uses `core:thread`'s `create_and_start_with_poly_data`/`destroy` (the
+latter blocks until the thread finishes *and* frees it, so a loop of `destroy` calls after spawning every
+worker is also the join point). Each worker gets a single `^Julia_Block` pointer (a struct byte size over
+`create_and_start_with_poly_data`'s inline-argument limit, so the pointer indirection is required, not just
+tidier) holding its row range plus the shared read-only parameters (`cx`/`cy`/`scale`/the colour table) —
+`arr.data` itself is one shared slice, safe because every worker only ever writes its own disjoint row range,
+never reads or writes another worker's. Confirmed safe against this VM's actual GC design, not just assumed:
+`maybe_collect_garbage` (`vm/gc.odin`) only runs *between* opcodes, and this whole native call is a single
+opcode from the VM's perspective, so nothing else touches the VM or GC while these threads are running, and
+none of the worker threads themselves allocate, call back into Lox, or touch anything GC-tracked.
+
+**Verified for correctness, not just crash-freedom** — the property that made this a *low-risk* parallelization
+rather than a repeat of the earlier vec2/3/4-pool GC-correctness concern: since every pixel's colour is a
+pure function of its own coordinates and the shared parameters, the result is fully deterministic regardless
+of how the rows are partitioned or how the OS schedules the threads. Ran the identical call 5 times against 5
+separate `float_array`s with identical inputs and diffed every one of 120,000 cells against the first run —
+zero mismatches, repeated across 3 separate process runs. **Measured speedup**: 1920×1080 at 300 max
+iterations, 10 calls averaged, release build — 168ms/call single-threaded (measured by temporarily hardcoding
+`num_workers = 1`, then reverting) vs. 17.8ms/call parallel, ≈9.4× on this machine. `lox_examples/julia.lox`
+re-verified running its full loop clean under both build modes afterward. `pytest` held at 220/0/26.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

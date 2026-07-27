@@ -2,6 +2,8 @@ package natives
 
 import "../core"
 import "../vm"
+import "core:os"
+import "core:thread"
 
 // gfx_lox_julia_array: ported from glox's builtin_draw.go's
 // JuliaArrayBuiltIn -- computes a Julia set fractal directly into a
@@ -12,16 +14,18 @@ import "../vm"
 // object, matching glox's own registration
 // (defineBuiltIn(vm, "gfx", "lox_julia_array", ...), src/vm/builtin.go).
 //
-// Deliberately single-threaded here, unlike glox's own version, which
-// splits the image into blocks and computes them on separate goroutines.
-// That's a pure wall-clock-speed optimization with no effect on the
-// output -- every pixel's color depends only on its own coordinates and
-// the shared parameters, never on another pixel -- and this port's own
-// scope already excludes VM-level threading entirely (see README.md's
-// Scope section). If real-time performance on a large canvas ever needs
-// it, this loop is an easy target to parallelize later (e.g. via
-// core:thread, entirely internal to this one native call, since it never
-// touches the VM/GC mid-computation) without changing the result.
+// Parallelized across OS threads (core:thread), one per available CPU
+// core, splitting the image into row bands -- matching the *effect* of
+// glox's own goroutine-per-block version, though not its adaptive
+// block-size logic (a flat row-band split is simpler and just as
+// correct: every pixel's color depends only on its own coordinates and
+// the shared read-only parameters, never on another pixel, so any way of
+// partitioning the rows produces an identical result). Safe to do
+// without touching the VM or GC at all: this whole native call is one
+// opcode from the VM's perspective (maybe_collect_garbage only runs
+// *between* opcodes -- see vm/gc.odin), and the worker threads only
+// write to disjoint row ranges of arr.data, a plain slice, with no
+// allocation or Lox-visible calls happening on those threads.
 @(private = "package")
 gfx_lox_julia_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -94,22 +98,80 @@ gfx_lox_julia_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> co
 	half_height := f32(height) / 2
 	half_width := f32(width) / 2
 
-	for row in 0 ..< height {
-		y0 := scale_over_max_dim * (f32(row) - half_height) + yoffset
-		for col in 0 ..< width {
-			x0 := scale_over_max_dim * (f32(col) - half_width) + xoffset
+	num_workers := clamp(os.get_processor_core_count(), 1, height)
+	blocks := make([]Julia_Block, num_workers)
+	defer delete(blocks)
+	threads := make([]^thread.Thread, num_workers)
+	defer delete(threads)
+
+	rows_per_worker := (height + num_workers - 1) / num_workers
+	for i in 0 ..< num_workers {
+		start_row := i * rows_per_worker
+		end_row := min(start_row + rows_per_worker, height)
+		blocks[i] = Julia_Block {
+			data                = arr.data,
+			array_width         = arr.width,
+			start_row           = start_row,
+			end_row             = end_row,
+			width               = width,
+			max_iteration       = max_iteration,
+			cx                  = cx,
+			cy                  = cy,
+			xoffset             = xoffset,
+			yoffset             = yoffset,
+			color_table         = color_table,
+			scale_over_max_dim  = scale_over_max_dim,
+			half_height         = half_height,
+			half_width          = half_width,
+		}
+		threads[i] = thread.create_and_start_with_poly_data(&blocks[i], julia_calc_block)
+	}
+	// destroy() waits for the thread to finish before freeing it, so this
+	// loop is also the join point -- every worker has completed, and
+	// arr.data is fully populated, by the time it exits.
+	for t in threads {
+		thread.destroy(t)
+	}
+	return core.NIL_VALUE
+}
+
+// Julia_Block is one worker's share of the image (a contiguous row
+// range) plus the read-only parameters every worker needs -- passed as a
+// single pointer to create_and_start_with_poly_data (the struct itself
+// is too large for that proc's inline poly-data slots, which cap out at
+// 8 pointer-widths).
+@(private = "file")
+Julia_Block :: struct {
+	data:                []f64, // arr's own backing slice -- shared, but each worker only ever writes its own start_row..<end_row
+	array_width:         int,
+	start_row, end_row:  int,
+	width:               int,
+	max_iteration:       int,
+	cx, cy:              f32,
+	xoffset, yoffset:    f32,
+	color_table:         []f64, // shared, read-only
+	scale_over_max_dim:  f32,
+	half_height:         f32,
+	half_width:          f32,
+}
+
+@(private = "file")
+julia_calc_block :: proc(b: ^Julia_Block) {
+	for row in b.start_row ..< b.end_row {
+		y0 := b.scale_over_max_dim * (f32(row) - b.half_height) + b.yoffset
+		for col in 0 ..< b.width {
+			x0 := b.scale_over_max_dim * (f32(col) - b.half_width) + b.xoffset
 			zx, zy := x0, y0
 			iteration := 0
-			for (zx * zx + zy * zy <= 4.0) && (iteration < max_iteration) {
-				xtemp := zx * zx - zy * zy + cx
-				zy = 2 * zx * zy + cy
+			for (zx * zx + zy * zy <= 4.0) && (iteration < b.max_iteration) {
+				xtemp := zx * zx - zy * zy + b.cx
+				zy = 2 * zx * zy + b.cy
 				zx = xtemp
 				iteration += 1
 			}
-			arr.data[row * arr.width + col] = color_table[iteration]
+			b.data[row * b.array_width + col] = b.color_table[iteration]
 		}
 	}
-	return core.NIL_VALUE
 }
 
 // julia_color_table precomputes an RGB-encoded-float color per possible
