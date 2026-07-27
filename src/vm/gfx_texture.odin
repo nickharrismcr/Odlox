@@ -105,18 +105,18 @@ invoke_builtin_texture :: proc(vm: ^VM, t: ^core.Texture_Object, name: string, a
 // pattern, still supported separately in gfx_window.odin) -- plus
 // get_texture()/draw_texture_pro() (found needed by kaleido.lox, which
 // re-samples a live-painted canvas into a Texture every frame and blits
-// triangle-masked, blend-moded segments of it via draw_texture_pro). Matches
-// glox's own render_texture_methods.go exactly: each drawing call brackets
-// *just that one draw* in its own BeginTextureMode/EndTextureMode, not a
-// persistent mode switch -- unlike Window's own drawing methods, which draw
-// against whatever the current global GL target already is. Deliberately
-// still not implemented: text() (glox's own RenderTexture.text() takes a
-// different, narrower argument list -- (x, y, string) only, fixed font size
-// 10, hardcoded white -- than Window's text(), and no example script here
-// calls it, so there's nothing to verify that mismatch against), and
-// draw_array_fast() (float_array-to-texture upload, needed by julia.lox/
-// mandel_gfx.lox but those are also blocked on unimplemented batch_instanced
-// features regardless).
+// triangle-masked, blend-moded segments of it via draw_texture_pro), and
+// draw_array_fast() (found needed by julia.lox/mandel_gfx.lox, which each
+// rewrite an entire float_array-computed fractal into a render_texture
+// every frame). Matches glox's own render_texture_methods.go exactly: each
+// drawing call brackets *just that one draw* in its own
+// BeginTextureMode/EndTextureMode, not a persistent mode switch -- unlike
+// Window's own drawing methods, which draw against whatever the current
+// global GL target already is. Deliberately still not implemented: text()
+// (glox's own RenderTexture.text() takes a different, narrower argument
+// list -- (x, y, string) only, fixed font size 10, hardcoded white -- than
+// Window's text(), and no example script here calls it, so there's nothing
+// to verify that mismatch against).
 invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
@@ -369,6 +369,55 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		origin := rl.Vector2{f32(core.as_float(org_x)), f32(core.as_float(org_y))}
 		rl.BeginTextureMode(rt.render_texture)
 		rl.DrawTexturePro(t.texture, src, dst, origin, f32(core.as_float(rot_val)), col)
+		rl.EndTextureMode()
+		result = core.NIL_VALUE
+	case "draw_array_fast":
+		// Bulk-uploads a float_array (each cell a packed-RGB float, same
+		// encoding as gfx.encode_rgba/decode_rgba) as one texture and
+		// blits it in a single draw, instead of one draw call per cell --
+		// found needed by lox_examples/julia.lox, which rewrites its
+		// entire fractal every frame. Reuses rt's own array_texture
+		// across calls (Load only on the first call or a size change;
+		// Update otherwise) rather than loading/unloading a fresh GPU
+		// texture every frame -- see obj_render_texture.odin's header
+		// comment for why that specifically matters here (a driver race,
+		// not just a performance nicety).
+		if arg_count != 1 {
+			runtime_error(vm, "draw_array_fast() expects 1 argument (float_array).")
+			return false
+		}
+		arr_val := peek(vm, 0)
+		if arr_val.type != .Obj || arr_val.obj_type != .Float_Array {
+			runtime_error(vm, "draw_array_fast() argument must be a float_array.")
+			return false
+		}
+		arr := core.as_float_array(arr_val)
+		pixels := make([]rl.Color, arr.width * arr.height)
+		defer delete(pixels)
+		for f, i in arr.data {
+			packed := u32(f)
+			pixels[i] = rl.Color{u8((packed >> 16) & 0xFF), u8((packed >> 8) & 0xFF), u8(packed & 0xFF), 255}
+		}
+		if !rt.array_texture_valid || rt.array_texture_w != arr.width || rt.array_texture_h != arr.height {
+			if rt.array_texture_valid {
+				rl.UnloadTexture(rt.array_texture)
+			}
+			img := rl.Image {
+				data    = raw_data(pixels),
+				width   = c.int(arr.width),
+				height  = c.int(arr.height),
+				mipmaps = 1,
+				format  = .UNCOMPRESSED_R8G8B8A8,
+			}
+			rt.array_texture = rl.LoadTextureFromImage(img)
+			rt.array_texture_w = arr.width
+			rt.array_texture_h = arr.height
+			rt.array_texture_valid = true
+		} else {
+			rl.UpdateTexture(rt.array_texture, raw_data(pixels))
+		}
+		rl.BeginTextureMode(rt.render_texture)
+		rl.DrawTexture(rt.array_texture, 0, 0, rl.WHITE)
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case:

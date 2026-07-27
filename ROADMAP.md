@@ -2387,6 +2387,40 @@ other remaining gap). `pytest` held at 220/0/26 throughout (including whatever e
 already existed, confirming the scanner fix didn't regress single-line string handling); both build modes
 compiled cleanly.
 
+### Phase 6q: `render_texture.draw_array_fast`, `gfx.lox_julia_array`, and a fully-running `julia.lox`
+
+Trigger: direct follow-on request to close both gaps Phase 6p left open in `lox_examples/julia.lox`.
+
+**`render_texture.draw_array_fast(arr)`** (`vm/gfx_texture.odin`): bulk-uploads a `float_array` (each cell an
+RGB-encoded float, same convention as `gfx.encode_rgba`/`decode_rgba`) as one texture and blits it in a
+single draw, instead of one draw call per cell. Ported from glox's own `render_texture_methods.go`, including
+its persistent `array_texture` field (`core/obj_render_texture.odin`) reused across calls — `rl.LoadTextureFromImage`
+only on the first call or a size change, `rl.UpdateTexture` otherwise. This isn't just a performance nicety:
+recreating a GPU texture every frame races the driver's double-buffered pipeline (a new texture can reuse an
+ID a still-in-flight draw from the previous frame references, producing stray stale-colour pixels) — the same
+reasoning glox's own doc comment gives for why this field exists at all. `render_texture_unload`/`object_size`
+updated to account for it.
+
+**`gfx.lox_julia_array(array, width, height, max_iterations, cx, cy, scale, xoffset, yoffset)`**
+(`natives/gfx_julia.odin`, new file): computes a Julia set fractal directly into a `float_array`'s backing
+storage, fast enough to recompute every frame for `julia.lox`'s real-time zoom/pan animation. Ported from
+glox's `builtin_draw.go`'s `JuliaArrayBuiltIn` — same precomputed six-band colour table (electric blue → cyan
+→ green → yellow → red → magenta → white, black inside the set), same per-pixel iteration math, `f32`
+precision matching glox's own inner-loop cast. **Deliberately single-threaded**, unlike glox's own
+goroutine-per-block version: every pixel's colour depends only on its own coordinates and the shared
+parameters, never on another pixel, so parallelizing it changes wall-clock speed only, never the output —
+and this port's own scope already excludes VM-level threading entirely (`README.md`'s Scope section). Noted
+as an easy target to parallelize later (e.g. via `core:thread`, entirely internal to this one native call
+since it never touches the VM/GC mid-computation) if a large canvas ever needs it for real-time interactivity.
+
+**Verified**: `lox_examples/julia.lox`, unmodified, now runs its full real-time loop under a bounded
+wall-clock smoke test (`timeout 10`, both build modes) with zero crashes and no orphaned process — the same
+script that previously stopped at the very first `lox_julia_array` call. Spot-checked `mandel_gfx.lox` (the
+other script Phase 6k/6m/6p noted as also needing `draw_array_fast`) in the same pass: it now gets past
+`draw_array_fast` cleanly and stops at `lox_mandel_array` instead — a separate, still-unimplemented
+Mandelbrot-set equivalent of `lox_julia_array`, not attempted this round (not part of what was asked; noted
+in `TODO.md`). `pytest` held at 220/0/26; both build modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

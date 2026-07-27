@@ -429,7 +429,15 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		t := cast(^core.Texture_Object)obj
 		return size_of(core.Texture_Object) + len(t.frame_rects) * size_of(rl.Rectangle)
 	case .Render_Texture:
-		return size_of(core.Render_Texture_Object)
+		// Dominated by the optional array_texture (draw_array_fast) when
+		// present -- a fullscreen fractal, say -- same reasoning as
+		// Image/Texture above.
+		rt := cast(^core.Render_Texture_Object)obj
+		size := size_of(core.Render_Texture_Object)
+		if rt.array_texture_valid {
+			size += rt.array_texture_w * rt.array_texture_h * 4
+		}
+		return size
 	case .Shader:
 		return size_of(core.Shader_Object)
 	case:
