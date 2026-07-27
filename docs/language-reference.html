@@ -1,0 +1,1904 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>odlox Language Reference</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#1c2128; --muted:#57606a; --border:#d0d7de;
+  --sidebar-bg:#f6f8fa; --accent:#0969da; --accent-soft:#ddf4ff;
+  --code-bg:#f6f8fa; --code-fg:#24292f; --card-bg:#f6f8fa;
+  --kw:#cf222e; --str:#0a3069; --com:#6e7781; --num:#0550ae; --fn:#8250df;
+  --table-alt:#f6f8fa; --shadow:0 1px 3px rgba(27,31,36,.12);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --border:#30363d;
+    --sidebar-bg:#0d1117; --accent:#58a6ff; --accent-soft:#12263f;
+    --code-bg:#161b22; --code-fg:#e6edf3; --card-bg:#161b22;
+    --kw:#ff7b72; --str:#a5d6ff; --com:#8b949e; --num:#79c0ff; --fn:#d2a8ff;
+    --table-alt:#161b22; --shadow:0 1px 3px rgba(1,4,9,.6);
+  }
+}
+:root[data-theme="light"]{
+  --bg:#ffffff; --fg:#1c2128; --muted:#57606a; --border:#d0d7de;
+  --sidebar-bg:#f6f8fa; --accent:#0969da; --accent-soft:#ddf4ff;
+  --code-bg:#f6f8fa; --code-fg:#24292f; --card-bg:#f6f8fa;
+  --kw:#cf222e; --str:#0a3069; --com:#6e7781; --num:#0550ae; --fn:#8250df;
+  --table-alt:#f6f8fa; --shadow:0 1px 3px rgba(27,31,36,.12);
+}
+:root[data-theme="dark"]{
+  --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --border:#30363d;
+  --sidebar-bg:#0d1117; --accent:#58a6ff; --accent-soft:#12263f;
+  --code-bg:#161b22; --code-fg:#e6edf3; --card-bg:#161b22;
+  --kw:#ff7b72; --str:#a5d6ff; --com:#8b949e; --num:#79c0ff; --fn:#d2a8ff;
+  --table-alt:#161b22; --shadow:0 1px 3px rgba(1,4,9,.6);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent); text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Layout */
+.layout{display:flex; min-height:100vh}
+.sidebar{
+  width:290px; flex:0 0 290px; background:var(--sidebar-bg);
+  border-right:1px solid var(--border); position:sticky; top:0; height:100vh;
+  overflow-y:auto; padding:0;
+}
+.sidebar-head{padding:20px 20px 12px; border-bottom:1px solid var(--border)}
+.sidebar-head h1{font-size:19px; margin:0 0 2px; letter-spacing:-.02em}
+.sidebar-head .tag{font-size:12px; color:var(--muted)}
+.search-wrap{padding:12px 16px; position:sticky; top:0; background:var(--sidebar-bg); border-bottom:1px solid var(--border); z-index:2}
+#navsearch{
+  width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:6px;
+  background:var(--bg); color:var(--fg); font-size:13px;
+}
+nav{padding:10px 0 40px}
+nav .group{padding:10px 20px 4px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600}
+nav a{display:block; padding:4px 20px 4px 24px; color:var(--fg); font-size:13.5px; border-left:2px solid transparent}
+nav a:hover{background:var(--accent-soft); text-decoration:none}
+nav a.active{border-left-color:var(--accent); color:var(--accent); font-weight:600; background:var(--accent-soft)}
+nav a.sub{padding-left:38px; font-size:12.5px; color:var(--muted)}
+nav a.hidden{display:none}
+
+/* Content */
+.content{flex:1 1 auto; min-width:0; max-width:900px; margin:0 auto; padding:0 40px 120px}
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:14px 0; position:sticky; top:0; background:var(--bg);
+  border-bottom:1px solid var(--border); z-index:5; margin-bottom:8px;
+}
+.topbar .crumbs{font-size:13px; color:var(--muted)}
+.btn{
+  border:1px solid var(--border); background:var(--card-bg); color:var(--fg);
+  border-radius:6px; padding:6px 12px; font-size:13px; cursor:pointer;
+}
+.btn:hover{border-color:var(--accent)}
+.menu-toggle{display:none}
+
+h2.section{font-size:28px; margin:44px 0 4px; padding-top:14px; letter-spacing:-.02em; border-bottom:2px solid var(--border); padding-bottom:8px}
+h3{font-size:20px; margin:32px 0 8px; letter-spacing:-.01em}
+h4{font-size:16px; margin:24px 0 6px; color:var(--fg)}
+p{margin:10px 0}
+ul,ol{margin:10px 0; padding-left:24px}
+li{margin:4px 0}
+hr{border:none; border-top:1px solid var(--border); margin:36px 0}
+.lead{font-size:17px; color:var(--muted)}
+
+/* Code */
+code{font-family:"SF Mono",SFMono-Regular,ui-monospace,"Cascadia Code",Consolas,monospace; font-size:13.5px}
+:not(pre)>code{background:var(--code-bg); border:1px solid var(--border); border-radius:5px; padding:1px 5px; font-size:12.5px; color:var(--code-fg)}
+pre{
+  background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+  padding:14px 16px; overflow-x:auto; margin:14px 0; line-height:1.5;
+}
+pre code{color:var(--code-fg); font-size:13px; white-space:pre}
+.tok-kw{color:var(--kw)} .tok-str{color:var(--str)} .tok-com{color:var(--com); font-style:italic}
+.tok-num{color:var(--num)} .tok-fn{color:var(--fn)}
+
+/* Tables */
+table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14px; display:block; overflow-x:auto}
+th,td{border:1px solid var(--border); padding:8px 12px; text-align:left; vertical-align:top}
+th{background:var(--card-bg); font-weight:600}
+tr:nth-child(even) td{background:var(--table-alt)}
+td code{white-space:nowrap}
+
+/* Callouts */
+.note,.warn,.tip{border-radius:8px; padding:12px 16px; margin:16px 0; border:1px solid var(--border); font-size:14.5px}
+.note{background:var(--accent-soft); border-color:var(--accent)}
+.warn{background:rgba(212,153,0,.12); border-color:#d4a017}
+.tip{background:rgba(45,164,78,.10); border-color:#2da44e}
+.note strong,.warn strong,.tip strong{display:block; margin-bottom:2px}
+
+/* Signature blocks */
+.sig{background:var(--card-bg); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:6px; padding:6px 12px; margin:14px 0 4px; font-family:ui-monospace,monospace; font-size:13.5px; overflow-x:auto}
+.sig .nm{color:var(--fn); font-weight:600}
+
+.pill{display:inline-block; font-size:11px; padding:1px 8px; border-radius:20px; background:var(--card-bg); border:1px solid var(--border); color:var(--muted); vertical-align:middle; margin-left:6px}
+
+footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); margin-top:60px; padding-top:20px}
+
+@media (max-width:860px){
+  .sidebar{position:fixed; left:0; top:0; z-index:50; transform:translateX(-100%); transition:transform .2s; box-shadow:var(--shadow)}
+  .sidebar.open{transform:translateX(0)}
+  .menu-toggle{display:inline-block}
+  .content{padding:0 20px 100px}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <h1>odlox Reference</h1>
+      <div class="tag">Lox bytecode interpreter in Odin — a port of glox</div>
+    </div>
+    <div class="search-wrap"><input id="navsearch" type="search" placeholder="Filter sections…" autocomplete="off"></div>
+    <nav id="nav">
+      <div class="group">Getting Started</div>
+      <a href="#introduction">Introduction</a>
+      <a href="#running">Running odlox</a>
+      <div class="group">Language</div>
+      <a href="#comments">Comments</a>
+      <a href="#variables">Variables &amp; const</a>
+      <a href="#types">Values &amp; types</a>
+      <a href="#operators">Operators</a>
+      <a href="#control-flow">Control flow</a>
+      <a href="#functions">Functions</a>
+      <a href="#classes">Classes</a>
+      <a href="#exceptions">Exceptions</a>
+      <a href="#modules">Modules &amp; imports</a>
+      <div class="group">Built-in Types</div>
+      <a href="#numbers">Numbers</a>
+      <a href="#strings">Strings</a>
+      <a href="#lists">Lists</a>
+      <a href="#tuples">Tuples</a>
+      <a href="#dicts">Dictionaries</a>
+      <a href="#vectors">Vectors</a>
+      <div class="group">Built-in Functions</div>
+      <a href="#builtins">Built-in functions</a>
+      <a href="#mod-gfx">gfx &amp; physics</a>
+      <div class="group">Native Objects</div>
+      <a href="#window">window</a>
+      <a href="#batch">batch</a>
+      <a href="#batch-instanced">batch_instanced</a>
+      <a href="#texture">texture</a>
+      <a href="#render-texture">render_texture</a>
+      <a href="#image">image</a>
+      <a href="#camera">camera</a>
+      <a href="#shader">shader</a>
+      <a href="#float-array">float_array</a>
+      <a href="#physics-world">physics_world</a>
+      <div class="group">Library Modules</div>
+      <a href="#mod-math">math</a>
+      <a href="#mod-random">random</a>
+      <a href="#mod-itertools">itertools</a>
+      <a href="#mod-functools">functools</a>
+      <a href="#mod-string">string</a>
+      <a href="#mod-json">json</a>
+      <a href="#mod-logging">logging</a>
+      <a href="#mod-colour">colour</a>
+      <a href="#mod-colour-utils">colour_utils</a>
+      <a href="#mod-particle">particle_sys</a>
+      <a href="#mod-sprite">sprite</a>
+      <a href="#mod-plot">plot_grey / plot_rgb</a>
+      <div class="group">System Modules</div>
+      <a href="#mod-os">os</a>
+      <a href="#mod-re">re</a>
+      <a href="#mod-pickle">pickle</a>
+      <a href="#mod-process">process</a>
+      <a href="#mod-pool">pool</a>
+      <a href="#mod-thread">thread</a>
+      <a href="#mod-sync">sync</a>
+      <a href="#mod-sys">sys</a>
+      <a href="#mod-inspect">inspect</a>
+      <div class="group">Reference</div>
+      <a href="#keywords">Keyword index</a>
+      <a href="#performance">Performance notes</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <button class="btn menu-toggle" id="menuToggle" aria-label="Toggle navigation">☰ Menu</button>
+      <span class="crumbs" id="crumbs">odlox Language Reference</span>
+      <button class="btn" id="themeToggle" aria-label="Toggle theme">◐ Theme</button>
+    </div>
+
+<!-- ==================== INTRODUCTION ==================== -->
+<h2 class="section" id="introduction">Introduction</h2>
+<p class="lead">odlox is an Odin port of <a href="https://github.com/nickharrismcr/glox">glox</a>, a bytecode interpreter for the Lox language (from Bob Nystrom's <em>Crafting Interpreters</em>) extended with Python-inspired features and Raylib graphics bindings. The language and standard library are the same Lox-derived design glox defines; this port re-implements the interpreter itself (scanner, compiler, VM, garbage collector, native modules) in Odin rather than Go.</p>
+<p>On top of vanilla Lox, odlox adds: lists, tuples, dictionaries and slicing; exceptions with <code>try/except</code>; module imports; <code>foreach</code>/<code>range</code> iteration; integer arithmetic and modulus; <code>break</code>/<code>continue</code>; <code>const</code>; implicit variable declaration; string interning; native vector types (<code>vec2</code>/<code>vec3</code>/<code>vec4</code>); a <code>float_array</code> type; a native <code>physics_world</code> simulation (3D internally, though only 2D drawing is implemented so far); and Raylib bindings for 2D graphics.</p>
+<div class="warn"><strong>Ported from glox's own reference, not yet fully audited section-by-section</strong>This document started as a copy of glox's own language reference, since the two share the same core language. Most of it — syntax, control flow, classes, exceptions, the built-in container types, <code>window</code>/2D drawing/<code>texture</code>/<code>render_texture</code>/<code>physics_world</code> — is accurate for odlox as-is. Some sections still describe glox-only surface not yet ported here (notably <code>shader</code>, <code>camera</code>, <code>batch</code>/<code>batch_instanced</code>, 3D drawing, and the <code>thread</code>/<code>sync</code>/<code>pickle</code> modules — <code>thread</code>/<code>sync</code> are permanently out of scope for odlox, not just unported) — see this project's own <code>TODO.md</code> for the current, authoritative list of what's actually implemented.</div>
+<p>This document is the complete language and library reference, adapted from glox's own <code>docs/language-reference.html</code>.</p>
+<div class="note"><strong>No semicolons required</strong>Like glox, odlox does <em>not</em> require semicolon line terminators. A newline ends a statement, so <code>;</code> is optional (both styles are accepted). Most examples in this reference omit them. See <a href="#variables">Variables</a>.</div>
+<div class="note"><strong>Reading the signatures</strong>Method and function signatures are shown in monospace boxes. Arguments in <em>italics</em> describe the expected value type. Unless noted, <code>vec4</code> colours use 0–255 RGBA components.</div>
+
+<!-- ==================== RUNNING ==================== -->
+<h2 class="section" id="running">Running odlox</h2>
+<p>Build the interpreter and run a script:</p>
+<pre><code class="lox">// Build (debug: -vet/-strict-style lints, and the --debug/--instrument trace hooks compiled in)
+bin/build.sh
+// Build (release: -o:speed -disable-assert -no-bounds-check, no trace hooks)
+bin/build.sh --release
+
+// Run a script
+bin/odlox.exe script.lox
+
+// Start the REPL
+bin/odlox.exe --repl
+
+// Set LOX_PATH so module imports resolve
+. ./setenv.ps1     // PowerShell
+. ./setenv         // bash</code></pre>
+<h3>Command-line flags</h3>
+<table>
+<thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>--repl</code></td><td>Start an interactive read-eval-print loop</td></tr>
+<tr><td><code>--compile-only</code></td><td>Compile a file and report success/failure, then exit — no execution</td></tr>
+<tr><td><code>--print-tokens</code></td><td>Tokenize a file and print the token stream, then exit</td></tr>
+<tr><td><code>--disassemble</code></td><td>Compile a file and print its full bytecode listing, then exit</td></tr>
+<tr><td><code>--info</code></td><td>Compile a file and print a size summary, then exit</td></tr>
+<tr><td><code>--debug</code></td><td>Attach a live execution trace while running</td></tr>
+<tr><td><code>--instrument</code></td><td>Count executed instructions while running</td></tr>
+<tr><td><code>--no-peephole</code></td><td>Disable the peephole optimiser</td></tr>
+<tr><td><code>-h</code>, <code>--help</code></td><td>Show usage and exit</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>No short-flag aliases</strong>Unlike glox's <code>-d</code>/<code>-c</code>/<code>-f</code>/<code>-i</code>/<code>-n</code>, odlox only accepts the long forms above.</div>
+<div class="note"><strong><code>--debug</code>/<code>--instrument</code> need a debug build</strong>These attach a per-instruction hook that costs real dispatch-loop performance if it's always compiled in, so a release build (<code>bin/build.sh --release</code>) compiles it out entirely — passing either flag there prints a warning and produces no trace/count output. Use the default debug build (<code>bin/build.sh</code>, no arguments) for real trace/instrument output.</div>
+<div class="note"><strong>No bytecode cache</strong>Unlike glox's <code>__loxcache__/*.lxc</code> compiled-module cache, odlox recompiles every imported module from source on every run — there is no on-disk cache to invalidate or force-refresh. (glox's <code>-f</code>/<code>--force-compile</code> flag exists here too, for script-compatibility, but is simply a no-op.)</div>
+
+<h3>The REPL</h3>
+<p><code>bin/odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
+<pre><code class="lox">&gt; var x = 10
+&gt; fun add(a) { return a + x }
+&gt; print add(5)
+15</code></pre>
+<p>Definitions can span multiple lines. When a line leaves brackets open (<code>{ }</code>, <code>( )</code>, <code>[ ]</code>) or a string unterminated, the prompt changes to <code>...</code> and input is buffered until the statement is complete:</p>
+<pre><code class="lox">&gt; fun greet(name) {
+...   return "hello, ${name}"
+... }
+&gt; print greet("world")
+hello, world</code></pre>
+<p>Pressing <kbd>Enter</kbd> on an empty line exits the REPL; pressing it while a multi-line entry is still open (at the <code>...</code> prompt) cancels that pending entry and returns to the <code>&gt;</code> prompt.</p>
+<div class="note"><strong>Runtime errors don't end the session</strong>An error on one line is reported and the REPL continues — previously defined variables and functions are still available on the next line.</div>
+
+<!-- ==================== COMMENTS ==================== -->
+<h2 class="section" id="comments">Comments</h2>
+<p>Line comments start with <code>//</code> and run to the end of the line. There are no block comments.</p>
+<pre><code class="lox">// This is a comment
+a = 1   // trailing comment</code></pre>
+
+<!-- ==================== VARIABLES ==================== -->
+<h2 class="section" id="variables">Variables &amp; const</h2>
+<p>GLox supports both explicit (<code>var</code>) and implicit variable declaration. Assigning to a new name creates it; no <code>var</code> is required.</p>
+<pre><code class="lox">var a = 1     // explicit declaration
+b = 2         // implicit — assignment creates the variable
+a = a + b     // reassignment</code></pre>
+<h3><code>const</code></h3>
+<p><code>const</code> declares a variable that cannot be reassigned. Attempting to reassign a <code>const</code> is a compile-time error.</p>
+<pre><code class="lox">const PI = 3.14159
+const MAX_ENTITIES = 500</code></pre>
+<h3>Destructuring assignment</h3>
+<p>Lists and tuples can be unpacked into multiple variables in one statement.</p>
+<pre><code class="lox">a, b, c = [1, 2, 3]
+x, y, z = (10, 20, 30)</code></pre>
+<h3>Statement terminators</h3>
+<p>Statements may be terminated with a semicolon <code>;</code> or simply a newline — both are accepted, so semicolons are optional.</p>
+<p>A closing brace <code>}</code> also terminates the statement immediately before it, so braced blocks may be written on a single line: <code>if (x) { print 1 }</code> and <code>if (x) { a() } else { b() }</code> are valid.</p>
+<div class="note"><strong>Use <code>;</code> to split statements on one line</strong>Because a newline is the usual statement terminator, two statements sharing a single line must be separated with a semicolon <code>;</code> — otherwise the parser cannot tell where one ends and the next begins. This applies inside single-line blocks: <code>while (i &lt; 3) { print i; i = i + 1 }</code> and <code>{ const c = 7; print c }</code>. The semicolon is only needed <em>between</em> statements; the last one before <code>}</code> needs none, since the brace terminates it.</div>
+
+<!-- ==================== TYPES ==================== -->
+<h2 class="section" id="types">Values &amp; types</h2>
+<p>Every value has a type, queryable at runtime with <a href="#builtins"><code>type(value)</code></a>, which returns a string.</p>
+<table>
+<thead><tr><th>Type string</th><th>Description</th><th>Literal example</th></tr></thead>
+<tbody>
+<tr><td><code>"int"</code></td><td>64-bit integer</td><td><code>42</code>, <code>-7</code></td></tr>
+<tr><td><code>"float"</code></td><td>64-bit floating point</td><td><code>3.14</code>, <code>2.0</code></td></tr>
+<tr><td><code>"bool"</code></td><td>Boolean</td><td><code>true</code>, <code>false</code></td></tr>
+<tr><td><code>"nil"</code></td><td>Absence of a value</td><td><code>nil</code></td></tr>
+<tr><td><code>"string"</code></td><td>Interned immutable string</td><td><code>"hello"</code></td></tr>
+<tr><td><code>"list"</code></td><td>Mutable ordered sequence</td><td><code>[1, 2, 3]</code></td></tr>
+<tr><td><code>"tuple"</code></td><td>Immutable ordered sequence</td><td><code>(1, 2, 3)</code></td></tr>
+<tr><td><code>"dict"</code></td><td>Hash map</td><td><code>{"k": "v"}</code></td></tr>
+<tr><td><code>"vec2"</code>/<code>"vec3"</code>/<code>"vec4"</code></td><td>Native fixed-size float vectors</td><td><code>vec3(1, 2, 3)</code></td></tr>
+<tr><td><code>"class"</code>/<code>"instance"</code></td><td>User-defined class and its instances</td><td><code>Point()</code></td></tr>
+</tbody>
+</table>
+<p>Booleans and <code>nil</code> are falsey; everything else is truthy in a boolean context.</p>
+
+<!-- ==================== OPERATORS ==================== -->
+<h2 class="section" id="operators">Operators</h2>
+<h3>Arithmetic</h3>
+<table>
+<thead><tr><th>Operator</th><th>Meaning</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>+</code> <code>-</code> <code>*</code> <code>/</code></td><td>Add, subtract, multiply, divide</td><td>Integer or float; int/int stays int</td></tr>
+<tr><td><code>%</code></td><td>Modulus</td><td>Integer remainder</td></tr>
+<tr><td><code>-x</code></td><td>Unary negation</td><td></td></tr>
+</tbody>
+</table>
+<h3>Comparison &amp; logic</h3>
+<table>
+<thead><tr><th>Operator</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>==</code> <code>!=</code></td><td>Equality / inequality</td></tr>
+<tr><td><code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code></td><td>Ordering comparisons</td></tr>
+<tr><td><code>and</code> <code>or</code></td><td>Short-circuiting boolean logic</td></tr>
+<tr><td><code>!x</code></td><td>Boolean negation</td></tr>
+</tbody>
+</table>
+<h3>Special operators</h3>
+<table>
+<thead><tr><th>Operator</th><th>Meaning</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>&amp;</code></td><td>Concatenation (strings &amp; lists)</td><td><code>"a" &amp; "b"</code> → <code>"ab"</code></td></tr>
+<tr><td><code>*</code></td><td>String repetition</td><td><code>"@" * 3</code> → <code>"@@@"</code></td></tr>
+<tr><td><code>++</code></td><td>Vector addition</td><td><code>vec3(1,2,3) ++ vec3(1,1,1)</code></td></tr>
+<tr><td><code>in</code></td><td>Membership test</td><td><code>3 in [1,2,3]</code>, <code>"bc" in "abc"</code></td></tr>
+<tr><td><code>[i]</code>, <code>[a:b]</code></td><td>Index &amp; slice</td><td><code>list[0]</code>, <code>list[1:3]</code></td></tr>
+</tbody>
+</table>
+<h3>Compound assignment</h3>
+<p>The compound-assignment operators <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>, and <code>%=</code> work on variables and object properties. As with the binary operators, <code>/</code> on two integers is integer division and <code>%</code> requires integer operands. Vector properties may also use <code>++</code> forms via the property compound path.</p>
+<pre><code class="lox">a = 5
+a += 1        // 6
+a -= 2        // 4
+a *= 3        // 12
+a /= 4        // 3   (integer division)
+a %= 2        // 1
+
+p = vec2(1, 2)
+p.x += 1      // 2
+p.y *= 3      // 6</code></pre>
+
+<h3>Conditional expression (ternary)</h3>
+<p>The C-style ternary operator <code>cond ? a : b</code> evaluates <code>cond</code> and yields <code>a</code> if it is truthy, otherwise <code>b</code>. Only the selected branch is evaluated. It is an expression, so it can appear anywhere a value is expected. It is right-associative, so <code>c1 ? a : c2 ? b : c</code> groups as <code>c1 ? a : (c2 ? b : c)</code>.</p>
+<pre><code class="lox">n = 1
+var label = n == 1 ? "item" : "items"   // "item"
+
+// only the chosen branch runs
+x = ok ? compute() : fallback()          // fallback() not called when ok is truthy
+
+// right-associative chaining
+grade = s >= 90 ? "A" : s >= 80 ? "B" : "C"</code></pre>
+
+<!-- ==================== CONTROL FLOW ==================== -->
+<h2 class="section" id="control-flow">Control flow</h2>
+<h3>if / else</h3>
+<pre><code class="lox">if (x > 10) {
+    print "big"
+} else if (x > 0) {
+    print "small"
+} else {
+    print "non-positive"
+}</code></pre>
+<h3>while</h3>
+<pre><code class="lox">i = 0
+while (i < 5) {
+    print i
+    i = i + 1
+}</code></pre>
+<h3>for</h3>
+<pre><code class="lox">for (var i = 0; i < 10; i = i + 1) {
+    if (i == 5) break
+    if (i % 2 == 0) continue
+    print i
+}</code></pre>
+<h3>foreach</h3>
+<p><code>foreach</code> iterates any iterable: lists, tuples, strings, <code>range()</code>, or a class implementing the iterator protocol (see <a href="#classes">Classes</a>).</p>
+<pre><code class="lox">foreach (item in [1, 2, 3]) {
+    print item
+}
+
+foreach (ch in "abc") {
+    print ch
+}</code></pre>
+<h3>range</h3>
+<p><code>range()</code> returns an efficient native integer iterator. Using <code>foreach (i in range(n))</code> is significantly faster than an equivalent manual <code>for</code> loop.</p>
+<pre><code class="lox">foreach (i in range(5))        { print i }   // 0..4
+foreach (i in range(2, 8))     { print i }   // 2..7
+foreach (i in range(0, 10, 2)) { print i }   // 0,2,4,6,8</code></pre>
+<div class="tip"><strong>Performance tip</strong>Prefer <code>foreach (i in range(n))</code> over a manual counter <code>for</code> loop — <code>range()</code> is a native iterator and avoids per-iteration bytecode overhead.</div>
+<h3>break / continue</h3>
+<p><code>break</code> exits the innermost loop; <code>continue</code> skips to the next iteration. Both work in <code>for</code>, <code>while</code>, and <code>foreach</code>.</p>
+
+<!-- ==================== FUNCTIONS ==================== -->
+<h2 class="section" id="functions">Functions</h2>
+<p>Functions are declared with <code>func</code> (or the alias <code>fun</code>). They are first-class values and support closures.</p>
+<pre><code class="lox">func add(a, b) {
+    return a + b
+}
+
+func make_counter() {
+    count = 0
+    func inc() {
+        count = count + 1     // closes over `count`
+        return count
+    }
+    return inc
+}
+
+c = make_counter()
+print c()   // 1
+print c()   // 2</code></pre>
+<p>A function with no <code>return</code> returns <code>nil</code>. Functions can be passed as arguments and stored in variables, lists and dicts — see <a href="#mod-functools">functools</a> for <code>map</code>/<code>filter</code>/<code>reduce</code>.</p>
+
+<h3>Default parameters</h3>
+<p>A parameter may be given a default value with <code>name=expr</code>. The default is used when the caller omits that argument. Defaults are <strong>evaluated at call time</strong>, once per call — so a fresh value is produced each time (no shared mutable-default trap), the default may be any expression (including a function call), and it may reference earlier parameters.</p>
+<pre><code class="lox">func greet(name, greeting="hi") { return greeting & ", " & name }
+print greet("Sam")            // hi, Sam
+print greet("Sam", "yo")      // yo, Sam
+
+func f(n, m=n*2) { return m } // default references an earlier parameter
+print f(4)                    // 8
+
+func acc(x, items=[]) { items.append(x); return items }
+print acc(1)                  // [ 1 ]   (fresh list every call)
+print acc(2)                  // [ 2 ]</code></pre>
+<p>All defaulted parameters must come after the non-default (required) ones — a required parameter may not follow a defaulted one.</p>
+
+<h3>Variadic parameters (<code>*rest</code>)</h3>
+<p>A trailing <code>*name</code> parameter collects any surplus positional arguments into a fresh list. It must be the last parameter, and combines with required and default parameters.</p>
+<pre><code class="lox">func sum(*xs) { var t = 0; foreach (x in xs) { t = t + x } return t }
+print sum()                   // 0
+print sum(1, 2, 3)            // 6
+
+func lead(a, *rest) { return str(a) & "/" & str(len(rest)) }
+print lead("x", 1, 2)         // x/2
+
+func mix(a, b=10, *rest) { ... }   // required, then default, then *rest</code></pre>
+
+<h3>Anonymous functions (lambdas)</h3>
+<p>Omit the name to write a function as an expression. Anonymous functions are ordinary closures — they capture surrounding variables (and <code>this</code> inside a method) just like named ones — and are handy as inline callbacks:</p>
+<pre><code class="lox">var add = func (a, b) { return a + b }
+print add(2, 3)                       // 5
+
+// inline callbacks for higher-order functions
+print functools.map([1, 2, 3], func (x) { return x * x })     // [ 1 , 4 , 9 ]
+print functools.filter(xs, func (x) { return x &gt; 0 })
+
+// immediately-invoked
+print (func () { return 7 })()        // 7</code></pre>
+<p>The body is a normal braced block with an explicit <code>return</code> (there is no expression-body shorthand). Since an anonymous function has no name, it cannot refer to itself for recursion — assign it to a variable first and call through that.</p>
+<div class="note"><strong>func in statement position is a declaration</strong>A statement that begins with <code>func</code> is always parsed as a named declaration, so write lambdas where an expression is expected (after <code>=</code>, as a call argument, inside a list/dict, after <code>return</code>). To invoke one immediately, wrap it in parentheses: <code>(func () { … })()</code>.</div>
+
+<!-- ==================== CLASSES ==================== -->
+<h2 class="section" id="classes">Classes</h2>
+<p>Classes support single inheritance, an <code>init</code> constructor, instance methods, <code>this</code>, <code>super</code>, and <code>static</code> methods and class variables.</p>
+<pre><code class="lox">class Animal {
+    init(name) {
+        this.name = name
+    }
+    speak() {
+        return this.name & " makes a sound"
+    }
+}
+
+class Dog < Animal {          // Dog inherits from Animal
+    init(name) {
+        super.init(name)       // call parent constructor
+    }
+    speak() {
+        return this.name & " barks"
+    }
+}
+
+d = Dog("Rex")
+print d.speak()   // "Rex barks"</code></pre>
+<h3>Static methods</h3>
+<p>Methods declared <code>static</code> are called on the class itself rather than an instance.</p>
+<pre><code class="lox">class MathHelper {
+    static square(x) {
+        return x * x
+    }
+}
+print MathHelper.square(5)   // 25</code></pre>
+<h3>Class variables</h3>
+<p>A <code>static</code> field (no parentheses following the name) declares a class variable &mdash; a value that lives on the class itself rather than on any instance. It's declared with an optional initializer (defaulting to <code>nil</code> when omitted, like a bare <code>var</code>) and read or written from anywhere with <code>ClassName.field</code>, including from inside the class's own methods. There is no implicit <code>this.field</code> access to a class variable &mdash; use the class name explicitly.</p>
+<p>Reading a class variable through a subclass walks up to the nearest ancestor that has it set, so a base class can track state shared across all its subclasses. Writing through a subclass always creates or updates that subclass's own value, shadowing the ancestor's without changing it.</p>
+<pre><code class="lox">class Animal {
+    static count = 0
+
+    init(name) {
+        this.name = name
+        Animal.count = Animal.count + 1
+    }
+}
+
+class Dog < Animal { }
+
+Animal("Rex")
+Dog("Fido")
+print Animal.count   // 2
+print Dog.count      // 2, shared read via the superclass chain
+
+Dog.count = 99        // shadows Animal.count, only for Dog
+print Animal.count    // still 2</code></pre>
+<h3 id="tostring">toString magic method</h3>
+<p>If a class defines <code>toString()</code> returning a string, it is used whenever an instance is printed or passed to <code>str()</code>.</p>
+<pre><code class="lox">class Point {
+    init(x, y) { this.x = x; this.y = y }
+    toString() { return "Point(" & str(this.x) & ", " & str(this.y) & ")" }
+}
+print Point(3, 4)   // Point(3, 4)</code></pre>
+<h3>Iterator protocol</h3>
+<p>A class becomes <code>foreach</code>-iterable by implementing <code>__iter__</code> (returning an iterator object) and that iterator implementing <code>__next__</code>, which returns successive values and <code>nil</code> to signal the end.</p>
+<pre><code class="lox">class Range2 {
+    init(n) { this.n = n }
+    __iter__() { return Range2Iter(this.n) }
+}
+class Range2Iter {
+    init(n) { this.n = n; this.i = 0 }
+    __next__() {
+        if (this.i >= this.n) return nil
+        v = this.i
+        this.i = this.i + 1
+        return v
+    }
+}
+foreach (x in Range2(3)) { print x }   // 0, 1, 2</code></pre>
+
+<!-- ==================== EXCEPTIONS ==================== -->
+<h2 class="section" id="exceptions">Exceptions</h2>
+<p>GLox provides <code>try</code>/<code>except</code>/<code>finally</code> exception handling. A built-in <code>Exception</code> base class is available; subclass it for custom exceptions. Handlers bind the caught instance with <code>as</code>.</p>
+<pre><code class="lox">class MyError < Exception {
+    init(msg) {
+        super.init(msg)
+        this.name = "MyError"
+    }
+}
+
+try {
+    raise MyError("something failed")
+} except MyError as e {
+    print "caught: " & str(e)
+} except Exception as e {
+    print "other: " & e.name
+}</code></pre>
+<ul>
+<li>Multiple <code>except</code> clauses handle different exception types; the first matching type wins.</li>
+<li><code>try</code>/<code>except</code> blocks may be nested.</li>
+<li><code>raise <em>instance</em></code> throws an exception instance.</li>
+<li>The runtime raises catchable exceptions such as <code>RunTimeError</code> and <code>EOFError</code>.</li>
+</ul>
+<h3>finally</h3>
+<p>An optional <code>finally</code> clause runs exactly once no matter how the <code>try</code> is left: normal completion, a caught exception, an exception that isn't caught here (it still propagates afterward), or a <code>return</code>/<code>break</code>/<code>continue</code> that jumps out of the <code>try</code> or an <code>except</code> body. <code>except</code> is optional as long as <code>finally</code> is present, so a bare <code>try { ... } finally { ... }</code> is valid.</p>
+<pre><code class="lox">func readFirstLine(path) {
+    var f = os.open(path, "r")
+    try {
+        return os.readln(f)
+    } finally {
+        os.close(f)    // runs whether readln() returns normally or raises
+    }
+}</code></pre>
+<ul>
+<li>A new exception raised from inside <code>finally</code> itself supersedes whatever was already propagating -- the enclosing <code>except</code> (if any) catches the new one, matching Python's <code>finally</code> semantics.</li>
+<li>Known limitation: if an <code>except</code> clause's own body raises a fresh exception, the enclosing <code>finally</code> does not run for it -- only exceptions escaping the <code>try</code> body itself (uncaught here) and normal/`return`/`break`/`continue` exits are covered.</li>
+</ul>
+<h3>Built-in exception classes</h3>
+<table>
+<thead><tr><th>Class</th><th>Raised when</th></tr></thead>
+<tbody>
+<tr><td><code>Exception</code></td><td>Base class for all exceptions; has <code>msg</code>, <code>name</code>, <code>toString()</code></td></tr>
+<tr><td><code>RunTimeError</code></td><td>A runtime fault (bad argument, invalid operation, index error…)</td></tr>
+<tr><td><code>EOFError</code></td><td><a href="#mod-os"><code>os.readln()</code></a> reaches end of file</td></tr>
+<tr><td><code>PickleError</code></td><td><a href="#mod-pickle"><code>pickle.dumps()</code></a> is given a value it can't serialise (e.g. a function, a class itself, or a cyclic structure), or <a href="#mod-pickle"><code>pickle.loads()</code></a> is given malformed data or an encoded instance whose class can't be resolved</td></tr>
+<tr><td><code>ProcessError</code></td><td><a href="#mod-process"><code>process.spawn()</code></a> fails to start a process, or a <a href="#mod-process">Process</a>'s <code>send()</code>/<code>recv()</code> hits a closed or broken pipe</td></tr>
+<tr><td><code>ThreadError</code></td><td><a href="#mod-thread"><code>thread.spawn()</code></a> is given a non-function or is called from the REPL, <code>thread.channel()</code> is called outside a spawned thread, a <a href="#mod-thread">Thread</a>/<a href="#mod-thread">ThreadChannel</a>'s <code>send()</code>/<code>recv()</code> hits a finished or cancelled thread, or the thread ended abnormally (an uncaught exception or a Go-level panic)</td></tr>
+<tr><td><code>SyncError</code></td><td><a href="#mod-sync"><code>Mutex.release()</code></a> is called without a matching <code>acquire()</code>, or an uncaught exception escapes a <code>Mutex.locked()</code> closure</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULES ==================== -->
+<h2 class="section" id="modules">Modules &amp; imports</h2>
+<p>Modules are imported by name. Compiled module bytecode is cached in <code>__loxcache__/&lt;module&gt;.lxc</code> and reused unless the source is newer.</p>
+<pre><code class="lox">import math
+import particle_sys as ps        // alias
+import random, colour as clr     // multiple, with alias</code></pre>
+<h3>from … import</h3>
+<p>Selectively import names into the current namespace, or import everything with <code>*</code>. This works for both file modules and the native built-in modules.</p>
+<pre><code class="lox">from math import sin, cos, PI
+from colour import *
+from gfx import window, batch     // native built-in module</code></pre>
+<p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/src/modules/foo.lox</code> (glox's own shared modules); <code>foo.lox</code> in the same directory as the script being run; then <code>foo.lox</code> in any subdirectory of that directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), and <a href="#mod-physics">physics</a> (physics_world).</p>
+
+<!-- ==================== NUMBERS ==================== -->
+<h2 class="section" id="numbers">Numbers</h2>
+<p>GLox distinguishes integers from floats. Integer literals have no decimal point; arithmetic between two integers stays integer (including <code>/</code>), while any float operand promotes the result to float.</p>
+<pre><code class="lox">a = 10
+b = 3
+print a / b     // 3   (integer division)
+print a % b     // 1   (modulus)
+print a / 3.0   // 3.3333333333333335  (float)
+print int(3.9)  // 3
+print float(3)  // 3.0</code></pre>
+<p>See the <a href="#mod-math">math module</a> for trigonometry, roots, rounding and vector maths, and <a href="#builtins">built-in functions</a> for <code>int()</code>, <code>float()</code>, and <code>rand()</code>.</p>
+
+<!-- ==================== STRINGS ==================== -->
+<h2 class="section" id="strings">Strings</h2>
+<p>Strings are immutable and interned (the VM works with integer string IDs internally for fast lookup). They support concatenation, repetition, slicing, membership and iteration.</p>
+<pre><code class="lox">s = "hello"
+print len(s)          // 5
+print s & " world"    // concatenation
+print "@" * 3         // "@@@"  (repetition, either operand order)
+print s[0]            // "h"
+print s[1:3]          // "el"   (slice)
+print "ell" in s      // true   (substring test)
+foreach (c in s) { print c }   // iterate characters</code></pre>
+<h3>String interpolation</h3>
+<p>Any <code>${ <em>expression</em> }</code> inside a string literal is evaluated and spliced into the result. It works in both <code>"…"</code> and <code>'…'</code> literals, and the embedded expression may be arbitrary (arithmetic, calls, indexing, method calls, even nested strings). Each value is stringified via the same path as <a href="#builtins"><code>str()</code></a> / <code>print</code>, so ints, floats, bools, <code>nil</code>, and class instances (through their <a href="#tostring"><code>toString</code></a> method) all format correctly.</p>
+<pre><code class="lox">count = 3;
+pct = 42.5;
+print "total: ${count} (${pct}%)"   // total: 3 (42.5%)
+print "next is ${count + 1}"         // next is 4
+print "upper: ${"hi".replace("h", "H")}"  // upper: Hi</code></pre>
+<p>Write a literal <code>$</code> as <code>$$</code> (so <code>$${x}</code> yields a literal <code>${x}</code>); a lone <code>$</code> not followed by <code>{</code> is already literal. Interpolation is pure syntax sugar: <code>"a${x}b"</code> desugars to <code>("a" &amp; str(x) &amp; "b")</code>, so it composes with everything strings already support.</p>
+<h3>String methods</h3>
+<div class="sig"><span class="nm">s.replace</span>(<em>old</em>, <em>new</em>) <span class="pill">→ string</span></div>
+<p>Returns a copy of <code>s</code> with all occurrences of <code>old</code> replaced by <code>new</code>.</p>
+<div class="sig"><span class="nm">s.join</span>(<em>list</em>) <span class="pill">→ string</span></div>
+<p>Joins a list of strings using <code>s</code> as the separator. All list elements must be strings.</p>
+<pre><code class="lox">print "|".join(["a", "b", "c"])   // "a|b|c"
+print "xx".replace("x", "y")      // "yy"</code></pre>
+<h3>Related built-in functions</h3>
+<ul>
+<li><a href="#builtins"><code>replace(s, old, new)</code></a> — free-function form of <code>.replace</code>.</li>
+<li><a href="#builtins"><code>format(fmt, args...)</code></a> — printf-style formatting (wraps Go <code>fmt.Sprintf</code>).</li>
+<li><a href="#builtins"><code>str(value)</code></a> — convert any value to its string form.</li>
+<li><a href="#mod-string"><code>string.split(s, delim)</code></a> — split into a list of substrings.</li>
+</ul>
+<div class="note"><strong>format()</strong><code>format</code> uses Go format verbs: <code>%s</code> (string), <code>%d</code> (integer), <code>%f</code> (float), <code>%v</code> (any). Example: <code>format("%s = %d", name, count)</code>. For most cases <a href="#strings">string interpolation</a> (<code>"${name} = ${count}"</code>) is more concise; reach for <code>format</code> when you need precise numeric formatting (width, precision).</div>
+
+<!-- ==================== LISTS ==================== -->
+<h2 class="section" id="lists">Lists</h2>
+<p>Lists are mutable, ordered, and can hold values of any type.</p>
+<pre><code class="lox">a = []
+b = [1, 2, 3]
+b.append(4)          // [1, 2, 3, 4]
+x = b[0]             // 1
+b[1] = 42            // [1, 42, 3, 4]
+c = a & b            // concatenation
+if (3 in b) { print "found" }
+p, q, r, s = b       // destructuring</code></pre>
+<h3>Slicing &amp; slice assignment</h3>
+<pre><code class="lox">a = [0, 1, 2, 3, 4]
+print a[1:3]     // [1, 2]
+print a[:2]      // [0, 1]
+print a[2:]      // [2, 3, 4]
+print a[:]       // full copy
+a[2:5] = [7, 8, 9]   // slice assignment</code></pre>
+<h3>List methods</h3>
+<div class="sig"><span class="nm">list.append</span>(<em>value</em>) <span class="pill">→ nil</span></div>
+<p>Adds <code>value</code> to the end of the list, in place.</p>
+<div class="sig"><span class="nm">list.remove</span>(<em>index</em>) <span class="pill">→ nil</span></div>
+<p>Removes the element at the integer <code>index</code>, in place. (Note: removal is by <em>index</em>, not by value.)</p>
+<div class="sig"><span class="nm">list.find</span>(<em>value</em>) <span class="pill">→ int | nil</span></div>
+<p>Returns the index of the first element equal to <code>value</code>, or <code>nil</code> if not present.</p>
+<div class="sig"><span class="nm">list.length</span>() <span class="pill">→ int</span></div>
+<p>Returns the number of elements. Equivalent to <a href="#builtins"><code>len(list)</code></a>.</p>
+<div class="note"><strong>Also available</strong>The built-in <a href="#builtins"><code>append(list, value)</code></a> is the free-function form of <code>list.append</code>. Sorting and reversing live in <a href="#mod-itertools">itertools</a>; map/filter/reduce in <a href="#mod-functools">functools</a>.</div>
+
+<!-- ==================== TUPLES ==================== -->
+<h2 class="section" id="tuples">Tuples</h2>
+<p>Tuples are immutable lists, written with parentheses. They support all list operations except those that mutate (no <code>append</code>, no index assignment).</p>
+<pre><code class="lox">t = (1, 2, 3)
+print t[0]        // 1
+print len(t)      // 3
+print 2 in t      // true
+x, y, z = t       // destructuring
+foreach (v in t) { print v }</code></pre>
+<div class="note"><strong>print with commas</strong>Because <code>print</code> takes a single expression, <code>print("a", b, c)</code> actually prints the <em>tuple</em> <code>("a", b, c)</code>, rendered as <code>( "a" , b , c )</code>. To print values joined without tuple formatting, use <a href="#strings">string interpolation</a> (<code>print "${a} ${b} ${c}"</code>), concatenate with <code>&amp;</code>, or use <code>format()</code>.</p></div>
+
+<!-- ==================== DICTS ==================== -->
+<h2 class="section" id="dicts">Dictionaries</h2>
+<p>Dictionaries map keys to values.</p>
+<pre><code class="lox">d = {}
+d = {"name": "Rex", "age": 3}
+v = d["name"]              // index access
+d["age"] = 4               // set
+print "name" in d          // membership on keys</code></pre>
+<h3>Dictionary methods</h3>
+<div class="sig"><span class="nm">dict.get</span>(<em>key</em>, <em>default</em>) <span class="pill">→ value</span></div>
+<p>Returns the value for <code>key</code>, or <code>default</code> if the key is absent (avoids a runtime error on missing keys).</p>
+<div class="sig"><span class="nm">dict.keys</span>() <span class="pill">→ list</span></div>
+<p>Returns a list of the dictionary's keys.</p>
+<div class="sig"><span class="nm">dict.remove</span>(<em>key</em>) <span class="pill">→ nil</span></div>
+<p>Removes the entry for <code>key</code>, in place.</p>
+<pre><code class="lox">d = {"a": 1, "b": 2}
+print d.get("c", 0)    // 0
+print d.keys()         // list of keys
+d.remove("a")</code></pre>
+
+<!-- ==================== VECTORS ==================== -->
+<h2 class="section" id="vectors">Vectors</h2>
+<p><code>vec2</code>, <code>vec3</code> and <code>vec4</code> are native fixed-size float vectors. Each is a small heap-allocated object (like lists, dicts and other native types), referenced from its <code>Value</code> the same way any other object is — not unboxed into the value representation the way <code>int</code>/<code>float</code>/<code>bool</code> are. They are used throughout the graphics API (positions, sizes, and RGBA colours as <code>vec4</code>).</p>
+<p>Unlike the <a href="#mod-gfx"><code>gfx</code></a> constructors (<code>window</code>, <code>batch</code>, …), the vector constructors <code>vec2()</code> / <code>vec3()</code> / <code>vec4()</code> are <strong>built-in</strong> — always available, no import needed — because vectors are core value types rather than graphics objects.</p>
+<pre><code class="lox">v2 = vec2(1, 2)
+v3 = vec3(1, 2, 3)
+v4 = vec4(255, 128, 0, 255)   // often an RGBA colour
+
+// Component access &amp; mutation
+print v3.x        // 1
+v3.y = 5
+v3.z += 1
+
+// Vector addition uses ++
+sum = vec3(1, 2, 3) ++ vec3(10, 10, 10)   // vec3(11, 12, 13)</code></pre>
+<table>
+<thead><tr><th>Constructor</th><th>Components</th></tr></thead>
+<tbody>
+<tr><td><code>vec2(x, y)</code></td><td><code>.x</code> <code>.y</code></td></tr>
+<tr><td><code>vec3(x, y, z)</code></td><td><code>.x</code> <code>.y</code> <code>.z</code></td></tr>
+<tr><td><code>vec4(x, y, z, w)</code></td><td><code>.x</code> <code>.y</code> <code>.z</code> <code>.w</code></td></tr>
+</tbody>
+</table>
+<p>For vector length, normalisation, rotation and scaling helpers, see the <a href="#mod-math">math module</a>.</p>
+<h3>In-place addition</h3>
+<p>Each vector type also has an <code>.add(other)</code> method that mutates the receiver's components directly instead of allocating a new vector — useful in hot loops (e.g. updating an entity's position every frame).</p>
+<pre><code class="lox">pos = vec2(0, 0)
+dp = vec2(1, 1)
+pos.add(dp)        // pos becomes vec2(1, 1); dp is unchanged</code></pre>
+<p><strong>Caution:</strong> unlike <code>++</code> (which always allocates a fresh vector), <code>.add()</code> mutates the existing object, so any other reference to that same vector — e.g. a value stored via <code>this.pos = pos</code> in a constructor, when the caller kept its own reference to the argument — is mutated too. Prefer <code>.add()</code> only where the receiver is known not to be aliased elsewhere (a field set from an unshared literal, for example); otherwise use <code>++</code>.</p>
+
+<h3>In-place replacement: <code>.set()</code> <span class="pill">odlox only</span></h3>
+<p>Each vector type also has a <code>.set(x, y[, z[, w]])</code> method — an odlox addition with no glox equivalent — that overwrites every component of the receiver in place and returns it, given plain numbers rather than another vector.</p>
+<pre><code class="lox">pos = vec2(0, 0)
+pos.set(10, 20)     // pos becomes vec2(10, 20) -- same object, no allocation</code></pre>
+<p>Same aliasing caution as <code>.add()</code> above: <code>.set()</code> mutates the receiver, so anything else still holding a reference to it sees the change too.</p>
+
+<h3>Allocation cost in hot loops</h3>
+<p>Every <code>vec2()</code>/<code>vec3()</code>/<code>vec4()</code> call — including the one <code>++</code> performs internally on every use — allocates a new heap object that the garbage collector must later trace and sweep, same as any other native object (see the first paragraph of this section). In code that runs once, or a handful of times, this is not worth thinking about. In a per-frame update loop it is: a script that reconstructs a handful of vectors per entity, per frame, at 60fps, is generating real, sustained GC pressure — enough to trigger a collection cycle within a couple of seconds.</p>
+<div class="note"><strong>Worked example</strong>A kaleidoscope demo drawing 32 segments × 24 pens per frame was found to allocate roughly 250 short-lived vector/instance objects every single frame — mostly <code>vec2()</code>/<code>vec4()</code> calls whose result was read once and discarded, plus a small wrapper object that existed only to smuggle four numbers between two functions. None of it was a leak; it was all reachable for at most one frame. Rewriting the hot path to (a) pass raw numbers instead of constructing a vector that's only ever read back as <code>.x</code>/<code>.y</code> a line later, (b) hoist an unchanging color out of the loop as a shared <code>const</code>, and (c) use <code>.set()</code> to update an already-existing position vector in place cut that to essentially zero extra allocations per frame.</div>
+<p>Practical guidance: if a vector is only ever read (its components extracted) before being discarded, consider passing its components as plain numbers instead of constructing it at all. If a vector already exists as a long-lived field (an entity's position, say) and needs updating every frame, use <code>.set()</code> or <code>.add()</code> rather than reassigning a freshly constructed one. Reach for <code>++</code> and fresh <code>vec2()</code>/<code>vec3()</code>/<code>vec4()</code> calls freely everywhere else — this only matters in loops that run every frame or every iteration of a large batch.</p>
+
+<!-- ==================== BUILT-IN FUNCTIONS ==================== -->
+<h2 class="section" id="builtins">Built-in functions</h2>
+<p>These functions are always available without importing anything.</p>
+
+<h3>Core &amp; type conversion</h3>
+<div class="sig"><span class="nm">type</span>(<em>value</em>) <span class="pill">→ string</span></div>
+<p>Returns the type of <code>value</code> as a string (see <a href="#types">Values &amp; types</a>).</p>
+<div class="sig"><span class="nm">str</span>(<em>value</em>) <span class="pill">→ string</span></div>
+<p>Converts any value to its string representation. Uses a class's <code>toString()</code> if defined. (<code>str</code> is a language keyword-operator, always written <code>str(expr)</code>.)</p>
+<div class="sig"><span class="nm">int</span>(<em>value</em>) <span class="pill">→ int</span></div>
+<p>Converts a float or numeric string to an integer (truncating floats).</p>
+<div class="sig"><span class="nm">float</span>(<em>value</em>) <span class="pill">→ float</span></div>
+<p>Converts an int or numeric string to a float.</p>
+<div class="sig"><span class="nm">len</span>(<em>container</em>) <span class="pill">→ int</span></div>
+<p>Length of a string, list, tuple or dict.</p>
+
+<h3>Containers</h3>
+<div class="sig"><span class="nm">append</span>(<em>list</em>, <em>value</em>) <span class="pill">→ nil</span></div>
+<p>Appends <code>value</code> to <code>list</code> (free-function form of <a href="#lists"><code>list.append</code></a>).</p>
+<div class="sig"><span class="nm">range</span>(<em>stop</em>) &nbsp;·&nbsp; <span class="nm">range</span>(<em>start</em>, <em>stop</em>) &nbsp;·&nbsp; <span class="nm">range</span>(<em>start</em>, <em>stop</em>, <em>step</em>) <span class="pill">→ iterator</span></div>
+<p>Returns a native integer iterator for use with <code>foreach</code>. With one argument, counts <code>0…stop-1</code>.</p>
+
+<h3>Strings</h3>
+<div class="sig"><span class="nm">replace</span>(<em>string</em>, <em>old</em>, <em>new</em>) <span class="pill">→ string</span></div>
+<p>Replaces occurrences of <code>old</code> with <code>new</code>.</p>
+<div class="sig"><span class="nm">format</span>(<em>fmt</em>, <em>args…</em>) <span class="pill">→ string</span></div>
+<p>Printf-style formatting via Go's <code>fmt.Sprintf</code>. Supports <code>%s %d %f %v</code> and other Go verbs.</p>
+
+<h3>Math (low-level)</h3>
+<p>These underscore-prefixed primitives are the native maths intrinsics; normally you use the friendlier wrappers in the <a href="#mod-math">math module</a> instead.</p>
+<table>
+<thead><tr><th>Function</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>_sin(x)</code>, <code>_cos(x)</code>, <code>_tan(x)</code></td><td>Trigonometric functions (radians)</td></tr>
+<tr><td><code>_sqrt(x)</code></td><td>Square root</td></tr>
+<tr><td><code>_pow(base, exp)</code></td><td>Exponentiation (float arguments)</td></tr>
+<tr><td><code>_atan2(y, x)</code></td><td>Two-argument arctangent</td></tr>
+<tr><td><code>rand()</code></td><td>Random float in <code>[0, 1)</code></td></tr>
+</tbody>
+</table>
+
+<h2 class="section" id="mod-gfx">gfx &amp; physics modules</h2>
+<p>These create native objects, each documented in its own section. <code>vec2</code>/<code>vec3</code>/<code>vec4</code> are <strong>built-in</strong> (core value types, always available), but the graphics constructors and helpers live in the <code>gfx</code> module and the physics constructor in <code>physics</code> — import them before use:</p>
+<pre><code class="lox">from gfx import *              // window, batch, texture, shader, camera, ...
+from physics import physics_world
+// or keep them namespaced:
+import gfx
+win = gfx.window(800, 600)</code></pre>
+<ul>
+<li><strong>built-in:</strong> <a href="#vectors"><code>vec2</code>/<code>vec3</code>/<code>vec4</code></a></li>
+<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#float-array"><code>float_array</code></a>, plus the image/colour helpers below</li>
+<li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a></li>
+</ul>
+
+<h3>Colour encoding <span class="pill">gfx</span></h3>
+<div class="sig"><span class="nm">encode_rgba</span>(<em>r</em>, <em>g</em>, <em>b</em>) <span class="pill">→ float</span></div>
+<p>Packs three RGB components (0–255 integers) into a single encoded float, e.g. for storing colours in a <a href="#float-array">float_array</a>. (Despite the name, no alpha channel is encoded.)</p>
+<div class="sig"><span class="nm">decode_rgba</span>(<em>value</em>) <span class="pill">→ tuple</span></div>
+<p>Unpacks an encoded colour float back into an <code>(r, g, b)</code> tuple.</p>
+<pre><code class="lox">from gfx import encode_rgba, decode_rgba
+c = encode_rgba(255, 128, 0)   // pack RGB into one float
+rgb = decode_rgba(c)           // (255, 128, 0)</code></pre>
+
+<h3>Image helpers <span class="pill">gfx</span></h3>
+<p>These fill a <a href="#float-array">float_array</a> that you allocate, then render it with <a href="#window"><code>win.draw_array()</code></a> (or a render texture's <code>draw_array_fast()</code>) or save it with <code>draw_png()</code>.</p>
+<div class="sig"><span class="nm">draw_png</span>(<em>filename</em>, <em>float_array</em>, <em>rgb_encoded</em>) <span class="pill">→ nil</span></div>
+<p>Writes a <a href="#float-array">float_array</a> to a PNG file. Pass <code>rgb_encoded = true</code> when cells hold <a href="#mod-gfx"><code>encode_rgba</code></a>-packed colours, or <code>false</code> for a grayscale array (values 0–1).</p>
+<div class="sig"><span class="nm">lox_mandel_array</span>(<em>array</em>, <em>height</em>, <em>width</em>, <em>max_iter</em>, <em>xoff</em>, <em>yoff</em>, <em>zoom</em>) <span class="pill">→ nil</span></div>
+<p>Fills <code>array</code> in place with an RGB-encoded Mandelbrot set.</p>
+<div class="sig"><span class="nm">lox_julia_array</span>(<em>array</em>, <em>width</em>, <em>height</em>, <em>max_iter</em>, <em>cx</em>, <em>cy</em>, <em>scale</em>, <em>xoff</em>, <em>yoff</em>) <span class="pill">→ nil</span></div>
+<p>Fills <code>array</code> in place with an RGB-encoded Julia set.</p>
+<pre><code class="lox">from gfx import float_array, lox_mandel_array, draw_png
+arr = float_array(800, 600)
+lox_mandel_array(arr, 600, 800, 100, 0.0, 0.0, 1.0)   // array, height, width, max_iter, xoff, yoff, zoom
+draw_png("mandelbrot.png", arr, true)                 // true: cells are RGB-encoded</code></pre>
+
+<!-- ==================== WINDOW ==================== -->
+<h2 class="section" id="window">window <span class="pill">gfx</span></h2>
+<p>The <code>window</code> object is the main interface for graphics rendering and input. It wraps a Raylib window and requires a display; graphics scripts should not be run headless.</p>
+<div class="sig"><span class="nm">window</span>(<em>width</em>, <em>height</em>) <span class="pill">→ window</span></div>
+<pre><code class="lox">from gfx import window
+win = window(800, 600)
+win.init()
+while (!win.should_close()) {
+    win.begin()
+    win.clear(vec4(30, 30, 40, 255))
+    win.circle_fill(400, 300, 50, vec4(255, 0, 0, 255))
+    win.end()
+}
+win.close()</code></pre>
+
+<h3>Window management</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>init()</code></td><td>Initialise the window at its configured size</td></tr>
+<tr><td><code>begin()</code></td><td>Begin a drawing frame</td></tr>
+<tr><td><code>end()</code></td><td>End the frame and present it</td></tr>
+<tr><td><code>close()</code></td><td>Close the window</td></tr>
+<tr><td><code>should_close()</code></td><td><code>true</code> when the user requests to close the window</td></tr>
+<tr><td><code>toggle_fullscreen()</code></td><td>Toggle fullscreen / windowed</td></tr>
+<tr><td><code>get_screen_width()</code> / <code>get_screen_height()</code></td><td>Current screen dimensions</td></tr>
+<tr><td><code>set_target_fps(fps)</code></td><td>Set the target frame rate</td></tr>
+<tr><td><code>get_fps()</code></td><td>Current measured frame rate</td></tr>
+</tbody>
+</table>
+
+<h3>2D drawing</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>clear(color)</code></td><td>Clear the screen to a <code>vec4</code> colour</td></tr>
+<tr><td><code>pixel(x, y, color)</code></td><td>Draw a single pixel</td></tr>
+<tr><td><code>line(x1, y1, x2, y2, color)</code></td><td>Draw a line</td></tr>
+<tr><td><code>line_ex(x1, y1, x2, y2, thickness, color)</code></td><td>Draw a thick line</td></tr>
+<tr><td><code>rectangle(x, y, w, h, color)</code></td><td>Draw a rectangle outline</td></tr>
+<tr><td><code>circle(x, y, radius, color)</code></td><td>Draw a circle outline</td></tr>
+<tr><td><code>circle_fill(x, y, radius, color)</code></td><td>Draw a filled circle</td></tr>
+<tr><td><code>triangle(x1, y1, x2, y2, x3, y3, color)</code></td><td>Draw a triangle</td></tr>
+<tr><td><code>text(text, x, y, size, color)</code></td><td>Draw text</td></tr>
+<tr><td><code>draw_array(float_array)</code></td><td>Draw an RGBA-encoded float array as a colour image</td></tr>
+<tr><td><code>draw_texture(texture, x, y, color)</code></td><td>Draw a texture</td></tr>
+<tr><td><code>draw_texture_flip(texture, x, y, color, flip_x)</code></td><td>Draw a texture, mirrored horizontally when <code>flip_x</code> is true</td></tr>
+<tr><td><code>draw_texture_scaled(texture, x, y, color, flip_x, scale)</code></td><td>Like <code>draw_texture_flip</code>, but scales the drawn size by <code>scale</code> (dest size = frame size × <code>scale</code>); <code>x, y</code> anchor the scaled sprite's top-left corner</td></tr>
+<tr><td><code>draw_texture_rect(texture, x, y, sx, sy, sw, sh, color)</code></td><td>Draw a sub-rectangle of a texture</td></tr>
+<tr><td><code>draw_render_texture(rt, x, y, color)</code></td><td>Draw a render texture</td></tr>
+<tr><td><code>draw_render_texture_ex(rt, x, y, rotation, scale, color)</code></td><td>Draw a render texture transformed</td></tr>
+</tbody>
+</table>
+
+<h3>3D drawing</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>begin_3d(camera)</code> / <code>end_3d()</code></td><td>Enter / leave 3D mode with a <a href="#camera">camera</a></td></tr>
+<tr><td><code>cube(position, size, color)</code></td><td>Draw a solid cube (<code>position</code>/<code>size</code> <code>vec3</code>, <code>color</code> <code>vec4</code>)</td></tr>
+<tr><td><code>cube_wires(position, size, color)</code></td><td>Draw a cube wireframe (same args as <code>cube</code>)</td></tr>
+<tr><td><code>cube_rotated(position, size, axis, angle, color)</code></td><td>Draw a solid cube rotated by <code>angle</code> degrees around <code>axis</code> (all vec3 except angle)</td></tr>
+<tr><td><code>cube_wires_rotated(position, size, axis, angle, color)</code></td><td>Draw a cube wireframe rotated by <code>angle</code> degrees around <code>axis</code> — the rotated counterpart of <code>cube_wires</code></td></tr>
+<tr><td><code>textured_cube(texture, position, size, color)</code></td><td>Draw a cube with a texture overlay</td></tr>
+<tr><td><code>sphere(center, radius, color)</code></td><td>Draw a sphere (<code>center</code> <code>vec3</code>, <code>radius</code> number, <code>color</code> <code>vec4</code>)</td></tr>
+<tr><td><code>cylinder(position, radius_top, radius_bottom, height, color)</code></td><td>Draw a cylinder (<code>position</code> <code>vec3</code>)</td></tr>
+<tr><td><code>plane(position, size, color)</code></td><td>Draw a flat plane</td></tr>
+<tr><td><code>grid(slices, spacing)</code></td><td>Draw a reference grid</td></tr>
+<tr><td><code>ellipse3(cx, cy, cz, rx, rz, color)</code></td><td>Draw a flat 3D ellipse</td></tr>
+<tr><td><code>triangle3(x1,y1,z1, x2,y2,z2, x3,y3,z3, color)</code></td><td>Draw a triangle in 3D space</td></tr>
+</tbody>
+</table>
+
+<h3>Blend modes &amp; shaders</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>begin_blend_mode(mode)</code> / <code>end_blend_mode()</code></td><td>Set a custom blend mode</td></tr>
+<tr><td><code>begin_shader_mode(shader)</code> / <code>end_shader_mode()</code></td><td>Apply a custom <a href="#shader">shader</a></td></tr>
+</tbody>
+</table>
+<p><strong>Blend constants:</strong> <code>win.BLEND_ALPHA</code>, <code>win.BLEND_ADD</code>, <code>win.BLEND_MULTIPLY</code>, <code>win.BLEND_SUBTRACT</code>, <code>win.BLEND_DEFAULT</code>.</p>
+
+<h3>Input</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>key_down(key)</code></td><td><code>true</code> while a key is held</td></tr>
+<tr><td><code>key_pressed(key)</code></td><td><code>true</code> on the frame a key is first pressed</td></tr>
+</tbody>
+</table>
+<p><strong>Key constants</strong> are exposed as <code>win.KEY_*</code>, e.g. <code>win.KEY_SPACE</code>, <code>win.KEY_ESCAPE</code>, <code>win.KEY_ENTER</code>, <code>win.KEY_A</code> … <code>win.KEY_Z</code>.</p>
+
+<h3>Batch type constants</h3>
+<p>Passed to <a href="#batch"><code>batch()</code></a>: <code>win.BATCH_CUBE</code>, <code>win.BATCH_TEXTURED_CUBE</code>, <code>win.BATCH_SPHERE</code>, <code>win.BATCH_TRIANGLE3</code>, <code>win.BATCH_CIRCLE3</code>.</p>
+
+<!-- ==================== BATCH ==================== -->
+<h2 class="section" id="batch">batch <span class="pill">gfx</span></h2>
+<p>A <code>batch</code> accumulates many primitives of one type and renders them all in a single native draw call — dramatically faster than thousands of individual Lox-level draw calls. Ideal for particle systems, large scenes and real-time simulations.</p>
+<div class="sig"><span class="nm">batch</span>(<em>type</em>) <span class="pill">→ batch</span></div>
+<p><code>type</code> is one of the <code>win.BATCH_*</code> constants. Supported primitive types: cube, textured cube, sphere, triangle (3 points), and circle (flat 3D disc).</p>
+<pre><code class="lox">from gfx import window, batch, camera
+import random
+win = window(800, 600)
+win.init()
+cam = camera(vec3(0, 50, 100), vec3(0, 0, 0), vec3(0, 1, 0))
+
+cube_batch = batch(win.BATCH_CUBE)
+foreach (i in range(1000)) {
+    pos   = vec3(random.float(-50, 50), 0, random.float(-50, 50))
+    size  = vec3(1, 1, 1)
+    color = vec4(255, random.integer(0, 255), 0, 255)
+    cube_batch.add(pos, size, color)
+}
+win.begin_3d(cam)
+cube_batch.draw()        // all 1000 cubes in one call
+win.end_3d()</code></pre>
+
+<h3>Adding primitives</h3>
+<table>
+<thead><tr><th>Method</th><th>Batch type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>add(position, size, color)</code></td><td>cube / sphere</td><td>Add a cube or sphere; returns its index</td></tr>
+<tr><td><code>add_triangle3(p1, p2, p3, color)</code></td><td>triangle3</td><td>Add a triangle from three <code>vec3</code> points; returns its index</td></tr>
+<tr><td><code>add_circle3(center, radius, axis, angle, color)</code></td><td>circle3</td><td>Add a circle (e.g. a shadow) in one call, oriented by <code>axis</code>/<code>angle</code> degrees (<code>axis={0,1,0}</code>, <code>angle=0</code> for a flat, +Y-facing disc); returns its index. Drawn as a shared quad mesh -- see <code>set_circle_texture</code>.</td></tr>
+<tr><td><code>set_circle_texture(texture)</code></td><td>circle3</td><td>Sets the texture sampled by every entry in this batch -- typically a filled circle pre-rendered into a <a href="#render-texture">render_texture</a> (<code>circle_fill()</code> + <code>get_texture()</code>). Without one, entries draw as flat-colored squares (the shared quad's plain shape).</td></tr>
+</tbody>
+</table>
+
+<h3>Updating primitives by index</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>set_position(i, vec3)</code></td><td>Update a cube/sphere position</td></tr>
+<tr><td><code>set_size(i, vec3)</code></td><td>Update a cube/sphere size</td></tr>
+<tr><td><code>set_color(i, vec4)</code></td><td>Update a cube/sphere colour</td></tr>
+<tr><td><code>get_position(i)</code> / <code>get_size(i)</code> / <code>get_color(i)</code></td><td>Read current values back</td></tr>
+<tr><td><code>set_triangle3(i, p1, p2, p3)</code></td><td>Update triangle points (keeps colour)</td></tr>
+<tr><td><code>set_triangle3_full(i, x1,y1,z1, x2,y2,z2, x3,y3,z3, color)</code></td><td>Update points + colour with raw floats (no <code>vec3</code> allocation)</td></tr>
+<tr><td><code>set_triangle3_color(i, color)</code></td><td>Update only a triangle's colour</td></tr>
+<tr><td><code>set_circle3_full(i, x, y, z, radius, color)</code></td><td>Update a circle's centre/radius/colour with raw floats</td></tr>
+<tr><td><code>set_circle3_color(i, color)</code></td><td>Update only a circle's colour</td></tr>
+</tbody>
+</table>
+
+<h3>Rendering &amp; management</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>draw()</code></td><td>Render every entry in one native call</td></tr>
+<tr><td><code>draw_culled(camera, max_distance)</code></td><td>Render only entries within <code>max_distance</code> of the camera</td></tr>
+<tr><td><code>draw_frustum_culled(camera)</code></td><td>Render only entries inside the camera's view frustum</td></tr>
+<tr><td><code>count()</code></td><td>Number of entries</td></tr>
+<tr><td><code>reserve(n)</code></td><td>Pre-allocate capacity for <code>n</code> entries</td></tr>
+<tr><td><code>clear()</code></td><td>Remove all entries (keeps capacity)</td></tr>
+<tr><td><code>is_valid_index(i)</code></td><td>Whether index <code>i</code> exists</td></tr>
+</tbody>
+</table>
+<div class="tip"><strong>Batching tips</strong>Use batching for any scene with more than ~50 similar objects. Pre-allocate with <code>reserve()</code>. Reusing a batch across frames (updating by index) is cheaper than clearing and rebuilding. For flat shadows, <code>BATCH_CIRCLE3</code> + <code>add_circle3()</code> replaces a hand-built triangle fan with a single call.</div>
+
+<!-- ==================== BATCH_INSTANCED ==================== -->
+<h2 class="section" id="batch-instanced">batch_instanced <span class="pill">gfx</span></h2>
+<p><code>batch_instanced()</code> uses GPU mesh instancing to draw very large numbers of textured cubes (100k+) in a single call. It is specialised for textured-cube instancing where hardware instancing gives the biggest win.</p>
+<div class="sig"><span class="nm">batch_instanced</span>(<em>texture</em>, <em>cube_size</em>, <em>max_instances</em>) <span class="pill">→ batch_instanced</span></div>
+<ul>
+<li><code>texture</code> — the <a href="#texture">texture</a> applied to every cube (all instances share it); commonly a <a href="#render-texture">render_texture</a>'s <code>get_texture()</code>.</li>
+<li><code>cube_size</code> — edge length (float) of every cube.</li>
+<li><code>max_instances</code> — capacity (int); <code>add()</code> beyond this raises a runtime error.</li>
+</ul>
+<p>Like <a href="#batch"><code>batch</code></a>, entries are added then drawn in one call, but the render path uses hardware instancing. Unlike <code>batch</code>, instances carry only a transform (position + rotation) — the texture and size are fixed at construction. The workflow is: <code>add()</code> every instance, call <code>make_transforms()</code> once to build the transform matrices, then <code>draw(camera)</code> each frame.</p>
+<pre><code class="lox">from gfx import window, camera, render_texture, batch_instanced
+import random
+win = window(1200, 800)
+win.init()
+cam = camera(vec3(0, 20, 60), vec3(0, 0, 0), vec3(0, 1, 0))
+
+rt = render_texture(64, 64)                 // build a texture to sample
+rt.clear(vec4(0, 0, 0, 255))
+rt.circle_fill(32, 32, 30, vec4(255, 128, 0, 255))
+
+cubes = batch_instanced(rt.get_texture(), 2.0, 100000)
+foreach (i in range(50000)) {
+    pos = vec3(random.float(-50, 50), random.float(-50, 50), random.float(-50, 50))
+    cubes.add(pos, vec3(0, 1, 0), random.float(0, 360))   // position, rotation axis, angle°
+}
+cubes.make_transforms()                     // build matrices once, after adding
+
+// render loop:
+win.begin_3d(cam)
+cubes.draw(cam)                             // all 50k cubes in one instanced call
+win.end_3d()</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>add(position_vec3, axis_vec3, angle)</code></td><td>Add an instance at <code>position</code>, rotated <code>angle</code> degrees (float) around <code>axis</code>. Errors if <code>max_instances</code> is exceeded.</td></tr>
+<tr><td><code>make_transforms()</code></td><td>Build the instance transform matrices from the added instances. Call once after all <code>add()</code>s and before <code>draw()</code>.</td></tr>
+<tr><td><code>draw(camera)</code></td><td>Render every instance in a single hardware-instanced call.</td></tr>
+<tr><td><code>count()</code></td><td>Number of instances added.</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>Not customisable with <code>shader()</code></strong>Every <code>batch_instanced</code> renders with the same built-in lighting shader (ambient light only, one shared texture per batch); <code>win.begin_shader_mode()</code> has no effect on it, and instances carry only a transform — no per-instance colour or custom data. There is currently no way to give a <code>batch_instanced</code> a custom look from a <code>.lox</code> script. Use plain <a href="#batch"><code>batch</code></a> if you need per-object shader effects.</div>
+
+<!-- ==================== TEXTURE ==================== -->
+<h2 class="section" id="texture">texture <span class="pill">gfx</span></h2>
+<p>A texture is 2D image data uploaded to the GPU, with optional animation frames.</p>
+<div class="sig"><span class="nm">texture</span>(<em>image</em>, <em>frames</em>, <em>start_frame</em>, <em>end_frame</em>) <span class="pill">→ texture</span></div>
+<pre><code class="lox">from gfx import image, texture
+img = image("sprite.png")
+tex = texture(img, 4, 0, 3)   // 4 animation frames, play 0..3
+tex.animate(6)                // advance a frame every 6 ticks</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>width()</code> / <code>height()</code></td><td>Texture dimensions in pixels</td></tr>
+<tr><td><code>frame_width()</code></td><td>Width of one animation frame</td></tr>
+<tr><td><code>animate(ticks_per_frame)</code></td><td>Enable automatic frame animation at the given speed</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== RENDER TEXTURE ==================== -->
+<h2 class="section" id="render-texture">render_texture <span class="pill">gfx</span></h2>
+<p>A render texture is an off-screen buffer you can draw into and then use as a texture — useful for post-processing and dynamic textures.</p>
+<div class="sig"><span class="nm">render_texture</span>(<em>width</em>, <em>height</em>) <span class="pill">→ render_texture</span></div>
+<pre><code class="lox">from gfx import window, render_texture
+win = window(800, 600)
+win.init()
+rt = render_texture(128, 128)
+rt.clear(vec4(0, 0, 0, 255))
+rt.circle_fill(64, 64, 40, vec4(255, 128, 0, 255))   // draw into the off-screen buffer
+// later, blit it to the screen:
+win.begin()
+win.draw_render_texture(rt, 100, 100, vec4(255, 255, 255, 255))
+win.end()</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>width()</code> / <code>height()</code></td><td>Buffer dimensions</td></tr>
+<tr><td><code>clear(color)</code></td><td>Clear the buffer to a colour</td></tr>
+<tr><td><code>line</code>, <code>line_ex</code>, <code>rectangle</code>, <code>circle</code>, <code>circle_fill</code>, <code>pixel</code></td><td>Same 2D drawing methods as <a href="#window">window</a>, but rendered into the buffer</td></tr>
+</tbody>
+</table>
+<p>Draw a render texture to the screen with <a href="#window"><code>win.draw_render_texture()</code></a> / <code>draw_render_texture_ex()</code>.</p>
+
+<!-- ==================== IMAGE ==================== -->
+<h2 class="section" id="image">image <span class="pill">gfx</span></h2>
+<p>An image holds raw pixel data loaded from a file, typically used to create a <a href="#texture">texture</a>.</p>
+<div class="sig"><span class="nm">image</span>(<em>filename</em>) <span class="pill">→ image</span></div>
+<pre><code class="lox">from gfx import image, texture
+img = image("player.png")
+print img.width()             // pixel dimensions
+tex = texture(img, 1, 0, 0)   // upload as a single-frame texture</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>width()</code> / <code>height()</code></td><td>Image dimensions in pixels</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== CAMERA ==================== -->
+<h2 class="section" id="camera">camera <span class="pill">gfx</span></h2>
+<p>A camera defines the viewpoint for 3D rendering, passed to <a href="#window"><code>win.begin_3d()</code></a>.</p>
+<div class="sig"><span class="nm">camera</span>(<em>position_vec3</em>, <em>target_vec3</em>, <em>up_vec3</em>) <span class="pill">→ camera</span></div>
+<pre><code class="lox">from gfx import window, camera
+win = window(800, 600)
+win.init()
+cam = camera(vec3(0, 10, 20), vec3(0, 0, 0), vec3(0, 1, 0))   // eye, look-at, up
+cam.set_fovy(60)
+// in the render loop:
+win.begin_3d(cam)
+win.cube(vec3(0, 0, 0), vec3(2, 2, 2), vec4(255, 0, 0, 255))   // position, size, colour
+win.end_3d()</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>set_position(vec3)</code></td><td>Set the camera position</td></tr>
+<tr><td><code>get_position()</code></td><td>Get the camera position as a <code>vec3</code></td></tr>
+<tr><td><code>set_target(vec3)</code></td><td>Set the look-at target</td></tr>
+<tr><td><code>set_fovy(degrees)</code></td><td>Set the vertical field of view</td></tr>
+<tr><td><code>update()</code></td><td>Update the camera (enables free-look controls)</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== SHADER ==================== -->
+<h2 class="section" id="shader">shader <span class="pill">gfx</span></h2>
+<p>Shaders load custom GLSL programs for GPU rendering effects. Create from files, or construct empty and load from source strings.</p>
+<div class="sig"><span class="nm">shader</span>(<em>vertex_file</em>, <em>fragment_file</em>) &nbsp;·&nbsp; <span class="nm">shader</span>() <span class="pill">→ shader</span></div>
+<pre><code class="lox">from gfx import window, shader
+win = window(800, 600)
+win.init()
+sh = shader("rainbow.vs", "rainbow.fs")
+if (sh.is_valid()) {
+    time_loc = sh.get_location("time")
+}
+
+// In the render loop (cube_batch built earlier, elapsed = seconds since start):
+sh.set_value_float(time_loc, elapsed)
+win.begin_shader_mode(sh)
+cube_batch.draw()
+win.end_shader_mode()</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>load_from_memory(vertex_code, fragment_code)</code></td><td>Load GLSL from source strings</td></tr>
+<tr><td><code>get_location(name)</code></td><td>Get a uniform's location handle</td></tr>
+<tr><td><code>set_value_float(loc, value)</code></td><td>Set a <code>float</code> uniform</td></tr>
+<tr><td><code>set_value_vec2(loc, vec2)</code></td><td>Set a <code>vec2</code> uniform</td></tr>
+<tr><td><code>set_value_vec3(loc, vec3)</code></td><td>Set a <code>vec3</code> uniform</td></tr>
+<tr><td><code>set_value_vec4(loc, vec4)</code></td><td>Set a <code>vec4</code> uniform</td></tr>
+<tr><td><code>is_valid()</code></td><td>Whether the shader compiled successfully</td></tr>
+<tr><td><code>unload()</code></td><td>Free GPU shader resources</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>Failure handling</strong>Always check <code>is_valid()</code> after loading. Invalid shaders fall back gracefully to default rendering rather than crashing.</div>
+<div class="note"><strong>Instanced batches don't respect this</strong><code>begin_shader_mode</code> only affects draws that use raylib's currently-bound shader — plain <a href="#batch"><code>batch</code></a> draws, <code>win.plane()</code>/sphere/cube/etc., and <code>win.draw_render_texture()</code> all qualify. <a href="#batch-instanced"><code>batch_instanced</code></a> does not: it always renders with its own fixed lighting shader regardless of what's currently bound, so wrapping <code>my_batch_instanced.draw()</code> in <code>begin_shader_mode</code> has no effect. See <a href="#batch-instanced"><code>batch_instanced</code></a> below.</div>
+
+<!-- ==================== FLOAT ARRAY ==================== -->
+<h2 class="section" id="float-array">float_array <span class="pill">gfx</span></h2>
+<p>A dense 2D array of floats, useful for numeric computation and image/data generation. Colours can be RGBA-encoded into cells with <a href="#mod-gfx"><code>encode_rgba()</code></a> and rendered with <a href="#window"><code>win.draw_array()</code></a> or saved with <a href="#mod-gfx"><code>draw_png()</code></a>.</p>
+<div class="sig"><span class="nm">float_array</span>(<em>width</em>, <em>height</em>) <span class="pill">→ float_array</span></div>
+<pre><code class="lox">from gfx import float_array, window, encode_rgba
+win = window(256, 256)
+win.init()
+grid = float_array(256, 256)
+foreach (y in range(256)) {
+    foreach (x in range(256)) {
+        grid.set(x, y, encode_rgba(x, y, 128))   // a colour gradient
+    }
+}
+win.begin()
+win.draw_array(grid)          // render the RGBA-encoded array
+win.end()</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>width()</code> / <code>height()</code></td><td>Array dimensions</td></tr>
+<tr><td><code>get(x, y)</code></td><td>Read the value at <code>(x, y)</code></td></tr>
+<tr><td><code>set(x, y, value)</code></td><td>Write a value at <code>(x, y)</code></td></tr>
+<tr><td><code>clear(value)</code></td><td>Fill the whole array with <code>value</code></td></tr>
+</tbody>
+</table>
+
+<!-- ==================== PHYSICS WORLD ==================== -->
+<h2 class="section" id="physics-world">physics_world <span class="pill">physics</span></h2>
+<p><code>physics_world</code> is a native 3D rigid-body simulation for spheres. Each body has a position, velocity, radius and material; <code>step()</code> advances them all — applying gravity, bouncing off the boundary box, and resolving body-to-body collisions — in a single native call. Fixed level geometry (floors, shelves, ramps) can be added as static boxes with <code>add_static_box</code> — optionally tilted, never moving — for dynamic spheres to bounce off.</p>
+<h3>Creating a world</h3>
+<div class="sig"><span class="nm">physics_world</span>(<em>min_vec3</em>, <em>max_vec3</em>, <em>cell_size</em>, <em>gravity_vec3</em>) <span class="pill">→ physics_world</span></div>
+<ul>
+<li><code>min_vec3</code> / <code>max_vec3</code> — opposite corners of the boundary box; bodies bounce off these (each body's radius is accounted for).</li>
+<li><code>cell_size</code> — internal collision-grid cell size; should exceed the largest body's diameter.</li>
+<li><code>gravity_vec3</code> — constant acceleration applied to every body each <code>step()</code>.</li>
+</ul>
+<h3>Basic usage</h3>
+<p>Register a material, add bodies to get their ids, then call <code>step()</code> each frame and read positions back with <code>get_position()</code>:</p>
+<pre><code class="lox">from physics import physics_world
+from gfx import window, camera
+import random
+import colour as col
+world = physics_world(vec3(-10, 0, -10), vec3(10, 100, 10), 2.0, vec3(0, -0.01, 0))
+mat = world.add_material(0.5, 0.3, 0.99)     // restitution, friction, damping
+
+ids = []
+foreach (i in range(20)) {
+    pos = vec3(random.float(-5, 5), random.float(5, 20), random.float(-5, 5))
+    ids.append(world.add(pos, vec3(0, 0, 0), 0.5, mat))
+}
+
+win = window(800, 600)
+win.init()
+cam = camera(vec3(0, 20, 40), vec3(0, 0, 0), vec3(0, 1, 0))
+while (!win.should_close()) {
+    world.step(1.0)
+    win.begin()
+    win.clear(vec4(30, 30, 40, 255))
+    win.begin_3d(cam)
+    foreach (id in ids) {
+        p = world.get_position(id)
+        win.sphere(p, 0.5, col.WHITE)
+    }
+    win.end_3d()
+    win.end()
+}</code></pre>
+<h3>Methods</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>add_material(restitution, friction, damping)</code></td><td>Register a material, returns an integer id. <code>restitution</code> = bounciness (0–1); <code>damping</code> = per-step velocity multiplier (air resistance, ~0.99); <code>friction</code> is accepted but not yet applied.</td></tr>
+<tr><td><code>add(pos_vec3, vel_vec3, radius, material_id)</code></td><td>Add a dynamic sphere body; returns a stable integer id used by every other method</td></tr>
+<tr><td><code>add_static_box(pos_vec3, half_extents_vec3, axis_vec3, angle, material_id)</code></td><td>Add a fixed box that never moves, optionally tilted <code>angle</code> degrees around <code>axis</code> (0 = axis-aligned) — for floors, shelves, ramps</td></tr>
+<tr><td><code>get_box_transform(id)</code></td><td>For a static box body, returns <code>(position, half_extents, axis, angle)</code> — feed straight into <a href="#window"><code>win.cube_rotated()</code></a> so drawing always matches exactly what physics collided against</td></tr>
+<tr><td><code>remove(id)</code></td><td>Remove a body from the simulation</td></tr>
+<tr><td><code>get_position(id)</code></td><td>Current position of a body as a <code>vec3</code></td></tr>
+<tr><td><code>add_impulse(id, impulse_vec3)</code></td><td>Add an instantaneous velocity change (<code>vel += impulse</code>) to one body</td></tr>
+<tr><td><code>step(dt)</code></td><td>Advance the simulation one step: gravity, boundary bounce, collision resolution</td></tr>
+<tr><td><code>collisions()</code></td><td>List of tuples <code>(a_id, b_id, normal_vec3, impulse)</code> for pairs that <em>newly</em> touched during the last <code>step()</code>; resting contacts are not repeated</td></tr>
+<tr><td><code>count()</code></td><td>Number of active bodies</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>Static bodies bypass the broad-phase grid</strong>Dynamic spheres from <code>add</code> still use the collision grid, so <code>cell_size</code> should exceed the largest sphere's diameter as before. Static boxes from <code>add_static_box</code> are checked directly against every dynamic sphere instead, since a single grid cell can't represent a large platform's true extent — so static geometry can be arbitrarily large regardless of <code>cell_size</code>. Two static bodies never collide with each other.</div>
+
+<!-- ==================== MODULE: MATH ==================== -->
+<h2 class="section" id="mod-math">math <span class="pill">module</span></h2>
+<p><code>import math</code> — extended mathematical utilities, including trig wrappers, rounding, and 2D/3D vector helpers. Wraps the native <code>_sin</code>/<code>_cos</code>/… intrinsics with friendly names.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>math.PI</code></td><td>The constant π (a module variable)</td></tr>
+<tr><td><code>math.sin(x)</code>, <code>math.cos(x)</code>, <code>math.tan(x)</code></td><td>Trigonometry (radians)</td></tr>
+<tr><td><code>math.atan2(y, x)</code></td><td>Two-argument arctangent</td></tr>
+<tr><td><code>math.sqrt(x)</code></td><td>Square root</td></tr>
+<tr><td><code>math.pow(base, exp)</code></td><td>Exponentiation</td></tr>
+<tr><td><code>math.floor(n)</code></td><td>Largest integer ≤ <code>n</code></td></tr>
+<tr><td><code>math.round(n)</code></td><td>Round to nearest integer</td></tr>
+<tr><td><code>math.round_places(n, places)</code></td><td>Round to <code>places</code> decimal places</td></tr>
+<tr><td><code>math.abs(n)</code></td><td>Absolute value</td></tr>
+<tr><td><code>math.max(a, b)</code> / <code>math.min(a, b)</code></td><td>Maximum / minimum of two numbers</td></tr>
+<tr><td><code>math.sign(v)</code></td><td>−1, 0, or 1 by sign</td></tr>
+<tr><td><code>math.radians(deg)</code> / <code>math.degrees(rad)</code></td><td>Angle unit conversion</td></tr>
+<tr><td><code>math.rotate2d(v2, angle)</code></td><td>Rotate a <code>vec2</code> by <code>angle</code> radians</td></tr>
+<tr><td><code>math.scale2(v2, s)</code> / <code>math.scale3(v3, s)</code></td><td>Scale a vector by a scalar</td></tr>
+<tr><td><code>math.length2(v2)</code> / <code>math.length3(v3)</code></td><td>Vector magnitude</td></tr>
+<tr><td><code>math.normalize2(v2)</code> / <code>math.normalize3(v3)</code></td><td>Unit vector (returns zero vector if length is 0)</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: RANDOM ==================== -->
+<h2 class="section" id="mod-random">random <span class="pill">module</span></h2>
+<p><code>import random</code> — random-number utilities on top of the native <code>rand()</code>.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>random.integer(min, max)</code></td><td>Random integer in <code>[min, max]</code> (inclusive)</td></tr>
+<tr><td><code>random.float(min, max)</code></td><td>Random float in <code>[min, max)</code></td></tr>
+<tr><td><code>random.choice(list)</code></td><td>Random element from a list (<code>nil</code> if empty)</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: ITERTOOLS ==================== -->
+<h2 class="section" id="mod-itertools">itertools <span class="pill">module</span></h2>
+<p><code>import itertools</code> — sequence utilities inspired by Python's <code>itertools</code>.</p>
+<table>
+<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>itertools.reverse(seq)</code></td><td>Reverse a string or list (returns the same type)</td></tr>
+<tr><td><code>itertools.sort(list, cmp)</code></td><td>Sort a list in place using a comparator <code>cmp(a, b)</code> returning −1/0/1</td></tr>
+<tr><td><code>itertools.stringsorter(a, b)</code></td><td>Ready-made string comparator for <code>sort</code></td></tr>
+<tr><td><code>itertools.Bouncer(min, max, dx)</code></td><td>Class: a value that moves by <code>dx</code> and reflects off <code>[min, max]</code>; methods <code>update()</code>, <code>get()</code>, <code>set(v)</code>, <code>copy()</code></td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import itertools
+nums = [3, 1, 2]
+itertools.sort(nums, func(a, b) { return a - b })
+print nums                     // [1, 2, 3]
+print itertools.reverse("abc") // "cba"</code></pre>
+
+<!-- ==================== MODULE: FUNCTOOLS ==================== -->
+<h2 class="section" id="mod-functools">functools <span class="pill">module</span></h2>
+<p><code>import functools</code> — higher-order list functions.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>functools.map(list, fn)</code></td><td>Apply <code>fn</code> to each element, returning a new list</td></tr>
+<tr><td><code>functools.filter(list, predicate)</code></td><td>Keep elements where <code>predicate(x)</code> is truthy</td></tr>
+<tr><td><code>functools.reduce(list, fn)</code></td><td>Fold a list to one value with <code>fn(acc, x)</code>, seeded from the first element</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import functools
+sq = functools.map([1, 2, 3], func(x) { return x * x })
+sum = functools.reduce([1, 2, 3, 4], func(a, b) { return a + b })   // 10
+evens = functools.filter([1, 2, 3, 4], func(x) { return x % 2 == 0 })</code></pre>
+
+<!-- ==================== MODULE: STRING ==================== -->
+<h2 class="section" id="mod-string">string <span class="pill">module</span></h2>
+<p><code>import string</code> — string helpers not built into the string type.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>string.split(s, delim)</code></td><td>Split <code>s</code> into a list of substrings on a single-character delimiter</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import string
+print string.split("a,b,c", ",")   // ["a", "b", "c"]</code></pre>
+
+<!-- ==================== MODULE: JSON ==================== -->
+<h2 class="section" id="mod-json">json <span class="pill">module</span></h2>
+<p><code>import json</code> — minimal, ASCII-only JSON encoding and decoding, built on <a href="#mod-re"><code>re</code></a>. Not a full JSON implementation: <code>\uXXXX</code>, <code>\b</code> and <code>\f</code> string escapes are not supported and raise <code>JSONDecodeError</code> if encountered.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>json.encode(value)</code> / <code>json.encode(value, indent)</code></td><td>Encode a Lox value (<code>nil</code>, <code>boolean</code>, <code>int</code>/<code>float</code>, <code>string</code>, <code>list</code>, <code>dict</code>) to a JSON string. Compact by default; passing <code>indent</code> (a number of spaces) pretty-prints one element per line, matching Python's <code>json.dumps(indent=…)</code> style. Raises <code>JSONEncodeError</code> for values with no JSON representation (functions, classes, instances, …).</td></tr>
+<tr><td><code>json.decode(s)</code></td><td>Parse a JSON string into the corresponding Lox value. Raises <code>JSONDecodeError</code> on malformed input or trailing data.</td></tr>
+<tr><td><code>json.load(path)</code></td><td>Read the file at <code>path</code> and decode its contents as JSON (equivalent to <code>json.decode(os.read_all(path))</code>). Raises <code>JSONDecodeError</code> on malformed input, or <code>RunTimeError</code> if the file cannot be read.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import json
+from json import JSONDecodeError
+
+s = json.encode({"name": "bob", "tags": ["a", "b"], "active": true})
+print s                      // {"name":"bob","tags":["a","b"],"active":true}
+print json.encode([1, 2], 2) // pretty-printed: "[" / "  1," / "  2" / "]" on separate lines
+
+v = json.decode(s)
+print v["name"]              // "bob"
+
+try {
+    json.decode("{bad json")
+} except JSONDecodeError as e {
+    print "invalid: " & e.msg
+}
+
+config = json.load("config.json")
+print config["name"]</code></pre>
+
+<!-- ==================== MODULE: LOGGING ==================== -->
+<h2 class="section" id="mod-logging">logging <span class="pill">module</span></h2>
+<p><code>import logging</code> — basic leveled logging with a pluggable writer. A <code>Logger</code> filters messages against its own configured minimum level, then hands a fully-formatted line to a writer closure — a plain <code>func(line)</code> that receives the formatted string. The default writer prints to stdout; swap in something else (e.g. <code>logging.file_writer(file)</code>) to send output elsewhere.</p>
+<table>
+<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>logging.Logger(name, level, writer)</code></td><td>Class: all three constructor arguments are optional — <code>name="root"</code>, <code>level=Logger.INFO</code>, <code>writer=func(line) { print line; }</code>. <code>name</code> labels every line this logger produces.</td></tr>
+<tr><td><code>Logger.DEBUG</code> / <code>.INFO</code> / <code>.WARN</code> / <code>.ERROR</code> / <code>.CRITICAL</code></td><td>Static level constants (10/20/30/40/50 — spaced to leave room for an in-between custom level).</td></tr>
+<tr><td><code>.debug(msg)</code> / <code>.info(msg)</code> / <code>.warn(msg)</code> / <code>.error(msg)</code> / <code>.critical(msg)</code></td><td>Log <code>msg</code> at the named level.</td></tr>
+<tr><td><code>.log(level, msg)</code></td><td>Log <code>msg</code> at an arbitrary integer <code>level</code> — what the convenience methods above call internally.</td></tr>
+<tr><td><code>.set_level(level)</code> / <code>.get_level()</code></td><td>Change/query the logger's minimum level after construction. A message below the configured level is suppressed before it's even formatted — the writer is never called for it.</td></tr>
+<tr><td><code>.set_writer(writer)</code></td><td>Swap this logger's writer closure after construction.</td></tr>
+<tr><td><code>Logger.level_name(level)</code></td><td>Static: the name for a known level constant, or <code>"LEVEL&lt;n&gt;"</code> for any other integer — never raises.</td></tr>
+<tr><td><code>logging.file_writer(file)</code></td><td>Returns a writer closure that appends each line to an already-open <code>file</code> (from <a href="#mod-os"><code>os.open()</code></a>) instead of printing it. The caller still owns the file's lifecycle — open it before, close it after.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import logging
+import os
+from logging import Logger
+
+log = Logger()                 // name="root", level=INFO, writer=print
+log.debug("not shown")         // below the default INFO level
+log.info("starting up")        // [2024-01-15 09:30:00] [INFO] root: starting up
+log.warn("low disk space")
+log.error("connection failed")
+
+quiet = Logger("worker", Logger.ERROR)   // only ERROR and CRITICAL get through
+quiet.warn("ignored")
+quiet.error("shown")
+
+file = os.open("app.log", "a")
+file_log = Logger("app", Logger.INFO, logging.file_writer(file))
+file_log.info("wrote a line to app.log instead of stdout")
+os.close(file)</code></pre>
+<div class="note"><strong>No real timestamp before this module</strong>glox has no wall-clock date/time facility elsewhere — <code>sys.clock()</code> is elapsed seconds since the interpreter started, not a real time. <code>logging</code> is the reason <a href="#mod-sys"><code>sys.today()</code></a>/<a href="#mod-sys"><code>sys.now()</code></a> exist: every log line's <code>[date time]</code> prefix comes from those two functions.</div>
+
+<!-- ==================== MODULE: COLOUR ==================== -->
+<h2 class="section" id="mod-colour">colour <span class="pill">module</span></h2>
+<p><code>import colour</code> — colour constants and manipulation helpers (a Lox-friendly wrapper over the native <a href="#mod-colour-utils">colour_utils</a>). All colours are <code>vec4</code> RGBA (0–255).</p>
+<h3>Colour constants</h3>
+<p><code>RED</code>, <code>GREEN</code>, <code>BLUE</code>, <code>YELLOW</code>, <code>CYAN</code>, <code>MAGENTA</code>, <code>BLACK</code>, <code>WHITE</code>, <code>ORANGE</code>, <code>LIGHTGRAY</code>, <code>GRAY</code>, <code>DARKGRAY</code>, <code>PINK</code>, <code>MAROON</code>, <code>LIME</code>, <code>DARKGREEN</code>, <code>SKYBLUE</code>, <code>DARKBLUE</code>, <code>PURPLE</code>, <code>VIOLET</code>, <code>DARKPURPLE</code>, <code>BEIGE</code>, <code>BROWN</code>, <code>DARKBROWN</code>, <code>GOLD</code>, <code>RAYWHITE</code>.</p>
+<h3>Functions</h3>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>colour.random_rgb()</code></td><td>Random opaque colour</td></tr>
+<tr><td><code>colour.fade(color, alpha)</code></td><td>Apply an alpha (0.0–1.0) to a colour</td></tr>
+<tr><td><code>colour.lerp(c1, c2, t)</code></td><td>Linear interpolation between two colours</td></tr>
+<tr><td><code>colour.brightness(color, factor)</code></td><td>Scale brightness (1.0 = unchanged)</td></tr>
+<tr><td><code>colour.tint(color, tint_color)</code></td><td>Multiply one colour by another</td></tr>
+<tr><td><code>colour.hsv_to_rgb(h, s, v)</code></td><td>HSV (h 0–360, s/v 0.0–1.0) to RGB</td></tr>
+<tr><td><code>colour.scale_colour(color, scalar)</code></td><td>Scale RGB components by a scalar (mutates and returns)</td></tr>
+<tr><td><code>colour.ColourFromEncoded(value)</code></td><td>Build a colour from an encoded RGB integer</td></tr>
+<tr><td><code>colour.primary_colours()</code></td><td>Dict of the eight primary named colours</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: COLOUR_UTILS ==================== -->
+<h2 class="section" id="mod-colour-utils">colour_utils <span class="pill">native module</span></h2>
+<p><code>import colour_utils</code> — native, high-performance colour functions taking raw 0–255 components and returning <code>vec4</code>. The <a href="#mod-colour">colour</a> module wraps these for convenience.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>colour_utils.fade(r, g, b, alpha)</code></td><td>Apply alpha (0.0–1.0) → <code>vec4</code></td></tr>
+<tr><td><code>colour_utils.tint(r1, g1, b1, r2, g2, b2)</code></td><td>Multiply base colour by tint colour</td></tr>
+<tr><td><code>colour_utils.brightness(r, g, b, factor)</code></td><td>Adjust brightness by factor</td></tr>
+<tr><td><code>colour_utils.lerp(r1, g1, b1, r2, g2, b2, amount)</code></td><td>Interpolate two colours (0.0–1.0)</td></tr>
+<tr><td><code>colour_utils.hsv_to_rgb(h, s, v)</code></td><td>HSV → RGB <code>vec4</code></td></tr>
+<tr><td><code>colour_utils.random()</code></td><td>Random RGB colour <code>vec4</code></td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: PARTICLE ==================== -->
+<h2 class="section" id="mod-particle">particle_sys <span class="pill">module</span></h2>
+<p><code>import particle_sys</code> — a small particle system built on user-supplied init/update functions per particle. Particles hold a position and run an update function each tick.</p>
+<table>
+<thead><tr><th>Class</th><th>Key methods</th></tr></thead>
+<tbody>
+<tr><td><code>Particle(pos, init_fn, update_fn)</code></td><td><code>next()</code> — advance the particle one tick</td></tr>
+<tr><td><code>Emitter(pos, init_fn, update_fn)</code></td><td><code>emit(n)</code>, <code>emit_particle()</code>, <code>update()</code>, <code>get_particles()</code></td></tr>
+<tr><td><code>Emitters()</code></td><td><code>queue(emitter, particles, delay)</code>, <code>queue_length()</code>, <code>update()</code>, <code>get()</code> — manage many emitters with staggered start delays</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: SPRITE ==================== -->
+<h2 class="section" id="mod-sprite">sprite <span class="pill">module</span></h2>
+<p><code>import sprite</code> — a simple animated sprite wrapper around an <a href="#image">image</a>/<a href="#texture">texture</a>.</p>
+<div class="sig"><span class="nm">Sprite</span>(<em>pos</em>, <em>img</em>, <em>frames</em>, <em>start_frame</em>, <em>end_frame</em>)</div>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>move(newpos)</code></td><td>Set the sprite's position</td></tr>
+<tr><td><code>animate(ticks_per_frame)</code></td><td>Set the animation speed</td></tr>
+<tr><td><code>get_texture()</code></td><td>Return the underlying texture for drawing</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: PLOT ==================== -->
+<h2 class="section" id="mod-plot">plot_grey / plot_rgb <span class="pill">modules</span></h2>
+<p><code>import plot_grey</code> and <code>import plot_rgb</code> — buffered plotters that accumulate pixels into a <a href="#float-array">float_array</a> and save a PNG. <code>plot_grey</code> works in greyscale; <code>plot_rgb</code> in colour.</p>
+<h3>plot_grey.Plotter</h3>
+<div class="sig"><span class="nm">Plotter</span>(<em>filename</em>, <em>width</em>, <em>height</em>)</div>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>clear(grey)</code></td><td>Fill with a grey level</td></tr>
+<tr><td><code>plot(x, y, val)</code></td><td>Set a pixel's greyscale value</td></tr>
+<tr><td><code>add(x, y, val)</code></td><td>Additively accumulate into a pixel</td></tr>
+<tr><td><code>save()</code></td><td>Write the PNG file</td></tr>
+</tbody>
+</table>
+<h3>plot_rgb.Plotter</h3>
+<div class="sig"><span class="nm">Plotter</span>(<em>filename</em>, <em>width</em>, <em>height</em>)</div>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>clear(col)</code></td><td>Fill with a colour</td></tr>
+<tr><td><code>plot(x, y, col)</code></td><td>Set a pixel's colour</td></tr>
+<tr><td><code>add(x, y, col)</code></td><td>Additively accumulate colour into a pixel</td></tr>
+<tr><td><code>square(x, y, s, r, g, b)</code></td><td>Fill an <code>s</code>×<code>s</code> square</td></tr>
+<tr><td><code>get_array()</code></td><td>Return the underlying <a href="#float-array">float_array</a></td></tr>
+<tr><td><code>save()</code></td><td>Write the PNG file</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== MODULE: OS ==================== -->
+<h2 class="section" id="mod-os">os <span class="pill">module</span></h2>
+<p><code>import os</code> — file system and path operations, similar to Python's <code>os</code>. Paths use forward slashes for cross-platform consistency.</p>
+<h3>Files</h3>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>os.open(path, mode)</code></td><td>Open a file. Modes: <code>"r"</code> read, <code>"w"</code> write/create, <code>"a"</code> append. Returns a file object.</td></tr>
+<tr><td><code>os.readln(file)</code></td><td>Read one line (without newline). Raises <a href="#exceptions"><code>EOFError</code></a> at end of file.</td></tr>
+<tr><td><code>os.read_all(path)</code></td><td>Read the whole file at <code>path</code> and return its contents as a single string. Takes a path, not an open file object — opens and closes the file itself.</td></tr>
+<tr><td><code>os.write(file, text)</code></td><td>Write a string (handles <code>\n</code> escapes)</td></tr>
+<tr><td><code>os.close(file)</code></td><td>Close a file</td></tr>
+<tr><td><code>os.remove(path)</code></td><td>Delete a file</td></tr>
+</tbody>
+</table>
+<h3>Directories &amp; paths</h3>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>os.listdir(path)</code></td><td>List directory contents as a list of names</td></tr>
+<tr><td><code>os.mkdir(path)</code></td><td>Create a directory (with parents as needed)</td></tr>
+<tr><td><code>os.rmdir(path)</code></td><td>Remove an empty directory</td></tr>
+<tr><td><code>os.getcwd()</code></td><td>Current working directory</td></tr>
+<tr><td><code>os.chdir(path)</code></td><td>Change working directory</td></tr>
+<tr><td><code>os.exists(path)</code></td><td>Whether a path exists</td></tr>
+<tr><td><code>os.isdir(path)</code> / <code>os.isfile(path)</code></td><td>Whether a path is a directory / regular file</td></tr>
+<tr><td><code>os.join(a, b, …)</code></td><td>Join path components</td></tr>
+<tr><td><code>os.dirname(path)</code> / <code>os.basename(path)</code></td><td>Directory / filename portion of a path</td></tr>
+<tr><td><code>os.splitext(path)</code></td><td>Split into <code>[name, extension]</code></td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import os
+f = os.open("data.txt", "w")
+os.write(f, "hello\n")
+os.close(f)
+
+f = os.open("data.txt", "r")
+try {
+    while (true) { print os.readln(f) }
+} except EOFError as e {
+    os.close(f)
+}</code></pre>
+
+<!-- ==================== MODULE: RE ==================== -->
+<h2 class="section" id="mod-re">re <span class="pill">module</span></h2>
+<p><code>import re</code> — regular expressions, wrapping Go's <code>regexp</code> package (RE2 syntax). RE2 does not support backreferences or lookaround; replacement strings use Go's <code>$1</code> / <code>${name}</code> syntax, not Python's <code>\1</code>.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>re.search(pattern, s)</code></td><td>Find the first match anywhere in <code>s</code>. Returns a <a href="#mod-re-match">Match</a> or <code>nil</code>.</td></tr>
+<tr><td><code>re.match(pattern, s)</code></td><td>Match anchored at the start of <code>s</code> (need not consume all of <code>s</code>). Returns a Match or <code>nil</code>.</td></tr>
+<tr><td><code>re.fullmatch(pattern, s)</code></td><td>Match the entire string <code>s</code>. Returns a Match or <code>nil</code>.</td></tr>
+<tr><td><code>re.sub(pattern, repl, s [, count])</code></td><td>Replace matches with <code>repl</code> (<code>$1</code> / <code>${name}</code> group refs). <code>count</code> limits the number of replacements (default/0: all).</td></tr>
+<tr><td><code>re.subn(pattern, repl, s [, count])</code></td><td>Like <code>sub()</code>, returns the tuple <code>(new_string, num_subs)</code></td></tr>
+<tr><td><code>re.split(pattern, s [, maxsplit])</code></td><td>Split <code>s</code> on matches, as a list. <code>maxsplit</code> limits the number of splits (default/0: all). Unlike Python, captured group text is not interleaved into the result.</td></tr>
+<tr><td><code>re.findall(pattern, s)</code></td><td>All non-overlapping matches. No groups → list of strings; one group → list of that group's strings; 2+ groups → list of tuples.</td></tr>
+<tr><td><code>re.compile(pattern)</code></td><td>Precompile a pattern into a <a href="#mod-re-pattern">Pattern</a> object exposing the same methods (minus the leading <code>pattern</code> argument), for reuse without recompiling.</td></tr>
+</tbody>
+</table>
+<h3 id="mod-re-match">Match objects</h3>
+<p>Returned by <code>search()</code>, <code>match()</code>, and <code>fullmatch()</code> on a successful match.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>group()</code> / <code>group(n)</code> / <code>group(name)</code></td><td>Matched text for group <code>0</code> (whole match), group <code>n</code>, or a named group. <code>nil</code> if that group didn't participate.</td></tr>
+<tr><td><code>groups()</code></td><td>Tuple of all groups <code>1..N</code> (<code>nil</code> for groups that didn't participate)</td></tr>
+<tr><td><code>groupdict()</code></td><td>Dict of named groups (<code>(?P&lt;name&gt;...)</code>) to their matched text</td></tr>
+<tr><td><code>start()</code> / <code>start(n)</code></td><td>Start offset of the whole match / group <code>n</code></td></tr>
+<tr><td><code>end()</code> / <code>end(n)</code></td><td>End offset of the whole match / group <code>n</code></td></tr>
+<tr><td><code>span()</code> / <code>span(n)</code></td><td><code>(start, end)</code> tuple for the whole match / group <code>n</code></td></tr>
+</tbody>
+</table>
+<h3 id="mod-re-pattern">Pattern objects</h3>
+<p>Returned by <code>re.compile(pattern)</code>. Compiles once and reuses the same regex across repeated calls.</p>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>search(s)</code> / <code>match(s)</code> / <code>fullmatch(s)</code></td><td>Same as the module-level functions, using the compiled pattern</td></tr>
+<tr><td><code>sub(repl, s [, count])</code> / <code>subn(repl, s [, count])</code></td><td>Same as the module-level functions</td></tr>
+<tr><td><code>split(s [, maxsplit])</code></td><td>Same as the module-level function</td></tr>
+<tr><td><code>findall(s)</code></td><td>Same as the module-level function</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import re
+
+m = re.search("(?P&lt;user&gt;\w+)@(?P&lt;host&gt;\w+)\.com", "contact: bob@example.com")
+if (m != nil) {
+    print m.group(0)             // "bob@example.com"
+    print m.group("user")        // "bob"
+    print m.groupdict()["host"]  // "example"
+}
+
+print re.sub("\d+", "#", "a1 b22 c333")   // "a# b# c#"
+print re.split(",\s*", "a, b,  c")        // ["a", "b", "c"]
+print re.findall("\d+", "a1 b22 c333")    // ["1", "22", "333"]
+
+digits = re.compile("\d+")
+print digits.sub("#", "1 2 3")            // "# # #"</code></pre>
+
+<!-- ==================== MODULE: PICKLE ==================== -->
+<h2 class="section" id="mod-pickle">pickle <span class="pill">module</span></h2>
+<p><code>import pickle</code> — serialises plain-data Lox values (<code>nil</code>, <code>bool</code>, <code>int</code>, <code>float</code>, <code>string</code>, <code>list</code>, <code>tuple</code>, <code>dict</code>, <code>vec2</code>/<code>vec3</code>/<code>vec4</code>) and class instances, arbitrarily nested, to a byte string and back — useful for passing values between separate <code>glox</code> processes over a pipe/socket/file. An instance is encoded as its class <em>name</em> plus its fields only — never its methods/code — so <code>loads()</code> can reconstruct it only if a class of that name is already loaded in the decoding process (built-ins first, then the calling script's own module scope); otherwise it raises <a href="#exceptions"><code>PickleError</code></a>, same as for any other unresolvable case. Class identity is by name only, the same convention <code>except ClassName</code> already uses. Closures, classes themselves (not their instances), modules, files, and native/graphics objects cannot be pickled and raise <code>PickleError</code>, as does a cyclic structure (e.g. a list, or an instance field, pointing back at itself).</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>pickle.dumps(value)</code></td><td>Serialise <code>value</code> to a string of raw encoded bytes. Raises <code>PickleError</code> if <code>value</code> contains an unpicklable type or a cycle.</td></tr>
+<tr><td><code>pickle.loads(data)</code></td><td>Deserialise a string produced by <code>dumps()</code> back into a value. Raises <code>PickleError</code> on truncated/malformed input, or on an encoded instance whose class can't be resolved.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import pickle
+
+data = pickle.dumps({"name": "Rex", "pos": vec2(1, 2), "tags": (1, 2, 3)})
+value = pickle.loads(data)
+print value["name"]        // "Rex"
+print value["pos"].x       // 1
+
+try {
+    pickle.dumps(pickle.dumps)   // a function -- not picklable
+} except PickleError as e {
+    print e.msg
+}
+
+class Point {
+    init(x, y) {
+        this.x = x
+        this.y = y
+    }
+}
+p2 = pickle.loads(pickle.dumps(Point(3, 4)))
+print p2.x   // 3</code></pre>
+
+<!-- ==================== MODULE: PROCESS ==================== -->
+<h2 class="section" id="mod-process">process <span class="pill">module</span></h2>
+<p><code>import process</code> — spawns other <code>glox</code> processes and talks to them over a pipe carrying <a href="#mod-pickle">pickled</a> values, glox's answer to Python's <code>multiprocessing</code>. Since glox has no <code>fork()</code> and no way to serialise a closure, each worker is a separate <code>.lox</code> script run as its own process, not an in-memory function.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>process.spawn(script_path, ...)</code></td><td>Launch another glox process running <code>script_path</code>, connected by a pipe on its stdin/stdout. Extra string arguments become the child's own <code>sys.args()</code>; they must not start with <code>-</code> (no <code>--</code> escape hatch in argument parsing). Returns a <a href="#mod-process-obj">Process</a>.</td></tr>
+<tr><td><code>process.parent()</code></td><td>Returns a <a href="#mod-process-obj">Process</a> wired to this process's own stdin/stdout -- the far end of the pipe held by whatever spawned it. Used inside a worker script to talk back to its spawner.</td></tr>
+<tr><td><code>process.wait_any(processes)</code></td><td>Blocks until any of the given Process objects has a message ready. Returns the tuple <code>(index, value)</code>, or <code>nil</code> once every process in the list has finished. This is the fan-in primitive for collecting results from several workers without polling each in turn. A process that finished cleanly (closed its pipe normally) is dropped from consideration rather than aborting the wait for the others; a genuine I/O error still raises <code>ProcessError</code> immediately.</td></tr>
+</tbody>
+</table>
+<h3 id="mod-process-obj">Process objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>send(value)</code></td><td>Pickle <code>value</code> and write it to the pipe</td></tr>
+<tr><td><code>recv()</code></td><td>Block until a value arrives and return it. Raises <a href="#exceptions"><code>ProcessError</code></a> if the peer closed its end.</td></tr>
+<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code> -- the same shape as Go's own <code>v, ok := &lt;-channel</code>.</td></tr>
+<tr><td><code>wait()</code></td><td>Block until the child exits; returns its exit code. Only on a <code>spawn()</code>-side Process.</td></tr>
+<tr><td><code>kill()</code></td><td>Forcibly terminate the child. Only on a <code>spawn()</code>-side Process.</td></tr>
+<tr><td><code>pid()</code></td><td>The child's OS process ID. Only on a <code>spawn()</code>-side Process.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">// parent.lox
+import process
+p = process.spawn("worker.lox")
+p.send(42)
+print p.recv()      // result from the worker
+p.wait()
+
+// worker.lox
+import process
+p = process.parent()
+x = p.recv()
+p.send(x * 2)</code></pre>
+<div class="note"><strong>Worker pool</strong>There's no shared-memory <code>Queue</code> the way Python's <code>multiprocessing.Queue</code> needs one, but <code>spawn</code>/<code>send</code>/<code>wait_any</code> are enough to drain a shared task queue across several workers -- the <a href="#mod-pool"><code>pool</code></a> module below does exactly that, so most scripts don't need to hand-roll it. See <a href="md/PROCESS_MODULE.md">PROCESS_MODULE.md</a> for the pattern <code>pool</code> is built on.</div>
+
+<!-- ==================== MODULE: POOL ==================== -->
+<h2 class="section" id="mod-pool">pool <span class="pill">module</span></h2>
+<p><code>import pool</code> — fixed-size worker pools, glox's answer to Python's <code>multiprocessing.Pool</code>: <code>ProcessPool</code> over <a href="#mod-process">process</a>'s <code>spawn</code>/<code>send</code>/<code>recv</code>/<code>wait_any</code>, <code>ThreadPool</code> over the equivalent <a href="#mod-thread">thread</a> primitives. Both spawn their workers up front and keep them alive across calls; <code>.map()</code> hands tasks out to whichever worker is free and returns results in task order, regardless of which worker finishes first.</p>
+<table>
+<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>pool.ProcessPool(worker_path, n_workers)</code></td><td>Class: spawns <code>n_workers</code> copies of the <code>.lox</code> script <code>worker_path</code> immediately. Each worker loops "<code>recv()</code> a task, do work, <code>send()</code> a result". Workers stay alive, idle between calls, until <code>close()</code> kills them.</td></tr>
+<tr><td><code>pool.ThreadPool(task_fn, n_workers)</code></td><td>Class: spawns <code>n_workers</code> threads immediately, each looping "<code>recv()</code> a task via its own channel, call <code>task_fn(task)</code>, <code>send()</code> the result back". <code>task_fn</code> is a plain function, not a script -- no process boundary needs crossing to hand it a closure. Workers stay alive, idle between calls, until <code>close()</code> cancels them.</td></tr>
+<tr><td><code>.map(tasks)</code></td><td>Runs every item in <code>tasks</code> across the pool; blocks until all are done. Returns results in the same order as <code>tasks</code>. Safe to call more than once on the same pool -- workers are reused, not respawned, between calls. Identical contract on both classes.</td></tr>
+<tr><td><code>.close()</code></td><td><code>ProcessPool</code>: kills and reaps every worker. <code>ThreadPool</code>: cancels and reaps every thread. Idempotent either way. <code>map()</code> raises <code>PoolError</code> if called afterward.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import pool
+
+p = pool.ProcessPool("worker.lox", 4)
+results = p.map([1, 2, 3, 4, 5])   // more tasks than workers is fine
+print results                      // in task order, however workers finished
+results2 = p.map([10, 20])         // same pool, same workers, reused
+p.close()
+
+p2 = pool.ThreadPool(func(x) { return x * x }, 4)   // in-memory function, not a script
+print p2.map([1, 2, 3, 4, 5])
+p2.close()</code></pre>
+<div class="note"><strong>Limitation</strong>If a worker crashes mid-task, <code>map()</code> can't distinguish that from every worker in the pool having exited -- <code>wait_any()</code> doesn't tell the two apart on either backend -- so it raises <code>PoolError</code> either way rather than retrying or reporting which task was lost.</div>
+
+<!-- ==================== MODULE: THREAD ==================== -->
+<h2 class="section" id="mod-thread">thread <span class="pill">module</span></h2>
+<p><code>import thread</code> — runs a closure on a new goroutine-backed <code>glox</code> VM instance within the <em>same</em> OS process. Unlike <a href="#mod-process"><code>process</code></a>, which needs a <code>.lox</code> script path per worker because there's no way to serialise a closure across a process boundary, <code>thread.spawn()</code> takes an in-memory function directly, since no process boundary is crossed.</p>
+<table>
+<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>thread.spawn(closure, ...args)</code></td><td>Deep-copies <code>closure</code>'s captured upvalues and <code>args</code>, then runs the copy on a new goroutine-backed VM. Returns a <a href="#mod-thread-obj">Thread</a>. Raises <code>ThreadError</code> if <code>closure</code> isn't a function, or if called from the REPL (unsupported).</td></tr>
+<tr><td><code>thread.channel()</code></td><td>Called from inside a spawned function: returns a <a href="#mod-thread-chan-obj">ThreadChannel</a> wired to this thread's own communication channels, the <code>thread</code>-module analogue of <code>process.parent()</code>. Raises <code>ThreadError</code> if called outside a spawned thread.</td></tr>
+<tr><td><code>thread.wait_any(threads)</code></td><td>Blocks until any of the given <a href="#mod-thread-obj">Thread</a> objects has a message ready. Returns <code>(index, value)</code>, or <code>nil</code> once every thread in the list has finished -- the <code>thread</code>-module analogue of <code>process.wait_any()</code>. A thread that finished cleanly (its function returned, or it was cancelled) is dropped from consideration rather than treated as an error; one that ended abnormally and was <em>not</em> cancelled still raises <code>ThreadError</code>.</td></tr>
+</tbody>
+</table>
+<h3 id="mod-thread-obj">Thread objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>send(value)</code></td><td>Hands <code>value</code> to the thread directly -- no serialisation, both sides share one address space. Raises <code>ThreadError</code> if the thread has already finished.</td></tr>
+<tr><td><code>recv()</code></td><td>Blocks until the thread sends a value via <code>channel().send()</code>. Raises <code>ThreadError</code> if the thread finished (no more messages) or ended abnormally -- only the original exception's message text carries across, never its class. A cancelled thread finishing is not treated as abnormal.</td></tr>
+<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code>.</td></tr>
+<tr><td><code>wait()</code></td><td>Blocks until the thread's function returns, and returns whatever it returned -- unlike <code>process</code>'s <code>wait()</code> (an OS exit code only), a thread's real return value survives since there's no process boundary to lose it across. Raises <code>ThreadError</code> if the thread ended abnormally; a cancelled thread's <code>wait()</code> returns <code>nil</code> instead.</td></tr>
+<tr><td><code>cancel()</code></td><td>Cooperative cancellation only, <strong>not</strong> a real kill: unblocks a thread parked in <code>channel().send()</code>/<code>recv()</code> (both raise <code>ThreadError</code> inside the thread's own function), but can't interrupt a thread stuck in a loop that never touches its channel. From the parent's side, though, a successfully cancelled thread looks like a clean finish, not a fault -- mirroring <code>process.kill()</code> producing a clean EOF for <code>process.wait_any()</code> rather than a <code>ProcessError</code>.</td></tr>
+</tbody>
+</table>
+<h3 id="mod-thread-chan-obj">ThreadChannel objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>send(value)</code></td><td>Sends <code>value</code> back to the parent. Raises <code>ThreadError</code> if the parent has called <code>cancel()</code>.</td></tr>
+<tr><td><code>recv()</code></td><td>Blocks until the parent sends a value via <code>t.send()</code>. Raises <code>ThreadError</code> if the parent called <code>cancel()</code> or is gone.</td></tr>
+<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>, same tri-state shape.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import thread
+
+t = thread.spawn(func() {
+    c = thread.channel()
+    x = c.recv()
+    c.send(x * 2)
+    return "done"
+})
+
+t.send(21)
+print t.recv()   // 42
+print t.wait()   // "done"</code></pre>
+<div class="note"><strong>Limitation</strong>Only a spawned closure's own captured (upvalue) locals are isolated (deep-copied) -- top-level <code>var</code>s, class statics, and module attributes are shared across every thread, not copied. Use <a href="#mod-sync"><code>sync.Mutex</code></a> when more than one thread needs to touch one of those safely. See <a href="md/THREAD_MODULE.md">THREAD_MODULE.md</a> for the full set of limitations.</div>
+
+<!-- ==================== MODULE: SYNC ==================== -->
+<h2 class="section" id="mod-sync">sync <span class="pill">module</span></h2>
+<p><code>import sync</code> — <code>Mutex</code>, the one tool <a href="#mod-thread"><code>thread</code></a> gives you for the gap it deliberately leaves open: globals/class statics/module attributes are shared across threads, not isolated, so <code>Mutex</code> is what makes touching one of those safe from more than one thread at a time.</p>
+<table>
+<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>sync.Mutex()</code></td><td>Class: constructs a new, unlocked mutex. A <code>Mutex</code> captured by a <code>thread.spawn()</code>-ed closure's upvalue is shared, not cloned, across the new thread and the caller -- a lock only means something if every thread contends for the same one.</td></tr>
+<tr><td><code>.acquire()</code></td><td>Blocks until the lock is free, then takes it. Pair with <code>release()</code> in a <code>finally</code> block to guarantee release on every path -- or prefer <code>locked()</code>, which does this for you, unless the lock needs to span more than one statement.</td></tr>
+<tr><td><code>.release()</code></td><td>Releases the lock. Raises <code>SyncError</code> if called without a matching <code>acquire()</code>.</td></tr>
+<tr><td><code>.locked(closure)</code></td><td>Acquires the lock, calls <code>closure</code> with no arguments, and guarantees release when it returns -- normally or by raising -- without needing a manual release-on-every-path. Returns whatever <code>closure</code> returned. An uncaught exception inside <code>closure</code> surfaces as <code>SyncError</code>, not its original class -- catch it inside <code>closure</code> with your own <code>try</code>/<code>except</code> if the original type matters.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import thread
+import sync
+
+counter = 0
+lock = sync.Mutex()
+
+func incrementer() {
+    lock.locked(func() {
+        counter = counter + 1
+    })
+}
+
+threads = []
+foreach (i in range(20)) {
+    threads.append(thread.spawn(incrementer))
+}
+foreach (t in threads) { t.wait() }
+
+print counter   // always exactly 20</code></pre>
+<div class="note"><strong>Limitation</strong>v1 ships a single <code>Mutex</code> only -- no <code>RWMutex</code>, semaphore, or <code>WaitGroup</code>-equivalent yet.</div>
+
+<!-- ==================== MODULE: SYS ==================== -->
+<h2 class="section" id="mod-sys">sys <span class="pill">module</span></h2>
+<p><code>import sys</code> — system-level utilities.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>sys.args()</code></td><td>List of command-line arguments</td></tr>
+<tr><td><code>sys.clock()</code></td><td>Current time in seconds (for timing / animation)</td></tr>
+<tr><td><code>sys.sleep(seconds)</code></td><td>Pauses execution for <code>seconds</code> (int or float)</td></tr>
+<tr><td><code>sys.today()</code></td><td>Current date as a string, <code>"YYYY-MM-DD"</code></td></tr>
+<tr><td><code>sys.now()</code></td><td>Current time as a string, <code>"HH:MM:SS"</code> (no date — pair with <code>sys.today()</code> for both)</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>Note</strong>File I/O lives in the <a href="#mod-os"><code>os</code></a> module (not <code>sys</code>). <code>sys</code> must be imported before use — it is not injected as a built-in.</div>
+
+<!-- ==================== MODULE: INSPECT ==================== -->
+<h2 class="section" id="mod-inspect">inspect <span class="pill">module</span></h2>
+<p><code>import inspect</code> — VM introspection and debugging.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>inspect.dump_frame()</code></td><td>Print the current frame: function name, stack/locals, and globals</td></tr>
+<tr><td><code>inspect.get_frame()</code></td><td>Return a dict describing the current frame</td></tr>
+</tbody>
+</table>
+<p><code>get_frame()</code> returns a dictionary with keys:</p>
+<table>
+<thead><tr><th>Key</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td><code>function</code></td><td>Function name</td></tr>
+<tr><td><code>line</code></td><td>Current source line</td></tr>
+<tr><td><code>file</code></td><td>Current script path</td></tr>
+<tr><td><code>args</code></td><td>List of arguments</td></tr>
+<tr><td><code>locals</code></td><td>Dict of local variables</td></tr>
+<tr><td><code>globals</code></td><td>Dict of global variables</td></tr>
+<tr><td><code>prev_frame</code></td><td>Calling frame dict, or <code>nil</code></td></tr>
+</tbody>
+</table>
+
+<!-- ==================== KEYWORD INDEX ==================== -->
+<h2 class="section" id="keywords">Keyword index</h2>
+<p>Reserved keywords in GLox:</p>
+<table>
+<thead><tr><th>Keyword</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><code>var</code></td><td>Explicit variable declaration</td></tr>
+<tr><td><code>const</code></td><td>Immutable variable declaration</td></tr>
+<tr><td><code>func</code> / <code>fun</code></td><td>Function declaration</td></tr>
+<tr><td><code>class</code></td><td>Class declaration</td></tr>
+<tr><td><code>static</code></td><td>Static method / class variable modifier</td></tr>
+<tr><td><code>this</code> / <code>super</code></td><td>Instance self-reference / parent access</td></tr>
+<tr><td><code>return</code></td><td>Return from a function</td></tr>
+<tr><td><code>if</code> / <code>else</code></td><td>Conditional</td></tr>
+<tr><td><code>while</code> / <code>for</code> / <code>foreach</code></td><td>Loops</td></tr>
+<tr><td><code>in</code></td><td>Membership test / <code>foreach</code> binding</td></tr>
+<tr><td><code>break</code> / <code>continue</code></td><td>Loop control</td></tr>
+<tr><td><code>and</code> / <code>or</code></td><td>Boolean logic</td></tr>
+<tr><td><code>true</code> / <code>false</code> / <code>nil</code></td><td>Literals</td></tr>
+<tr><td><code>print</code></td><td>Print an expression</td></tr>
+<tr><td><code>str</code></td><td>Stringify operator: <code>str(expr)</code></td></tr>
+<tr><td><code>import</code> / <code>from</code> / <code>as</code></td><td>Module imports</td></tr>
+<tr><td><code>try</code> / <code>except</code> / <code>finally</code> / <code>raise</code></td><td>Exception handling</td></tr>
+<tr><td><code>breakpoint</code></td><td>Debugger breakpoint statement</td></tr>
+</tbody>
+</table>
+
+<!-- ==================== PERFORMANCE ==================== -->
+<h2 class="section" id="performance">Performance notes</h2>
+<p>GLox runs roughly 1.5–3.6× slower than CPython across the loxcraft benchmark suite. Key implementation notes for writing fast Lox:</p>
+<ul>
+<li>Prefer <a href="#control-flow"><code>foreach (i in range(n))</code></a> over manual counter loops — <code>range</code> is a native iterator.</li>
+<li>Use <a href="#batch"><code>batch</code></a> / <a href="#batch-instanced"><code>batch_instanced</code></a> for large numbers of similar primitives instead of per-object draw calls.</li>
+<li>Move hot per-object simulation into native types where available (e.g. <a href="#physics-world"><code>physics_world</code></a>) rather than per-object Lox method dispatch.</li>
+<li>Strings are interned; equality and method/global lookup use integer IDs.</li>
+</ul>
+<p>Interpreter-level optimisations include a reduced 32-byte <code>Value</code> struct, slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>OP_ADD_II</code>/<code>OP_ADD_FF</code>), inline call frames, and a hoisted dispatch-loop frame context.</p>
+
+<footer>
+<p>odlox Language Reference — adapted from <a href="https://github.com/nickharrismcr/glox">glox</a>'s own <code>docs/language-reference.html</code>. For odlox's own implementation details (package layout, value/object representation, GC design) see <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>; for what's implemented vs. still outstanding see this project's <code>TODO.md</code>/<code>ROADMAP.md</code>.</p>
+</footer>
+  </main>
+</div>
+
+<script>
+(function(){
+  // ---- Theme toggle ----
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem("odlox-theme"); } catch(e){}
+  if (saved) root.setAttribute("data-theme", saved);
+  document.getElementById("themeToggle").addEventListener("click", function(){
+    var cur = root.getAttribute("data-theme");
+    if (!cur) cur = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    var next = cur === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("odlox-theme", next); } catch(e){}
+  });
+
+  // ---- Mobile menu ----
+  var sidebar = document.getElementById("sidebar");
+  document.getElementById("menuToggle").addEventListener("click", function(){
+    sidebar.classList.toggle("open");
+  });
+  sidebar.addEventListener("click", function(e){
+    if (e.target.tagName === "A" && window.innerWidth <= 860) sidebar.classList.remove("open");
+  });
+
+  // ---- Nav filter ----
+  var search = document.getElementById("navsearch");
+  var links = Array.prototype.slice.call(document.querySelectorAll("#nav a"));
+  search.addEventListener("input", function(){
+    var q = search.value.toLowerCase().trim();
+    links.forEach(function(a){
+      var match = !q || a.textContent.toLowerCase().indexOf(q) !== -1;
+      a.classList.toggle("hidden", !match);
+    });
+  });
+
+  // ---- Scroll spy + breadcrumb ----
+  var sections = Array.prototype.slice.call(document.querySelectorAll("h2.section"));
+  var crumbs = document.getElementById("crumbs");
+  var byId = {};
+  links.forEach(function(a){ byId[a.getAttribute("href")] = a; });
+  function spy(){
+    var pos = window.scrollY + 120, current = sections[0];
+    for (var i=0;i<sections.length;i++){ if (sections[i].offsetTop <= pos) current = sections[i]; }
+    links.forEach(function(a){ a.classList.remove("active"); });
+    var link = current && byId["#"+current.id];
+    if (link){ link.classList.add("active"); crumbs.textContent = "odlox Reference › " + current.textContent.replace(/native object|module|native module/g,"").trim(); }
+  }
+  window.addEventListener("scroll", spy, {passive:true});
+  spy();
+
+  // ---- Lightweight Lox syntax highlighting ----
+  var KW = ("and as break breakpoint class const continue else except false finally for foreach from fun func "
+          + "if import in nil or print raise return static str super this true try var while").split(" ");
+  var kwSet = {}; KW.forEach(function(k){ kwSet[k]=1; });
+  function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  // token regex: comments, strings, numbers, identifiers, other
+  var re = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|(\b\d+\.?\d*\b)|([A-Za-z_]\w*)|([\s\S])/g;
+  document.querySelectorAll("code.lox").forEach(function(code){
+    var src = code.textContent, out = "", m;
+    re.lastIndex = 0;
+    while ((m = re.exec(src)) !== null){
+      if (m[1]) out += '<span class="tok-com">'+esc(m[1])+'</span>';
+      else if (m[2]) out += '<span class="tok-str">'+esc(m[2])+'</span>';
+      else if (m[3]) out += '<span class="tok-num">'+esc(m[3])+'</span>';
+      else if (m[4]) out += kwSet[m[4]] ? '<span class="tok-kw">'+m[4]+'</span>' : esc(m[4]);
+      else out += esc(m[5]);
+    }
+    code.innerHTML = out;
+  });
+})();
+</script>
+</body>
+</html>
