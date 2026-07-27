@@ -32,14 +32,18 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `gfx.window()` + core 2D drawing landed (see `ROADMAP.md`'s Phase 6i);
-      `physics_world` is complete (see Phase 6i too). Still outstanding: `texture`/`shader`/`camera`/
-      `render_texture`/`image`/`batch`/`batch_instanced`, 3D drawing, blend/shader modes, `draw_array` —
-      each its own real chunk of work, not attempted yet. `d:/odin/glox_reference/src/builtin/` is the
-      ground truth for each (`obj_builtin_texture.go`+`texture_methods.go`, `obj_builtin_shader.go`,
-      `obj_builtin_camera.go`+`camera_methods.go`, `obj_builtin_render_texture.go`+
-      `render_texture_methods.go`, `obj_builtin_batch.go`+`batch_methods.go`,
-      `obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
+- [ ] Raylib-backed natives: `physics_world` and `gfx.window()` + core 2D drawing (lifecycle, frame
+      begin/end, input, pixel/line/line_ex/triangle/rectangle/circle/circle_fill/text) are both complete
+      (see `ROADMAP.md`'s Phase 6i/6j) — verified by a scripted smoke test that opens a real window, draws
+      every primitive for 10 frames, and closes cleanly (no way to visually confirm rendered output from
+      here; genuinely untested beyond "runs without crashing/hanging and issues the right raylib calls" —
+      a human should eyeball it at least once). Still outstanding, each its own real chunk of work:
+      `texture`/`shader`/`camera`/`render_texture`/`image`/`batch`/`batch_instanced`, 3D drawing,
+      blend/shader modes, `draw_array`. `d:/odin/glox_reference/src/builtin/` is the ground truth for each
+      (`obj_builtin_texture.go`+`texture_methods.go`, `obj_builtin_shader.go`, `obj_builtin_camera.go`+
+      `camera_methods.go`, `obj_builtin_render_texture.go`+`render_texture_methods.go`,
+      `obj_builtin_batch.go`+`batch_methods.go`, `obj_builtin_batch_instanced.go`+
+      `batch_instanced_methods.go`).
 - [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are
       tested; `wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused

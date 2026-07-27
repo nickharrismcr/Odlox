@@ -171,6 +171,9 @@ as_process :: proc(v: Value) -> ^Process_Object {
 as_physics_world :: proc(v: Value) -> ^Physics_World_Object {
 	return cast(^Physics_World_Object)v.obj
 }
+as_window :: proc(v: Value) -> ^Window_Object {
+	return cast(^Window_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

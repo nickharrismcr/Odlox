@@ -710,8 +710,9 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       rather than create the package and its wiring at the same time as
       the first real raylib work.
 - [x] `physics_world` — complete. See Phase 6i.
-- [ ] `gfx.window()` + core 2D drawing (lifecycle, frame begin/end,
-      input, pixel/line/rectangle/circle/text) — in progress, see Phase 6j.
+- [x] `gfx.window()` + core 2D drawing (lifecycle, frame begin/end,
+      input, pixel/line/line_ex/triangle/rectangle/circle/circle_fill/
+      text) — complete. See Phase 6j.
 - [ ] `texture`/`shader`/`camera`/`render_texture`/`image`/`batch`/
       `batch_instanced`, 3D drawing, blend/shader modes, `draw_array` —
       not started, deliberately deferred past the Phase 6j slice.
@@ -1979,6 +1980,92 @@ algorithm exactly. Promoted to `tests/new_tests/lox/physics_world_basic.lox`
 + `test_physics.py` (2 parametrized cases) once verified. Full `pytest`
 regression: 220 passed / 0 failed / 26 skipped (up from 218/0/26), both
 build modes clean.
+
+### Phase 6j: `gfx.window()` + core 2D drawing
+
+The first real `vendor:raylib` work. Scope deliberately bounded to
+window lifecycle, frame begin/end, input, and 2D primitive drawing —
+texture/shader/camera/render_texture/image/batch/batch_instanced, 3D
+drawing, blend/shader modes, and `draw_array` are explicitly deferred
+(see `TODO.md`), matching the smallest-slice-first sequencing this
+section of `ROADMAP.md` already called for.
+
+**`vendor:raylib` confirmed present** at
+`C:\Users\User\AppData\Local\Programs\Odin\vendor\raylib\` (raylib v6.0,
+Windows DLL bundled — no new dependency to install). glox's own binding
+(raylib-go, pinned to a May-2025 commit, ≈raylib 5.5) is close enough in
+version that the core API used here — `InitWindow`, `BeginDrawing`,
+`DrawRectangle`, keyboard/config-flag enums — is unchanged; no
+signature mismatches found.
+
+**A real API-shape detail, not an oversight**: glox's `gfx.window(w, h)`
+constructor does *not* call `rl.InitWindow` itself — `WindowBuiltIn`
+(`obj_builtin_window.go`) just builds the struct; `rl.InitWindow` only
+happens inside a separate `win.init()` method
+(`win_methods.go`), which also does `SetTraceLogLevel(LogNone)`,
+`SetConfigFlags(FlagVsyncHint)`, and `SetTargetFPS(60)`. Ported
+faithfully as two separate steps (`natives/gfx.odin`'s `gfx_window`
+constructor vs. `vm/gfx_window.odin`'s `"init"` case) rather than
+collapsing them, since any real script (once any get ported) will
+already call `.init()` explicitly.
+
+**Deliberate deviations from glox, both documented in
+`vm/gfx_window.odin`'s header comment**:
+- `end()` does **not** call `rl.DrawFPS(10, 10)` automatically the way
+  glox's own `end()` does — a debug overlay side effect baked into the
+  wrong place. `get_fps()` is exposed so a script can draw its own FPS
+  text if it wants one at all.
+- `get_screen_width()`/`get_screen_height()` return **int**, not
+  glox's float — a screen dimension has no fractional part, and every
+  other pixel-coordinate argument in this file is already an int.
+
+**Files**: `core/obj_window.odin` (new — `Window_Object`, a lightweight
+marker/context struct; raylib's window/GL-context state is process-
+global, so there's no per-object GPU resource to own); `vm/gfx_window.odin`
+(new — `invoke_builtin_window`'s full method dispatch, plus a shared
+`vec4_to_rl_color`/`arg_color` helper every drawing call uses); `natives/gfx.odin`
+(the `gfx.window(width, height)` constructor, plus `register_gfx_key_constants`
+exposing `gfx.KEY_A`..`KEY_Z`/`KEY_0`..`KEY_9`/`KEY_SPACE`/`KEY_ESCAPE`/
+`KEY_ENTER`/`KEY_UP`/`KEY_DOWN`/`KEY_LEFT`/`KEY_RIGHT` — a deliberately
+small subset of glox's ~100-constant `rl.Key*` registration, expandable
+on demand); `vm/builtins.odin` (new `define_builtin_const` — the first
+built-in module constant this port has needed, alongside every function
+registered via `define_builtin`; mirrors that proc's own
+`vm.builtin_modules[...]` lookup, writing straight into the module's
+environment via `core.env_set_var` instead of wrapping a `Builtin_Fn`).
+Colors cross the boundary as `vec4`, each channel 0-255 — confirmed
+against `natives/colour_utils.odin`'s already-shipped convention
+(`colour_utils_fade`'s `clamp255`/alpha-at-255 usage) before assuming
+it, not guessed.
+
+**No GC-triggered teardown**: unlike `Texture`/`Shader`/`RenderTexture`
+in glox (not implemented in this port yet either), `Window_Object` owns
+no GPU resource of its own — raylib's window is closed only by an
+explicit `.close()` call, made idempotent via a `closed` bool so a
+second call is a safe no-op rather than a second `rl.CloseWindow()`.
+`vm/gc.odin`'s `free_object` needs no new case at all (the existing
+`case: free(obj)` default is already correct here).
+
+**Verification — the honest limit of what could actually be checked
+from here**: no display access, so rendered output can't be visually
+confirmed at all. Compiled cleanly in both build modes on the first
+attempt; full `pytest` regression stayed at 220/0/26 throughout (this
+work adds no new automated Lox-level tests, since there's no `_ns`-style
+no-screen equivalent for "did this draw the right pixels"). Wrote and
+ran a scripted smoke test instead (not part of the checked-in suite):
+opens a real 320x240 window, calls `.init()`, checks
+`get_screen_width/height`/`get_fps`, runs 10 frames each calling every
+2D primitive (`pixel`/`line`/`line_ex`/`triangle`/`rectangle`/`circle`/
+`circle_fill`/`text`) plus `key_down`/`key_pressed`, exercises both
+argument-validation error paths, and calls `.close()` twice to confirm
+idempotency — ran to completion with exit code 0, no crash, no hang, no
+orphaned process left behind afterward. That confirms the code path
+executes and issues the right raylib calls without erroring; it does
+**not** confirm the window actually rendered correctly on screen — that
+needs an actual human look, which this environment can't provide.
+Said explicitly rather than claimed as done, matching this project's
+own standing rule for UI/graphics work that can't be tested end-to-end
+from here.
 
 ## Phase 7 — Performance pass
 

@@ -119,6 +119,17 @@ define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_F
 	core.env_set_var(mod.environment, core.intern_string(name), val)
 }
 
+// define_builtin_const registers a plain value (not a callable) as a
+// member of an already-created built-in module -- e.g. gfx.KEY_A. Same
+// module-environment lookup as define_builtin, just skipping the
+// Native_Object/Builtin_Fn wrapping step: Get_Property's own .Module
+// case already reads members via core.env_get_var, so a constant needs
+// nothing more than landing in that same environment.
+define_builtin_const :: proc(vm: ^VM, module: string, name: string, value: core.Value) {
+	mod := vm.builtin_modules[core.intern_string(module)]
+	core.env_set_var(mod.environment, core.intern_string(name), value)
+}
+
 // -----------------------------------------------------------------------
 // Core free functions (glox's builtin.core_functions.go)
 
@@ -182,6 +193,10 @@ type_name :: proc(v: core.Value) -> string {
 		case .Physics_World:
 			// Matches glox's own type() exactly -- PhysicsWorldObject.GetType()
 			// (obj_builtin_physics_world.go) also returns OBJECT_NATIVE.
+			return "builtin"
+		case .Window:
+			// Matches glox's own type() exactly -- WindowObject.GetType()
+			// (obj_builtin_window.go) also returns OBJECT_NATIVE.
 			return "builtin"
 		}
 	}
