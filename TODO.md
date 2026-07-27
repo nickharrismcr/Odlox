@@ -30,8 +30,6 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       build/version to see if the instability follows) rather than further ad hoc bisection before this is
       trustworthy as a verification step again.
 
-- [ ] lox_examples/fireworks.lox segfaults after several seconds. possible garbage collector issue? investigate and diagnose 
-
 ## Phase 6 — Native/builtin functions & standard library
 
 - [ ] `process.wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget

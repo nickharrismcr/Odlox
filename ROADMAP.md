@@ -2654,6 +2654,60 @@ textured cubes, orbiting/pathfinding camera controller, ~30k-cube stacks) and
 distance-hue shader post-process) — both generate their full scene and run their animated loop under a
 bounded wall-clock smoke test with zero crashes, zero orphaned processes.
 
+### Phase 6w: fixed a real use-after-free in module loading (`lox_examples/fireworks.lox` segfault)
+
+Trigger: `fireworks.lox` (not modified by this port otherwise) segfaulted after a few seconds of running,
+with genuinely variable symptoms run to run — sometimes a clean `"Undefined property 'pos'"`/`"'size'"`
+runtime error, sometimes an outright segfault — the hallmark of real memory corruption rather than a
+deterministic script-logic bug.
+
+**Root cause, confirmed directly rather than inferred**: `vm/module.odin`'s `load_module` runs a module's
+own top-level code (class declarations, top-level `var` initializers) in a throwaway sub-VM
+(`sub := new_vm_raw(path)`), then keeps only `sub.environment` (wrapped in a `Module_Object`) once
+`interpret(sub, ...)` returns. Every object that top-level code allocated — including a module-level
+`var _pool = [];` list — was `gc_track`ed onto **`sub.objects`**, never the parent `vm.objects`. `_pool`
+itself (`modules/particle_sys.lox`, a shared free-list of recycled `Particle` instances — "so a steady-state
+fountain does no per-frame Particle allocation") is exactly this shape: created once at module load, mutated
+for the rest of the program's life by the *importing* script's own execution.
+
+Since `sweep()` only ever walks `vm.objects`, `_pool`'s own list object — reachable and correctly marked by
+the parent's `mark_roots` (`module_cache` → `Module_Object` → `mark_environment`) — was *never visited by
+sweep*, so its `marked` bit, once set on the very first GC cycle that reached it, was never cleared again.
+`mark_object`'s own fast path (`if obj.marked { return }`, skip re-queuing for `blacken_object`) then meant
+`_pool`'s contents were traced exactly once, on cycle 1, and never again — every particle added to the pool
+after that point was invisible to every future mark phase, and got swept as garbage by the very next cycle
+while `_acquire()`/`_release()` still handed out live references to it. A classic mark-bit-never-reset
+use-after-free, not a marking-logic bug in the usual sense.
+
+**How this was actually confirmed**, not guessed at, after several dead-end hypotheses (cross-module string
+interning — ruled out, `intern_table` is a genuinely shared, process-wide global; the swap-remove list
+pattern — ruled out by direct code reading; upvalue closing — ruled out by a synthetic closures-under-GC-
+pressure repro that never crashed): a temporary, `when ODIN_DEBUG`-gated quarantine mode was added to the
+collector (`free_object` records a freed object's address instead of actually releasing it, so its address
+can never be handed back out by the allocator to something else during the same run) plus assertions at
+every point an object gets touched again (`mark_object`, `get_property`/`set_property` on an `Instance`
+receiver). The very first trip confirmed a genuine use-after-free (not a hypothesis) in `set_property`, which
+directly localized to `Particle.reset()` writing through a pointer pulled out of `_pool` by `_acquire()`. A
+second, more targeted check — walking `particle_sys`'s `_pool` right after `mark_roots`/`trace_references`
+completed, before `sweep` could free anything — showed the pool's own list object correctly marked with its
+full, current item count, yet *every single item inside it* unmarked; cross-referencing against a per-List
+trace in `blacken_object` showed the pool's list was blackened exactly once, at GC cycle 1, and never again
+in any subsequent cycle despite growing to over 200 items by cycle 3 — the exact mechanism above, caught in
+the act rather than inferred from symptoms. This diagnostic scaffolding was removed after the fix was
+confirmed (not shipped) — the fix itself doesn't need it.
+
+**Fix**: after `interpret(sub, ...)` succeeds, splice `sub.objects`'s entire linked list into `vm.objects`
+(a plain O(n)-in-sub's-own-list pointer walk to find the tail, then one link), and fold
+`sub.bytes_allocated` into `vm.bytes_allocated`. This makes the parent VM's own `sweep()` the sole owner of
+everything the module allocated at load time, not just what it allocated afterward — fixing the bug at its
+structural source (any module-level mutable container has this same latent shape) rather than special-
+casing `_pool` specifically.
+
+**Verified**: `pytest` held at 220/0/26 throughout. `lox_examples/fireworks.lox`, previously crashing on
+roughly 2 of every 3 runs within a few seconds, ran clean to a bounded wall-clock timeout on 5 consecutive
+runs (debug) and 3 consecutive runs (release) after the fix, zero crashes, zero orphaned processes — a much
+stronger bar than the pre-fix baseline, which crashed reliably within that same window.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

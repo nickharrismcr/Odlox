@@ -142,6 +142,38 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return nil, false
 	}
 
+	// sub is a throwaway VM that exists only to run this module's own
+	// top-level code (class/func declarations, any module-level `var`
+	// initializers). Every object that code allocated -- including e.g.
+	// a module-level `var _pool = [];` list a script mutates long after
+	// import -- was gc_track()ed onto *sub's* vm.objects, not the parent
+	// vm's. Once sub is discarded below, those objects would still be
+	// reachable (via mod.environment, correctly walked by the parent's
+	// mark_roots) but never actually swept by anyone: sweep() only walks
+	// vm.objects, so their mark bit, once set on the first cycle that
+	// reaches them, would never get cleared again -- and mark_object's
+	// "already marked, don't re-queue" fast path then means they never
+	// get re-traced either. A List's own object surviving that way is
+	// harmless (it just never becomes unreachable), but anything added
+	// to it *after* this point (e.g. every particle a pool holds beyond
+	// its first GC cycle) is invisible to every future mark phase and
+	// gets swept as garbage while still genuinely referenced --
+	// confirmed as the exact mechanism behind a real, reproducible
+	// use-after-free (lox_examples/fireworks.lox, see ROADMAP.md).
+	// Splicing sub's object list into the parent's, and folding its
+	// allocation total in too, makes the parent's own sweep the sole
+	// owner of everything the module allocated, fixing this at the
+	// source rather than special-casing module-level containers.
+	if sub.objects != nil {
+		tail := sub.objects
+		for tail.next != nil {
+			tail = tail.next
+		}
+		tail.next = vm.objects
+		vm.objects = sub.objects
+	}
+	vm.bytes_allocated += sub.bytes_allocated
+
 	// Publish the module's slot-indexed globals into its own name-keyed
 	// Vars map too, so `from mod import x` (name-based lookup) works --
 	// mirrors glox's post-import sync step.
