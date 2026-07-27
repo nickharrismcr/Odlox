@@ -2492,6 +2492,52 @@ unmodified, now runs its full real-time zoom loop under a bounded wall-clock smo
 build modes) with zero crashes and no orphaned process — the same script that previously stopped at the very
 first `lox_mandel_array` call. `pytest` held at 220/0/26 throughout; both build modes compiled cleanly.
 
+### Phase 6t: `gfx.camera()`, 3D drawing, and `win.draw_array`
+
+Trigger: direct request to continue closing the remaining raylib gaps. Three pieces, all ported from glox's
+`obj_builtin_camera.go`/`camera_methods.go` and the 3D-drawing/`draw_array` portions of `win_methods.go`.
+
+**`gfx.camera(position, target, up)`** (`core/obj_camera.odin`, `vm/gfx_camera.odin`) — always perspective
+projection, 45° default field of view, matching glox's constructor exactly (it exposes no way to construct
+an orthographic camera or change projection mode, so this port doesn't invent one). Methods: `set_position`,
+`set_target`, `set_fovy`, `update()` (`rl.UpdateCamera` in free-look mode), `get_position()`.
+
+**3D drawing on `Window`** (`vm/gfx_window.odin`): `begin_3d(camera)`/`end_3d()` (`rl.BeginMode3D`/`EndMode3D`),
+`cube`/`cube_wires` (direct raylib primitives), `sphere`, `cylinder`, `grid`, `plane`, `triangle3`, and two
+methods with real substance behind them:
+
+- **`cube_rotated`/`cube_wires_rotated`** — raylib's `DrawCube` has no rotation parameter, so these draw an
+  arbitrarily rotated box via `DrawMesh` against a `scale * rotate * translate` transform matrix instead.
+  `cube_rotated` draws the shared solid mesh; `cube_wires_rotated` transforms a unit cube's 8 corners
+  directly and draws its 12 edges as lines, since rendering the solid mesh in wireframe mode would also show
+  its internal triangle diagonals, not clean edges — both match glox's own `win_methods.go` exactly. The
+  shared unit-cube mesh + default material both methods draw against is lazily created and cached on
+  `Window_Object` itself (`core/obj_window.odin`'s new `window_cube_model`, ported from glox's own
+  `Graphics.CubeModel()`) — one mesh serves every box regardless of size, scaled per-draw via the transform
+  matrix, never unloaded (matches glox exactly: `Window_Object` has no GC-triggered GPU teardown at all,
+  process exit tears down the whole GL context regardless).
+- **`ellipse3`** — raylib has no dedicated 3D ellipse primitive; drawn as a flattened cylinder (near-zero
+  height), matching glox's own approach.
+- **`textured_cube`** — raylib's `DrawCube` has no textured variant either, so this specifies six quads by
+  hand via `rlgl`'s immediate-mode API (`Begin`/`Vertex3f`/`TexCoord2f`/`Normal3f`/`Color4ub`/`End`) — ported
+  from glox's own `DrawTexturedCube` line for line. `vendor:raylib/rlgl` (a separate sub-package from the
+  main `vendor:raylib` import) is where Odin's binding of raylib's low-level immediate-mode drawing lives;
+  confirmed present before assuming it, not guessed.
+
+**`win.draw_array(float_array)`** — one `DrawPixel` call per cell, straight to whatever the current render
+target already is. Deliberately distinct from `render_texture.draw_array_fast` (Phase 6q): no GPU texture
+involved at all, matching glox's own `win_methods.go` exactly (a direct per-pixel loop, not a bulk upload) —
+slower for large arrays, but real scripts call both depending on array size, so both exist.
+
+**Verified**: a smoke test exercised `camera()` construction and every method, `begin_3d`/`end_3d`, every 3D
+primitive (including `textured_cube` and the two transform-matrix methods), `draw_array`, and two type-check
+error paths (a non-camera passed to `begin_3d`, a non-vec3 passed to `set_position`) across several frames —
+zero crashes, no orphaned process. Confirmed against a real, unmodified script:
+`lox_examples/wireframe_cubes.lox` (200 tumbling, bouncing wireframe cubes with an orbiting camera — camera
+construction/`set_position` every frame, `begin_3d`/`end_3d`, `cube_wires`, `cube_wires_rotated`, no
+`batch`/`batch_instanced` needed at all) runs its full loop under a bounded wall-clock smoke test with zero
+crashes on both build modes. `pytest` held at 220/0/26; both build modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

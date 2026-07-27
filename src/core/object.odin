@@ -55,6 +55,7 @@ Object_Type :: enum u8 {
 	Texture,
 	Render_Texture,
 	Shader,
+	Camera,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -153,6 +154,8 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	case .Shader:
 		s := cast(^Shader_Object)obj
 		return fmt.aprintf("<Shader ID:%d>", s.shader.id, allocator = allocator)
+	case .Camera:
+		return "<Camera3D>"
 	}
 	return "<unknown>"
 }

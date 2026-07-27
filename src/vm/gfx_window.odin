@@ -2,16 +2,17 @@ package vm
 
 import "../core"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 import "core:c"
+import "core:math"
 import "core:strings"
 
 // gfx_window: the raylib-backed window/2D-drawing surface. Ported from
-// glox's obj_builtin_window.go/win_methods.go -- this pass covers window
-// lifecycle, frame begin/end, input, 2D primitive drawing, texture/
-// render_texture drawing, and begin_blend_mode/end_blend_mode (needed by
-// lox_examples/defender's fx.lox, see that case's own doc comment);
-// shader/camera/batch/batch_instanced, 3D drawing, shader modes, and
-// draw_array are deliberately not ported yet (see TODO.md).
+// glox's obj_builtin_window.go/win_methods.go -- window lifecycle, frame
+// begin/end, input, 2D primitive drawing, texture/render_texture
+// drawing, blend/shader modes, 3D drawing (see begin_3d's own doc
+// comment), and draw_array. `batch`/`batch_instanced` are still not
+// ported yet (see TODO.md).
 //
 // Colors cross the Lox boundary as vec4, each channel 0-255 -- matches
 // natives/colour_utils.odin's existing, already-shipped convention
@@ -629,6 +630,320 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		)
 		result = core.NIL_VALUE
 
+	case "draw_array":
+		// Draws a float_array (each cell an RGB-encoded float, same
+		// convention as gfx.encode_rgba/decode_rgba) one DrawPixel call
+		// per cell, straight to whatever the current render target
+		// already is -- unlike render_texture's own draw_array_fast,
+		// no GPU texture involved at all, matching glox's own win_methods.go
+		// exactly (a direct per-pixel loop, not a bulk upload). Slower
+		// than draw_array_fast for anything but small arrays; kept for
+		// parity since real scripts call both depending on array size.
+		if arg_count != 1 {
+			runtime_error(vm, "draw_array() expects 1 argument (float_array).")
+			return false
+		}
+		arr_val := peek(vm, 0)
+		if arr_val.type != .Obj || arr_val.obj_type != .Float_Array {
+			runtime_error(vm, "draw_array() argument must be a float_array.")
+			return false
+		}
+		arr := core.as_float_array(arr_val)
+		for x in 0 ..< arr.width {
+			for y in 0 ..< arr.height {
+				f, _ := core.float_array_get(arr, x, y)
+				packed := u32(f)
+				col := rl.Color{u8((packed >> 16) & 0xFF), u8((packed >> 8) & 0xFF), u8(packed & 0xFF), 255}
+				rl.DrawPixel(c.int(x), c.int(y), col)
+			}
+		}
+		result = core.NIL_VALUE
+
+	// --- 3D drawing (see .begin_3d()'s own doc comment for the mode
+	// this requires being active) ---
+	case "begin_3d":
+		if arg_count != 1 {
+			runtime_error(vm, "begin_3d() expects 1 argument (camera).")
+			return false
+		}
+		cam_val := peek(vm, 0)
+		if cam_val.type != .Obj || cam_val.obj_type != .Camera {
+			runtime_error(vm, "begin_3d() argument must be a camera.")
+			return false
+		}
+		rl.BeginMode3D(core.as_camera(cam_val).camera)
+		result = core.NIL_VALUE
+	case "end_3d":
+		if arg_count != 0 {
+			runtime_error(vm, "end_3d() takes no arguments.")
+			return false
+		}
+		rl.EndMode3D()
+		result = core.NIL_VALUE
+	case "cube":
+		if arg_count != 3 {
+			runtime_error(vm, "cube() expects 3 arguments (position, size, color).")
+			return false
+		}
+		pos_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
+			runtime_error(vm, "cube() position/size arguments must be vec3.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "cube")
+		if !ok {
+			return false
+		}
+		pos, size := core.as_vec3(pos_val), core.as_vec3(size_val)
+		rl.DrawCube(rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)}, f32(size.x), f32(size.y), f32(size.z), col)
+		result = core.NIL_VALUE
+	case "cube_wires":
+		if arg_count != 3 {
+			runtime_error(vm, "cube_wires() expects 3 arguments (position, size, color).")
+			return false
+		}
+		pos_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
+			runtime_error(vm, "cube_wires() position/size arguments must be vec3.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "cube_wires")
+		if !ok {
+			return false
+		}
+		pos, size := core.as_vec3(pos_val), core.as_vec3(size_val)
+		rl.DrawCubeWires(rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)}, f32(size.x), f32(size.y), f32(size.z), col)
+		result = core.NIL_VALUE
+	case "cube_rotated":
+		// raylib has no DrawCube overload that takes a rotation -- draws
+		// the window's own shared unit-cube mesh (core/obj_window.odin's
+		// window_cube_model) via DrawMesh with a scale*rotate*translate
+		// transform instead, matching glox's own win_methods.go exactly.
+		if arg_count != 5 {
+			runtime_error(vm, "cube_rotated() expects 5 arguments (position, size, axis, angle, color).")
+			return false
+		}
+		pos_val, size_val, axis_val, angle_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) || !core.is_vec3(axis_val) {
+			runtime_error(vm, "cube_rotated() position/size/axis arguments must be vec3.")
+			return false
+		}
+		if !core.is_number(angle_val) {
+			runtime_error(vm, "cube_rotated() angle argument must be a number.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "cube_rotated")
+		if !ok {
+			return false
+		}
+		pos, size, axis_v := core.as_vec3(pos_val), core.as_vec3(size_val), core.as_vec3(axis_val)
+		mesh, material := core.window_cube_model(w)
+		scale := rl.MatrixScale(f32(size.x), f32(size.y), f32(size.z))
+		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
+		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
+		translation := rl.MatrixTranslate(f32(pos.x), f32(pos.y), f32(pos.z))
+		transform := scale * rotation * translation
+		material.maps[rl.MaterialMapIndex.ALBEDO].color = col
+		rl.DrawMesh(mesh, material, transform)
+		result = core.NIL_VALUE
+	case "cube_wires_rotated":
+		// rl.DrawCubeWires has no rotation parameter, and rendering the
+		// shared solid mesh in wireframe polygon mode would also show its
+		// internal triangle diagonals, not clean cube edges -- so this
+		// transforms a unit cube's 8 corners directly and draws its 12
+		// edges as lines instead, matching glox's own win_methods.go
+		// exactly (same transform composition as cube_rotated above).
+		if arg_count != 5 {
+			runtime_error(vm, "cube_wires_rotated() expects 5 arguments (position, size, axis, angle, color).")
+			return false
+		}
+		pos_val, size_val, axis_val, angle_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) || !core.is_vec3(axis_val) {
+			runtime_error(vm, "cube_wires_rotated() position/size/axis arguments must be vec3.")
+			return false
+		}
+		if !core.is_number(angle_val) {
+			runtime_error(vm, "cube_wires_rotated() angle argument must be a number.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "cube_wires_rotated")
+		if !ok {
+			return false
+		}
+		pos, size, axis_v := core.as_vec3(pos_val), core.as_vec3(size_val), core.as_vec3(axis_val)
+		scale := rl.MatrixScale(f32(size.x), f32(size.y), f32(size.z))
+		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
+		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
+		translation := rl.MatrixTranslate(f32(pos.x), f32(pos.y), f32(pos.z))
+		transform := scale * rotation * translation
+		corners := [8]rl.Vector3 {
+			{-0.5, -0.5, -0.5}, {0.5, -0.5, -0.5}, {0.5, 0.5, -0.5}, {-0.5, 0.5, -0.5},
+			{-0.5, -0.5, 0.5}, {0.5, -0.5, 0.5}, {0.5, 0.5, 0.5}, {-0.5, 0.5, 0.5},
+		}
+		for i in 0 ..< len(corners) {
+			corners[i] = rl.Vector3Transform(corners[i], transform)
+		}
+		edges := [12][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 0}, {4, 5}, {5, 6}, {6, 7}, {7, 4}, {0, 4}, {1, 5}, {2, 6}, {3, 7}}
+		for e in edges {
+			rl.DrawLine3D(corners[e[0]], corners[e[1]], col)
+		}
+		result = core.NIL_VALUE
+	case "sphere":
+		if arg_count != 3 {
+			runtime_error(vm, "sphere() expects 3 arguments (center, radius, color).")
+			return false
+		}
+		center_val, radius_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(center_val) {
+			runtime_error(vm, "sphere() center argument must be a vec3.")
+			return false
+		}
+		if !core.is_number(radius_val) {
+			runtime_error(vm, "sphere() radius argument must be a number.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "sphere")
+		if !ok {
+			return false
+		}
+		center := core.as_vec3(center_val)
+		rl.DrawSphere(rl.Vector3{f32(center.x), f32(center.y), f32(center.z)}, f32(core.as_float(radius_val)), col)
+		result = core.NIL_VALUE
+	case "cylinder":
+		if arg_count != 5 {
+			runtime_error(vm, "cylinder() expects 5 arguments (position, radius_top, radius_bottom, height, color).")
+			return false
+		}
+		pos_val, rtop_val, rbot_val, height_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(pos_val) {
+			runtime_error(vm, "cylinder() position argument must be a vec3.")
+			return false
+		}
+		if !core.is_number(rtop_val) || !core.is_number(rbot_val) || !core.is_number(height_val) {
+			runtime_error(vm, "cylinder() radius/height arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "cylinder")
+		if !ok {
+			return false
+		}
+		pos := core.as_vec3(pos_val)
+		rl.DrawCylinder(
+			rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)},
+			f32(core.as_float(rtop_val)), f32(core.as_float(rbot_val)), f32(core.as_float(height_val)),
+			16, col,
+		)
+		result = core.NIL_VALUE
+	case "grid":
+		if arg_count != 2 {
+			runtime_error(vm, "grid() expects 2 arguments (slices, spacing).")
+			return false
+		}
+		slices_val, spacing_val := peek(vm, 1), peek(vm, 0)
+		if !core.is_number(slices_val) || !core.is_number(spacing_val) {
+			runtime_error(vm, "grid() arguments must be numbers.")
+			return false
+		}
+		rl.DrawGrid(c.int(core.as_int(slices_val)), f32(core.as_float(spacing_val)))
+		result = core.NIL_VALUE
+	case "plane":
+		if arg_count != 3 {
+			runtime_error(vm, "plane() expects 3 arguments (center, size, color).")
+			return false
+		}
+		center_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(center_val) || !core.is_vec2(size_val) {
+			runtime_error(vm, "plane() center must be a vec3 and size a vec2.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "plane")
+		if !ok {
+			return false
+		}
+		center, size := core.as_vec3(center_val), core.as_vec2(size_val)
+		rl.DrawPlane(rl.Vector3{f32(center.x), f32(center.y), f32(center.z)}, rl.Vector2{f32(size.x), f32(size.y)}, col)
+		result = core.NIL_VALUE
+	case "ellipse3":
+		// Drawn as a flattened cylinder (near-zero height), matching
+		// glox's own win_methods.go exactly -- raylib has no dedicated
+		// 3D ellipse primitive.
+		if arg_count != 4 {
+			runtime_error(vm, "ellipse3() expects 4 arguments (center, radius_x, radius_z, color).")
+			return false
+		}
+		center_val, rx_val, rz_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_vec3(center_val) {
+			runtime_error(vm, "ellipse3() center argument must be a vec3.")
+			return false
+		}
+		if !core.is_number(rx_val) || !core.is_number(rz_val) {
+			runtime_error(vm, "ellipse3() radius arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "ellipse3")
+		if !ok {
+			return false
+		}
+		center := core.as_vec3(center_val)
+		rl.DrawCylinder(
+			rl.Vector3{f32(center.x), f32(center.y), f32(center.z)},
+			f32(core.as_float(rx_val)), f32(core.as_float(rz_val)), 0.01,
+			16, col,
+		)
+		result = core.NIL_VALUE
+	case "triangle3":
+		if arg_count != 10 {
+			runtime_error(vm, "triangle3() expects 10 arguments (x1, y1, z1, x2, y2, z2, x3, y3, z3, color).")
+			return false
+		}
+		x1, y1, z1, x2, y2, z2, x3, y3, z3, col_val :=
+			peek(vm, 9), peek(vm, 8), peek(vm, 7), peek(vm, 6), peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_number(x1) || !core.is_number(y1) || !core.is_number(z1) ||
+		   !core.is_number(x2) || !core.is_number(y2) || !core.is_number(z2) ||
+		   !core.is_number(x3) || !core.is_number(y3) || !core.is_number(z3) {
+			runtime_error(vm, "triangle3() coordinate arguments must be numbers.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "triangle3")
+		if !ok {
+			return false
+		}
+		rl.DrawTriangle3D(
+			rl.Vector3{f32(core.as_float(x1)), f32(core.as_float(y1)), f32(core.as_float(z1))},
+			rl.Vector3{f32(core.as_float(x2)), f32(core.as_float(y2)), f32(core.as_float(z2))},
+			rl.Vector3{f32(core.as_float(x3)), f32(core.as_float(y3)), f32(core.as_float(z3))},
+			col,
+		)
+		result = core.NIL_VALUE
+	case "textured_cube":
+		if arg_count != 4 {
+			runtime_error(vm, "textured_cube() expects 4 arguments (texture, position, size, color).")
+			return false
+		}
+		tex_val, pos_val, size_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		texture: rl.Texture2D
+		if tex_val.type == .Obj && tex_val.obj_type == .Texture {
+			texture = core.as_texture(tex_val).texture
+		} else if tex_val.type == .Obj && tex_val.obj_type == .Render_Texture {
+			texture = core.as_render_texture(tex_val).render_texture.texture
+		} else {
+			runtime_error(vm, "textured_cube() first argument must be a texture or render_texture.")
+			return false
+		}
+		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
+			runtime_error(vm, "textured_cube() position/size arguments must be vec3.")
+			return false
+		}
+		col, ok := arg_color(vm, col_val, "textured_cube")
+		if !ok {
+			return false
+		}
+		pos, size := core.as_vec3(pos_val), core.as_vec3(size_val)
+		rl.BeginBlendMode(.ALPHA)
+		draw_textured_cube(texture, rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)}, f32(size.x), f32(size.y), f32(size.z), col)
+		rl.EndBlendMode()
+		result = core.NIL_VALUE
+
 	case:
 		runtime_error(vm, "Undefined Window method '%s'.", name)
 		return false
@@ -779,4 +1094,87 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 		return core.NIL_VALUE, false
 	}
 	return core.make_int_value(int(key), true), true
+}
+
+// draw_textured_cube ports glox's own DrawTexturedCube (win_methods.go)
+// exactly: six manually-specified quads (raylib's DrawCube has no
+// textured variant), each vertex carrying its own normal/texcoord/
+// position via rlgl's immediate-mode API -- the same shape every raylib
+// language binding exposes this through, not an odlox-specific choice.
+@(private = "file")
+draw_textured_cube :: proc(texture: rl.Texture2D, position: rl.Vector3, width, height, length: f32, tint: rl.Color) {
+	x, y, z := position.x, position.y, position.z
+
+	rlgl.SetTexture(texture.id)
+	rlgl.Begin(rlgl.QUADS)
+	rlgl.Color4ub(tint.r, tint.g, tint.b, tint.a)
+
+	// Front Face
+	rlgl.Normal3f(0.0, 0.0, 1.0)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)
+
+	// Back Face
+	rlgl.Normal3f(0.0, 0.0, -1.0)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)
+
+	// Top Face
+	rlgl.Normal3f(0.0, 1.0, 0.0)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)
+
+	// Bottom Face
+	rlgl.Normal3f(0.0, -1.0, 0.0)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)
+
+	// Right Face
+	rlgl.Normal3f(1.0, 0.0, 0.0)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z - length / 2)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z - length / 2)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x + width / 2, y + height / 2, z + length / 2)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x + width / 2, y - height / 2, z + length / 2)
+
+	// Left Face
+	rlgl.Normal3f(-1.0, 0.0, 0.0)
+	rlgl.TexCoord2f(0.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z - length / 2)
+	rlgl.TexCoord2f(1.0, 0.0)
+	rlgl.Vertex3f(x - width / 2, y - height / 2, z + length / 2)
+	rlgl.TexCoord2f(1.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z + length / 2)
+	rlgl.TexCoord2f(0.0, 1.0)
+	rlgl.Vertex3f(x - width / 2, y + height / 2, z - length / 2)
+
+	rlgl.End()
+	rlgl.SetTexture(0)
 }

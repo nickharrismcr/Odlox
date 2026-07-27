@@ -32,9 +32,8 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: `render_texture.text()`, `camera`, `batch`/`batch_instanced`, 3D drawing,
-      `draw_array`. `d:/odin/glox_reference/src/builtin/` is the ground truth for each
-      (`obj_builtin_camera.go`+`camera_methods.go`, `obj_builtin_batch.go`+`batch_methods.go`,
+- [ ] Raylib-backed natives: `render_texture.text()`, `batch`/`batch_instanced`. `d:/odin/glox_reference/src/builtin/`
+      is the ground truth for each (`obj_builtin_batch.go`+`batch_methods.go`,
       `obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
 - [ ] `process.wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused

@@ -33,6 +33,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "texture", gfx_texture)
 	vm.define_builtin(v, "gfx", "render_texture", gfx_render_texture)
 	vm.define_builtin(v, "gfx", "shader", gfx_shader)
+	vm.define_builtin(v, "gfx", "camera", gfx_camera)
 	vm.define_builtin(v, "gfx", "lox_julia_array", gfx_lox_julia_array)
 	vm.define_builtin(v, "gfx", "lox_mandel_array", gfx_lox_mandel_array)
 }
@@ -196,6 +197,33 @@ gfx_shader :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 		vm.runtime_error(v, "shader() expects 0 or 2 arguments.")
 		return core.NIL_VALUE
 	}
+}
+
+// gfx_camera mirrors glox's own CameraBuiltIn: always perspective
+// projection, 45° default fovy -- see core/obj_camera.odin's own doc
+// comment.
+@(private = "file")
+gfx_camera :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 3 {
+		vm.runtime_error(v, "camera() expects 3 arguments: position(vec3), target(vec3), up(vec3).")
+		return core.NIL_VALUE
+	}
+	pos_val, target_val, up_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1], v.stack[arg_stack_ptr + 2]
+	if !core.is_vec3(pos_val) || !core.is_vec3(target_val) || !core.is_vec3(up_val) {
+		vm.runtime_error(v, "camera() arguments must be vec3.")
+		return core.NIL_VALUE
+	}
+	pos := core.as_vec3(pos_val)
+	target := core.as_vec3(target_val)
+	up := core.as_vec3(up_val)
+	o := core.make_camera_object(
+		rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)},
+		rl.Vector3{f32(target.x), f32(target.y), f32(target.z)},
+		rl.Vector3{f32(up.x), f32(up.y), f32(up.z)},
+	)
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj, true)
 }
 
 @(private = "file")

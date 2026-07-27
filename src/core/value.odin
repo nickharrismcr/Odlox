@@ -186,6 +186,9 @@ as_render_texture :: proc(v: Value) -> ^Render_Texture_Object {
 as_shader :: proc(v: Value) -> ^Shader_Object {
 	return cast(^Shader_Object)v.obj
 }
+as_camera :: proc(v: Value) -> ^Camera_Object {
+	return cast(^Camera_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

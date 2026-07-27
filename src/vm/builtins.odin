@@ -187,11 +187,12 @@ type_name :: proc(v: core.Value) -> string {
 			// Matches glox's own type() exactly -- WindowObject.GetType()
 			// (obj_builtin_window.go) also returns OBJECT_NATIVE.
 			return "builtin"
-		case .Image, .Texture, .Render_Texture, .Shader:
+		case .Image, .Texture, .Render_Texture, .Shader, .Camera:
 			// Matches glox's own type() exactly -- ImageObject/TextureObject/
-			// RenderTextureObject/ShaderObject.GetType() (obj_builtin_image.go,
-			// obj_builtin_texture.go, obj_builtin_render_texture.go,
-			// obj_builtin_shader.go) all return OBJECT_NATIVE.
+			// RenderTextureObject/ShaderObject/CameraObject.GetType()
+			// (obj_builtin_image.go, obj_builtin_texture.go,
+			// obj_builtin_render_texture.go, obj_builtin_shader.go,
+			// obj_builtin_camera.go) all return OBJECT_NATIVE.
 			return "builtin"
 		}
 	}
