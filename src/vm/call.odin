@@ -174,6 +174,8 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_regex_match(vm, core.as_regex_match(receiver), core.string_get(name), arg_count)
 	case .Process:
 		return invoke_builtin_process(vm, core.as_process(receiver), core.string_get(name), arg_count)
+	case .Physics_World:
+		return invoke_builtin_physics_world(vm, core.as_physics_world(receiver), core.string_get(name), arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;

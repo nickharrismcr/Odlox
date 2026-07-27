@@ -48,6 +48,9 @@ Object_Type :: enum u8 {
 	Regex_Match,
 
 	Process,
+
+	Physics_World,
+	Window,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -129,6 +132,11 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		return fmt.aprintf("<Match span=%v>", m.pos[0], allocator = allocator)
 	case .Process:
 		return "<process>"
+	case .Physics_World:
+		pw := cast(^Physics_World_Object)obj
+		return fmt.aprintf("<PhysicsWorld [%d bodies]>", physics_world_count(pw), allocator = allocator)
+	case .Window:
+		return "<window>"
 	}
 	return "<unknown>"
 }

@@ -179,6 +179,10 @@ type_name :: proc(v: core.Value) -> string {
 			// Matches glox's own type() exactly -- ProcessObject.GetType()
 			// (obj_builtin_process.go) also returns OBJECT_NATIVE.
 			return "builtin"
+		case .Physics_World:
+			// Matches glox's own type() exactly -- PhysicsWorldObject.GetType()
+			// (obj_builtin_physics_world.go) also returns OBJECT_NATIVE.
+			return "builtin"
 		}
 	}
 	return ""

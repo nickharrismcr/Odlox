@@ -3,16 +3,13 @@ package natives
 import "../core"
 import "../vm"
 
-// physics: glox's own `physics_world` (src/builtin/obj_builtin_physics_world.go)
-// is a real hand-rolled spatial-grid physics engine, well beyond this
-// pass's scope (same reasoning as gfx.odin's raylib-dependent functions --
-// a genuine multi-session port of its own). Registered here only so the
-// `physics` module and its `physics_world` name exist at all (matching
-// glox's own makeBuiltInModule(vm, "physics") + defineBuiltIn(...,
-// "physics_world", ...) shape) -- `type(physics.physics_world)` correctly
-// reports "builtin", same as any other native function, without needing
-// physics_world to actually be callable yet. Calling it raises a clear
-// "not implemented" error rather than silently doing nothing or crashing.
+// physics: glox's own physics_world (src/builtin/obj_builtin_physics_world.go)
+// -- a hand-rolled 3D SoA sphere/box physics engine, no raylib
+// dependency at all. The real simulation logic lives in
+// vm/physics_world.odin (mutating core/obj_physics_world.odin's
+// Physics_World_Object directly); this file is just the thin argument-
+// marshalling constructor, matching natives/process.odin's and
+// natives/re.odin's established shape.
 
 @(private)
 register_physics :: proc(v: ^vm.VM) {
@@ -23,6 +20,42 @@ register_physics :: proc(v: ^vm.VM) {
 @(private = "file")
 physics_world_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
-	vm.runtime_error(v, "physics_world() is not yet implemented in odlox.")
-	return core.NIL_VALUE
+	if argc != 4 {
+		vm.runtime_error(v, "physics_world() expects 4 arguments (min, max, cell_size, gravity).")
+		return core.NIL_VALUE
+	}
+	min_val := v.stack[arg_stack_ptr]
+	max_val := v.stack[arg_stack_ptr + 1]
+	cell_size_val := v.stack[arg_stack_ptr + 2]
+	gravity_val := v.stack[arg_stack_ptr + 3]
+
+	if !core.is_vec3(min_val) {
+		vm.runtime_error(v, "physics_world() first argument must be a vec3 (bounds min).")
+		return core.NIL_VALUE
+	}
+	if !core.is_vec3(max_val) {
+		vm.runtime_error(v, "physics_world() second argument must be a vec3 (bounds max).")
+		return core.NIL_VALUE
+	}
+	if !core.is_number(cell_size_val) {
+		vm.runtime_error(v, "physics_world() third argument must be a number (cell_size).")
+		return core.NIL_VALUE
+	}
+	if !core.is_vec3(gravity_val) {
+		vm.runtime_error(v, "physics_world() fourth argument must be a vec3 (gravity).")
+		return core.NIL_VALUE
+	}
+
+	min_v := core.as_vec3(min_val)
+	max_v := core.as_vec3(max_val)
+	gravity_v := core.as_vec3(gravity_val)
+
+	w := core.make_physics_world_object(
+		core.P_Vec3{min_v.x, min_v.y, min_v.z},
+		core.P_Vec3{max_v.x, max_v.y, max_v.z},
+		core.as_float(cell_size_val),
+		core.P_Vec3{gravity_v.x, gravity_v.y, gravity_v.z},
+	)
+	vm.gc_track(v, &w.obj)
+	return core.make_object_value(&w.obj, true)
 }

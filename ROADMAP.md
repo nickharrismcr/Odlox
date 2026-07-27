@@ -709,15 +709,13 @@ Port `src/vm/builtin.go` (core builtins) first, then `src/builtin/*.go`
       only needs to add functions to an already-plumbed-through package
       rather than create the package and its wiring at the same time as
       the first real raylib work.
-- [ ] Raylib-backed natives: window/2D drawing first (smallest surface,
-      most test coverage via `_ns`-paired tests can validate the non-
-      graphics logic before graphics itself is wired up), then
-      texture/shader/batch/camera/render_texture/image/physics_world (a
-      stub already exists -- see Phase 6f). **Not started** -- this is
-      the one remaining piece of Phase 6b: everything raylib-window-
-      dependent, deliberately deferred as its own much larger effort
-      (real windowing, an actual vendor:raylib dependency, a native
-      object per raylib resource type).
+- [x] `physics_world` — complete. See Phase 6i.
+- [ ] `gfx.window()` + core 2D drawing (lifecycle, frame begin/end,
+      input, pixel/line/rectangle/circle/text) — in progress, see Phase 6j.
+- [ ] `texture`/`shader`/`camera`/`render_texture`/`image`/`batch`/
+      `batch_instanced`, 3D drawing, blend/shader modes, `draw_array` —
+      not started, deliberately deferred past the Phase 6j slice.
+      `d:/odin/glox_reference/src/builtin/` is the ground truth for each.
 - [x] `float_array`, `vec2`/`vec3`/`vec4` methods beyond basic
       arithmetic. See Phase 6f for the full writeup -- `float_array`
       turned out not to need raylib at all (a plain w*h f64 buffer), and
@@ -1904,6 +1902,83 @@ skipped** after (`process`/`pool` tests moved from failing to skipped,
 suite now either passes or is skipped for an understood, documented
 reason (`thread`/`sync` permanently out of scope; `process`/`pool`
 parked pending the `wait_any` bug).
+
+### Phase 6i: `physics_world`
+
+The last remaining Phase 6 stub. Faithful port of glox's
+`obj_builtin_physics_world.go`/`physics_world_methods.go` — a hand-rolled
+3D struct-of-arrays sphere/box physics simulation (uniform-grid broad
+phase, 27-cell narrow phase, new-contact-only collision reporting via a
+ping-pong `map[pair]bool`, boundary bounce). **Zero raylib dependency**,
+confirmed before starting — this is why it was resequenced ahead of
+`gfx` despite `TODO.md` previously listing it last: fully testable via
+ordinary `pytest`, no display/window needed at all.
+
+**Files**: `core/obj_physics_world.odin` (new — `Physics_World_Object`
+and its supporting types: `P_Vec3`, `Shape`/`Shape_Kind`,
+`Physics_Material`, `Physics_Cell_Key`/`Physics_Pair_Key`,
+`Collision_Pair`, plus the constructor and a `physics_world_count` pure
+accessor `object_to_string` needs — `core` can't import `vm`, so this is
+the one piece of "real" logic that has to live here rather than
+alongside the rest); `vm/physics_world.odin` (new — the actual
+simulation: `step`/`integrate`/`boundary_collisions`/`rebuild_grid`/
+`narrow_phase`/`resolve_static_pairs`/`collide`/`resolve`, plus
+`invoke_builtin_physics_world`'s full Lox-facing method dispatch);
+`natives/physics.odin` (constructor, replacing the old "not yet
+implemented" stub); `core/object.odin`/`core/value.odin`/`vm/call.odin`/
+`vm/gc.odin`/`vm/builtins.odin` each got the one-case-per-file addition
+this port's established native-object checklist calls for (same
+recipe as this session's `Regex_Pattern`/`Process` additions).
+
+**Deliberately not fixed**: `Physics_Material.friction` is stored and
+combined (`combine_materials`) exactly like `restitution`, but — matching
+glox exactly — is never actually applied anywhere in `resolve()`'s
+collision response. A real glox limitation, ported faithfully rather
+than silently fixed; changing collision behavior mid-port would be an
+undocumented deviation, not a bug fix, and is called out explicitly in
+both `core/obj_physics_world.odin`'s and `vm/physics_world.odin`'s doc
+comments so it doesn't read as an oversight later.
+
+**A real, reproducible Odin bug found and worked around — not a bounds-
+check-catchable mistake in this code.** `narrow_phase`'s 27-cell scan
+originally read `for j in w.grid[k] { ... }` — ranging directly over a
+map-index expression. This **segfaults** when `k` is absent from the
+map, identically in both `-debug` (bounds-checked) and `-o:speed
+-no-bounds-check` builds — ruling out a simple out-of-range access,
+which bounds-checking would have caught as a panic instead of a raw
+segfault. Isolated with a minimal standalone repro (a bare
+`map[Cell_Key][dynamic]int`, no VM involved at all) before touching the
+real fix, to confirm it wasn't specific to this code's surrounding
+complexity: `for j in grid[missing_key]` crashes; `bucket := grid[missing_key];
+for j in bucket` does not. The bug has a genuine Heisenbug flavor — adding
+`fmt.println` calls between statements while bisecting made it stop
+reproducing, then reappear reliably (5/5) once the debug prints were
+removed — consistent with real undefined behavior (something like a
+dangling/short-lived reference to the map's zero-value tempo­rary),
+not a logic bug that debug output would be expected to mask. Fixed by
+reading into a local (`bucket := w.grid[k]`) before ranging over it —
+already the pattern every *other* map read in this file already used
+(see `rebuild_grid`); this was the one direct-index exception, now
+removed and commented in place as a warning against reintroducing it.
+Confirmed fixed: 5/5 clean runs after, both build modes, plus the full
+smoke test and pytest fixture below all green.
+
+**Verification**: a hand-written correctness script (falling/bouncing
+sphere, a rotated static box + `get_box_transform` round-tripping
+exactly what was set, sphere-sphere collision detection with a correct
+contact normal, `remove`/`count` bookkeeping, `add_impulse`, and all
+three error paths) run manually first to catch behavioral bugs before
+formalizing it — one test-design mistake caught this way, not an engine
+bug: an exactly-symmetric two-sphere approach with too coarse a `dt`
+stepped clean over the entire overlap window in one frame, landing
+exactly on the "centers coincide" degenerate case (`dist < 1e-12`,
+deliberately excluded to avoid a divide-by-zero) instead of inside it —
+fixed by using a finer `dt` in the test, not a code change, since the
+engine's discrete-time behavior here is correct and matches glox's own
+algorithm exactly. Promoted to `tests/new_tests/lox/physics_world_basic.lox`
++ `test_physics.py` (2 parametrized cases) once verified. Full `pytest`
+regression: 220 passed / 0 failed / 26 skipped (up from 218/0/26), both
+build modes clean.
 
 ## Phase 7 — Performance pass
 

@@ -321,6 +321,33 @@ free_object :: proc(obj: ^core.Obj) {
 		os.close(p.read_file)
 		os.close(p.write_file)
 		free(p)
+	case .Physics_World:
+		// No external (GPU/OS) resource -- just every internal
+		// [dynamic]/map allocation, which free(w) alone wouldn't reach
+		// (each is its own separate backing allocation, same reasoning
+		// as Regex_Pattern's group_names above).
+		w := cast(^core.Physics_World_Object)obj
+		delete(w.pos_x)
+		delete(w.pos_y)
+		delete(w.pos_z)
+		delete(w.vel_x)
+		delete(w.vel_y)
+		delete(w.vel_z)
+		delete(w.shapes)
+		delete(w.material_id)
+		delete(w.active)
+		delete(w.is_static)
+		delete(w.static_ids)
+		delete(w.materials)
+		for _, bucket in w.grid {
+			delete(bucket)
+		}
+		delete(w.grid)
+		delete(w.used_cells)
+		delete(w.collisions)
+		delete(w.contact_sets[0])
+		delete(w.contact_sets[1])
+		free(w)
 	case:
 		free(obj)
 	}
@@ -363,6 +390,12 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size_of(core.Regex_Match_Object)
 	case .Process:
 		return size_of(core.Process_Object)
+	case .Physics_World:
+		// Dominated by the SoA body slices, same reasoning as
+		// Float_Array above -- a few thousand bodies is a real amount of
+		// memory the growth heuristic should actually see.
+		w := cast(^core.Physics_World_Object)obj
+		return size_of(core.Physics_World_Object) + len(w.pos_x) * (6 * size_of(f64) + size_of(core.Shape) + size_of(int) + 2 * size_of(bool))
 	case:
 		return 32
 	}

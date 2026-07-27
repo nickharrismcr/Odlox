@@ -168,6 +168,9 @@ as_regex_match :: proc(v: Value) -> ^Regex_Match_Object {
 as_process :: proc(v: Value) -> ^Process_Object {
 	return cast(^Process_Object)v.obj
 }
+as_physics_world :: proc(v: Value) -> ^Physics_World_Object {
+	return cast(^Physics_World_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

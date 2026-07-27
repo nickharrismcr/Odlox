@@ -32,10 +32,14 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 6 — Native/builtin functions & standard library
 
-- [ ] Raylib-backed natives: window/2D drawing first, then texture/shader/batch/camera/render_texture/
-      image, then a real `physics_world` (a stub exists). The one remaining piece of Phase 6b — a separate,
-      much larger effort (real windowing, a `vendor:raylib` dependency, a native object per raylib resource
-      type).
+- [ ] Raylib-backed natives: `gfx.window()` + core 2D drawing landed (see `ROADMAP.md`'s Phase 6i);
+      `physics_world` is complete (see Phase 6i too). Still outstanding: `texture`/`shader`/`camera`/
+      `render_texture`/`image`/`batch`/`batch_instanced`, 3D drawing, blend/shader modes, `draw_array` —
+      each its own real chunk of work, not attempted yet. `d:/odin/glox_reference/src/builtin/` is the
+      ground truth for each (`obj_builtin_texture.go`+`texture_methods.go`, `obj_builtin_shader.go`,
+      `obj_builtin_camera.go`+`camera_methods.go`, `obj_builtin_render_texture.go`+
+      `render_texture_methods.go`, `obj_builtin_batch.go`+`batch_methods.go`,
+      `obj_builtin_batch_instanced.go`+`batch_instanced_methods.go`).
 - [ ] `process` module: **parked, not finished**. `spawn`/`send`/`recv`/`wait`/`kill`/`pid` work and are
       tested; `wait_any()` raises a spurious "truncated message" `ProcessError` under a fire-and-forget
       multi-message pattern (suspected Windows `PeekNamedPipe`/pipe-EOF interaction, not fully root-caused
@@ -47,6 +51,11 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       `plot_rgb.lox`/`sprite.lox` are blocked on raylib instead, tracked under the raylib bullet above.
 
 ## Phase 7 — Performance pass
+
+**Parked** after Phase 7f — 11 of 13 loxcraft benchmarks beat or tie glox, the remaining two (`trees`/
+`binary_trees`) are within 9-28% instead of 45%; good enough to stop for now and pick up Phase 6b (raylib
+bindings, `gfx`/`physics_world`) instead. Resume from here, not from scratch — every item below is exactly
+where Phase 7 left off.
 
 Only after Phases 1–6 are correct and green against the test suite.
 

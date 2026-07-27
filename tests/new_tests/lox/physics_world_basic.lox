@@ -1,0 +1,85 @@
+import physics;
+
+var w = physics.physics_world(vec3(-10, -10, -10), vec3(10, 10, 10), 2.0, vec3(0, -10, 0));
+print type(w);
+
+var bouncy = w.add_material(1.0, 0.5, 1.0);
+var still = w.add_material(0.0, 0.5, 1.0);
+print bouncy;
+print still;
+
+// A sphere with no gravity-affecting velocity, moving in a straight
+// line under damping=1.0 (no damping) and gravity -- deterministic
+// after exactly 1 step at dt=1.
+var nograv = w.add_material(0.0, 0.5, 1.0);
+var straight = w.add(vec3(0, 0, 0), vec3(1, 0, 0), 1.0, still);
+w.step(1.0);
+print w.get_position(straight);
+
+// A static box and its transform.
+var ramp = w.add_static_box(vec3(5, 5, 5), vec3(1, 2, 3), vec3(0, 1, 0), 45, still);
+print w.get_box_transform(ramp);
+
+// Two spheres approaching head-on -- a small dt relative to closing
+// speed so a step reliably lands inside the overlap window (an exactly
+// symmetric setup with a coarse dt can step clean over the whole
+// overlap in one frame, landing exactly on the "centers coincide"
+// degenerate case instead -- not a bug, just a bad test parameter
+// choice; see physics_world_resolve/collide_sphere_sphere's own
+// dist < 1e-12 guard).
+var a = w.add(vec3(-3, -9, -9), vec3(2, 0, 0), 1.0, bouncy);
+var b = w.add(vec3(3, -9, -9), vec3(-2, 0, 0), 1.0, bouncy);
+var i = 0;
+var found = false;
+while (i < 20) {
+  w.step(0.1);
+  var cs = w.collisions();
+  if (cs.length() > 0) {
+    found = true;
+    var pair = cs[0];
+    print pair[0];
+    print pair[1];
+    print pair[2];
+  }
+  i = i + 1;
+}
+print found;
+
+print w.count();
+w.remove(a);
+print w.count();
+
+w.add_impulse(b, vec3(0, 5, 0));
+
+// Boundary bounce: a sphere dropped with zero restitution loses all
+// its velocity on first contact and settles exactly at the lower y
+// boundary + radius (unlike a bouncy/elastic material, which never
+// loses energy and keeps oscillating indefinitely -- not a useful
+// "settles" test).
+var drop = w.add(vec3(0, 9, 0), vec3(0, 0, 0), 1.0, still);
+var j = 0;
+while (j < 100) {
+  w.step(0.1);
+  j = j + 1;
+}
+var pos = w.get_position(drop);
+print pos.y >= -10.0 and pos.y <= -8.9;
+
+// Error paths.
+try {
+  w.add(vec3(0, 0, 0), vec3(0, 0, 0), 1.0, 999);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+try {
+  w.get_position(99999);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+try {
+  w.get_box_transform(straight);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+
+print "done";
