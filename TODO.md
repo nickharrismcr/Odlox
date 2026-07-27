@@ -58,15 +58,16 @@ Only after Phases 1–6 are correct and green against the test suite.
       if profiling specifically implicates it.
 - [ ] Object-model cost (map-backed instance fields/methods, `core/obj_instance.odin`'s
       `fields: map[^String_Object]Value`, `core/obj_class.odin`'s `methods`/`statics` maps) is odlox's last
-      remaining relative weak spot: after the redundant-intern fix (Phase 7c), `trees`/`binary_trees` improved
-      from 1.45x/1.44x to 1.14x/1.27x but are still the only two benchmarks where odlox loses to glox — the
-      *real* per-instance/per-class map lookup itself (not a redundant one) is what's left, plus whatever
-      allocation cost is specific to deep tree construction (`instantiation.lox`, pure allocation with little
-      access, already favors odlox at 0.79x, so it's the access pattern, not raw allocation). Attempt
-      compile-time-baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it properly or
-      skip it; a runtime-only slot table was a net regression in glox's own roadmap, so don't repeat that
-      shortcut.
-- [ ] Consider a monomorphic inline cache on `OP_GET_PROPERTY`/`OP_INVOKE`.
+      remaining relative weak spot. After the redundant-intern fix (Phase 7c) and the monomorphic inline
+      cache on `Get_Property`/`Invoke` (Phase 7e), `trees`/`binary_trees` improved from 1.45x/1.44x to
+      1.09x/1.24x but remain the only two benchmarks where odlox loses to glox — what's left is the
+      **instance-fields lookup itself** (`inst.fields[name]`), which the inline cache structurally cannot
+      touch (Lox instances have no fixed shape, so field access can't be cached at the class level the way
+      method dispatch can — see core/chunk.odin's `Property_Cache` doc comment), plus whatever allocation
+      cost is specific to deep tree construction (`instantiation.lox`, pure allocation with little access,
+      already favors odlox at ~0.8x, so it's the access pattern, not raw allocation). Attempt compile-time-
+      baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it properly or skip it; a
+      runtime-only slot table was a net regression in glox's own roadmap, so don't repeat that shortcut.
 - [ ] Consider a free-list/pool allocator for high-churn small fixed-size objects (vec2/3/4, upvalues,
       bound methods).
 - [ ] Stretch: NaN-boxing `Value` down to 8 bytes — only if profiling still shows `Value` width as a

@@ -130,19 +130,54 @@ Local_Var_Info :: struct {
 // resolve global names/slots through that shared Environment rather than
 // carrying their own copy (see environment.odin).
 Chunk :: struct {
-	code:         [dynamic]u8,
-	constants:    [dynamic]Value,
-	lines:        [dynamic]int, // parallel to code: one entry per byte
-	filename:     string,
-	local_vars:   [dynamic]Local_Var_Info, // debug info
-	global_count: int,
-	global_names: [dynamic]string,
+	code:            [dynamic]u8,
+	constants:       [dynamic]Value,
+	lines:           [dynamic]int, // parallel to code: one entry per byte
+	filename:        string,
+	local_vars:      [dynamic]Local_Var_Info, // debug info
+	global_count:    int,
+	global_names:    [dynamic]string,
+	property_caches: [dynamic]Property_Cache,
+}
+
+// Property_Cache backs the monomorphic inline cache on Get_Property and
+// Invoke: one per callsite, allocated at compile time
+// (chunk_add_property_cache) and carried as an extra bytecode operand
+// (the cache's index into this array), not looked up by class identity
+// in some shared map -- a real O(1) array access on a hit, not another
+// hash lookup wearing an inline cache's clothes. `class == nil` means
+// "never populated" (cold).
+//
+// Caches only the class -> method resolution (Class_Object.methods),
+// never the receiver's own instance-fields lookup: that can't be safely
+// cached at the class level at all, since Lox instances have no fixed
+// shape -- two instances of the same class can have different field
+// sets, so a field that happens to mask a method on one instance doesn't
+// mean it does on another. See vm/call.odin's invoke and
+// vm/properties.odin's get_property for exactly which lookup this skips
+// (always the *second* one, after a same-class field-lookup miss).
+Property_Cache :: struct {
+	class:  ^Class_Object,
+	method: Value,
 }
 
 new_chunk :: proc(filename: string) -> ^Chunk {
 	c := new(Chunk)
 	c.filename = filename
 	return c
+}
+
+// chunk_add_property_cache allocates a fresh, cold cache slot and
+// returns its index -- called once per Get_Property/Invoke callsite at
+// compile time (compiler/expr.odin's dot), mirroring chunk_add_constant's
+// shape. u8-indexed like every other operand in this bytecode format, so
+// a single function emitting more than 255 property/method-call
+// expressions hits the same kind of hard limit the 255-argument-list
+// check already does -- checked at the call site, not here, matching
+// that existing pattern.
+chunk_add_property_cache :: proc(c: ^Chunk) -> u8 {
+	append(&c.property_caches, Property_Cache{})
+	return u8(len(c.property_caches) - 1)
 }
 
 chunk_write_op :: proc(c: ^Chunk, op: Op_Code, line: int) {

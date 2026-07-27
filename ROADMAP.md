@@ -1932,10 +1932,10 @@ for the full reasoning behind each item; this is the checklist form.
       concluded a runtime-only slot table (no compiler changes) is a net
       *regression* on access-heavy code; don't repeat that specific
       mistake. Either do the compile-time-baked opcodes properly or skip
-      this item. Phase 7c closed most, not all, of the `trees`/
+      this item. Phase 7c/7e closed most, not all, of the `trees`/
       `binary_trees` gap — this is what's left.
-- [ ] Consider a monomorphic inline cache on `OP_GET_PROPERTY`/
-      `OP_INVOKE` (class-id → slot/method), complementary to the above.
+- [x] Monomorphic inline cache on `Op_Get_Property`/`Op_Invoke` — see
+      Phase 7e below.
 - [ ] Consider a free-list/pool allocator for high-churn small fixed-size
       objects (vec2/3/4, upvalues, bound methods) — reuse sweep-freed
       slots instead of round-tripping through the general allocator.
@@ -2249,6 +2249,109 @@ already off.
 `TODO.md` entry for why (push/pop/peek's call sites span far more of
 the codebase than ip's readers do, for a much smaller and murkier
 payoff).
+
+### Phase 7e: monomorphic inline cache on `Op_Get_Property`/`Op_Invoke`
+
+**What it actually caches, and why not more.** A real inline cache needs
+O(1) indexed access on a hit, not a hash lookup wearing an inline
+cache's clothes — considered and rejected a design keyed by `ip`
+position in a chunk-level map first, since that's just one map lookup
+replacing another with no asymptotic win. The real design: the compiler
+allocates a `core.Property_Cache{class, method}` slot per callsite at
+compile time (`chunk_add_property_cache`, mirroring `chunk_add_constant`'s
+shape) and emits its index as an extra bytecode operand
+(`compiler/expr.odin`'s `dot`/`emit_property_cache`) — `Get_Property`
+grew from `[name_const]` to `[name_const][cache_idx]`, `Invoke` from
+`[name_const][arg_count]` to `[name_const][arg_count][cache_idx]`.
+`Set_Property`/`Get_Super`/`Super_Invoke` don't get one: sets have no
+method-dispatch angle to cache, and super calls are cold enough not to
+bother.
+
+It can only ever cache the **class → method** resolution
+(`Class_Object.methods[name]`/`static_methods[name]`) — never the
+receiver's own **instance-fields** lookup (`inst.fields[name]`), and
+this isn't an incremental limitation to lift later, it's structural:
+Lox instances have no fixed shape (`core/obj_instance.odin`'s
+`fields: map[^String_Object]Value` is genuinely dynamic per instance),
+so a field that happens to mask a method on one instance of a class
+says nothing about another instance of the *same* class. A class-keyed
+cache is safe for the method table (flattened once at `do_inherit` time,
+effectively immutable after that) but never safe for field presence.
+So both `get_property` and `invoke` still always do the real
+`inst.fields[name]` lookup first, every time, and the cache only ever
+skips the *second* lookup, on a fields-miss with a matching cached
+class — real, but narrower than "skips property access."
+
+**The static/instance conflation trap, caught before it shipped**:
+`invoke_from_class` (`vm/call.odin`) handles both instance-method calls
+(`obj.method()`) and static-method calls (`Class.method()`) through the
+same proc, keyed by `is_static`. Initially reused one cache slot for
+both — wrong: a static call's `class` param *is* the class value itself,
+so `cache.class == inst.class` could spuriously match a *different*
+instance of that same class hitting the site afterward, returning a
+static method where an instance method (or vice versa) was needed.
+Fixed by only ever populating/checking the cache on the instance
+(`is_static == false`) path; the `.Class` receiver branch in `invoke`
+passes `nil` for `cache`, so static dispatch is simply never cached (a
+real but accepted scope limit, not a bug).
+
+**A real regression, found and fixed before it shipped**: `Frame_Locals`
+(the per-call struct `run.odin`'s dispatch loop hoists) initially grew a
+`property_caches: []core.Property_Cache` field alongside `constants`/
+`code`, mirroring how those are already hoisted. First benchmark pass
+showed `loop.lox` — a benchmark with **zero property or method access**
+— regressing 0.48x→0.62x (glox-relative), confirmed as a real, stable
+~25% *absolute* slowdown (not noise: reproduced 2.7s→3.5s three times
+running, then reproduced the clean 2.7s baseline on a throwaway
+`git worktree` at the pre-change commit). Root cause: growing that
+struct by one field shifted register allocation for the *entire* hot
+loop body, not just the two opcodes that use the new field — every
+opcode paid for it, whether it touched `property_caches` or not. Fixed
+by *not* hoisting `property_caches` into `Frame_Locals` at all; the two
+call sites (`Get_Property`, `Invoke`) reach it one hop further out,
+via `fl.fn.chunk.property_caches[cache_idx]`, instead. Confirmed the fix
+restored `loop.lox` to baseline (2.6-2.7s) with the property/method wins
+fully intact. Worth remembering for any future `Frame_Locals` addition:
+the struct's own size is itself on the hot path, independent of whether
+a given opcode reads the new field.
+
+**Correctness verification**: full `pytest` regression unchanged
+(218/0/26) against both build modes; `compiler` package's own unit
+tests (67/67) confirm the `decode()` bytecode-shape helper in
+`compile_test.odin` was updated correctly for the new operand layout. A
+dedicated correctness script (`ic_test.lox`, not part of the checked-in
+suite) specifically exercised the cases most likely to break with a
+naive inline cache: a monomorphic site (same class, many hits), a
+polymorphic site (alternating classes at the identical `Op_Invoke`
+instruction, e.g. iterating a mixed-type list calling the same method
+name), inheritance (a subclass reaching a method only present via the
+flattened table, immediately followed by a sibling class miss at the
+same site), and — the case most likely to silently corrupt behavior —
+two instances of the *same* class where only one has a field dynamically
+added that masks a method name, confirming the field lookup always wins
+and the class-level cache never leaks across instances. All correct.
+
+**Result** (3-run baseline vs. after, same fixture):
+
+| benchmark | before | after |
+|---|---|---|
+| invocation | 0.67x | **0.42x** |
+| method_call | 0.61x | **0.52x** |
+| properties | 0.67x | **0.55x** |
+| zoo | 0.69x | **0.57x** |
+| trees | 1.19x | **1.09x** |
+| binary_trees | 1.27x | **1.24x** |
+| loop | 0.48x | 0.46x (confirmed unaffected, see the `Frame_Locals` fix above) |
+| (everything else) | ~unchanged | ~unchanged |
+
+Broad, clean win with no regressions anywhere in the suite. `trees` is
+now within 9% of glox, down from 45% behind at the start of Phase 7 —
+`binary_trees` improved less (1.27x→1.24x), consistent with it being
+comparatively more allocation/instantiation-heavy relative to its
+method-call density than `trees.lox`'s recursive `walk()`. Both remain
+the only two benchmarks where odlox still trails glox; what's left is
+exactly the instance-fields lookup the cache structurally can't touch
+(see the `TODO.md` entry) plus tree-construction allocation cost.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 

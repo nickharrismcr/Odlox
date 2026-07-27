@@ -128,7 +128,16 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 // content rather than use it as a map key, so core.string_get(name) at
 // each of those call sites is a cheap, non-hashing conversion, not a
 // re-intern.
-invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int) -> bool {
+// cache is a monomorphic inline cache for the .Instance case -- see
+// core/chunk.odin's Property_Cache doc comment. Always non-nil here
+// (every Op_Invoke bytecode instruction gets a cache slot from the
+// compiler, see expr.odin's dot); the .Class (static-method) branch
+// deliberately passes nil to invoke_from_class rather than reusing this
+// same cache, since a class value and an instance of that class hitting
+// the same callsite would otherwise be indistinguishable by class
+// pointer alone despite needing different method tables
+// (static_methods vs. methods).
+invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, arg_count)
 	#partial switch receiver.type {
 	case .Vec2, .Vec3, .Vec4:
@@ -145,9 +154,12 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int) -> bool {
 			vm.stack[vm.stack_top - arg_count - 1] = field_val
 			return call_value(vm, field_val, arg_count)
 		}
-		return invoke_from_class(vm, inst.class, name, arg_count, false)
+		if cache.class == inst.class {
+			return call(vm, core.as_closure(cache.method), arg_count)
+		}
+		return invoke_from_class(vm, inst.class, name, arg_count, false, cache)
 	case .Class:
-		return invoke_from_class(vm, core.as_class(receiver), name, arg_count, true)
+		return invoke_from_class(vm, core.as_class(receiver), name, arg_count, true, nil)
 	case .List:
 		return invoke_builtin_list(vm, core.as_list(receiver), core.string_get(name), arg_count)
 	case .Dict:
@@ -235,7 +247,13 @@ invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_co
 	return false
 }
 
-invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object, arg_count: int, is_static: bool) -> bool {
+// invoke_from_class does the real class.methods[name] (or
+// class.static_methods[name]) lookup and, on a hit, populates cache
+// (skipped for is_static -- see invoke's doc comment on why static
+// dispatch doesn't share a cache slot with instance dispatch) so the
+// next call at this site with the same class skips straight past this
+// lookup entirely.
+invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object, arg_count: int, is_static: bool, cache: ^core.Property_Cache) -> bool {
 	method_val, ok := core.Value{}, false
 	if is_static {
 		method_val, ok = class.static_methods[name]
@@ -246,18 +264,38 @@ invoke_from_class :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String
 		runtime_error(vm, "Undefined method '%s'.", core.string_get(name))
 		return false
 	}
+	if cache != nil && !is_static {
+		cache.class = class
+		cache.method = method_val
+	}
 	return call(vm, core.as_closure(method_val), arg_count)
 }
 
 // bind_method implements property access to a method value (not a
 // call): `instance.method` without `()` produces a Bound_Method_Object
-// pairing the receiver with the unbound closure.
-bind_method :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object) -> bool {
+// pairing the receiver with the unbound closure. cache is nil from
+// do_get_super (no cache slot allocated for Get_Super sites); non-nil
+// from get_property, which already checked cache.class == inst.class
+// itself and calls bind_method_cached directly on a hit, so a genuine
+// lookup here always means a miss worth (re)populating the cache for.
+bind_method :: proc(vm: ^VM, class: ^core.Class_Object, name: ^core.String_Object, cache: ^core.Property_Cache) -> bool {
 	method_val, ok := class.methods[name]
 	if !ok {
 		runtime_error(vm, "Undefined property '%s'.", core.string_get(name))
 		return false
 	}
+	if cache != nil {
+		cache.class = class
+		cache.method = method_val
+	}
+	return bind_method_cached(vm, method_val)
+}
+
+// bind_method_cached builds the Bound_Method_Object for an
+// already-resolved method value -- the shared tail of bind_method's
+// genuine-lookup path and get_property's (properties.odin) cache-hit
+// fast path, so package-visible rather than file-private.
+bind_method_cached :: proc(vm: ^VM, method_val: core.Value) -> bool {
 	bound := core.make_bound_method_object(peek(vm, 0), core.as_closure(method_val))
 	gc_track(vm, &bound.obj)
 	pop(vm) // the receiver

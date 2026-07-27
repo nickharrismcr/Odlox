@@ -35,7 +35,12 @@ Frame_Locals :: struct {
 refresh_frame :: proc(vm: ^VM) -> Frame_Locals {
 	f := frame(vm)
 	fn := f.closure.function
-	return Frame_Locals{f = f, fn = fn, constants = fn.chunk.constants[:], code = fn.chunk.code[:]}
+	return Frame_Locals{
+		f = f,
+		fn = fn,
+		constants = fn.chunk.constants[:],
+		code = fn.chunk.code[:],
+	}
 }
 
 // display_string shows a string Value as its raw text, not its quoted
@@ -423,10 +428,11 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Invoke:
 			name_const := fl.code[ip]
 			arg_count := int(fl.code[ip + 1])
-			ip += 2
+			cache_idx := fl.code[ip + 2]
+			ip += 3
 			name := core.as_string(fl.constants[name_const])
 			fl.f.ip = ip
-			if invoke(vm, name, arg_count) {
+			if invoke(vm, name, arg_count, &fl.fn.chunk.property_caches[cache_idx]) {
 				fl = refresh_frame(vm)
 				ip = fl.f.ip
 			}
@@ -530,8 +536,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			do_class_var(vm, core.string_get(core.as_string(fl.constants[name_const])))
 		case .Get_Property:
 			name_const := fl.code[ip]
-			ip += 1
-			get_property(vm, core.as_string(fl.constants[name_const]))
+			cache_idx := fl.code[ip + 1]
+			ip += 2
+			get_property(vm, core.as_string(fl.constants[name_const]), &fl.fn.chunk.property_caches[cache_idx])
 		case .Set_Property:
 			name_const := fl.code[ip]
 			ip += 1

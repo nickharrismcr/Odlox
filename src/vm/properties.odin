@@ -24,7 +24,16 @@ import "../core"
 // caching the interned id on the constant at compile time). Passing the
 // pointer through turns every one of these into a single map lookup
 // keyed by pointer identity, same as glox's int-keyed fast path.
-get_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
+//
+// get_property/invoke additionally take a monomorphic inline cache
+// (core.Property_Cache, one per callsite -- see core/chunk.odin's doc
+// comment) so a same-class repeat hit skips the *second* map lookup too
+// (class.methods[name], after an instance-fields-miss) -- nil for the
+// callsites that don't get one (do_get_super/do_super_invoke, both
+// comparatively cold). It can never replace the instance-fields lookup
+// itself: Lox instances have no fixed shape, so a field masking a method
+// on one instance says nothing about another instance of the same class.
+get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, 0)
 
 	#partial switch receiver.type {
@@ -39,7 +48,10 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 				push(vm, v)
 				return true
 			}
-			return bind_method(vm, inst.class, name)
+			if cache.class == inst.class {
+				return bind_method_cached(vm, cache.method)
+			}
+			return bind_method(vm, inst.class, name, cache)
 		case .Class:
 			class := core.as_class(receiver)
 			for c := class; c != nil; c = c.super {
@@ -269,10 +281,12 @@ do_class_var :: proc(vm: ^VM, name: string) {
 }
 
 // do_get_super: stack is [..., this_value, superclass_value] (see
-// compiler/expr.odin's super_).
+// compiler/expr.odin's super_). No inline cache -- super calls are
+// comparatively cold, and unlike Get_Property/Invoke the compiler
+// doesn't allocate a Property_Cache slot for Get_Super/Super_Invoke.
 do_get_super :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	super := core.as_class(pop(vm))
-	return bind_method(vm, super, name)
+	return bind_method(vm, super, name, nil)
 }
 
 // do_super_invoke: stack is [..., this_value, arg1, ..., argN,
@@ -281,5 +295,5 @@ do_get_super :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 // for any ordinary method call, so it can reuse that path directly.
 do_super_invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int) -> bool {
 	super := core.as_class(pop(vm))
-	return invoke_from_class(vm, super, name, arg_count, false)
+	return invoke_from_class(vm, super, name, arg_count, false, nil)
 }

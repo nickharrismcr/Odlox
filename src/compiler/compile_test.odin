@@ -39,12 +39,17 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		case .Constant, .Get_Local, .Set_Local, .Inc_Local,
 		     .Get_Global, .Set_Global, .Define_Global, .Define_Global_Const,
 		     .Get_Upvalue, .Set_Upvalue, .Call, .Create_List, .Create_Dict,
-		     .Create_Tuple, .Unpack, .Get_Property, .Set_Property, .Method,
+		     .Create_Tuple, .Unpack, .Set_Property, .Method,
 		     .Static_Method, .Class_Var, .Get_Super, .Class:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
-		     .Incr_Const_N, .Invoke, .Super_Invoke, .Import:
+		     .Incr_Const_N, .Super_Invoke, .Import, .Get_Property:
+			// Get_Property: [name_const][cache_idx] -- see expr.odin's
+			// dot/emit_property_cache.
 			n = 2
+		case .Invoke:
+			// [name_const][arg_count][cache_idx] -- see expr.odin's dot.
+			n = 3
 		case .Except:
 			// [type_const][skip_hi][skip_lo] -- see stmt.odin's
 			// try_except_statement and vm/exceptions.odin's header

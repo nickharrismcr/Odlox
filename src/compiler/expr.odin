@@ -321,6 +321,20 @@ argument_list :: proc(p: ^Parser) -> u8 {
 	return u8(count)
 }
 
+// emit_property_cache allocates a fresh monomorphic-inline-cache slot on
+// the current chunk (core.chunk_add_property_cache) and emits it as the
+// trailing operand byte of a Get_Property/Invoke instruction -- see
+// core/chunk.odin's Property_Cache doc comment for what it caches and
+// why. Guards the 255-slots-per-chunk limit the u8 index implies, same
+// pattern as argument_list's 255-argument check.
+@(private = "file")
+emit_property_cache :: proc(p: ^Parser) {
+	if len(current_chunk(p).property_caches) == 255 {
+		error(p, "Too many property accesses/method calls in one function.")
+	}
+	emit_byte(p, core.chunk_add_property_cache(current_chunk(p)))
+}
+
 // dot compiles `.name`, `.name = expr`, `.name <compound>= expr`, and
 // `.name(args)` (a method invoke, via Op_Code.Invoke rather than a
 // separate Get_Property+Call -- the VM's fast path for the common case).
@@ -341,6 +355,7 @@ dot :: proc(p: ^Parser, can_assign: bool) {
 			// keeps a copy around for that second use.
 			emit_op(p, .Dup)
 			emit_op_byte(p, .Get_Property, name_const)
+			emit_property_cache(p)
 			expression(p)
 			emit_op(p, op)
 			emit_op_byte(p, .Set_Property, name_const)
@@ -351,9 +366,11 @@ dot :: proc(p: ^Parser, can_assign: bool) {
 		arg_count := argument_list(p)
 		emit_op_byte(p, .Invoke, name_const)
 		emit_byte(p, arg_count)
+		emit_property_cache(p)
 		return
 	}
 	emit_op_byte(p, .Get_Property, name_const)
+	emit_property_cache(p)
 }
 
 // -----------------------------------------------------------------------

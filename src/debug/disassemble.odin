@@ -86,9 +86,14 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 		return simple_instruction(op, offset)
 
 	// --- one-byte constant-pool index ---
-	case .Constant, .Get_Property, .Set_Property, .Method,
+	case .Constant, .Set_Property, .Method,
 	     .Static_Method, .Class_Var, .Get_Super:
 		return constant_instruction(op, c, offset)
+
+	// --- Get_Property: [name_const][cache_idx] -- see expr.odin's
+	// dot/emit_property_cache. ---
+	case .Get_Property:
+		return get_property_instruction(c, offset)
 
 	// --- one-byte global slot -- NOT a constant-pool index. Slots are
 	// numbered into Environment.globals; Chunk.global_names (populated
@@ -149,10 +154,15 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	case .Next:
 		return next_instruction(c, offset)
 
-	// --- Invoke/Super_Invoke: [name_const][arg_count] -- see
-	// expr.odin's dot/super_. ---
-	case .Invoke, .Super_Invoke:
+	// --- Super_Invoke: [name_const][arg_count] -- see expr.odin's
+	// super_. ---
+	case .Super_Invoke:
 		return invoke_instruction(op, c, offset)
+
+	// --- Invoke: [name_const][arg_count][cache_idx] -- see expr.odin's
+	// dot. ---
+	case .Invoke:
+		return invoke_cached_instruction(op, c, offset)
 
 	// --- Import: [module_const][alias_const] -- see stmt.odin's
 	// import_statement. ---
@@ -278,6 +288,23 @@ invoke_instruction :: proc(op: core.Op_Code, c: ^core.Chunk, offset: int) -> int
 	arg_count := c.code[offset + 2]
 	fmt.printfln("%-16v %v (%d args)", op, const_repr(c, name_const), arg_count)
 	return offset + 3
+}
+
+@(private = "file")
+get_property_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
+	name_const := c.code[offset + 1]
+	cache_idx := c.code[offset + 2]
+	fmt.printfln("%-16v %4d %v (cache %d)", core.Op_Code.Get_Property, name_const, const_repr(c, name_const), cache_idx)
+	return offset + 3
+}
+
+@(private = "file")
+invoke_cached_instruction :: proc(op: core.Op_Code, c: ^core.Chunk, offset: int) -> int {
+	name_const := c.code[offset + 1]
+	arg_count := c.code[offset + 2]
+	cache_idx := c.code[offset + 3]
+	fmt.printfln("%-16v %v (%d args) (cache %d)", op, const_repr(c, name_const), arg_count, cache_idx)
+	return offset + 4
 }
 
 @(private = "file")
