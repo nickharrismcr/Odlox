@@ -9,14 +9,26 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 0 — Project scaffolding
 
-- [ ] `odin test src/vm -all-packages` currently segfaults (exit 139) partway through the compiler-package
-      tests, reproducibly, both single- and multi-threaded (`-define:ODIN_TEST_THREADS=1`) — confirmed
-      **pre-existing and unrelated to any change in this session** by reproducing it on a clean worktree at
-      the last commit before today's build-script work. `python -m pytest tests/new_tests/` (the project's
-      primary correctness gate) is unaffected and passes cleanly. Root cause not investigated — worth a
-      closer look (this Odin dev-build's version, memory-tracking overhead, or a genuine bug surfaced by one
-      of the newer test files) before relying on the isolated `odin test` sweep this project used in prior
-      sessions as a secondary verification step.
+- [ ] `odin test src/vm -all-packages` is unreliable — confirmed **pre-existing and unrelated to any change
+      in this session** (reproduces on a clean worktree at the commit before today's build-script work).
+      `python -m pytest tests/new_tests/` (the project's actual correctness gate) is unaffected throughout.
+      Bisection ruled out a single broken test (every individual test passes alone; `core`/`compiler`
+      packages alone never fail) and pointed at first toward a data race on `core/obj_string.odin`'s
+      unsynchronized global `intern_table` (multiple `vm`-package tests compile/run real Lox code
+      concurrently under the test runner's default 16-thread parallelism) — `-define:ODIN_TEST_THREADS=1`
+      made a known-crashing batch pass reliably, which looked like confirmation. **But it isn't a full fix**:
+      re-running the identical `-all-packages -define:ODIN_TEST_THREADS=1` command twice produced two
+      different failure modes on two different runs — a genuine infinite-loop hang (an orphaned child test
+      process burning real CPU, not blocked/waiting) once, a segfault at a different point in the log the
+      next time. Same input, same flags, different outcomes each run — meaning either `ODIN_TEST_THREADS=1`
+      isn't fully honored by this Odin dev-build's test runner, or there's a genuine memory-corruption bug
+      (use-after-free / stale pointer / buffer overrun) whose *symptom* varies with heap layout, independent
+      of threading. Not root-caused, and a genuine compiler/test-runner bug can't be ruled out either — this
+      is a `dev-YYYY-MM` from-source Odin build, not a numbered release (see the workspace root `CLAUDE.md`),
+      so pre-1.0 toolchain bugs are a real possibility alongside a bug in odlox's own code. Needs proper
+      tooling (a memory sanitizer, if available for this Odin build, or testing against a different Odin
+      build/version to see if the instability follows) rather than further ad hoc bisection before this is
+      trustworthy as a verification step again.
 
 ## Phase 6 — Native/builtin functions & standard library
 

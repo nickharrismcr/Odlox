@@ -90,16 +90,46 @@ size int-to-int, which is exactly the case vet flagged.
 
 **Unrelated finding, recorded but not fixed here**: `odin test src/vm
 -all-packages` (the isolated unit-test sweep used as a secondary
-verification step in prior sessions) segfaults partway through the
-compiler-package tests, reproducibly, both single- and multi-threaded.
-Confirmed via a throwaway `git worktree` at the commit immediately
-before this session's changes that this is **pre-existing and
-unrelated** — not caused by the vet/style fixes above (also confirmed
-directly: an isolated Odin program proved `cast`/`transmute` are
-behaviorally identical here, ruling out the obvious suspect before
+verification step in prior sessions) is unreliable. Confirmed via a
+throwaway `git worktree` at the commit immediately before this session's
+changes that this is **pre-existing and unrelated** to anything here —
+not caused by the vet/style fixes above either (an isolated Odin program
+directly confirmed `cast`/`transmute` are behaviorally identical for
+same-width int conversions, ruling out the obvious suspect before
 reaching for the worktree test). `pytest`, the project's actual
-correctness gate, is unaffected. Tracked in `TODO.md`; not investigated
-further as part of this Phase 0 item.
+correctness gate, is unaffected throughout.
+
+Bisected further than "it segfaults": every individual `vm`-package test
+passes alone; `core` and `compiler` packages alone never fail (only ones
+that compile/run real Lox code, i.e. `vm`, do); a batch of 7 tests that
+reliably crashed under the test runner's default 16-thread parallelism
+passed reliably under `-define:ODIN_TEST_THREADS=1`. That looked like a
+clean diagnosis — a data race on `core/obj_string.odin`'s unsynchronized
+global `intern_table` (multiple tests interning strings into the same
+map concurrently) — and almost got written up as one.
+
+**It isn't a full fix, though**: re-running the identical `-all-packages
+-define:ODIN_TEST_THREADS=1` command twice produced two *different*
+failure modes on two different runs — once a genuine infinite-loop hang
+(an orphaned child `vm.exe` test-binary process burning real CPU,
+thousands of CPU-seconds, not blocked/waiting on anything), once a
+segfault at a different point in the log. Identical input, identical
+flags, different outcomes each run. That rules out a clean "just
+serialize it" story: either `ODIN_TEST_THREADS=1` isn't fully honored by
+this Odin dev-build's test runner, or there's a genuine memory-
+corruption bug (use-after-free / stale pointer / buffer overrun) whose
+*symptom* varies with heap layout, independent of threading — the
+intern_table race may still be real and contributing, just not the whole
+story. Also can't rule out a genuine compiler/test-runner bug rather
+than a bug in odlox's own code: this is a `dev-YYYY-MM` from-source Odin
+build, not a numbered release (workspace root `CLAUDE.md`), and pre-1.0
+toolchain instability is a real possibility here, not just a convenient
+excuse. Not root-caused. A `bin/test_odin.sh` wrapper forcing
+`ODIN_TEST_THREADS=1` was written, tested, and then deliberately
+**dropped** rather than shipped — it would have implied a fix that
+doesn't reliably hold. Tracked in `TODO.md`; needs proper tooling (a
+memory sanitizer if available for this Odin build, or bisecting against
+a different Odin version) before it's worth resuming.
 
 ## Phase 1 — Scanner
 
