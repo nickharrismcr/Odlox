@@ -2271,6 +2271,46 @@ same bounded `timeout 6` smoke test with zero crashes; `tile_planes.lox`, `cobwe
 touches every global assignment in the interpreter — all three still ran clean, no orphaned process in any
 case. Both build modes compiled cleanly throughout.
 
+### Phase 6n: fixed a use-after-unload GPU bug in `get_texture()`, found by actually looking at the screen
+
+Trigger: user report, from actually watching `kaleido.lox` run rather than just checking it didn't crash --
+"it starts OK, drawing the pattern and kaleidoscoping it, but after a few seconds the screen goes black,
+like the texture gets cleared and lost." A bounded, crash-free `timeout` smoke test (Phase 6m's own
+verification) cannot catch this class of bug at all -- the process never crashes, never raises, never hangs;
+it just silently starts rendering garbage. This is exactly the kind of thing this project's own standing
+rule (documented since Phase 6j) says needs an actual human look, not just "ran to completion."
+
+**Root cause**: `render_texture.get_texture()` (Phase 6m) wraps the render_texture's own live `rl.Texture2D`
+handle in a fresh `Texture_Object` via `core.make_texture_object_from_texture2d` -- called every single
+frame by `kaleido.lox` (`tex = canvas.get_texture()`, inside the main loop, to re-sample the live-painted
+canvas). Each frame's wrapper becomes unreachable the moment the *next* frame's `get_texture()` call
+overwrites `tex`, making it eligible for GC. `vm/gc.odin`'s `.Texture` case unconditionally called
+`core.texture_unload` on any collected `Texture_Object`, which unconditionally called `rl.UnloadTexture` --
+but that GPU handle isn't owned by the wrapper at all, it's the render_texture's *own* texture, still very
+much in active use. The first GC sweep that happened to collect one of these transient wrappers destroyed
+the render_texture's real GPU resource out from under it -- every future draw against `canvas` (or reads via
+a later `get_texture()`) then operated on a freed/invalid texture, which is why the screen went black rather
+than crashing outright: freed GPU handles don't fault the way freed CPU memory does, they just render
+nothing (or garbage) silently. "After a few seconds" lines up exactly with `INITIAL_GC_THRESHOLD` (1 MiB) --
+however many frames it took to allocate that much before the first collection cycle ran.
+
+**Fix**: `Texture_Object` gets a new `owns_texture: bool` field (`core/obj_texture.odin`) -- `true` for
+`make_texture_object` (the real, unique-per-call `rl.LoadTextureFromImage` loader), `false` for
+`make_texture_object_from_texture2d` (a borrowed view onto someone else's already-loaded texture).
+`texture_unload` now checks it before calling `rl.UnloadTexture` -- a borrowed wrapper's `freed` flag still
+gets set (so `.unload()` called on one is a harmless no-op, not an error), but the actual GPU teardown is
+skipped entirely, leaving the real owner's texture alone. This is the *first* consumer of
+`make_texture_object_from_texture2d` (added speculatively in Phase 6k, unused until Phase 6m's
+`get_texture()`), so the bug had no way to surface any earlier.
+
+**Verified, honestly bounded**: `kaleido.lox` run for a sustained 20 real seconds (release build too, 15s) --
+long enough for several GC cycles to fire against the per-frame `get_texture()` allocation churn -- with no
+crash and no orphaned process. That confirms the fix doesn't regress anything and the code path the bug lived
+in now takes the "don't unload a borrowed texture" branch instead. It does **not** by itself confirm the
+black-screen symptom is actually gone on screen -- this bug was only found at all because a human was
+watching the output, and the same kind of look is what would confirm the fix, not a bounded background run.
+`pytest` held at 220/0/26; both build modes compiled cleanly.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See
