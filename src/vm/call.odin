@@ -451,7 +451,7 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 			runtime_error(vm, "Key argument to get must be a string.")
 			return false
 		}
-		if v, ok := core.dict_get(d, core.string_get(core.as_string(key_val))); ok {
+		if v, ok := core.dict_get(d, core.as_string(key_val)); ok {
 			result = v
 		} else if arg_count == 2 {
 			result = peek(vm, 0)
@@ -472,7 +472,7 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 			runtime_error(vm, "Argument to remove must be a string key.")
 			return false
 		}
-		v, _ := core.dict_remove(d, core.string_get(core.as_string(key_val)))
+		v, _ := core.dict_remove(d, core.as_string(key_val))
 		result = v
 	case:
 		runtime_error(vm, "Undefined dict method '%s'.", name)

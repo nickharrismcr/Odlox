@@ -412,7 +412,7 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			if !vok {
 				return NIL_VALUE, verr, false
 			}
-			dict_set(dict, key, val)
+			dict_set(dict, intern_string(key), val)
 		}
 		return make_object_value(&dict.obj), "", true
 	case .Instance:

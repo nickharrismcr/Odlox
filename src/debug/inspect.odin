@@ -24,13 +24,13 @@ frame_dict_at :: proc(v: ^vm.VM, frame_idx: int) -> core.Value {
 	function := frame.closure.function
 
 	d := core.make_dict_object()
-	core.dict_set(d, "function", core.make_object_value(&function.name.obj, true))
-	core.dict_set(d, "line", core.make_int_value(chunk_line_at(function.chunk, frame.ip), true))
-	core.dict_set(d, "file", core.make_string_value(filepath.base(v.script)))
-	core.dict_set(d, "args", args_list(v, frame))
-	core.dict_set(d, "locals", locals_dict(v, frame))
-	core.dict_set(d, "globals", globals_dict(v))
-	core.dict_set(d, "prev_frame", frame_dict_at(v, frame_idx - 1))
+	core.dict_set(d, core.intern_string("function"), core.make_object_value(&function.name.obj, true))
+	core.dict_set(d, core.intern_string("line"), core.make_int_value(chunk_line_at(function.chunk, frame.ip), true))
+	core.dict_set(d, core.intern_string("file"), core.make_string_value(filepath.base(v.script)))
+	core.dict_set(d, core.intern_string("args"), args_list(v, frame))
+	core.dict_set(d, core.intern_string("locals"), locals_dict(v, frame))
+	core.dict_set(d, core.intern_string("globals"), globals_dict(v))
+	core.dict_set(d, core.intern_string("prev_frame"), frame_dict_at(v, frame_idx - 1))
 	return core.make_object_value(&d.obj)
 }
 
@@ -94,7 +94,7 @@ locals_dict :: proc(v: ^vm.VM, frame: ^vm.Call_Frame) -> core.Value {
 		if slot < 0 || slot >= v.stack_top {
 			continue
 		}
-		core.dict_set(d, info.name, v.stack[slot])
+		core.dict_set(d, core.intern_string(info.name), v.stack[slot])
 	}
 	return core.make_object_value(&d.obj)
 }
@@ -109,7 +109,7 @@ globals_dict :: proc(v: ^vm.VM) -> core.Value {
 		if slot >= len(env.defined) || !env.defined[slot] {
 			continue
 		}
-		core.dict_set(d, env.global_names[slot], env.globals[slot])
+		core.dict_set(d, core.intern_string(env.global_names[slot]), env.globals[slot])
 	}
 	return core.make_object_value(&d.obj)
 }

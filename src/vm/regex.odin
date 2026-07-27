@@ -408,7 +408,7 @@ invoke_builtin_regex_match :: proc(v: ^VM, m: ^core.Regex_Match_Object, name: st
 		d := core.make_dict_object()
 		for gn, gname in m.group_names {
 			if gn < len(m.groups) {
-				core.dict_set(d, gname, core.make_string_value(m.groups[gn]))
+				core.dict_set(d, core.intern_string(gname), core.make_string_value(m.groups[gn]))
 			}
 		}
 		result = core.make_object_value(&d.obj)

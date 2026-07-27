@@ -2353,6 +2353,56 @@ the only two benchmarks where odlox still trails glox; what's left is
 exactly the instance-fields lookup the cache structurally can't touch
 (see the `TODO.md` entry) plus tree-construction allocation cost.
 
+### Phase 7f: the same redundant-intern bug, in `Dict_Object`
+
+Prompted by a user question about *why* `collections.lox` trails
+CPython specifically (`odlox/py` ≈ 1.8x, worse than most of the rest of
+the suite) — investigated per-phase rather than accepting the aggregate
+number: `collections.lox` runs `list_ops`/`dict_ops`/`string_ops`
+back to back, and the `dict` phase alone was 2.19x slower than CPython,
+noticeably worse than `list`/`string`'s ~1.5-1.8x. Traced it to the
+exact same bug Phase 7c fixed for property/method access, just never
+applied to dicts: `core/obj_dict.odin`'s `dict_set`/`dict_get`/
+`dict_remove` all took a plain `string` and called `intern_string()`
+internally on *every* call — but a dict key value at a real call site
+(`d["a"] = i`, `d.get("a", 0)`) is always already an interned
+`^String_Object`, by construction, with no exception (every Lox string
+Value is interned at creation — see `obj_string.odin`), so re-hashing
+it was pure waste on every dict operation, not just the ones this
+particular benchmark happens to exercise.
+
+**Fix**: `dict_set`/`dict_get`/`dict_remove` now take `^String_Object`
+directly. `vm/collections.odin`'s `dict_key_string` (Index/Index_Assign's
+key coercion, since a dict subscript can be any Value, not just a
+string) was renamed `dict_key` and changed to return the canonical
+pointer directly for an already-string Value, only falling to
+`value_to_string` + a single `intern_string` call for a genuinely
+non-string key (int, etc.) where there's no pre-existing interned
+pointer to reuse. The handful of callers that start from a genuinely
+uninterned plain string — `vm/regex.odin`'s named-capture groups,
+`core/pickle.odin`'s deserialized keys, `debug/inspect.odin`'s frame-
+introspection dict-building (9 call sites, all cold/debug-only), plus
+test files in both `core` and `vm` packages — now call `intern_string`
+explicitly at their own call site instead.
+
+**Verification**: full `pytest` regression unchanged (218/0/26) against
+both build modes; `core` package's own unit tests (41/41, covers
+`dict_set`/`get`/`remove` directly).
+
+**Result**: `collections.lox`'s `dict` phase improved ~10% (2.73s→2.46s
+in isolated timing; full 3-run suite average 2.73s→2.46s tracked as
+`collections`'s `odlox/py` ratio nudging 1.82x→1.79x — modest against
+the suite-wide noise floor since `dict` is only one of three phases
+averaged together). Smaller than Phase 7c's win on property access,
+because interning wasn't the dominant cost here the way it was there:
+`dict_ops` also calls `.keys()` every iteration, which allocates a
+fresh `List_Object` on every call regardless of this fix (now tracked
+separately in `TODO.md`), and CPython's own dict implementation is
+about as hard a target as exists in the entire runtime to begin with —
+see the `TODO.md` entry and this section's own reasoning for why
+closing the rest of this gap has a much lower ceiling than the
+property-access fix did.
+
 ## Phase 8 (optional, low priority) — Bytecode cache
 
 Only if module-recompilation time is measured to actually matter for a

@@ -68,6 +68,11 @@ Only after Phases 1–6 are correct and green against the test suite.
       already favors odlox at ~0.8x, so it's the access pattern, not raw allocation). Attempt compile-time-
       baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it properly or skip it; a
       runtime-only slot table was a net regression in glox's own roadmap, so don't repeat that shortcut.
+- [ ] `Dict_Object.keys()` (`core/obj_dict.odin`'s `dict_keys`) allocates a fresh `List_Object` on every call,
+      even for a dict that hasn't changed since the last call — found via the Phase 7f investigation into why
+      `collections.lox`'s `dict` phase still trails CPython after fixing the redundant-intern cost there
+      (Phase 7f fixed the hashing cost, not this allocation cost, and `dict_ops` in that benchmark calls
+      `.keys()` every iteration). Lower priority than the object-model item above; not investigated further.
 - [ ] Consider a free-list/pool allocator for high-churn small fixed-size objects (vec2/3/4, upvalues,
       bound methods).
 - [ ] Stretch: NaN-boxing `Value` down to 8 bytes — only if profiling still shows `Value` width as a

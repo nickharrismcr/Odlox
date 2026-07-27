@@ -70,24 +70,24 @@ test_list_contains :: proc(t: ^testing.T) {
 @(test)
 test_dict_set_get_remove :: proc(t: ^testing.T) {
 	d := make_dict_object()
-	dict_set(d, "key", make_int_value(1))
+	dict_set(d, intern_string("key"), make_int_value(1))
 
-	v, ok := dict_get(d, "key")
+	v, ok := dict_get(d, intern_string("key"))
 	testing.expect(t, ok)
 	testing.expect_value(t, as_int(v), 1)
 
-	removed, removed_ok := dict_remove(d, "key")
+	removed, removed_ok := dict_remove(d, intern_string("key"))
 	testing.expect(t, removed_ok)
 	testing.expect_value(t, as_int(removed), 1)
 
-	_, still_there := dict_get(d, "key")
+	_, still_there := dict_get(d, intern_string("key"))
 	testing.expect(t, !still_there)
 }
 
 @(test)
 test_dict_get_missing_key :: proc(t: ^testing.T) {
 	d := make_dict_object()
-	_, ok := dict_get(d, "missing")
+	_, ok := dict_get(d, intern_string("missing"))
 	testing.expect(t, !ok)
 }
 

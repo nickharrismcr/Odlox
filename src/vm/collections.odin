@@ -8,17 +8,24 @@ import "core:strings"
 // compiler/expr.odin's subscript): object, then start (Nil if open),
 // then end (Nil if open, slices only).
 
-// dict_key_string coerces any Value into the string a dict subscript
-// should look it up by -- matches create_dict's own coercion (see that
-// proc's doc comment) and glox's own index()/indexAssign() (`iv.String()`
-// for anything that isn't already a StringObject), so `d[10]` and a
-// literal `{10: ...}` agree on the same key.
+// dict_key coerces any Value into the (already-interned) string a dict
+// subscript should look it up by -- matches create_dict's own coercion
+// (see that proc's doc comment) and glox's own index()/indexAssign()
+// (`iv.String()` for anything that isn't already a StringObject), so
+// `d[10]` and a literal `{10: ...}` agree on the same key. A Value
+// that's already a string returns its own canonical pointer directly,
+// no re-interning (see core/obj_dict.odin's doc comment on why that
+// matters); anything else goes through value_to_string once and interns
+// the result, since there's no pre-existing interned pointer to reuse
+// for a coerced key.
 @(private = "file")
-dict_key_string :: proc(v: core.Value) -> (key: string, needs_free: bool) {
+dict_key :: proc(v: core.Value) -> ^core.String_Object {
 	if core.is_string(v) {
-		return core.string_get(core.as_string(v)), false
+		return core.as_string(v)
 	}
-	return core.value_to_string(v), true
+	s := core.value_to_string(v)
+	defer delete(s)
+	return core.intern_string(s)
 }
 
 // do_index handles Op_Index (`obj[idx]`). Real bug, found porting the
@@ -33,13 +40,10 @@ do_index :: proc(vm: ^VM) -> bool {
 	obj := pop(vm)
 
 	if obj.type == .Obj && obj.obj_type == .Dict {
-		key, needs_free := dict_key_string(idx)
-		defer if needs_free {
-			delete(key)
-		}
+		key := dict_key(idx)
 		v, ok := core.dict_get(core.as_dict(obj), key)
 		if !ok {
-			runtime_error(vm, "Key '%s' not found.", key)
+			runtime_error(vm, "Key '%s' not found.", core.string_get(key))
 			return false
 		}
 		push(vm, v)
@@ -85,10 +89,7 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 	obj := pop(vm)
 
 	if obj.type == .Obj && obj.obj_type == .Dict {
-		key, needs_free := dict_key_string(idx)
-		defer if needs_free {
-			delete(key)
-		}
+		key := dict_key(idx)
 		core.dict_set(core.as_dict(obj), key, value)
 		push(vm, value)
 		return true
@@ -240,14 +241,9 @@ create_dict :: proc(vm: ^VM, pair_count: int) -> bool {
 		// `{10: "DEBUG", 20: "INFO", ...}`, looked up later via
 		// `str(level)`. core.value_to_string is the same stringification
 		// Op_Str's own generic (non-toString) fallback uses, so a level
-		// int and its str() lookup key always agree.
-		if core.is_string(key) {
-			items[core.as_string(key)] = value
-		} else {
-			key_str := core.value_to_string(key)
-			items[core.intern_string(key_str)] = value
-			delete(key_str) // intern_string clones; this copy is now redundant
-		}
+		// int and its str() lookup key always agree. dict_key shares this
+		// coercion with do_index/do_index_assign.
+		items[dict_key(key)] = value
 	}
 	d := core.make_dict_object(items)
 	gc_track(vm, &d.obj)
