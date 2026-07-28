@@ -111,6 +111,9 @@ class MovingObject {
         this.id = id                                        // Handle into physics_world
         this.pos = vec3(0, 0, 0)                            // Mutated in place from world each frame (world.get_position_into) -- never replaced, so it stays one persistent object for this ball's whole lifetime
         this.shadow_center = vec3(0, 0, 0)                  // Reused/mutated in add_shadow() instead of allocating a fresh vec3 every frame
+        this.ground_height = 0.0                            // Written by ground_at(x, z, this) -- see add_shadow()
+        this.ground_axis = UP_AXIS                          // ground_at() always reassigns this to a shared, read-only constant (UP_AXIS or one of ramp_ground's own axes), never mutates it -- a plain reference swap, no allocation
+        this.ground_angle = 0.0
         this.size = size                                    // Size dimensions (vec3, but we use .x for radius)
         this.color = color                                  // RGBA color (vec4)
         this.radius = this.get_collision_radius()          // Collision radius, mirrors what was passed to world.add()
@@ -187,10 +190,13 @@ class MovingObject {
             return
         }
 
-        ground = ground_at(this.pos.x, this.pos.z)
-        ground_y = ground[0]
-        ground_axis = ground[1]
-        ground_angle = ground[2]
+        // Writes this.ground_height/ground_axis/ground_angle directly instead
+        // of returning a tuple -- a tuple is a heap-allocated list like any
+        // other, and this runs once per ball every frame.
+        ground_at(this.pos.x, this.pos.z, this)
+        ground_y = this.ground_height
+        ground_axis = this.ground_axis
+        ground_angle = this.ground_angle
 
         // Shadow grows with height above whatever it's resting on, simulating
         // an overhead point light source: the higher the ball, the closer it
@@ -299,10 +305,15 @@ foreach (cfg in ramp_configs) {
     }
 }
 
-// Returns (height, axis, angle) for the ground surface directly below
-// world (x, z): a ramp's tilted top face if (x, z) is within one of the
-// four ramps' footprints, otherwise the flat floor.
-fun ground_at(x, z) {
+// Writes the ground surface (height, axis, angle) directly below world
+// (x, z) into obj.ground_height/ground_axis/ground_angle: a ramp's tilted
+// top face if (x, z) is within one of the four ramps' footprints,
+// otherwise the flat floor. Writes into caller-provided storage instead of
+// returning a tuple -- called once per ball every frame, and a tuple is a
+// heap-allocated list like any other. ground_axis is always a plain
+// reference swap to a shared, read-only constant (one of ramp_ground's own
+// axes, or UP_AXIS) -- never copied, never mutated, so aliasing it is safe.
+fun ground_at(x, z, obj) {
     foreach (rg in ramp_ground) {
         tilts_along_x = rg[0]
         along = x
@@ -312,11 +323,15 @@ fun ground_at(x, z) {
             cross = x
         }
         if (along >= rg[1] and along <= rg[2] and math.abs(cross - rg[3]) <= rg[4]) {
-            height = rg[5] + rg[7] * (along - rg[6])
-            return (height, rg[8], rg[9])
+            obj.ground_height = rg[5] + rg[7] * (along - rg[6])
+            obj.ground_axis = rg[8]
+            obj.ground_angle = rg[9]
+            return
         }
     }
-    return (0.0, UP_AXIS, 0.0)
+    obj.ground_height = 0.0
+    obj.ground_axis = UP_AXIS
+    obj.ground_angle = 0.0
 }
 
 // ===== BATCH RENDERING SETUP =====

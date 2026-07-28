@@ -2850,6 +2850,34 @@ modes under a bounded wall-clock smoke test, zero crashes, zero orphaned process
 improvement needs the reporting user's own look, consistent with this project's standing graphics-
 verification limitation.
 
+### Phase 6ab: `ground_at()`'s per-ball tuple return was the dominant remaining allocator
+
+Trigger: follow-up question after Phase 6aa — "what's responsible for the remaining GC pressure?" Answered
+by reading the post-6aa script directly (not by re-measuring first): `ground_at(x, z)`, called once per
+non-exploded ball every frame from `MovingObject.add_shadow()`, returned a 3-element tuple
+`(height, axis, angle)`. Tuples are heap-allocated `List_Object`s in this interpreter, same as any other
+list — so every call built a fresh one just to be destructured (`ground[0]`/`[1]`/`[2]`) and discarded
+immediately, regardless of whether the ball was over a ramp or the flat floor. At `SHAPES=500` that's ~500
+allocations/frame, an order of magnitude above every other remaining source in the script combined
+(`explosions = []`, allocated unconditionally every frame even when nothing exploded, was a distant second).
+
+**Fix**: `ground_at(x, z, obj)` now writes directly into three fields on the caller's own object
+(`obj.ground_height`, `obj.ground_axis`, `obj.ground_angle`) instead of returning anything — the same
+write-into-caller-provided-storage shape `world.get_position_into` already established in Phase 6aa, and
+the user's own suggestion once shown the diagnosis ("could pass MovingObject this"). `MovingObject` gained
+the three fields (initialized once in `init()`); `add_shadow()` calls `ground_at(this.pos.x, this.pos.z,
+this)` and reads the results straight back off `this` afterward. `ground_axis` specifically is a plain
+*reference* swap, not a copy — `ground_at` always assigns it to one of `ramp_ground`'s own precomputed axis
+vec3s or the shared `UP_AXIS` constant (Phase 6aa), never a fresh or mutated one, so aliasing it costs
+nothing and stays safe under the same "every consumer copies fields out immediately" guarantee already
+established for `shadow_center`.
+
+**Verified**: the same before/after GC-cycle-counter technique as Phase 6aa, run again on top of it —
+**405 cycles (post-6aa) down to 132** over an identical 20-second window, another ~3× reduction on top of
+the earlier 2.8× (≈8.6× total from the original unoptimized script's 1130). `pytest` held at 220/0/26;
+confirmed against the real, unmodified-elsewhere simulation running clean on both build modes, zero
+crashes, zero orphaned processes.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See
