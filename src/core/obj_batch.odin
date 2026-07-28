@@ -251,7 +251,7 @@ batch_draw_circle3 :: proc(b: ^Batch_Object, entry: Circle_Batch_Entry) {
 	scale := rl.MatrixScale(entry.radius * 2, 1, entry.radius * 2)
 	rotation := rl.MatrixRotate(entry.axis, entry.angle * math.RAD_PER_DEG)
 	translation := rl.MatrixTranslate(entry.center.x, entry.center.y, entry.center.z)
-	transform := scale * rotation * translation
+	transform := translation * rotation * scale // column-vector convention -- see vm/gfx_window.odin's cube_rotated comment
 	material.maps[rl.MaterialMapIndex.ALBEDO].color = entry.color
 	rl.DrawMesh(mesh, material, transform)
 }

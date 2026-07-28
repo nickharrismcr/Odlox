@@ -759,7 +759,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
 		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
 		translation := rl.MatrixTranslate(f32(pos.x), f32(pos.y), f32(pos.z))
-		transform := scale * rotation * translation
+		// raylib/OpenGL uses column-vector convention (confirmed directly
+		// from Vector3Transform's own source: (m * v4).xyz -- matrix on
+		// the left), so composing "scale, then rotate, then translate"
+		// needs translation * rotation * scale: transform * v expands as
+		// translation * (rotation * (scale * v)), applying scale to the
+		// vertex first and translation last. scale * rotation *
+		// translation (the reverse) applies translation to the mesh's
+		// still-local-space vertices first, then rotates the whole
+		// already-displaced object around the world origin instead of
+		// its own center -- a real bug, found via a real script
+		// (lox_examples/3d_balls_physics_shaders.lox) whose rotated ramps
+		// rendered nowhere near their actual physics_world position.
+		transform := translation * rotation * scale
 		material.maps[rl.MaterialMapIndex.ALBEDO].color = col
 		rl.DrawMesh(mesh, material, transform)
 		result = core.NIL_VALUE
@@ -792,7 +804,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
 		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
 		translation := rl.MatrixTranslate(f32(pos.x), f32(pos.y), f32(pos.z))
-		transform := scale * rotation * translation
+		transform := translation * rotation * scale // see cube_rotated's own comment on this order
 		corners := [8]rl.Vector3 {
 			{-0.5, -0.5, -0.5}, {0.5, -0.5, -0.5}, {0.5, 0.5, -0.5}, {-0.5, 0.5, -0.5},
 			{-0.5, -0.5, 0.5}, {0.5, -0.5, 0.5}, {0.5, 0.5, 0.5}, {-0.5, 0.5, 0.5},

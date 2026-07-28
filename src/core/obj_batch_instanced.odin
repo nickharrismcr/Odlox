@@ -102,7 +102,12 @@ batch_instanced_add :: proc(b: ^Batch_Instanced_Object, x, y, z, axis_x, axis_y,
 batch_instanced_make_transforms :: proc(b: ^Batch_Instanced_Object) {
 	for i in 0 ..< len(b.entries) {
 		e := b.entries[i]
-		b.transforms[i] = e.rotation * e.translation
+		// column-vector convention (v' = M*v) -- see vm/gfx_window.odin's
+		// cube_rotated comment. rotation*translation (the reverse) applies
+		// translation to the mesh's local-space vertices before rotation,
+		// swinging every instance around the world origin instead of its
+		// own center.
+		b.transforms[i] = e.translation * e.rotation
 	}
 }
 

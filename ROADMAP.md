@@ -2756,6 +2756,47 @@ paths (missing argument, non-bool argument). Confirmed against a real, unmodifie
 3D-drawing loop under a bounded wall-clock smoke test on both build modes, zero crashes, zero orphaned
 processes. `pytest` held at 220/0/26 throughout.
 
+### Phase 6z: fixed a real transform-composition-order bug across every rotated 3D draw path
+
+Trigger: direct visual bug report against `lox_examples/3d_balls_physics_shaders.lox` — "balls and collision
+seem OK, shadows are in the wrong place per ball and the rotated ramps are being drawn in completely the
+wrong places." Balls (plain, unrotated `win.sphere`/batch draws) and the physics simulation itself
+(`physics_world`) were fine; only *rotated* geometry was wrong.
+
+**Root cause, confirmed from first principles, not assumed**: every rotated-object draw path in this port
+(`cube_rotated`/`cube_wires_rotated` in `vm/gfx_window.odin`, `batch_draw_circle3`'s shadow-quad transform in
+`core/obj_batch.odin`, `batch_instanced_make_transforms` in `core/obj_batch_instanced.odin`) composed its
+model matrix as `scale * rotation * translation` (or, for `batch_instanced`, `rotation * translation`).
+raylib/OpenGL uses **column-vector** convention — confirmed directly from the Odin `vendor:raylib` binding's
+own `Vector3Transform` source (`(m * v4).xyz`, matrix on the left) rather than assumed — so a matrix product
+`A * B * C` applied to a vertex expands as `A * (B * (C * v))`: the *rightmost* matrix acts on the vertex
+*first*. `scale * rotation * translation` therefore applies **translation first**, to the mesh's still-local
+(untranslated, unrotated) vertex coordinates, then rotates the *already-displaced* result around the world
+origin instead of the object's own center — for anything off-center from the origin, this doesn't just
+misplace the object, it can throw it anywhere depending on angle and distance, exactly matching "shadows in
+the wrong place" and "ramps in completely the wrong places." The correct order is `translation * rotation *
+scale` (`Translation * Rotation` for the two-matrix `batch_instanced` case, no scale — mesh size is baked in
+at construction via `GenMeshCube(cube_size, ...)` instead).
+
+This was ported faithfully from glox's own equivalent Go source (`rl.MatrixMultiply(rl.MatrixMultiply(scale,
+rotation), translation)` in `win_methods.go`, same nesting) — whether glox's own raylib-go binding happens to
+define `MatrixMultiply` with different semantics than Odin's `vendor:raylib` (making glox's version correct
+despite the identical-looking code) wasn't investigated; irrelevant to fixing this port, which needed to be
+correct against *its own* binding's actual, directly-verified convention.
+
+**Fix**: reversed the multiplication order at all four sites (`translation * rotation * scale`, or
+`translation * rotation` for `batch_instanced`).
+
+**Verified**: `pytest` held at 220/0/26 (none of these paths are pytest-exercised — screen-only). Confirmed
+against real, unmodified scripts covering every affected path on both build modes: `3d_balls_physics_shaders.lox`
+(the reporting script — rotated ramps via `cube_rotated`/`cube_wires_rotated`, shadow quads via
+`batch_draw_circle3`), `wireframe_cubes.lox` (`cube_wires_rotated`), and `cube_stack_fly2.lox`/
+`textured_batch_demo2.lox` (`batch_instanced`) — all ran their full loop clean under a bounded wall-clock
+smoke test, zero crashes, zero orphaned processes. Actual on-screen correctness (objects now appearing where
+physics/script logic places them, not just "doesn't crash") needs the reporting user's own visual
+confirmation, consistent with this project's standing limitation that graphics correctness can't be verified
+from here.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See
