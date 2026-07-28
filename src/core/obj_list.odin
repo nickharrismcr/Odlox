@@ -39,6 +39,14 @@ list_append :: proc(l: ^List_Object, v: Value) {
 	append(&l.items, v)
 }
 
+// list_clear empties l in place, keeping its backing array's existing
+// capacity -- for a list that gets emptied and refilled every frame (e.g.
+// a per-frame event/hit list), this avoids reallocating a fresh List_Object
+// every time the way `l = []` would from Lox.
+list_clear :: proc(l: ^List_Object) {
+	clear(&l.items)
+}
+
 // list_join concatenates l's items (which must all be strings) with sep
 // between them, mirroring glox's ListObject.Join -- the underlying
 // logic for the `sep.join(list)` string method (vm/call.odin), named

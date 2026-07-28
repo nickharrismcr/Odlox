@@ -48,6 +48,7 @@ floor_flash_timer = 0          // Explosion floor flash effect timer
 time_value = 0.0               // Time in seconds (for shader uniforms)
 pulse_center = vec3(0, 5, 0)   // Moving center point for pulse shader effect
 cam_pos = vec3(20, 10, 10)     // Reused every frame (mutated below) instead of a fresh vec3 per frame
+explosions = []                // Cleared and refilled every frame (list.clear()) instead of reallocated
 
 // ========== PHYSICS SIMULATION CONSTANTS ==========
 const GRID_SIZE = 30.0         // Half-size of simulation boundary (60x60x60 total space)
@@ -401,7 +402,7 @@ while (!win.should_close()) {
     }
 
     // Check for objects whose explosion timers have expired
-    explosions = []
+    explosions.clear()
     foreach (obj in objects) {
         if (obj.should_explode()) {
             // Record explosion position for force propagation

@@ -2878,6 +2878,29 @@ the earlier 2.8× (≈8.6× total from the original unoptimized script's 1130). 
 confirmed against the real, unmodified-elsewhere simulation running clean on both build modes, zero
 crashes, zero orphaned processes.
 
+### Phase 6ac: `list.clear()`
+
+Trigger: direct follow-up — `3d_balls_physics_shaders.lox`'s `explosions = []` was still reallocated fresh
+every single frame (even on the overwhelmingly common frames where nothing explodes), because plain `List`
+had no way to empty itself in place — only `float_array` (`.clear(fill_value)`) and the raylib `batch`
+types had a `clear()` method; ordinary lists didn't. Asked whether there was a clear-and-reuse option
+instead of a realloc — there wasn't one, so this adds it.
+
+`core/obj_list.odin`'s new `list_clear :: proc(l: ^List_Object)` is a one-line `clear(&l.items)` — Odin's
+own `clear()` on a dynamic array resets its length to zero while keeping the existing backing allocation,
+exactly the "reuse capacity, don't reallocate" semantics wanted. Wired into `invoke_builtin_list`
+(`vm/call.odin`) as `list.clear()`, 0 arguments. Works identically on tuples too (a tuple is a `List_Object`
+under the hood) — no special-casing needed, though clearing an otherwise-immutable-by-convention tuple in
+place is an unusual thing for a script to actually do.
+
+`3d_balls_physics_shaders.lox`'s `explosions` is now declared once, at module scope, alongside the other
+per-frame-reused state (`cam_pos`, etc.), and the main loop calls `explosions.clear()` instead of
+`explosions = []`.
+
+**Verified**: a smoke test covered `.clear()` on both a plain list (append/clear/length/re-append/index) and
+a tuple, plus the wrong-argument-count error path. `pytest` held at 220/0/26. Confirmed against the real
+`3d_balls_physics_shaders.lox` running clean on both build modes, zero crashes, zero orphaned processes.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

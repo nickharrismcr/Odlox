@@ -435,6 +435,13 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			return false
 		}
 		result = core.make_int_value(core.list_length(l))
+	case "clear":
+		if arg_count != 0 {
+			runtime_error(vm, "clear takes no arguments.")
+			return false
+		}
+		core.list_clear(l)
+		result = core.NIL_VALUE
 	case:
 		runtime_error(vm, "Undefined list method '%s'.", name)
 		return false

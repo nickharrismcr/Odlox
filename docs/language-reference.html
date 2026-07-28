@@ -687,6 +687,8 @@ a[2:5] = [7, 8, 9]   // slice assignment</code></pre>
 <p>Returns the index of the first element equal to <code>value</code>, or <code>nil</code> if not present.</p>
 <div class="sig"><span class="nm">list.length</span>() <span class="pill">→ int</span></div>
 <p>Returns the number of elements. Equivalent to <a href="#builtins"><code>len(list)</code></a>.</p>
+<div class="sig"><span class="nm">list.clear</span>() <span class="pill">→ nil</span></div>
+<p>Empties the list in place, keeping its existing capacity — for a list that gets emptied and refilled every frame/iteration, cheaper than reassigning <code>list = []</code>, which allocates a brand new list.</p>
 <div class="note"><strong>Also available</strong>The built-in <a href="#builtins"><code>append(list, value)</code></a> is the free-function form of <code>list.append</code>. Sorting and reversing live in <a href="#mod-itertools">itertools</a>; map/filter/reduce in <a href="#mod-functools">functools</a>.</div>
 
 <!-- ==================== TUPLES ==================== -->
