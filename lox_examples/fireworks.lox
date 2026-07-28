@@ -85,6 +85,7 @@ const width=1500;
 const height=900;
 var win = window(width,height);
 win.init();
+win.show_fps(true);
 win.toggle_fullscreen()
  
 var emitters = particle_sys.Emitters();
