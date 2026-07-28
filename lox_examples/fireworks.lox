@@ -54,14 +54,18 @@ func queue_random_emitter(width,height,delay){
     
     emitters.queue(particle_sys.Emitter(pos, init(ecol1,ecol2), move), random.integer(MIN_PARTICLES, MAX_PARTICLES), delay); 
 }
-STARS=300 
+STARS=300
 func make_stars(){
     var stars=[];
     for ( var i = 0; i < STARS ; i=i+1 ){
         var pos=random_vec_2D(0,width,0,height);
         var size=1;
         var a=random.integer(1,255);
-        stars.append([pos,size,a]);
+        // color is built once here and mutated in place below rather than
+        // reallocated every frame -- 300 stars x 60fps of fresh vec4()
+        // allocations was pure per-frame GC churn with nothing to show for
+        // it, since only the alpha channel ever actually changes.
+        stars.append([pos,size,vec4(255,255,255,a)]);
     }
     return stars;
 }
@@ -70,12 +74,12 @@ func update_stars(stars) {
     foreach (var s in stars) {
 
         if (random.integer(0,1000) < 4) {
-            s[2] = random.integer(1, 255); // Randomly change alpha
+            s[2].a = random.integer(1, 255); // Randomly change alpha in place
         }
-        pos,size,a = s
-        win.circle_fill(pos.x, pos.y, size, vec4(255,255,255,a))
+        pos,size,col = s
+        win.circle_fill(pos.x, pos.y, size, col)
     }
-}   
+}
 
 const width=1500;
 const height=900;
