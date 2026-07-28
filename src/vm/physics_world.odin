@@ -645,6 +645,36 @@ invoke_builtin_physics_world :: proc(vm: ^VM, w: ^core.Physics_World_Object, nam
 			return false
 		}
 		result = make_vec3_result(vm, pos)
+	case "get_position_into":
+		// Writes into an existing vec3 in place instead of allocating a
+		// fresh one every call -- for a script syncing hundreds of bodies'
+		// positions every frame (e.g. lox_examples/3d_balls_physics_shaders.lox),
+		// get_position() means one new Vec3_Object per body per frame that's
+		// immediately discarded; this lets a script keep one persistent vec3
+		// per body instead.
+		if arg_count != 2 {
+			runtime_error(vm, "get_position_into() expects 2 arguments (id, vec3).")
+			return false
+		}
+		id_into_val, target_val := peek(vm, 1), peek(vm, 0)
+		if !core.is_int(id_into_val) {
+			runtime_error(vm, "get_position_into() first argument must be an integer (id).")
+			return false
+		}
+		if !core.is_vec3(target_val) {
+			runtime_error(vm, "get_position_into() second argument must be a vec3.")
+			return false
+		}
+		pos_into, err_into, ok_into := physics_world_get_position(w, core.as_int(id_into_val))
+		if !ok_into {
+			runtime_error(vm, "%s", err_into)
+			return false
+		}
+		target := core.as_vec3(target_val)
+		target.x = pos_into.x
+		target.y = pos_into.y
+		target.z = pos_into.z
+		result = core.NIL_VALUE
 	case "add_impulse":
 		if arg_count != 2 {
 			runtime_error(vm, "add_impulse() expects 2 arguments (id, impulse).")

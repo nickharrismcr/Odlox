@@ -47,6 +47,7 @@ frame_count = 0                // Frame counter for timing
 floor_flash_timer = 0          // Explosion floor flash effect timer
 time_value = 0.0               // Time in seconds (for shader uniforms)
 pulse_center = vec3(0, 5, 0)   // Moving center point for pulse shader effect
+cam_pos = vec3(20, 10, 10)     // Reused every frame (mutated below) instead of a fresh vec3 per frame
 
 // ========== PHYSICS SIMULATION CONSTANTS ==========
 const GRID_SIZE = 30.0         // Half-size of simulation boundary (60x60x60 total space)
@@ -77,6 +78,28 @@ const RAMP_ANGLE = 15.0                  // Tilt in degrees
 const RAMP_SIZE = (GRID_SIZE * 2) * 0.2  // Cube side length: 20% of the floor square's side
 const RAMP_HALF = RAMP_SIZE / 2.0
 
+// ========== PRE-ALLOCATED DRAW CONSTANTS ==========
+// vec2/vec3/vec4 are mutable heap objects -- constructing one every frame
+// (or every ball, every frame) for a value that's actually constant is
+// pure GC churn with nothing to show for it. Building these once here and
+// reusing the same object everywhere below cuts several thousand
+// allocations/frame at SHAPES=500.
+CLEAR_COLOR = vec4(100, 100, 150, 255)
+FLOOR_ORIGIN = vec3(0, 0, 0)
+FLOOR_SIZE = vec2(GRID_SIZE * 2, GRID_SIZE * 2)
+FLOOR_NORMAL_COLOR = vec4(100, 100, 100, 255)
+RAMP_WIRE_COLOR = vec4(0, 0, 0, 255)
+BOUNDARY_POS = vec3(0, 5, 0)
+BOUNDARY_SIZE = vec3(GRID_SIZE * 2, 10, GRID_SIZE * 2)
+BOUNDARY_COLOR = vec4(100, 100, 100, 100)
+SHADOW_COLOR = vec4(50, 50, 50, 255)
+UP_AXIS = vec3(0, 1, 0)
+// Flash color is genuinely per-frame-varying (its own alpha/brightness
+// depends on floor_flash_timer), but the vec4 *object* holding it doesn't
+// need to be -- reused and mutated in place instead of reallocated each
+// of the few frames a flash is actually active.
+floor_flash_color = vec4(255, 255, 255, 255)
+
 // ========== MOVING OBJECT CLASS ==========
 // Represents a rendering/gameplay wrapper around one physics_world body.
 // Integration, boundary bounce, and ball-ball collision now happen natively
@@ -86,7 +109,8 @@ const RAMP_HALF = RAMP_SIZE / 2.0
 class MovingObject {
     init(id, size, color) {
         this.id = id                                        // Handle into physics_world
-        this.pos = vec3(0, 0, 0)                            // Synced from world each frame
+        this.pos = vec3(0, 0, 0)                            // Mutated in place from world each frame (world.get_position_into) -- never replaced, so it stays one persistent object for this ball's whole lifetime
+        this.shadow_center = vec3(0, 0, 0)                  // Reused/mutated in add_shadow() instead of allocating a fresh vec3 every frame
         this.size = size                                    // Size dimensions (vec3, but we use .x for radius)
         this.color = color                                  // RGBA color (vec4)
         this.radius = this.get_collision_radius()          // Collision radius, mirrors what was passed to world.add()
@@ -175,13 +199,15 @@ class MovingObject {
         height_factor = math.min(2.0, 1.0 + (this.pos.y - ground_y) / 14.0)
         r = this.radius * height_factor
 
-        // Slightly above the surface to avoid z-fighting
-        center = vec3(this.pos.x, ground_y + 0.01, this.pos.z)
+        // Slightly above the surface to avoid z-fighting. Reuses this
+        // ball's own persistent shadow_center vec3 instead of allocating a
+        // fresh one every frame -- add_circle3 copies x/y/z out into its
+        // own batch entry immediately, so mutating and reusing this is safe.
+        this.shadow_center.x = this.pos.x
+        this.shadow_center.y = ground_y + 0.01
+        this.shadow_center.z = this.pos.z
 
-        // Gray shadow color with fixed transparency
-        shadow_color = vec4(50, 50, 50, 255)
-
-        shadow_batch.add_circle3(center, r, ground_axis, ground_angle, shadow_color)
+        shadow_batch.add_circle3(this.shadow_center, r, ground_axis, ground_angle, SHADOW_COLOR)
     }
 }
 
@@ -225,11 +251,15 @@ ramp_color = vec4(20, 90, 40, 255)
 // Static geometry never moves, so each draw transform is fetched once
 // rather than every frame -- get_box_transform() is the single source of
 // truth (see docs/md/plans/NOTES_box_physics.md) shared by physics and drawing.
+// wire_size (5th element) is precomputed here too, not in the render loop
+// every frame -- ramps are static, it can never change after this point.
 ramp_draws = []
 foreach (cfg in ramp_configs) {
     ramp_id = world.add_static_box(cfg[0], vec3(RAMP_HALF, RAMP_HALF, RAMP_HALF), cfg[1], cfg[2], mat_id)
     t = world.get_box_transform(ramp_id)
-    ramp_draws.append((t[0], vec3(t[1].x * 2, t[1].y * 2, t[1].z * 2), t[2], t[3]))
+    ramp_size = vec3(t[1].x * 2, t[1].y * 2, t[1].z * 2)
+    wire_size = vec3(ramp_size.x + 0.02, ramp_size.y + 0.02, ramp_size.z + 0.02)
+    ramp_draws.append((t[0], ramp_size, t[2], t[3], wire_size))
 }
 
 // Precompute per-ramp ground data once (static geometry never changes):
@@ -286,7 +316,7 @@ fun ground_at(x, z) {
             return (height, rg[8], rg[9])
         }
     }
-    return (0.0, vec3(0, 1, 0), 0.0)
+    return (0.0, UP_AXIS, 0.0)
 }
 
 // ===== BATCH RENDERING SETUP =====
@@ -323,7 +353,9 @@ while (!win.should_close()) {
     angle = angle + 0.005  // Rotation speed (radians per frame)
     x = math.cos(angle) * DISTANCE  // Calculate X position on circle
     z = math.sin(angle) * DISTANCE  // Calculate Z position on circle
-    cam.set_position(vec3(x, 10, z))  // Update camera position (Y=10 for elevated view)
+    cam_pos.x = x  // Y stays 10, never changes
+    cam_pos.z = z
+    cam.set_position(cam_pos)
 
     // ===== TIMING AND ANIMATION =====
     frame_count = frame_count + 1
@@ -337,10 +369,13 @@ while (!win.should_close()) {
 
     // Sync rendered/gameplay position from the physics world. Skipping
     // exploded objects is safe -- their bodies were already removed from
-    // world when they exploded.
+    // world when they exploded. get_position_into writes into obj.pos in
+    // place (a single persistent vec3 per ball, set up once in init())
+    // instead of get_position() allocating a brand new one every ball,
+    // every frame -- SHAPES=500 balls means 500 fewer allocations/frame.
     foreach (obj in objects) {
         if (obj.is_exploded) continue
-        obj.pos = world.get_position(obj.id)
+        world.get_position_into(obj.id, obj.pos)
     }
 
     // ===== EXPLOSION MECHANICS =====
@@ -392,7 +427,7 @@ while (!win.should_close()) {
     // ===== RENDERING PHASE =====
     win.begin()
     win.begin_blend_mode(win.BLEND_ALPHA)  // Enable alpha blending for transparency effects
-    win.clear(vec4(100,100,150,255))        // Clear to blue-gray background
+    win.clear(CLEAR_COLOR)        // Clear to blue-gray background
 
     // ===== 3D SCENE RENDERING =====
     win.begin_3d(cam)  // Enter 3D coordinate system with camera transformation
@@ -403,20 +438,21 @@ while (!win.should_close()) {
         // Calculate flash intensity (1.0 = full flash, 0.0 = normal)
         flash_intensity = floor_flash_timer / 10.0
         flash_white = int(150 + (255 - 150) * flash_intensity)  // Lerp from gray to white
-        floor_color = vec4(flash_white, flash_white, flash_white, 255)
-        win.plane(vec3(0, 0, 0), vec2(GRID_SIZE*2, GRID_SIZE*2), floor_color)
+        floor_flash_color.x = flash_white
+        floor_flash_color.y = flash_white
+        floor_flash_color.z = flash_white
+        win.plane(FLOOR_ORIGIN, FLOOR_SIZE, floor_flash_color)
     } else {
         // Normal gray floor when no explosions are occurring
-        win.plane(vec3(0, 0, 0), vec2(GRID_SIZE*2, GRID_SIZE*2), vec4(100, 100, 100, 255))
+        win.plane(FLOOR_ORIGIN, FLOOR_SIZE, FLOOR_NORMAL_COLOR)
     }
 
-    // Static ramps -- see STATIC RAMPS setup above for how their transforms were derived
+    // Static ramps -- see STATIC RAMPS setup above for how their transforms
+    // (including the wireframe's slightly-larger size, rd[4]) were derived,
+    // once, not per frame.
     foreach (rd in ramp_draws) {
         win.cube_rotated(rd[0], rd[1], rd[2], rd[3], ramp_color)
-        // Just a hair larger than the ramp itself so the wireframe is
-        // visible rather than z-fighting with the solid cube's own faces.
-        wire_size = vec3(rd[1].x + 0.02, rd[1].y + 0.02, rd[1].z + 0.02)
-        win.cube_wires_rotated(rd[0], wire_size, rd[2], rd[3], vec4(0, 0, 0, 255))
+        win.cube_wires_rotated(rd[0], rd[4], rd[2], rd[3], RAMP_WIRE_COLOR)
     }
 
     // ===== SHADOW PASS (BATCHED) =====
@@ -432,7 +468,7 @@ while (!win.should_close()) {
 
     // ===== BOUNDARY VISUALIZATION =====
     // Draw wireframe boundary cube to show simulation limits
-    win.cube_wires(vec3(0, 5, 0), vec3(GRID_SIZE*2, 10, GRID_SIZE*2), vec4(100, 100, 100, 100))
+    win.cube_wires(BOUNDARY_POS, BOUNDARY_SIZE, BOUNDARY_COLOR)
 
 
     // ===== OBJECT RENDERING PASS (BATCHED) =====

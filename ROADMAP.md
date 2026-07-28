@@ -2797,6 +2797,59 @@ physics/script logic places them, not just "doesn't crash") needs the reporting 
 confirmation, consistent with this project's standing limitation that graphics correctness can't be verified
 from here.
 
+### Phase 6aa: cut per-frame allocation churn in `3d_balls_physics_shaders.lox`
+
+Trigger: direct request — "the 3d balls demo does a load of allocations per frame. fix any quick wins eg
+constant vec4 colours etc and look at pools and object reuse." Same underlying pattern as the earlier
+`fireworks.lox` star-color fix (Phase 6z-adjacent GC work): `vec2`/`vec3`/`vec4` are mutable heap objects,
+so constructing a fresh one for a value that's actually constant across frames, or reconstructing one every
+call when only ONE field of it ever changes, is pure GC churn.
+
+**Quick wins (script-level, `lox_examples/3d_balls_physics_shaders.lox`)**:
+- Hoisted every genuinely-constant draw argument to a module-level constant, computed once instead of
+  every frame: the clear color, floor origin/size/normal-color, the ramp wireframe color, and the boundary
+  wireframe's position/size/color (the last three drawn unconditionally every single frame regardless of
+  simulation state).
+- `MovingObject.add_shadow()`'s `shadow_color` (`vec4(50, 50, 50, 255)`) was identical across all 500 balls,
+  every frame — hoisted to a module constant, cutting up to 500 allocations/frame on its own.
+- `ground_at()`'s fallback (`vec3(0, 1, 0)`, the flat-floor up-axis) was rebuilt on every call — the common
+  case, since only 4 small ramps exist in a 60×60 arena — hoisted to a module constant `UP_AXIS`; safe to
+  share since every consumer (`add_circle3`) copies `x`/`y`/`z` out into its own `rl.Vector3` immediately
+  and never retains the passed object (confirmed by reading `batch_draw_circle3`/`Circle_Batch_Entry` and
+  every other consuming native call in this pass, not assumed).
+- Per-ramp `wire_size` was recomputed every frame for all 4 ramps despite ramps being static geometry that
+  never changes after startup — moved into the one-time `ramp_draws` construction loop instead (now a 5th
+  tuple element), matching the sibling comment already there about `get_box_transform()` itself being
+  fetched once for the same reason.
+- Camera position (`cam.set_position(vec3(x, 10, z))`, every frame) and each ball's own shadow-quad center
+  (`add_shadow()`'s `center = vec3(...)`, 500×/frame) now reuse one persistent, field-mutated vec3 instead
+  of constructing a new one — `cam_pos` at module scope, `this.shadow_center` per `MovingObject`, both set
+  up once and only ever mutated (`.x =`/`.y =`/`.z =`) from then on. Confirmed safe the same way as above:
+  every consumer of these values (`cam.set_position`, `add_circle3`) copies fields out synchronously, never
+  stores the passed object past that one call.
+
+**Pools/object reuse (native, `vm/physics_world.odin`)**: the position-sync loop
+(`obj.pos = world.get_position(obj.id)`, once per live ball every frame) was the single largest remaining
+allocation source — `get_position()` always allocates and `gc_track`s a brand-new `Vec3_Object`
+(`make_vec3_result`), immediately abandoning whatever `obj.pos` pointed to before. Added
+`world.get_position_into(id, vec3)`: writes the body's current position into an *existing* vec3's fields in
+place instead of allocating a new one, mirroring the same in-place-mutation convention `set_vec_swizzle`
+already gives every vec2/3/4 for direct field assignment. `MovingObject.pos` is now set up once in `init()`
+and never replaced — `world.step()`'s own per-frame call becomes `world.get_position_into(obj.id, obj.pos)`,
+eliminating one `Vec3_Object` allocation per live ball per frame (up to 500/frame at `SHAPES=500`).
+
+**Verified**: `pytest` held at 220/0/26 throughout (this file and script are outside pytest's coverage,
+screen-only). A temporary GC-cycle counter (not shipped — same throwaway-instrumentation pattern used for
+the earlier `fireworks.lox` GC investigation) measured the mechanism directly rather than assuming it:
+running the *pre*-optimization script and the *post*-optimization script back to back through the same
+instrumented binary for an identical 20-second bounded window gave **1130 GC cycles before, 405 after** —
+roughly a 2.8× reduction in collection frequency, with the live working set staying small and stable in
+both cases (no leak either side, purely a churn-rate difference). Confirmed against the real, unmodified
+simulation (`SHAPES=500` balls, full physics/shadow/batch/shader pipeline) running clean on both build
+modes under a bounded wall-clock smoke test, zero crashes, zero orphaned processes. Actual frame-pacing
+improvement needs the reporting user's own look, consistent with this project's standing graphics-
+verification limitation.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

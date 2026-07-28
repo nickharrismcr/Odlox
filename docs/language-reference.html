@@ -1229,6 +1229,7 @@ while (!win.should_close()) {
 <tr><td><code>get_box_transform(id)</code></td><td>For a static box body, returns <code>(position, half_extents, axis, angle)</code> — feed straight into <a href="#window"><code>win.cube_rotated()</code></a> so drawing always matches exactly what physics collided against</td></tr>
 <tr><td><code>remove(id)</code></td><td>Remove a body from the simulation</td></tr>
 <tr><td><code>get_position(id)</code></td><td>Current position of a body as a <code>vec3</code></td></tr>
+<tr><td><code>get_position_into(id, vec3)</code></td><td>Writes a body's current position into an existing <code>vec3</code> in place instead of allocating a new one — for syncing many bodies' positions every frame without a fresh allocation per body per frame</td></tr>
 <tr><td><code>add_impulse(id, impulse_vec3)</code></td><td>Add an instantaneous velocity change (<code>vel += impulse</code>) to one body</td></tr>
 <tr><td><code>step(dt)</code></td><td>Advance the simulation one step: gravity, boundary bounce, collision resolution</td></tr>
 <tr><td><code>collisions()</code></td><td>List of tuples <code>(a_id, b_id, normal_vec3, impulse)</code> for pairs that <em>newly</em> touched during the last <code>step()</code>; resting contacts are not repeated</td></tr>
