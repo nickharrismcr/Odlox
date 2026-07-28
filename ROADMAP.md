@@ -2708,6 +2708,34 @@ roughly 2 of every 3 runs within a few seconds, ran clean to a bounded wall-cloc
 runs (debug) and 3 consecutive runs (release) after the fix, zero crashes, zero orphaned processes — a much
 stronger bar than the pre-fix baseline, which crashed reliably within that same window.
 
+### Phase 6x: fixed `vm.bytes_allocated` never decreasing (gradual frame-rate drop in long-running scripts)
+
+Trigger: after the Phase 6w fix, `fireworks.lox` no longer crashed, but the debug build showed a real,
+gradually worsening stutter the longer it ran.
+
+**Root cause**: `gc.odin`'s `vm.bytes_allocated` was only ever *incremented* (`gc_track`, on every
+allocation) — nothing anywhere decremented it when `sweep()` freed an object, confirmed by checking every
+reference to the field in the codebase. It was really tracking "total bytes ever allocated for the life of
+the process," not "bytes currently live." Since `next_gc` is computed as `bytes_allocated * GC_HEAP_GROW_
+FACTOR` after every cycle, and `bytes_allocated` never shrank, `next_gc` roughly doubled after every single
+collection regardless of how much was actually freed — a pattern directly visible in the Phase 6w
+investigation's own logs (cycle thresholds at ~1MB, ~2MB, ~4MB, an unbroken doubling). As the threshold grew
+exponentially, collections became exponentially rarer in wall-clock terms for a script allocating at a
+roughly constant per-frame rate, so more garbage piled up in `vm.objects` between collections — meaning each
+(increasingly rare) `sweep()` had to walk and free an increasingly large backlog, making each GC pause both
+rarer *and* progressively more expensive. Since collection runs synchronously inside the frame loop (between
+opcodes), this manifested as periodic stalls that got worse the longer the script ran, not a one-time hitch.
+
+**Fix**: `sweep()` now subtracts `object_size(obj)` from `vm.bytes_allocated` for every object it frees,
+read *before* `free_object` runs (several `object_size` cases depend on fields — `len(l.items)`, `len(inst.
+fields)`, etc. — that `free_object`'s own `delete()` calls invalidate).
+
+**Verified**: a temporary log confirmed the mechanism directly — before the fix, `bytes_allocated` only ever
+grew across a 25s `fireworks.lox` run; after the fix, it fluctuates in a bounded ~130KB–430KB range tracking
+the actual live particle count, and 45 GC cycles ran in that same 25s window versus only 2–3 before (short,
+cheap collections at a steady cadence instead of rare, expensive ones). `pytest` held at 220/0/26; both build
+modes compiled cleanly and `fireworks.lox` ran clean across repeated runs on both.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

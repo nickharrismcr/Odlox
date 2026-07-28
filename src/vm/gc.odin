@@ -259,6 +259,11 @@ sweep :: proc(vm: ^VM) {
 			obj.marked = false
 			prev = obj
 		} else {
+			// object_size must be read before free_object runs -- several
+			// cases (List/Dict/Instance/...) compute it from fields
+			// (len(l.items), len(inst.fields), ...) that free_object's own
+			// delete() calls invalidate.
+			vm.bytes_allocated -= object_size(obj)
 			free_object(obj)
 			if prev == nil {
 				vm.objects = next
