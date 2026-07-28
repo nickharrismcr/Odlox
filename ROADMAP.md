@@ -2736,6 +2736,26 @@ the actual live particle count, and 45 GC cycles ran in that same 25s window ver
 cheap collections at a steady cadence instead of rare, expensive ones). `pytest` held at 220/0/26; both build
 modes compiled cleanly and `fireworks.lox` ran clean across repeated runs on both.
 
+### Phase 6y: `win.show_fps(bool)`
+
+Trigger: direct request, framed against glox's own behavior — glox's `end()` (`win_methods.go`)
+unconditionally calls `rl.DrawFPS(10, 10)` right before `rl.EndDrawing()` on *every* script, every frame, no
+way to opt out. This port had already deliberately not ported that (documented in `gfx_window.odin`'s own
+header comment as a debug-overlay side effect baked into the wrong place) — `get_fps()` was exposed instead,
+leaving a script to draw its own FPS text if it wanted one at all. This closes the gap properly: an explicit
+opt-in toggle rather than either extreme (always-on like glox, or draw-it-yourself-from-scratch).
+
+`Window_Object` gets a `show_fps: bool` field (`core/obj_window.odin`), defaulting to `false` — matching this
+port's own existing default (not glox's always-on one). `win.show_fps(bool)` (`vm/gfx_window.odin`) sets it;
+`end()`'s existing `rl.EndDrawing()` call is now preceded by `if w.show_fps { rl.DrawFPS(10, 10) }`, same
+position glox always drew it at.
+
+**Verified**: a smoke test covered on/off/on-again toggling across several frames plus both argument-error
+paths (missing argument, non-bool argument). Confirmed against a real, unmodified script
+(`lox_examples/wireframe_cubes.lox`, with `win.show_fps(true)` added right after `.init()`) running its full
+3D-drawing loop under a bounded wall-clock smoke test on both build modes, zero crashes, zero orphaned
+processes. `pytest` held at 220/0/26 throughout.
+
 ## Phase 7 — Performance pass
 
 Only after Phases 1–6 are correct and green against the test suite. See

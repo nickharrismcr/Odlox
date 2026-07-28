@@ -19,6 +19,7 @@ Window_Object :: struct {
 	width:     int,
 	height:    int,
 	closed:    bool, // latched by .close() so a second call is a no-op, not a second CloseWindow()
+	show_fps:  bool, // toggled by .show_fps(bool) -- see gfx_window.odin's "end" case
 
 	cube_mesh:       rl.Mesh,
 	cube_material:   rl.Material,

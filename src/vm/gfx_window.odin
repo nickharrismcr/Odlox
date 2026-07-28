@@ -11,8 +11,8 @@ import "core:strings"
 // glox's obj_builtin_window.go/win_methods.go -- window lifecycle, frame
 // begin/end, input, 2D primitive drawing, texture/render_texture
 // drawing, blend/shader modes, 3D drawing (see begin_3d's own doc
-// comment), and draw_array. `batch`/`batch_instanced` are still not
-// ported yet (see TODO.md).
+// comment), draw_array, and batch/batch_instanced (vm/gfx_batch.odin,
+// vm/gfx_batch_instanced.odin).
 //
 // Colors cross the Lox boundary as vec4, each channel 0-255 -- matches
 // natives/colour_utils.odin's existing, already-shipped convention
@@ -20,9 +20,11 @@ import "core:strings"
 // normalized float.
 //
 // Deliberate deviation from glox: end() does *not* call rl.DrawFPS(10,
-// 10) automatically the way glox's own end() does -- that's a debug
-// overlay side effect baked into the wrong place; get_fps() is exposed
-// so a script can draw its own FPS text if it wants one at all.
+// 10) unconditionally the way glox's own end() does -- that's a debug
+// overlay side effect baked into a call every script makes every frame
+// regardless of whether it wants one. Opt-in instead: .show_fps(bool)
+// toggles it (off by default), and get_fps() remains available too for
+// a script that wants to draw its own FPS text some other way entirely.
 //
 // No GC-triggered window teardown: unlike glox, which doesn't call
 // CloseWindow from GCFree either, Window_Object owns no GPU resource of
@@ -98,7 +100,22 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 			runtime_error(vm, "end() takes no arguments.")
 			return false
 		}
+		if w.show_fps {
+			rl.DrawFPS(10, 10)
+		}
 		rl.EndDrawing()
+		result = core.NIL_VALUE
+	case "show_fps":
+		if arg_count != 1 {
+			runtime_error(vm, "show_fps() expects 1 argument (bool).")
+			return false
+		}
+		enabled_val := peek(vm, 0)
+		if enabled_val.type != .Bool {
+			runtime_error(vm, "show_fps() argument must be a bool.")
+			return false
+		}
+		w.show_fps = enabled_val.data != 0
 		result = core.NIL_VALUE
 
 	// --- info ---
