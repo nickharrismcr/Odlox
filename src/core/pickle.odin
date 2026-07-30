@@ -4,15 +4,12 @@ import "core:encoding/endian"
 import "core:fmt"
 
 // pickle.odin: a standalone, plain-data serialiser for Value, used by the
-// "pickle" native module (dumps/loads) and, later, the "process" module's
-// pipe framing. Ported from glox's src/core/pickle.go -- same tag-based
-// binary format in spirit (not required to be byte-compatible with glox's
-// own encoding, since this only ever needs to round-trip between two
-// odlox processes), same error-not-panic discipline (arbitrary/untrusted
-// bytes go through decode, so truncated or malformed input must always
-// come back as an error, never a crash), and the same cycle guard (a
-// "currently visiting" set of object pointers, checked before recursing
-// into a list/dict/instance's own children).
+// "pickle" native module (dumps/loads) and the "process" module's pipe
+// framing. A tag-based binary format with error-not-panic discipline
+// throughout (arbitrary/untrusted bytes go through decode, so truncated
+// or malformed input must always come back as an error, never a crash),
+// and a cycle guard (a "currently visiting" set of object pointers,
+// checked before recursing into a list/dict/instance's own children).
 
 @(private = "file")
 Pickle_Tag :: enum u8 {

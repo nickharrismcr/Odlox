@@ -5,15 +5,12 @@ import "../vm"
 import "core:math"
 import "core:math/rand"
 
-// colour_utils: ported from glox's src/builtin/color_functions.go, byte-
-// for-byte (clamps, integer truncation order, and all) -- every function
-// here returns a vec4 (r, g, b, 255), same as glox's own
-// core.MakeVec4Value(..., 255.0, false). None of this needs raylib; it
-// lives in natives rather than vm/builtins*.odin purely to keep the whole
-// `colour_utils` module (registration + every function under it) in one
-// place, matching how gfx.odin keeps encode_rgba/decode_rgba (also
-// raylib-free) alongside gfx's raylib-dependent surface for the same
-// reason.
+// colour_utils: pure colour-math helper functions with no raylib
+// dependency. Every function here returns a vec4 (r, g, b, 255). Lives
+// in natives rather than vm/builtins*.odin so the whole `colour_utils`
+// module (registration + every function under it) stays in one place,
+// the same way gfx.odin keeps its own raylib-free encode_rgba/
+// decode_rgba alongside gfx's raylib-dependent surface.
 
 @(private)
 register_colour_utils :: proc(v: ^vm.VM) {

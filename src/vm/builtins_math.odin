@@ -3,14 +3,12 @@ package vm
 import "../core"
 import "core:math"
 
-// Port of glox's src/builtin/math_functions.go: the low-level,
-// underscore-prefixed native functions (`_sin`, `_cos`, ...) that
-// glox's Lox-source `math` module (src/modules/math.lox) wraps with
-// int-to-float coercion and higher-level helpers (vector length, etc.)
-// before exposing `sin`/`cos`/... to user code. These register as
-// plain global names, same as glox -- `math.lox` itself, once ported
-// alongside this, is what makes `import math` work; these functions
-// alone are just the native floor it's built on.
+// The low-level, underscore-prefixed native functions (`_sin`, `_cos`,
+// ...) that the Lox-source `math` module wraps with int-to-float
+// coercion and higher-level helpers (vector length, etc.) before
+// exposing `sin`/`cos`/... to user code. These register as plain
+// global names; `math.lox` is what makes `import math` work, and these
+// functions are just the native floor it's built on.
 
 @(private)
 define_math_builtins :: proc(vm: ^VM) {

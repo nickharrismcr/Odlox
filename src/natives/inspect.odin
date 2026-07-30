@@ -4,11 +4,10 @@ import "../core"
 import "../debug"
 import "../vm"
 
-// inspect: VM introspection (get_frame/dump_frame), ported from glox's
-// src/debug/inspect.go + src/builtin/core_functions.go's
-// DumpFrameBuiltIn/GetFrameBuiltIn. The actual frame-walking logic lives
-// in the debug package (debug/inspect.odin), a sibling of this one off
-// vm -- this file is just the module registration.
+// inspect: VM introspection (get_frame/dump_frame). The actual
+// frame-walking logic lives in the debug package (debug/inspect.odin),
+// a sibling of this one off vm -- this file is just the module
+// registration.
 
 @(private)
 register_inspect :: proc(v: ^vm.VM) {

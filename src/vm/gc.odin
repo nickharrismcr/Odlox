@@ -5,12 +5,9 @@ import "core:os"
 import "core:text/regex"
 import rl "vendor:raylib"
 
-// Mark-and-sweep collector -- the design blueprint is
-// docs/ARCHITECTURE.md's Garbage collector section, itself carried over
-// from glox's own experimental Go collector (src/vm/gc.go there, whose
-// doc comment says outright it exists to serve as this port's design
-// blueprint). Two real refinements from that plan, discovered while
-// actually wiring this up (both explained where they matter below):
+// Mark-and-sweep collector -- design documented in
+// docs/ARCHITECTURE.md's Garbage collector section. Two refinements
+// beyond that document's blueprint, explained where they matter below:
 //
 //  1. No mid-opcode collection trigger, so no "pre-mark on link" trick
 //     is needed at all -- see maybe_collect_garbage.
@@ -22,15 +19,12 @@ import rl "vendor:raylib"
 //     respectively, neither of which has a VM in scope to register them
 //     with (core/compiler sit below vm in the package graph -- see
 //     docs/ARCHITECTURE.md's package-layout section) -- so those two
-//     remain structurally permanent, the same *outcome* glox's original
-//     exemption had, just arrived at for a different reason (a real
-//     constraint, not a deliberate choice) than glox's "small and
-//     long-lived, not worth it" rationale. Still fully traced either
-//     way, so nothing reachable only through a Function's constant pool
-//     or a String's own bytes (impossible -- strings have no Object
+//     remain structurally permanent. Still fully traced either way, so
+//     nothing reachable only through a Function's constant pool or a
+//     String's own bytes (impossible -- strings have no Object
 //     children) goes missing.
 
-INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox/glox's starting nextGC
+INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox's starting nextGC
 GC_HEAP_GROW_FACTOR :: 2
 
 // gc_track registers obj as a newly-allocated collectible object on
@@ -132,17 +126,15 @@ gc_adopt :: proc(vm: ^VM, v: core.Value) {
 // maybe_collect_garbage runs a full cycle if the allocation threshold
 // has been crossed. Called once per dispatch-loop iteration, *between*
 // opcodes (see run.odin) -- deliberately never from inside a single
-// opcode's own handler. This is what removes the need for glox's
-// "pre-mark a just-linked object so the very collection it triggered
-// can't sweep it before anything else can reach it" trick: that trick
-// exists in glox because a Go collection can, in principle, fire at any
-// allocation, including ones in the middle of an opcode handler that's
-// popped several already-built values off the stack (transiently
-// unreachable from anywhere) before combining them into a new object
-// (e.g. Op_Create_List). Checking only at instruction boundaries means
+// opcode's own handler. Checking only at instruction boundaries means
 // the value stack is *always* in a fully consistent, source-level-valid
 // state -- exactly what root scanning is allowed to assume -- whenever
-// a collection can actually run.
+// a collection can actually run. An opcode handler that pops several
+// already-built values off the stack (transiently unreachable from
+// anywhere) before combining them into a new object (e.g.
+// Op_Create_List) never has a collection interleaved into that window,
+// so no "pre-mark a just-linked object before anything else can reach
+// it" trick is needed to protect it.
 maybe_collect_garbage :: proc(vm: ^VM) {
 	if vm.bytes_allocated > vm.next_gc {
 		collect_garbage(vm)
@@ -202,11 +194,9 @@ mark_value :: proc(vm: ^VM, v: core.Value) {
 
 // mark_object marks obj and, on its first visit this cycle, queues it
 // for blacken_object to trace its children later. A plain `obj == nil`
-// check is sufficient here -- unlike glox's Go version, there is no
-// typed-nil-interface gotcha to guard against (see
-// docs/ARCHITECTURE.md's Object model section): `^core.Obj` is always
-// either a real pointer or literally nil, never a non-nil box wrapping
-// a nil concrete pointer.
+// check is sufficient here: `^core.Obj` is always either a real pointer
+// or literally nil, never a non-nil box wrapping a nil concrete pointer
+// (see docs/ARCHITECTURE.md's Object model section).
 mark_object :: proc(vm: ^VM, obj: ^core.Obj) {
 	if obj == nil || obj.marked {
 		return
@@ -300,8 +290,7 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 // sweep walks this VM's own registry, freeing anything left unmarked
 // and clearing the mark on survivors for next cycle. Anything requiring
 // real external-resource teardown (currently just an open file) gets
-// that call first -- the switch-based equivalent of glox's GCFreer
-// interface check (see docs/ARCHITECTURE.md's Object model section).
+// that call first (see docs/ARCHITECTURE.md's Object model section).
 sweep :: proc(vm: ^VM) {
 	prev: ^core.Obj
 	obj := vm.objects
@@ -425,12 +414,11 @@ free_object :: proc(obj: ^core.Obj) {
 		delete(w.contact_sets[1])
 		free(w)
 	case .Image:
-		// A deliberate improvement over glox, which never frees the
-		// underlying rl.Image at all (ImageObject has no GCFree/unload) --
-		// safe here because Image's own Lox-facing surface (width/height)
-		// never touches pixel data again once a Texture has been built
-		// from it, so freeing it when unreachable changes no observable
-		// behavior. See core/obj_image.odin's header comment.
+		// Frees the underlying rl.Image -- safe because Image's own
+		// Lox-facing surface (width/height) never touches pixel data
+		// again once a Texture has been built from it, so freeing it
+		// when unreachable changes no observable behavior. See
+		// core/obj_image.odin's header comment.
 		img := cast(^core.Image_Object)obj
 		rl.UnloadImage(img.image)
 		free(img)
@@ -454,11 +442,9 @@ free_object :: proc(obj: ^core.Obj) {
 		delete(bt.circles)
 		free(bt)
 	case .Batch_Instanced:
-		// No GC-triggered GPU teardown here either -- confirmed via grep
-		// that glox itself never calls UnloadMesh/UnloadMaterial/
-		// UnloadShader for BatchInstancedObject or its shader singleton,
-		// same "no GC-triggered teardown" convention already established
-		// for Window_Object's cube_mesh and Batch_Object's circle_mesh.
+		// No GC-triggered GPU teardown here either -- the same
+		// convention already established for Window_Object's cube_mesh
+		// and Batch_Object's circle_mesh.
 		bi := cast(^core.Batch_Instanced_Object)obj
 		delete(bi.entries)
 		delete(bi.transforms)

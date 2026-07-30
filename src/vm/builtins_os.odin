@@ -4,12 +4,11 @@ import "../core"
 import "core:os"
 import "core:strings"
 
-// Port of glox's os.* functions (src/builtin/os_functions.go): file
-// open/close/readln/write/read_all plus the directory/path-manipulation
-// functions. File_Object's actual read/write/close behavior lives in
-// core/obj_file.odin (core owns the object, vm owns the native
-// functions that construct/use it -- same split as every other object
-// kind).
+// The os.* module: file open/close/readln/write/read_all plus the
+// directory/path-manipulation functions. File_Object's actual
+// read/write/close behavior lives in core/obj_file.odin (core owns the
+// object, vm owns the native functions that construct/use it -- same
+// split as every other object kind).
 
 @(private)
 define_os_builtins :: proc(vm: ^VM) {
@@ -199,9 +198,8 @@ mkdir_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Val
 	return core.make_bool_value(true)
 }
 
-// rmdir and remove are the same underlying operation, matching glox's
-// own RmdirBuiltIn/RemoveBuiltIn (both call os.Remove) -- kept as two
-// separate registered names for parity, not collapsed into one, since
+// rmdir and remove are the same underlying operation, kept as two
+// separate registered names rather than collapsed into one since
 // script source calls them by these two distinct names.
 @(private = "file")
 rmdir_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
@@ -265,10 +263,8 @@ chdir_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Val
 }
 
 // join/dirname/basename/splitext are hand-rolled slash-based string
-// manipulation, not core:path/filepath, to match glox's own simple
-// (non-OS-specific-cleaning) implementations exactly -- see
-// os_functions.go's JoinBuiltIn/DirnameBuiltIn/BasenameBuiltIn/
-// SpliTextBuiltIn, which this ports statement-for-statement.
+// manipulation rather than core:path/filepath, since they intentionally
+// don't do any OS-specific path cleaning -- just plain slash-splitting.
 
 @(private = "file")
 join_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {

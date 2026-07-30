@@ -2,8 +2,8 @@ package vm
 
 import "../core"
 
-// Upvalue capture/closing -- standard clox design, unchanged by the
-// port. capture_upvalue finds-or-creates the Upvalue_Object for a given
+// Upvalue capture/closing -- standard clox design. capture_upvalue
+// finds-or-creates the Upvalue_Object for a given
 // stack slot, threading it into vm.open_upvalues (kept sorted
 // descending by slot) so a later capture of the *same* slot from a
 // sibling closure reuses the identical Upvalue_Object rather than

@@ -4,8 +4,7 @@ import rl "vendor:raylib"
 
 // Texture_Object wraps a GPU-loaded raylib texture, optionally sliced
 // into `frames` equal-width horizontal animation frames (frame N
-// occupies x in [(N-1)*frame_width, N*frame_width)). Ported from
-// glox's obj_builtin_texture.go.
+// occupies x in [(N-1)*frame_width, N*frame_width)).
 Texture_Object :: struct {
 	using obj:       Obj,
 	width, height:   int,
@@ -47,13 +46,11 @@ make_texture_object :: proc(image: rl.Image, frames, start_frame, end_frame: int
 // this Texture_Object does *not* own (e.g. render_texture.get_texture()
 // pulling out the render_texture's own live rl.Texture2D) as a
 // single-frame, non-animated Texture_Object. owns_texture is left false,
-// so texture_unload below never calls rl.UnloadTexture on it -- a real
-// bug, found by actually running lox_examples/kaleido.lox (which calls
-// get_texture() every frame, briefly making the previous frame's wrapper
-// unreachable and GC-collectible): without this, GC reaping one of these
-// transient wrappers unloaded the *render_texture's own* shared GPU
-// texture out from under it, and the screen went black a few seconds in
-// once the first sweep happened to catch one.
+// so texture_unload below never calls rl.UnloadTexture on it: a script
+// that calls get_texture() every frame makes the previous frame's
+// wrapper unreachable and GC-collectible, and without owns_texture,
+// reaping one of these transient wrappers would unload the
+// render_texture's own shared GPU texture out from under it.
 make_texture_object_from_texture2d :: proc(texture: rl.Texture2D) -> ^Texture_Object {
 	w, h := int(texture.width), int(texture.height)
 	o := new(Texture_Object)

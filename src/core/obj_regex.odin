@@ -5,10 +5,10 @@ import "core:text/regex"
 // Regex_Pattern_Object wraps a compiled regular expression (Odin's own
 // core:text/regex engine) plus a capture-group-number -> name map, since
 // that engine's own pattern syntax has no equivalent of Python/RE2's
-// (?P<name>...) named groups at all -- named-group support here is
-// this port's own preprocessing layer (see vm/regex.odin's
-// preprocess_pattern), which strips the name out before compiling and
-// remembers which group number it corresponded to.
+// (?P<name>...) named groups at all -- named-group support is a
+// preprocessing layer (see vm/regex.odin's preprocess_pattern), which
+// strips the name out before compiling and remembers which group number
+// it corresponded to.
 Regex_Pattern_Object :: struct {
 	using obj:   Obj,
 	regex:       regex.Regular_Expression,

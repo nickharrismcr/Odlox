@@ -15,15 +15,12 @@ import "../core"
 // Super_Invoke/Get_Super cases) reads name straight off a bytecode
 // constant that the compiler already interned when it emitted it
 // (compiler/expr.odin's dot -> core.make_string_value); a plain-string
-// signature here meant every single property/method access re-hashed
-// that name's full content against the global intern table just to
-// re-derive the exact pointer already sitting in the constant pool --
-// real, measured cost, found via the Phase 7b benchmark baseline
-// (trees/binary_trees, both property-access-heavy, were the only two
-// benchmarks where odlox lost to glox; glox avoids this entirely by
-// caching the interned id on the constant at compile time). Passing the
-// pointer through turns every one of these into a single map lookup
-// keyed by pointer identity, same as glox's int-keyed fast path.
+// signature here would mean every single property/method access
+// re-hashes that name's full content against the global intern table
+// just to re-derive the exact pointer already sitting in the constant
+// pool -- a real, measured cost on property-access-heavy code. Passing
+// the pointer through turns every one of these into a single map
+// lookup keyed by pointer identity.
 //
 // get_property/invoke additionally take a monomorphic inline cache
 // (core.Property_Cache, one per callsite -- see core/chunk.odin's doc
@@ -73,11 +70,9 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 			runtime_error(vm, "Undefined module property '%s'.", core.string_get(name))
 			return false
 		case .Window:
-			// `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` -- glox registers these
-			// directly on the window object (RegisterAllWindowConstants),
-			// not as module-level constants; see gfx_window.odin's
-			// window_constant doc comment for how this was found (porting
-			// lox_examples/defender and tile_planes.lox).
+			// `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` are registered
+			// directly on the window object, not as module-level
+			// constants -- see gfx_window.odin's window_constant.
 			if v, ok := window_constant(core.string_get(name)); ok {
 				pop(vm)
 				push(vm, v)
@@ -142,19 +137,11 @@ get_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string) -> bool {
 	return true
 }
 
-// set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`)
-// -- glox's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case
-// (`v.AsVec2().SetX(tmp.AsFloat())`, `vm.go`), which this port was
-// missing entirely: set_property only ever checked `receiver.type ==
-// .Obj`, so any vector's `.type` (`.Vec2`/`.Vec3`/`.Vec4`, never
-// `.Obj` -- see value.odin) fell straight through to the generic
-// "Only instances, classes, and modules have settable properties."
-// error, rejecting vector field assignment outright. Found porting
-// src/modules/particle_sys.lox, a real glox module that assigns
-// `this.pos.x = ...` directly. Vec2/3/4 objects are mutable heap
-// values (a Value just wraps a pointer to one -- see obj_vec.odin), so
-// this mutates the field in place rather than replacing anything on
-// the stack, same shape as Instance/Class/Module's map-entry updates.
+// set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`).
+// Vec2/3/4 objects are mutable heap values (a Value just wraps a
+// pointer to one -- see obj_vec.odin), so this mutates the field in
+// place rather than replacing anything on the stack, same shape as
+// Instance/Class/Module's map-entry updates.
 set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
 	if !core.is_number(value) {
 		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)

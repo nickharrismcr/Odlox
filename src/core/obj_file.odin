@@ -5,9 +5,7 @@ import "core:os"
 import "core:strings"
 
 // File_Object: wraps an open OS file handle plus (lazily-initialized)
-// line-buffered reader state for readln. Phase 4 left this at just the
-// handle/closed/eof fields with reads/writes deferred to Phase 6 --
-// this is that step.
+// line-buffered reader state for readln.
 File_Object :: struct {
 	using obj:    Obj,
 	handle:       ^os.File,
@@ -26,10 +24,8 @@ make_file_object :: proc(handle: ^os.File) -> ^File_Object {
 
 // file_close is idempotent -- a script may already have closed the file
 // itself before it becomes unreachable, at which point the garbage
-// collector's sweep (Phase 4) calls this again as teardown. Mirrors
-// glox's GCFreer pattern (see docs/ARCHITECTURE.md), just as a plain
-// proc dispatched from a `switch obj.type` in sweep rather than an
-// interface method.
+// collector's sweep calls this again as teardown (see
+// docs/ARCHITECTURE.md's GCFreer equivalent section).
 file_close :: proc(f: ^File_Object) {
 	if f.closed {
 		return
@@ -42,28 +38,13 @@ file_close :: proc(f: ^File_Object) {
 }
 
 // file_read_line reads up to and including the next '\n' (stripped,
-// along with any preceding '\r'), same trim glox's own ReadLine does.
-// ok is false only once EOF has already been reached with nothing left
-// to return -- a final line with no trailing newline still comes back
-// as ok=true (matching glox: a non-empty partial read on EOF is still
-// a real line, only the *next* call after that reports EOF).
-//
-// Real bug, found via except_native_raise.lox (which reads itself line
-// by line until EOFError and asserts the exact resulting line count):
-// glox's own ReadLine (obj_file.go) has the same "err != nil but len(line)
-// > 0 still returns a real line" fallthrough this doc comment describes,
-// but its *shape* means that fallthrough is also reached when err != nil
-// AND len(line) == 0 -- i.e. a file whose last byte is the final '\n',
-// with nothing left after it -- since Go's `if len(line) > 0 { return
-// ... }` only returns *early* in that inner branch; every other path,
-// including "err != nil, line empty", falls through to the same final
-// `return MakeStringObjectValue(line, false)` and comes back as a
-// *successful* read of an empty string. Only the *following* call (with
-// f.Eof now true) reports real EOF. This port's version returned
-// ok=false immediately in that exact case instead, one read short of
-// glox's own behaviour for any file that ends with a trailing newline
-// (the overwhelmingly common case) -- confirmed against glox's actual
-// binary on this exact fixture (27 successful reads, not 26).
+// along with any preceding '\r'). ok is false only once EOF has already
+// been reached with nothing left to return -- a final line with no
+// trailing newline still comes back as ok=true: a non-empty partial read
+// on EOF is still a real line, and even a file whose last byte is the
+// final '\n' (with nothing left after it) reports ok=false immediately
+// rather than one extra successful read of an empty string. Only the
+// *next* call after a real line reports EOF.
 file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 	if f.eof {
 		return "", false
@@ -80,19 +61,13 @@ file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 }
 
 // file_write writes s to f, first un-escaping a literal `\n` (the two
-// characters backslash-n) into a real newline byte -- matching glox's
-// own Write exactly. This looked like a compensating step for
-// something glox-scanner-specific at first glance, but it isn't: this
-// language's string literals (both glox's and this port's -- see
+// characters backslash-n) into a real newline byte. This language's
+// string literals have no real backslash-escape mechanism at all (see
 // scanner.odin's scan_string, which only ever special-cases `$$` for
-// interpolation) have no real backslash-escape mechanism at all, so
-// `"hello\n"` in Lox source is literally the six characters h-e-l-l-
-// o-backslash-n, not a newline. Writing text files with real newlines
-// from Lox therefore depends on this one write-time unescape; skipping
-// it (an earlier version of this proc did, on the wrong assumption
-// that the scanner already handled `\n`) breaks every multi-line file
-// write silently -- caught by an os.write/os.readln smoke test
-// round-trip, not by reasoning about the scanner in isolation.
+// interpolation), so `"hello\n"` in Lox source is literally the six
+// characters h-e-l-l-o-backslash-n, not a newline. Writing text files
+// with real newlines from Lox therefore depends on this one write-time
+// unescape.
 file_write :: proc(f: ^File_Object, s: string) {
 	unescaped, was_allocation := strings.replace_all(s, `\n`, "\n")
 	defer if was_allocation {

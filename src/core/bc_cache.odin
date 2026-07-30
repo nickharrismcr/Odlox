@@ -9,26 +9,21 @@ import "core:strings"
 // the full design). Same tag-dispatch, length-prefixed, bounds-checked
 // shape as pickle.odin's Value serializer, applied to a narrower value
 // population: compile-time constants only (Int/Float/String/Function --
-// confirmed by exhaustively grepping every chunk_add_constant call site
-// in compiler/, nothing else is ever a Chunk constant), not arbitrary
-// runtime values. Unlike glox's own bc_cache.go, int/float constants
-// here round-trip the full 8-byte payload with no truncation (glox
-// truncates ints to a uint32 -- a real, acknowledged bug there; this
-// format follows pickle.odin's own already-established precedent of not
-// repeating it).
+// nothing else is ever a Chunk constant), not arbitrary runtime values.
+// Int/float constants round-trip the full 8-byte payload with no
+// truncation.
 //
 // Same error-not-panic discipline as pickle.odin throughout: a `.lxc`
 // file is untrusted input (could be corrupt, truncated, or written by a
 // different schema version), so every decode step is bounds-checked and
-// every failure comes back as ok=false, never a crash. Note in
-// particular that no decode step ever pre-sizes an allocation from an
-// attacker/corruption-controlled count -- every `[dynamic]` collection
-// below starts at zero capacity and grows one bounds-checked element at
-// a time via `append`, so a garbage-huge count fails on the very next
-// out-of-range read instead of attempting a huge allocation. The one
-// exception, `property_caches` (a bare count with no per-entry payload
-// to bound it against), gets an explicit cap instead -- see
-// BC_CACHE_MAX_PROPERTY_CACHES.
+// every failure comes back as ok=false, never a crash. No decode step
+// ever pre-sizes an allocation from an attacker/corruption-controlled
+// count -- every `[dynamic]` collection below starts at zero capacity
+// and grows one bounds-checked element at a time via `append`, so a
+// garbage-huge count fails on the very next out-of-range read instead of
+// attempting a huge allocation. The one exception, `property_caches` (a
+// bare count with no per-entry payload to bound it against), gets an
+// explicit cap instead -- see BC_CACHE_MAX_PROPERTY_CACHES.
 
 BC_CACHE_MAGIC :: [4]u8{'O', 'L', 'X', 'C'}
 BC_CACHE_VERSION :: u16(1)

@@ -3,17 +3,16 @@ package core
 import rl "vendor:raylib"
 
 // Window_Object: the Lox-facing handle for raylib's window/graphics
-// context. Ported from glox's obj_builtin_window.go's Graphics struct.
-// raylib's own window/OpenGL-context state is process-global (InitWindow/
-// CloseWindow), so this struct is mostly a lightweight marker plus the
-// width/height a script asked for, and the lazily-built shared unit-cube
-// mesh/material `cube_rotated`/`cube_wires_rotated` need (raylib has no
-// DrawCube overload that takes a rotation, so those draw an arbitrarily
-// rotated box via DrawMesh with a transform matrix instead -- one shared
-// unit cube serves every box regardless of size, scaled at draw time);
-// the actual raylib calls live in vm/gfx_window.odin's
-// invoke_builtin_window, same split as every other native object type in
-// this port.
+// context. raylib's own window/OpenGL-context state is process-global
+// (InitWindow/CloseWindow), so this struct is mostly a lightweight
+// marker plus the width/height a script asked for, and the lazily-built
+// shared unit-cube mesh/material `cube_rotated`/`cube_wires_rotated`
+// need (raylib has no DrawCube overload that takes a rotation, so those
+// draw an arbitrarily rotated box via DrawMesh with a transform matrix
+// instead -- one shared unit cube serves every box regardless of size,
+// scaled at draw time); the actual raylib calls live in
+// vm/gfx_window.odin's invoke_builtin_window, same split as every other
+// native object type here.
 Window_Object :: struct {
 	using obj: Obj,
 	width:     int,
@@ -36,9 +35,9 @@ make_window_object :: proc(width, height: int) -> ^Window_Object {
 
 // window_cube_model lazily creates and caches a shared unit cube mesh +
 // default material -- see this file's own header comment for why. Never
-// explicitly unloaded (matches glox exactly: Window_Object as a whole
-// has no GC-triggered GPU teardown at all, see vm/gc.odin's `.Window`
-// case -- process exit tears down the whole GL context regardless).
+// explicitly unloaded: Window_Object as a whole has no GC-triggered GPU
+// teardown at all (see vm/gc.odin's `.Window` case) -- process exit
+// tears down the whole GL context regardless.
 window_cube_model :: proc(w: ^Window_Object) -> (rl.Mesh, rl.Material) {
 	if !w.cube_mesh_ready {
 		w.cube_mesh = rl.GenMeshCube(1, 1, 1)

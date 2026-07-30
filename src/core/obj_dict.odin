@@ -4,9 +4,8 @@ import "core:fmt"
 import "core:strings"
 
 // Dict_Object keys are always `^String_Object` (canonical interned
-// pointers), not arbitrary Values -- matching glox, where dict keys are
-// always strings (re-interned to a name id on every get/set). Keying
-// directly by the canonical pointer here means no separate intern-id
+// pointers), not arbitrary Values -- Lox dict keys are always strings.
+// Keying directly by the canonical pointer means no separate intern-id
 // concept is needed at all; see obj_string.odin's doc comment.
 Dict_Object :: struct {
 	using obj: Obj,
@@ -24,13 +23,13 @@ make_dict_object :: proc(items: map[^String_Object]Value = nil) -> ^Dict_Object 
 // ^String_Object, not a plain string -- every real caller already has
 // one (a Lox string Value's .obj *is* the canonical interned pointer,
 // by construction -- see obj_string.odin's make_string_value/
-// intern_string), so a plain-string signature here meant re-hashing the
-// key's full content on every single dict access, same redundant-intern
-// cost this project already found and fixed for property/method access
-// (see vm/properties.odin's get_property doc comment). The few callers
-// that start from a genuinely uninterned plain string (regex.odin's
-// named-capture groups, pickle.odin's deserialized keys, tests) call
-// intern_string themselves once at that call site instead.
+// intern_string). A plain-string signature here would mean re-hashing
+// the key's full content on every single dict access; see
+// vm/properties.odin's get_property doc comment for the same tradeoff
+// on property/method access. The few callers that start from a
+// genuinely uninterned plain string (regex.odin's named-capture groups,
+// pickle.odin's deserialized keys, tests) call intern_string themselves
+// once at that call site instead.
 dict_set :: proc(d: ^Dict_Object, key: ^String_Object, value: Value) {
 	d.items[key] = value
 }
@@ -49,7 +48,7 @@ dict_remove :: proc(d: ^Dict_Object, key: ^String_Object) -> (Value, bool) {
 
 // dict_keys returns a fresh List_Object of the dict's keys as string
 // Values -- the caller is responsible for linking it into the VM's GC
-// registry once one exists (Phase 4), same as glox's Keys().
+// registry.
 dict_keys :: proc(d: ^Dict_Object) -> ^List_Object {
 	keys := make([dynamic]Value, 0, len(d.items))
 	for k in d.items {

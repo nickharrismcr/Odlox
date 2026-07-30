@@ -17,9 +17,9 @@ import "core:text/regex/virtual_machine"
 // (and the iterator form) compact away any capture group that didn't
 // participate in a given match, rather than leaving a hole -- so a group
 // *after* one that failed to participate (e.g. one side of an
-// alternation) would be misnumbered here. Not exercised by anything in
-// the ported test suite; accepted rather than reimplementing capture
-// extraction against the lower-level virtual_machine package directly.
+// alternation) would be misnumbered here. Accepted rather than
+// reimplementing capture extraction against the lower-level
+// virtual_machine package directly.
 
 // preprocess_pattern strips (?P<name>...) down to plain (...) before
 // handing the pattern to Odin's regex.create, recording which capture-
@@ -228,9 +228,8 @@ delete_matches :: proc(matches: [dynamic]regex.Capture) {
 }
 
 // regex_expand_repl expands $1/$12/${1}/${name} references in repl
-// against capture's own groups, matching Go's regexp replacement syntax
-// (glox's own re module is built on Go's regexp and documents this exact
-// syntax, not Python's \1/\g<name>).
+// against capture's own groups. This is the re module's replacement
+// syntax -- not Python's \1/\g<name>.
 @(private = "file")
 regex_expand_repl :: proc(repl: string, capture: regex.Capture, group_names: map[int]string) -> string {
 	sb: strings.Builder

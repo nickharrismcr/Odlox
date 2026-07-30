@@ -32,7 +32,7 @@ get_rule :: proc(type: Token_Type) -> Parse_Rule {
 		// distinct from the numeric `+` (Op_Code.Add_Numeric): the
 		// compiler can't know an operand's runtime type, so `+`/`++`
 		// pick *which* opcode to emit, and each opcode does its own
-		// runtime type check/dispatch (Phase 4).
+		// runtime type check/dispatch.
 		return {nil, binary, .Term}
 	case .Star:
 		return {nil, binary, .Factor}
@@ -57,15 +57,9 @@ get_rule :: proc(type: Token_Type) -> Parse_Rule {
 	case .Less_Equal:
 		return {nil, binary, .Comparison}
 	case .In:
-		// Matches glox's own rule table exactly (compile.go:
-		// `TOKEN_IN: {prefix: nil, infix: binary, prec: PREC_EQUALITY}`).
-		// Was never wired up on this port's side at all -- the `In`
-		// opcode and its VM implementation (do_in, run.odin) already
-		// existed, but with no rule table entry `in` used as an
-		// expression (`"x" in s`) fell through to `variable`'s dispatch
-		// as a bare identifier read and failed to parse. foreach's own
-		// `consume(p, .In, ...)` is unaffected -- it never goes through
-		// the Pratt parser for this token.
+		// `in` used as a binary expression operator (`"x" in s`),
+		// distinct from foreach's own `consume(p, .In, ...)`, which
+		// never goes through the Pratt parser for this token.
 		return {nil, binary, .Equality}
 	case .Question:
 		return {nil, conditional, .Conditional}

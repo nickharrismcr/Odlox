@@ -2,13 +2,11 @@ package core
 
 import rl "vendor:raylib"
 
-// Shader_Object wraps a raylib GLSL shader program. Ported from glox's
-// obj_builtin_shader.go. Two construction paths, matching glox's own
-// ShaderBuiltIn exactly: gfx.shader(vertex_file, fragment_file) loads
-// compiled GLSL from disk immediately; gfx.shader() (no arguments)
-// constructs an empty, not-yet-loaded shader (rl.Shader{}) for a script
-// to fill in afterward via .load_from_memory(vertex_code, fragment_code)
-// -- the shape julia.lox actually uses, loading GLSL source that's
+// Shader_Object wraps a raylib GLSL shader program. Two construction
+// paths: gfx.shader(vertex_file, fragment_file) loads compiled GLSL from
+// disk immediately; gfx.shader() (no arguments) constructs an empty,
+// not-yet-loaded shader (rl.Shader{}) for a script to fill in afterward
+// via .load_from_memory(vertex_code, fragment_code), for GLSL source
 // embedded as Lox string literals rather than read from a file.
 Shader_Object :: struct {
 	using obj: Obj,

@@ -559,6 +559,36 @@ not a correctness bug in the interpreter's actual logic, but it is
 worked around silently; re-evaluate after any Odin compiler update
 before assuming it's this project's code again.
 
+### Two narrow, deliberate exceptions to "no concurrency"
+
+Two native modules genuinely touch OS-level concurrency, each staying
+safe without any general threading model:
+
+- **`gfx.lox_julia_array`/`gfx.lox_mandel_array`** (`natives/gfx_julia.odin`,
+  `natives/gfx_mandel.odin`) spawn one OS thread per CPU core to fill a
+  `float_array`. This is safe with zero VM/GC interaction because the
+  whole native call is one opcode from the VM's own perspective —
+  `maybe_collect_garbage` only ever runs *between* opcodes (see
+  [Garbage collector](#garbage-collector)), so no collection can
+  interleave with the threads' work — and each worker thread only writes
+  to a disjoint slice of pre-allocated backing storage, never allocates,
+  and never makes a Lox-visible call. The pattern generalizes to any
+  future native that wants to parallelize: keep it to one opcode's worth
+  of work, pre-allocate everything up front, partition output into
+  disjoint slices, and never touch the VM/GC from a worker thread.
+- **`process`** (`vm/process.odin`) has no blocking multi-handle wait to
+  reach for (there is no threading primitive anywhere in this
+  interpreter), so `recv`/`try_recv` poll the pipe via Windows'
+  `PeekNamedPipe` instead of blocking on a background reader, and
+  `wait_any` round-robins `try_recv` across every live process with a
+  short sleep between rounds — while still presenting ordinary blocking-
+  wait semantics to script code. One real platform gotcha this design
+  runs into: a failed `PeekNamedPipe` call must **not** be treated as
+  EOF, because Windows can report a broken pipe as soon as the writer
+  closes its end even while data the writer already sent is still
+  sitting unread in the pipe's buffer — only an actual blocking read is
+  authoritative on EOF vs. a genuine pending message.
+
 ---
 
 ## Environment & globals
@@ -861,25 +891,32 @@ proc()` (or just an inlined block, since Odin closures capturing locals by
 reference work the same way) — same reasoning applies, same discipline
 about calling it after the same opcode set.
 
-### The one further step Go couldn't take: raw pointers for `ip` and stack top
+### `ip`: a hoisted plain `int`, not a pointer
 
-glox's own performance roadmap explicitly wishes for this and can't have
-it: *"`frame.Ip` is a heap field, not a register... where clox keeps `ip`
-in a local the C compiler pins to a register... The stack pointer is
-likewise an index."* Every operand read is `currCode[frame.Ip];
-frame.Ip++` — a bounds-checked slice index, not pointer arithmetic, because
-Go offers no raw-pointer-into-a-slice idiom that isn't `unsafe`.
+`run`'s dispatch loop hoists `ip` as a genuine local at the top of the
+proc — a plain `int` byte offset into the current frame's code slice, not
+a raw `^u8`. The property that actually matters for keeping it
+register-resident across the loop's whole body is that it's a real local,
+never read back through a pointer-chased struct field (`frame.ip`)
+between sync points — an `int` local satisfies that exactly as well as a
+pointer local would, and every operand/opcode read already goes through a
+bounds-checked slice index (`code[ip]`) either way, since
+`-no-bounds-check` (a release-only build flag) is what actually removes
+that check's cost, independent of whether `ip` itself is an `int` or a
+pointer. `stack_top` is hoisted the same way, as a plain `int` index into
+`vm.stack`.
 
-Odin does offer this, safely: `ip: ^u8`, `stack_top: ^Value`, ordinary
-pointer arithmetic (`ip = ip[1:]` via slice-of-pointer idioms, or literal
-`ip = mem.ptr_offset(ip, 1)`/`ip^`). Hoist `ip` as a genuine pointer local
-at the top of `run`, dereference/advance it directly for every opcode and
-operand byte, and only write the resulting byte-offset back into
-`frame.ip` at the same points `refresh_frame` already has to run (call/
-return/frame-switch) — the exact clox-parity optimization the Go roadmap
-names and rules out. Bounds checking can still be enabled in debug builds
-(`-no-bounds-check` is a release-only flag) so this isn't a safety
-regression during development, only in the optimized build.
+**Sync discipline**: every point in the dispatch loop that already calls
+`refresh_frame()` (because `frame_count` might have changed) re-seeds
+`ip` from the refreshed frame's own `ip` field right after; every call
+this loop makes into anything that could transitively read or reposition
+the *current* frame's `ip` while it's suspended (`call_value`/`invoke`/
+`do_super_invoke`, `raise_exception`, `do_foreach`/`do_next`, the
+per-opcode debug hook) writes `frame.ip = ip` immediately before making
+that call. Every other reader of `Call_Frame.ip` elsewhere in the
+codebase (stack-trace/handler-matching, frame-introspection natives, the
+disassembler's trace mode) is only ever reached via one of these same
+call points, so this set of sync points is complete.
 
 ### Opcode dispatch: direct port, grouped by family
 
@@ -969,6 +1006,25 @@ unchanged (a cons-list of `Exception_Handler{except_ip, stack_top, prev}`
 per frame, unwind-and-retry-in-caller's-frame on no match) — but two of
 the specific invariants it calls out don't apply to what's actually
 here, and this port has bugs of its own glox's design doesn't share.
+
+**`break`/`continue`/`return` crossing an enclosing `try`**: these need to
+both unwind the exception handlers registered by any `try` they cross
+(so a frame's own handler chain never holds a stale entry for a `try` no
+longer lexically in scope) and replay that `try`'s `finally` block on the
+way out. `finally` is parsed *last*, so a `return`/`break`/`continue`
+written inside a `try` body can't yet know, at the point it's compiled,
+whether cleanup code will need to run first — it defers into a
+`Trampoline_Site` (`compiler/compiler_state.odin`) instead of emitting
+its terminal jump/return immediately, and the code that finishes
+compiling the enclosing `try`/`except`/`finally` resolves every pending
+site once it knows whether a `finally` exists. A `Trampoline_Site` stores
+a plain pointer to the loop/function it targets rather than a closure,
+because its resolution step can run arbitrarily later in the compile
+pass (once the enclosing `try` actually closes) — nothing in this
+codebase establishes that stashing an Odin closure in a struct field
+that outlives the call that created it is safe to invoke from that later
+point, so a pointer plus an explicit resolution step avoids relying on
+that.
 
 **Deliberate deviation from the plan**: glox finds "the next except/finally
 clause" by scanning raw bytecode for `OP_END_EXCEPT` immediately followed
@@ -1252,6 +1308,52 @@ glox's own split between `src/vm/builtin.go` (core) and `src/builtin/*.go`
 Phase 6b starts; not created yet, since an empty package with a no-op
 registration call would be scaffolding with no purpose (see
 `ROADMAP.md`'s Phase 6 checklist).
+
+### Raylib-backed graphics: non-obvious constraints
+
+A handful of facts about the `gfx`-family native objects (`vm/gfx_window.odin`,
+`gfx_texture.odin`, `gfx_batch.odin`, `obj_batch.odin`,
+`obj_render_texture.odin`) aren't obvious from reading the code and are
+easy to get wrong if touched without knowing them:
+
+- **Matrix composition order for rotated/scaled 3D primitives.** raylib/
+  OpenGL uses the column-vector convention, so transforming a mesh about
+  its own center (not the world origin) requires composing
+  `translation * rotation * scale`, in that order — reversing it rotates
+  the object about the origin instead of about itself.
+- **`begin_blend_mode()` is deliberately permissive.** Unlike every other
+  method on `Window`, it doesn't validate its argument's type. A
+  non-numeric mode value silently resolves to raylib's default alpha
+  blending (via the same int-conversion path every other numeric argument
+  uses, which itself defaults to 0 for a non-numeric input) rather than
+  raising a runtime error — a deliberate API-permissiveness choice for
+  this one call, not an oversight.
+- **`draw_render_texture` and `draw_render_texture_ex` don't handle the
+  Y-flip consistently.** A render texture is stored bottom-up by OpenGL;
+  `draw_render_texture` compensates for this (negative source height),
+  `draw_render_texture_ex` does not, and draws upside-down. Both are the
+  real, current, intentional-if-inconsistent behavior of two sibling
+  methods.
+- **`render_texture.get_texture()`'s otherwise-pointless Load/Unload
+  round trip is a GPU sync point**, not dead code: each render-texture
+  drawing method opens and closes its own texture-mode context rather
+  than holding one open across a frame, so the discarded
+  `LoadImageFromTexture`/`UnloadImage` pair exists purely to force the
+  GPU driver to finish in-flight writes before the texture it returns is
+  safely sampled.
+- **Translucent circle-quad batches must flush and disable depth-write
+  around themselves** (`obj_batch.odin`'s `batch_draw`). raylib/rlgl's
+  immediate-mode primitives only *queue* into a render batch rather than
+  hitting the GPU right away, so an unflushed translucent quad can
+  rasterize — and write depth, even at alpha 0 — before an
+  earlier-queued opaque primitive it's meant to sit on top of.
+- **`draw_array_fast`'s persistent GPU texture is updated in place, never
+  recreated per frame** (`obj_render_texture.odin`'s `array_texture`).
+  Loading and unloading a fresh GPU texture every frame races the
+  driver's double-buffered pipeline: a freshly-loaded texture can reuse
+  an ID still referenced by an in-flight draw call from the previous
+  frame, producing stray stale-color pixels. Keeping one long-lived
+  texture and updating its contents avoids this.
 
 ---
 

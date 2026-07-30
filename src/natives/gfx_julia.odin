@@ -5,27 +5,22 @@ import "../vm"
 import "core:os"
 import "core:thread"
 
-// gfx_lox_julia_array: ported from glox's builtin_draw.go's
-// JuliaArrayBuiltIn -- computes a Julia set fractal directly into a
+// gfx_lox_julia_array computes a Julia set fractal directly into a
 // float_array's backing storage (each cell an RGB-encoded float, same
 // convention as gfx.encode_rgba/decode_rgba), fast enough to recompute
-// every frame for a real-time zoom/pan animation (lox_examples/julia.lox).
-// A native free function on the "gfx" module, not a method on any
-// object, matching glox's own registration
-// (defineBuiltIn(vm, "gfx", "lox_julia_array", ...), src/vm/builtin.go).
+// every frame for a real-time zoom/pan animation. A native free
+// function on the "gfx" module, not a method on any object.
 //
 // Parallelized across OS threads (core:thread), one per available CPU
-// core, splitting the image into row bands -- matching the *effect* of
-// glox's own goroutine-per-block version, though not its adaptive
-// block-size logic (a flat row-band split is simpler and just as
-// correct: every pixel's color depends only on its own coordinates and
-// the shared read-only parameters, never on another pixel, so any way of
-// partitioning the rows produces an identical result). Safe to do
-// without touching the VM or GC at all: this whole native call is one
-// opcode from the VM's perspective (maybe_collect_garbage only runs
-// *between* opcodes -- see vm/gc.odin), and the worker threads only
-// write to disjoint row ranges of arr.data, a plain slice, with no
-// allocation or Lox-visible calls happening on those threads.
+// core, splitting the image into flat row bands: every pixel's color
+// depends only on its own coordinates and the shared read-only
+// parameters, never on another pixel, so any way of partitioning the
+// rows produces an identical result. Safe to do without touching the VM
+// or GC at all: this whole native call is one opcode from the VM's
+// perspective (maybe_collect_garbage only runs *between* opcodes -- see
+// vm/gc.odin), and the worker threads only write to disjoint row ranges
+// of arr.data, a plain slice, with no allocation or Lox-visible calls
+// happening on those threads.
 @(private = "package")
 gfx_lox_julia_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -176,10 +171,9 @@ julia_calc_block :: proc(b: ^Julia_Block) {
 
 // julia_color_table precomputes an RGB-encoded-float color per possible
 // iteration count, so the main loop above does a table lookup instead of
-// recomputing the color band math per pixel. Ported from glox's own
-// precomputeColorTable -- same six-band electric-blue -> cyan -> green
-// -> yellow -> red -> magenta -> white gradient, points still inside the
-// set (iteration == max_iteration) black.
+// recomputing the color band math per pixel. Six-band electric-blue ->
+// cyan -> green -> yellow -> red -> magenta -> white gradient; points
+// still inside the set (iteration == max_iteration) are black.
 @(private = "file")
 julia_color_table :: proc(max_iteration: int) -> []f64 {
 	table := make([]f64, max_iteration + 1)

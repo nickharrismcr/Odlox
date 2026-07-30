@@ -4,7 +4,7 @@ import "../core"
 
 // gfx_batch_instanced: method dispatch for Batch_Instanced_Object.
 // Construction lives in natives/gfx.odin, matching every other gfx
-// native type in this port.
+// native type.
 invoke_builtin_batch_instanced :: proc(vm: ^VM, b: ^core.Batch_Instanced_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {

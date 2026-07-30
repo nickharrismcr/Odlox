@@ -48,14 +48,13 @@ Parser_Snapshot :: struct {
 }
 
 // Try_Finally / Trampoline_Site implement the try/except/finally
-// compiler-side design documented in full in glox's own
-// docs/exception-handling.md (read that before touching this code) --
-// summarized in docs/ARCHITECTURE.md's Exceptions section. In short:
-// `finally` is parsed *last*, so a return/break/continue written inside
-// the try body can't know yet whether cleanup code needs to run first;
-// it defers ("trampolines") into `pending` instead of emitting its
-// terminal instruction immediately, and tryExceptStatement resolves
-// every pending site once it learns whether a finally exists.
+// compiler-side design -- see docs/ARCHITECTURE.md's Exceptions section
+// for the full picture. In short: `finally` is parsed *last*, so a
+// return/break/continue written inside the try body can't know yet
+// whether cleanup code needs to run first; it defers ("trampolines")
+// into `pending` instead of emitting its terminal instruction
+// immediately, and try_except_statement resolves every pending site
+// once it learns whether a finally exists.
 Try_Finally :: struct {
 	scope_depth_at_entry: int,
 	has_finally:          bool,
@@ -64,18 +63,14 @@ Try_Finally :: struct {
 	previous:             ^Try_Finally,
 }
 
-// Trampoline_Kind + loop replace glox's `finalize func(p *Parser)` closure
-// field (compile.go's trampolineSite): glox's closures capture `loop` (a
-// *Loop) by reference and stay valid because Go closures that escape are
-// heap-promoted by the GC. Odin has no equivalent guarantee for a `proc(p:
-// ^Parser)` value stored past the defining call's own stack frame -- and a
-// trampoline site's finalize step can run arbitrarily later, from a
-// completely different point in the compile pass (once the enclosing
-// try/finally actually closes). Rather than assume closures-over-locals are
-// safe to stash in a long-lived struct field here (untested in this
-// codebase -- nothing previously populated this field), Break/Continue
-// carry a plain `^Loop` (already heap-allocated by push_loop's own `new`)
-// instead, and compile_pending_trampolines switches on kind explicitly.
+// A Trampoline_Site's finalize step can run arbitrarily later than the
+// break/continue/return that queued it -- from a completely different
+// point in the compile pass, once the enclosing try/finally actually
+// closes. Rather than stash a closure in the struct to run at that
+// later point, Break/Continue carry a plain `^Loop` (already
+// heap-allocated by push_loop's own `new`), and
+// compile_pending_trampolines switches on kind explicitly to decide
+// what to finalize.
 Trampoline_Kind :: enum {
 	Return,
 	Break,
@@ -173,26 +168,16 @@ end_compiler :: proc(p: ^Parser) -> ^Compiler {
 			append(&fn.chunk.global_names, name)
 		}
 		if fn.environment != nil {
-			// Real bug, found via an actual multi-line REPL session (not
-			// just a single compile): fn.environment is the *same*
-			// persistent Environment across every REPL line (see
-			// vm.odin's new_vm_raw -- it's created once, never replaced),
-			// but this used to just append(&fn.environment.global_names,
-			// name) unconditionally, every single end_compiler call.
-			// p.global_names_by_slot is already the complete, correct,
-			// cumulative slot->name mapping for *this* line (rebuilt
-			// fresh each Compile_Repl call from the persisted
-			// Repl_State.globals map -- see compile.odin's
-			// rebuild_names_by_slot), so appending it on top of
-			// whatever previous lines already appended just kept
-			// growing environment.global_names without bound: after N
-			// REPL lines it held very close to N copies of the
-			// slot->name mapping stacked on top of each other, so
-			// env_slot_for_name (a linear search) would find a real
-			// name at whatever leftover index the *first* stale copy
-			// happened to still contain it at -- consistently wrong by
-			// exactly the amount of accumulated duplication, not
-			// randomly. Fixed by clearing first: replace, don't append.
+			// fn.environment is the same persistent Environment across
+			// every REPL line (see vm.odin's new_vm_raw -- it's created
+			// once, never replaced). p.global_names_by_slot is already
+			// the complete, correct, cumulative slot->name mapping for
+			// this line (rebuilt fresh each Compile_Repl call from the
+			// persisted Repl_State.globals map -- see compile.odin's
+			// rebuild_names_by_slot), so it must replace
+			// environment.global_names outright rather than append to
+			// it, or env_slot_for_name's linear search could resolve a
+			// name against a stale slot left over from an earlier line.
 			clear(&fn.environment.global_names)
 			for name in p.global_names_by_slot {
 				append(&fn.environment.global_names, name)
@@ -208,10 +193,9 @@ end_compiler :: proc(p: ^Parser) -> ^Compiler {
 	return finished
 }
 
-// DebugSkipPeephole mirrors glox's core.DebugSkipPeephole (`-n`/
-// `--no-peephole`) -- a package-level toggle rather than a CLI flag
-// wired up yet (that lands with the rest of main.odin's argument
-// parsing in Phase 4). Read only when constructing a Parser (see
+// DebugSkipPeephole is a package-level toggle (intended for a future
+// `-n`/`--no-peephole` CLI flag) for disabling the peephole optimizer.
+// Read only when constructing a Parser (see
 // Compile/Compile_Repl), which copies it into that Parser's own
 // skip_peephole field -- end_compiler reads *that*, not this global
 // directly, so one compile's behavior is a stable snapshot rather than
@@ -297,12 +281,11 @@ declare_variable :: proc(p: ^Parser) {
 // depth (see add_local's -1 sentinel and resolve_local's self-reference
 // check). Every caller only ever calls this right after add_local, so
 // local_count is always >= 1 here -- no early-return-on-scope-depth-0
-// guard is needed (an earlier version of this had one, on the theory
-// that scope_depth == 0 means "we're at global scope, nothing to mark" --
-// wrong specifically for init_function_compiler/init_root_compiler's
-// reserved slot 0, which is added and must be marked *before*
-// begin_scope bumps the depth off zero; that stray guard left `this`
-// permanently looking uninitialised to every method body).
+// guard is needed. In particular, it must run unconditionally even at
+// scope_depth == 0: init_function_compiler/init_root_compiler add and
+// mark their reserved slot 0 (`this`, for methods/initializers) before
+// begin_scope bumps the depth off zero, so a scope_depth == 0 guard
+// would leave `this` looking permanently uninitialised.
 mark_initialised :: proc(p: ^Parser) {
 	c := p.current_compiler
 	c.locals[c.local_count - 1].depth = c.scope_depth
@@ -472,9 +455,9 @@ emit_loop :: proc(p: ^Parser, loop_start: int) {
 // Rewrites two fixed-shape 8-byte instruction sequences in place,
 // padding with Noop so already-computed jump offsets elsewhere in the
 // chunk stay valid (nothing shifts). This is stage one of a two-stage
-// design: the VM (Phase 4) further specializes Add_Nn/Incr_Const_N into
-// their _Ii/_Ff type-specific children at runtime, on first execution
-// (a minimal inline cache) -- see docs/ARCHITECTURE.md's Chunk section.
+// design: the VM further specializes Add_Nn/Incr_Const_N into their
+// _Ii/_Ff type-specific children at runtime, on first execution (a
+// minimal inline cache) -- see docs/ARCHITECTURE.md's Chunk section.
 
 @(private = "file")
 peephole_optimise :: proc(c: ^core.Chunk) {

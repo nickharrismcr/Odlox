@@ -7,8 +7,7 @@ import "core:strings"
 // Numeric/string/vector binary operators. The compiler can't know an
 // operand's runtime type (see expr.odin's binary doc comment in the
 // compiler package), so each of these does its own type check/dispatch
-// at the opcode level -- exactly mirroring glox's own int/float 4-way
-// switches.
+// at the opcode level.
 
 add_numeric :: proc(vm: ^VM) -> bool {
 	b := pop(vm)
@@ -25,9 +24,8 @@ add_numeric :: proc(vm: ^VM) -> bool {
 	return true
 }
 
-// concat handles `&`: string+string or list+list. Mirrors glox's
-// Op_Concat scope (not, e.g., number-to-string coercion -- that's what
-// Op_Str/`str(...)` is for).
+// concat handles `&`: string+string or list+list only (not, e.g.,
+// number-to-string coercion -- that's what Op_Str/`str(...)` is for).
 concat :: proc(vm: ^VM) -> bool {
 	b := pop(vm)
 	a := pop(vm)
@@ -88,12 +86,10 @@ push_vec4 :: proc(vm: ^VM, x, y, z, w: f64) {
 	push(vm, core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj})
 }
 
-// string_multiply mirrors glox's own stringMultiply (vm.go) exactly,
-// including its behavior for count <= 0 (an empty string, since its own
-// `for i := 0; i < x; i++` loop simply never executes) -- core:strings'
-// own repeat() panics on a negative count instead, which would crash the
-// whole process on `"x" * -1` rather than reporting a Lox-level error or
-// producing glox's own (silently accepted) empty-string result.
+// string_multiply returns an empty string for count <= 0 rather than
+// deferring to core:strings' own repeat(), which panics on a negative
+// count -- that would crash the whole process on `"x" * -1` instead of
+// just producing an empty string.
 @(private = "file")
 string_multiply :: proc(s: string, count: int) -> string {
 	if count <= 0 {
@@ -110,16 +106,11 @@ string_multiply :: proc(s: string, count: int) -> string {
 numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 	b := pop(vm)
 	a := pop(vm)
-	// Vector subtraction -- glox's own binarySubtract (vm.go) handles
-	// VAL_VEC2/VEC3/VEC4 directly under the plain `-` operator, unlike
-	// `+` which is split into a numeric-only Add_Numeric and a
-	// vector-only Add_Vector (`++`) at the compiler level (see
-	// compiler/expr.odin's binary doc comment). `-` has no such split in
-	// glox -- there is no `--` token at all -- so it stays one operator
-	// that dispatches on runtime operand type here, same as there. Found
-	// via lox_examples/cube_stack_fly2.lox's `this.targetWorldPos -
-	// this.worldPos` (Controller.update), which this proc previously
-	// rejected outright with "Operands must be numbers."
+	// Vector subtraction: unlike `+`, which is split into a numeric-only
+	// Add_Numeric and a vector-only Add_Vector (`++`) at the compiler
+	// level (see compiler/expr.odin's binary doc comment), `-` has no
+	// separate vector token, so it stays one operator here that
+	// dispatches on runtime operand type.
 	if op == .Subtract {
 		a_is_vec := a.type == .Vec2 || a.type == .Vec3 || a.type == .Vec4
 		b_is_vec := b.type == .Vec2 || b.type == .Vec3 || b.type == .Vec4
@@ -142,12 +133,8 @@ numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 			return true
 		}
 	}
-	// String*int / int*string repetition -- glox's own binaryMultiply
-	// (vm.go) special-cases this before its own "operands must be
-	// numbers" check, same as here. Found via list_slice.lox's `"-"*50`
-	// separator line, which this proc previously rejected outright since
-	// it required both operands to be numeric unconditionally, with no
-	// Multiply-specific carve-out at all.
+	// String*int / int*string repetition is checked before the general
+	// "operands must be numbers" check below.
 	if op == .Multiply {
 		if core.is_string(a) && b.type == .Int {
 			push(vm, core.make_string_value(string_multiply(core.string_get(core.as_string(a)), core.as_int(b))))
@@ -177,10 +164,9 @@ numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 			push(vm, core.make_int_value(ai / bi))
 		case .Modulus:
 			if bi == 0 {
-				// Matches glox's own wording exactly (vm.go): glox uses the
-				// same "Division by zero" message for both int / and %
-				// by zero, rather than a separate "Modulus by zero" --
-				// found via test_crash_guards.py's mod_by_zero.lox case.
+				// Deliberately the same "Division by zero" message used
+				// for int division by zero above, rather than a separate
+				// "Modulus by zero".
 				runtime_error(vm, "Division by zero.")
 				return false
 			}

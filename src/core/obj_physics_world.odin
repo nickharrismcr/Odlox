@@ -1,19 +1,17 @@
 package core
 
 // Physics_World_Object: a hand-rolled 3D SoA sphere/box physics
-// simulation -- no raylib dependency at all, ported from glox's own
-// obj_builtin_physics_world.go/physics_world_methods.go. Struct and
-// pure data accessors live here; the real simulation logic (step,
-// integrate, broad/narrow phase, resolve) lives in vm/physics_world.odin
-// and mutates this struct's fields directly -- same split as
+// simulation -- no raylib dependency at all. Struct and pure data
+// accessors live here; the real simulation logic (step, integrate,
+// broad/narrow phase, resolve) lives in vm/physics_world.odin and
+// mutates this struct's fields directly -- same split as
 // Regex_Pattern_Object/Process_Object (struct in core, behavior in vm),
 // since only vm/call.odin's invoke() can wire in a new Object_Type case.
 
 // P_Vec3 is purely an internal math type for the SoA simulation -- not
 // exposed to Lox directly (positions/velocities/etc. cross the Lox
 // boundary as core.Vec3_Object, converted at vm/physics_world.odin's
-// method-dispatch layer). Named to avoid clashing with Vec3_Object,
-// mirroring glox's own PVec3.
+// method-dispatch layer). Named to avoid clashing with Vec3_Object.
 P_Vec3 :: struct {
 	x, y, z: f64,
 }
@@ -38,11 +36,8 @@ Shape :: struct {
 }
 
 // Physics_Material.friction is stored and combined the same way
-// restitution is, but -- matching glox exactly -- is never actually
-// applied anywhere in resolve()'s collision response. A real glox
-// limitation, ported faithfully rather than silently fixed; changing
-// collision behavior mid-port would be an undocumented deviation, not a
-// bug fix.
+// restitution is, but is never actually applied anywhere in resolve()'s
+// collision response.
 Physics_Material :: struct {
 	restitution: f64,
 	friction:    f64,
@@ -67,7 +62,7 @@ Collision_Pair :: struct {
 
 // Physics_World_Object: parallel (struct-of-arrays) body data, indexed
 // by id == the index at insertion time. IDs are never reused (removal
-// just tombstones active[id] = false), matching glox exactly.
+// just tombstones active[id] = false).
 Physics_World_Object :: struct {
 	using obj: Obj,
 

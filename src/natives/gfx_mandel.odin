@@ -5,28 +5,21 @@ import "../vm"
 import "core:os"
 import "core:thread"
 
-// gfx_lox_mandel_array: ported from glox's builtin_draw.go's
-// MandelArrayBuiltIn -- computes a Mandelbrot set fractal directly into
+// gfx_lox_mandel_array computes a Mandelbrot set fractal directly into
 // a float_array's backing storage, fast enough to recompute every frame
-// for a real-time deep-zoom animation (lox_examples/mandel_gfx.lox).
-// Registered under "gfx" like lox_julia_array (defineBuiltIn(vm, "gfx",
-// "lox_mandel_array", ...), src/vm/builtin.go) -- see gfx_julia.odin's
-// own header comment for the argument-order/registration convention
-// this matches.
+// for a real-time deep-zoom animation. Registered under "gfx" like
+// lox_julia_array -- see gfx_julia.odin's own header comment for the
+// registration convention this shares.
 //
 // Argument order is (array, height, width, max_iterations, xoffset,
-// yoffset, scale) -- height before width, offsets before scale --
-// matching glox's own MandelArrayBuiltIn exactly (and confirmed against
-// mandel_gfx.lox's real call site, not just the Go source, since it
-// differs from lox_julia_array's own (array, width, height, ...,
-// scale, xoffset, yoffset) order).
+// yoffset, scale) -- height before width, offsets before scale. Note
+// this differs from lox_julia_array's own (array, width, height, ...,
+// scale, xoffset, yoffset) order.
 //
-// f64 precision throughout (unlike lox_julia_array's f32): glox's own
-// comment on this specifically calls out "better precision in deep
-// zooms" -- mandel_gfx.lox's whole premise is a continuous zoom
-// (`scale = scale * zoom_speed` every frame), so this isn't a
-// stylistic choice to preserve, it's load-bearing for the effect not
-// visibly degrading into blocky artifacts partway through a long zoom.
+// f64 precision throughout (unlike lox_julia_array's f32) is
+// load-bearing: a continuous zoom (`scale` shrinking every frame) needs
+// that precision for the effect not to visibly degrade into blocky
+// artifacts partway through a long zoom.
 //
 // Parallelized the same way as lox_julia_array (see that file's header
 // comment for the full reasoning: safe without VM/GC interaction since
@@ -142,9 +135,8 @@ Mandel_Block :: struct {
 	is_deep_zoom:        bool,
 }
 
-// mandel_calc_block ports glox's own mandelbrotCalcBlock exactly,
-// including its two performance-critical early-exit paths (neither of
-// which changes the *result*, only how fast a point known to never
+// mandel_calc_block has two performance-critical early-exit paths
+// (neither changes the *result*, only how fast a point known to never
 // escape gets classified):
 //
 //   - Main-cardioid / period-2-bulb test: closed-form membership tests
@@ -226,13 +218,10 @@ mandel_in_period2_bulb :: proc(x, y: f64) -> bool {
 }
 
 // mandel_color_table mirrors julia_color_table's own six-band gradient
-// exactly (gfx_julia.odin) -- glox's precomputeColorTable is the same
-// shared function for both fractals, just indexed differently by each
-// caller ((iteration*2)%maxIteration here, vs plain iteration for
-// julia). Duplicated rather than shared across the two files: identical
-// today, but each is free to diverge independently since they're
-// ported from what are, in glox itself, two separate call sites of the
-// same source function -- not a hard coupling worth introducing an
+// (gfx_julia.odin), indexed differently by its caller
+// ((iteration*2)%maxIteration here, vs plain iteration for julia).
+// Duplicated rather than shared across the two files since each is free
+// to diverge independently -- not a hard coupling worth introducing an
 // abstraction to preserve.
 @(private = "file")
 mandel_color_table :: proc(max_iteration: int) -> []f64 {

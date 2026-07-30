@@ -3,13 +3,12 @@ package natives
 import "../core"
 import "../vm"
 
-// physics: glox's own physics_world (src/builtin/obj_builtin_physics_world.go)
-// -- a hand-rolled 3D SoA sphere/box physics engine, no raylib
+// physics: a hand-rolled 3D SoA sphere/box physics engine, no raylib
 // dependency at all. The real simulation logic lives in
 // vm/physics_world.odin (mutating core/obj_physics_world.odin's
 // Physics_World_Object directly); this file is just the thin argument-
 // marshalling constructor, matching natives/process.odin's and
-// natives/re.odin's established shape.
+// natives/re.odin's shape.
 
 @(private)
 register_physics :: proc(v: ^vm.VM) {

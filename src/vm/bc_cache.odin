@@ -15,8 +15,8 @@ import "core:time"
 // no vm.Environment in scope for a given module load -- only this layer
 // does).
 
-// bc_cache_path mirrors glox's own <module_dir>/__loxcache__/<name>.lxc
-// convention. module.odin's find_module_in_subdirs already skips
+// bc_cache_path is <module_dir>/__loxcache__/<name>.lxc.
+// module.odin's find_module_in_subdirs already skips
 // `__loxcache__` by name when walking a script's directory tree for a
 // module, anticipating this.
 bc_cache_path :: proc(module_source_path: string) -> string {
@@ -39,7 +39,7 @@ bc_cache_path :: proc(module_source_path: string) -> string {
 // own doc comment for why that case alone is worth a diagnostic.
 bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.Environment) -> (fn: ^core.Function_Object, ok: bool) {
 	if vm.force_compile {
-		return nil, false // never even stats the file, matching glox's own -f placement
+		return nil, false // never even stats the file
 	}
 
 	cache_path := bc_cache_path(module_source_path)
@@ -80,14 +80,9 @@ bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.En
 	// cache hit deliberately skips. module.odin's load_module relies on
 	// Environment.global_names (not Chunk's) to know which slots to
 	// publish into the module's name-keyed vars map after running its
-	// top-level code -- real bug, found via bc_cache_test.odin's own
-	// integration test: `helper.make_counter()` failed with "Undefined
-	// module property 'make_counter'" on a cache hit, because nothing
-	// populates this field on that path otherwise. Mirrors end_compiler's
-	// own clear-then-append (same real bug end_compiler's own doc
-	// comment describes for a different reason -- REPL reuse -- applies
-	// here too: replace, don't append, in case environment is reused
-	// across more than one load).
+	// top-level code, so a cache hit must populate it here too. Clearing
+	// before appending (rather than appending outright) keeps this
+	// correct if environment is reused across more than one load.
 	clear(&environment.global_names)
 	for name in decoded.chunk.global_names {
 		append(&environment.global_names, name)
@@ -136,8 +131,7 @@ bc_cache_write :: proc(module_source_path: string, fn: ^core.Function_Object) {
 	// filepath.dir returns a slice *into* cache_path, not a fresh
 	// allocation (see os/path.odin's split_path) -- do not delete() it.
 	// module.odin's read_module_source has its own doc comment on the
-	// exact same bad-free mistake with the same API; worth not repeating
-	// it here.
+	// same API gotcha.
 	dir := filepath.dir(cache_path)
 	_ = os.make_directory_all(dir)
 	_ = os.write_entire_file(cache_path, data)

@@ -9,8 +9,7 @@ import "core:path/filepath"
 // function name, source line/file, arguments, locals currently in scope,
 // every defined global, and (recursively) the same for every enclosing
 // frame under "prev_frame", down to and including the top-level script's
-// own frame. Ported from glox's src/debug/inspect.go
-// (FrameDictValue/FrameDictValueFromFrame).
+// own frame.
 frame_dict_value :: proc(v: ^vm.VM) -> core.Value {
 	return frame_dict_at(v, v.frame_count - 1)
 }
@@ -52,12 +51,11 @@ chunk_line_at :: proc(chunk: ^core.Chunk, ip: int) -> int {
 	return chunk.lines[i]
 }
 
-// args_list mirrors glox's own ListOfArgs exactly: slots
-// [frame.slots .. frame.slots+arity] inclusive -- slot 0 is the
-// function/closure value itself (`this`, for a method), slots 1..arity
-// the actual arguments, matching this compiler's own calling convention
-// (see compiler_state.odin's init_function_compiler, which reserves slot
-// 0 the same way).
+// args_list returns slots [frame.slots .. frame.slots+arity] inclusive
+// -- slot 0 is the function/closure value itself (`this`, for a
+// method), slots 1..arity the actual arguments, matching this
+// compiler's calling convention (see compiler_state.odin's
+// init_function_compiler, which reserves slot 0 the same way).
 @(private = "file")
 args_list :: proc(v: ^vm.VM, frame: ^vm.Call_Frame) -> core.Value {
 	arity := frame.closure.function.arity
@@ -70,12 +68,11 @@ args_list :: proc(v: ^vm.VM, frame: ^vm.Call_Frame) -> core.Value {
 }
 
 // locals_dict finds every local variable currently in scope at frame's
-// own ip, by name -- using this compiler's existing per-local debug info
+// own ip, by name -- using the compiler's per-local debug info
 // (Chunk.local_vars, populated by compiler_state.odin's add_local/
-// end_scope) rather than re-deriving scope boundaries from arity the way
-// glox's own DictOfLocals does; slot numbers there already run from 0
-// (the same reserved slot0 args_list above also uses), so a local's
-// absolute stack position is simply frame.slots + its recorded slot.
+// end_scope). Slot numbers run from 0 (the same reserved slot 0
+// args_list above also uses), so a local's absolute stack position is
+// simply frame.slots + its recorded slot.
 @(private = "file")
 locals_dict :: proc(v: ^vm.VM, frame: ^vm.Call_Frame) -> core.Value {
 	d := core.make_dict_object()
@@ -99,8 +96,7 @@ locals_dict :: proc(v: ^vm.VM, frame: ^vm.Call_Frame) -> core.Value {
 	return core.make_object_value(&d.obj)
 }
 
-// globals_dict mirrors glox's own DictOfGlobals: every currently-defined
-// global, by name.
+// globals_dict returns every currently-defined global, by name.
 @(private = "file")
 globals_dict :: proc(v: ^vm.VM) -> core.Value {
 	d := core.make_dict_object()
@@ -115,12 +111,9 @@ globals_dict :: proc(v: ^vm.VM) -> core.Value {
 }
 
 // dump_frame prints vm's current frame (name, ip), its live stack
-// slots, and every defined global to stdout -- a plain-text debugging
-// aid, ported from glox's own DumpFrameBuiltIn/ShowGlobals
-// (core_functions.go / debug.go). Format is this port's own rendering,
-// not a byte-for-byte match of glox's (nothing depends on that level of
-// detail; only the "Frame: <name> (ip=<N>)" line itself is checked by
-// the ported test suite).
+// slots, and every defined global to stdout as a plain-text debugging
+// aid. Only the "Frame: <name> (ip=<N>)" line format is relied on by
+// tests; the rest of the output isn't format-sensitive.
 dump_frame :: proc(v: ^vm.VM) {
 	frame := &v.frames[v.frame_count - 1]
 	function := frame.closure.function

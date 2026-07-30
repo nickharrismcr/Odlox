@@ -7,7 +7,7 @@ import rlgl "vendor:raylib/rlgl"
 // Batch_Object accumulates many same-kind 3D primitives (cubes, spheres,
 // 3-point triangles, or flat circles) and draws them all in one .draw()
 // call instead of one native-method-dispatch round trip per primitive
-// per frame -- ported from glox's obj_builtin_batch.go/batch_methods.go.
+// per frame.
 Batch_Primitive :: enum {
 	Cube,
 	Sphere,
@@ -15,13 +15,9 @@ Batch_Primitive :: enum {
 	Circle3,
 }
 
-// Batch_Entry backs BATCH_CUBE/BATCH_SPHERE (size.x doubles as radius
-// for spheres, matching glox's own Draw() exactly). glox's own
-// BatchEntry also carries a Rotation field that is stored on
-// construction but never read anywhere -- no method ever sets it after
-// the zero-value default, and Draw() never applies it -- structurally
-// dead state with no observable effect from Lox. Omitted here rather
-// than ported as an unreachable field with nothing to read or write it.
+// Batch_Entry backs BATCH_CUBE/BATCH_SPHERE. size.x doubles as radius
+// for spheres. Cubes and spheres in a batch are axis-aligned only -- no
+// per-entry rotation.
 Batch_Entry :: struct {
 	position: rl.Vector3,
 	size:     rl.Vector3,
@@ -58,9 +54,8 @@ Batch_Object :: struct {
 	// scratch every frame. The quad's own shape is a plain square --
 	// set_circle_texture supplies a texture (e.g. a pre-rendered filled
 	// circle) so it reads as a circle; without one it draws as a
-	// flat-colored square. Never explicitly unloaded -- matches glox
-	// exactly (no UnloadMesh/UnloadMaterial call exists for this anywhere
-	// in glox either); process exit tears down the GL context regardless.
+	// flat-colored square. Never explicitly unloaded -- process exit
+	// tears down the GL context regardless.
 	circle_mesh:       rl.Mesh,
 	circle_material:   rl.Material,
 	circle_mesh_ready: bool,
@@ -259,14 +254,13 @@ batch_draw_circle3 :: proc(b: ^Batch_Object, entry: Circle_Batch_Entry) {
 // batch_draw renders every entry in the batch. The BATCH_CIRCLE3 branch
 // flushes rlgl's own internal render batch before drawing (rl.DrawMesh,
 // used here and by cube_rotated, does not flush it itself) and disables
-// depth writes for the duration -- ported from glox's own Draw() exactly,
-// including the doc comment explaining why: immediate-mode primitives
-// drawn earlier in the frame (win.plane, win.cube, ...) only *queue*
-// vertices into rlgl's batch, not send them to the GPU; without an
-// explicit flush here, a translucent shadow quad can rasterize before,
-// say, the floor it should sit on top of, and since alpha=0 still writes
-// to the depth buffer, that gap becomes permanent once the floor's own
-// already-queued draw later fails the depth test against it.
+// depth writes for the duration: immediate-mode primitives drawn earlier
+// in the frame (win.plane, win.cube, ...) only *queue* vertices into
+// rlgl's batch, not send them to the GPU; without an explicit flush
+// here, a translucent shadow quad can rasterize before, say, the floor
+// it should sit on top of, and since alpha=0 still writes to the depth
+// buffer, that gap becomes permanent once the floor's own already-queued
+// draw later fails the depth test against it.
 batch_draw :: proc(b: ^Batch_Object) {
 	switch b.batch_type {
 	case .Cube:
@@ -291,15 +285,10 @@ batch_draw :: proc(b: ^Batch_Object) {
 	}
 }
 
-// batch_draw_frustum_culled mirrors glox's own DrawWithDirectionalCulling:
-// a simple, approximate view-cone test (not a real clip-space frustum),
-// applied per entry before each draw call rather than a stricter culling
-// scheme, matching glox's own implementation exactly rather than
-// improving on it -- only BATCH_CUBE/BATCH_SPHERE support this (glox's
-// own switch has no TRIANGLE3/CIRCLE3 case either, so those batch types
-// silently draw nothing via this method -- ported as-is, not treated as
-// a bug to fix, since it's real, existing behavior a script could depend
-// on either way).
+// batch_draw_frustum_culled performs a simple, approximate view-cone
+// test (not a real clip-space frustum), applied per entry before each
+// draw call. Only BATCH_CUBE/BATCH_SPHERE support this -- calling it on
+// a TRIANGLE3/CIRCLE3 batch silently draws nothing.
 batch_draw_frustum_culled :: proc(b: ^Batch_Object, camera_pos, camera_forward: rl.Vector3, max_distance, fov_degrees: f32) {
 	max_distance_sq := max_distance * max_distance
 	padded_fov := fov_degrees + 10.0

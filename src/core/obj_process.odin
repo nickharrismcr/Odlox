@@ -8,13 +8,11 @@ import "core:os"
 // vm/process.odin's frame_write/frame_read). Doubles as both "the
 // process I spawned" (child != nil, exposes wait/kill/pid) and "the
 // channel back to whoever spawned me" (child == nil, constructed
-// wrapping this process's own stdin/stdout) -- ported from glox's
-// ProcessObject (src/builtin/obj_builtin_process.go), minus its
-// background reader goroutine (this port has no general-purpose
-// threading model exposed anywhere -- see docs/ARCHITECTURE.md's Scope
-// section -- so recv/try_recv/wait_any read the pipe directly instead;
-// see vm/process.odin for exactly how try_recv/wait_any poll for
-// available data without a dedicated reader thread).
+// wrapping this process's own stdin/stdout). There is no background
+// reader thread (no general-purpose threading model is exposed anywhere
+// -- see docs/ARCHITECTURE.md's Scope section); recv/try_recv/wait_any
+// read the pipe directly instead -- see vm/process.odin for exactly how
+// try_recv/wait_any poll for available data without one.
 Process_Object :: struct {
 	using obj:  Obj,
 	read_file:  ^os.File,

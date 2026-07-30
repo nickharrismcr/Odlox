@@ -5,8 +5,7 @@ import "../vm"
 import "core:strings"
 import rl "vendor:raylib"
 
-// gfx: glox's own gfx module (src/vm/builtin.go's makeBuiltInModule(vm,
-// "gfx")) is a large raylib-dependent surface -- window/image/texture/
+// gfx: a large raylib-dependent module surface -- window/image/texture/
 // render_texture/shader/camera/batch/batch_instanced. Window lifecycle,
 // 2D and 3D drawing, texture/image/render_texture, shader, camera, and
 // batch/batch_instanced are all implemented -- see vm/gfx_window.odin,
@@ -14,11 +13,9 @@ import rl "vendor:raylib"
 // vm/gfx_batch.odin, vm/gfx_batch_instanced.odin for the real logic.
 //
 // gfx.window(width, height) only constructs the Window_Object -- it
-// does *not* call raylib's InitWindow itself. Matches glox's own API
-// shape exactly: WindowBuiltIn (obj_builtin_window.go) just builds the
-// struct; rl.InitWindow only happens inside the separate win.init()
-// method (win_methods.go), so a script must call .init() before
-// drawing. Ported as a real API-shape decision, not an oversight.
+// does *not* call raylib's InitWindow itself; that only happens inside
+// the separate win.init() method, so a script must call .init() before
+// drawing. This is a deliberate API shape, not an oversight.
 
 @(private)
 register_gfx :: proc(v: ^vm.VM) {
@@ -38,13 +35,12 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "lox_mandel_array", gfx_lox_mandel_array)
 }
 
-// window_created mirrors glox's own package-level `windowCreated` bool
-// (obj_builtin_window.go) exactly: gfx.texture() requires a window to
-// already exist (a GPU texture upload needs a live GL context), checked
-// here rather than in vm/gfx_texture.odin since it's a natives-package-
-// level constructor concern, not something the object itself needs to
-// know. Single-VM-per-process, matching the existing package-level-state
-// precedent in debug/trace.odin's instruction_count_val.
+// window_created tracks whether a window exists: gfx.texture() requires
+// one (a GPU texture upload needs a live GL context), checked here
+// rather than in vm/gfx_texture.odin since it's a natives-package-level
+// constructor concern, not something the object itself needs to know. A
+// package-level flag assumes a single VM per process, the same
+// assumption debug/trace.odin's instruction_count_val makes.
 @(private = "file")
 window_created: bool
 
@@ -66,11 +62,10 @@ gfx_window :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 	return core.make_object_value(&win.obj, true)
 }
 
-// gfx_image loads an rl.Image from a file into CPU memory. Unlike glox's
-// MakeImageObject, which panics on load failure, a failed load is a
-// proper Lox runtime_error here -- matching this port's established
-// pattern of turning native crash-on-error into a real, catchable Lox
-// exception rather than taking the whole process down.
+// gfx_image loads an rl.Image from a file into CPU memory. A failed
+// load raises a catchable Lox runtime_error rather than crashing the
+// process, matching how native failures are surfaced throughout this
+// module.
 @(private = "file")
 gfx_image :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -167,10 +162,10 @@ gfx_render_texture :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> cor
 	return core.make_object_value(&o.obj, true)
 }
 
-// gfx_shader mirrors glox's own ShaderBuiltIn exactly: 0 arguments
-// constructs an empty, not-yet-loaded shader (rl.Shader{}) for a script
-// to fill in via .load_from_memory(vertex_code, fragment_code); 2
-// arguments (vertex_file, fragment_file) loads compiled GLSL from disk
+// gfx_shader: 0 arguments constructs an empty, not-yet-loaded shader
+// (rl.Shader{}) for a script to fill in via
+// .load_from_memory(vertex_code, fragment_code); 2 arguments
+// (vertex_file, fragment_file) loads compiled GLSL from disk
 // immediately via rl.LoadShader.
 @(private = "file")
 gfx_shader :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
@@ -199,9 +194,8 @@ gfx_shader :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 	}
 }
 
-// gfx_camera mirrors glox's own CameraBuiltIn: always perspective
-// projection, 45° default fovy -- see core/obj_camera.odin's own doc
-// comment.
+// gfx_camera always creates a perspective-projection camera with a 45°
+// default fovy -- see core/obj_camera.odin's own doc comment.
 @(private = "file")
 gfx_camera :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -226,14 +220,12 @@ gfx_camera :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value 
 	return core.make_object_value(&o.obj, true)
 }
 
-// gfx_batch mirrors glox's own BatchBuiltIn: the single argument is a
-// win.BATCH_* constant (a plain int -- core.Batch_Primitive's own
-// ordinal values match glox's BatchPrimitive iota order exactly, see
-// gfx_window.odin's window_constant), not validated against a fixed
-// enum range here any more strictly than glox validates it either
-// (an out-of-range int just becomes an unreachable Batch_Primitive
-// value that every dispatch site's own switch statement falls through
-// on harmlessly).
+// gfx_batch: the single argument is a win.BATCH_* constant (a plain int
+// -- see gfx_window.odin's window_constant for core.Batch_Primitive's
+// ordinal values), not validated against a fixed enum range here: an
+// out-of-range int just becomes an unreachable Batch_Primitive value
+// that every dispatch site's own switch statement falls through on
+// harmlessly.
 @(private = "file")
 gfx_batch :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -251,10 +243,10 @@ gfx_batch :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	return core.make_object_value(&o.obj, true)
 }
 
-// gfx_batch_instanced mirrors glox's own BatchInstancedBuiltIn exactly:
-// (texture, cube_size: float, max_instances: int) -- a fixed-capacity
-// instanced batch of one textured cube mesh, for scenes with too many
-// identical cubes for win.cube()/gfx.batch() to keep up.
+// gfx_batch_instanced: (texture, cube_size: float, max_instances: int)
+// -- a fixed-capacity instanced batch of one textured cube mesh, for
+// scenes with too many identical cubes for win.cube()/gfx.batch() to
+// keep up.
 @(private = "file")
 gfx_batch_instanced :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -298,13 +290,10 @@ gfx_float_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.V
 	return core.make_object_value(&arr.obj)
 }
 
-// gfx_encode_rgba mirrors glox's EncodeRGBABuiltIn/util.EncodeRGB
-// exactly: packs three 0-255 int components into one float64-valued
-// 24-bit integer (r<<16 | g<<8 | b), matching glox's own choice to store
-// it as a Value float rather than an int (its own comment gives no
-// reason; ported as-is for exact behavioral parity, including glox's own
-// panic-worthy range check turned into an ordinary Lox runtime error
-// instead of a native crash).
+// gfx_encode_rgba packs three 0-255 int components into one 24-bit
+// integer (r<<16 | g<<8 | b), stored as a float64-valued Value rather
+// than an int. Out-of-range components raise a Lox runtime error rather
+// than crashing.
 @(private = "file")
 gfx_encode_rgba :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
@@ -344,7 +333,7 @@ gfx_decode_rgba :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.V
 	b := int(packed & 0xFF)
 	items: [dynamic]core.Value
 	append(&items, core.make_int_value(r), core.make_int_value(g), core.make_int_value(b))
-	result := core.make_list_object(items, true) // is_tuple, matching glox's own MakeListObject(..., true)
+	result := core.make_list_object(items, true) // is_tuple: true
 	vm.gc_track(v, &result.obj)
 	return core.make_object_value(&result.obj, true) // tuples are immutable Values, same as create_list's own convention
 }

@@ -4,15 +4,13 @@ import "../core"
 import "core:strings"
 
 // Indexing, slicing, and collection-literal construction. Stack
-// convention for slicing (this port's own choice, matching
-// compiler/expr.odin's subscript): object, then start (Nil if open),
-// then end (Nil if open, slices only).
+// convention for slicing (see compiler/expr.odin's subscript): object,
+// then start (Nil if open), then end (Nil if open, slices only).
 
 // dict_key coerces any Value into the (already-interned) string a dict
 // subscript should look it up by -- matches create_dict's own coercion
-// (see that proc's doc comment) and glox's own index()/indexAssign()
-// (`iv.String()` for anything that isn't already a StringObject), so
-// `d[10]` and a literal `{10: ...}` agree on the same key. A Value
+// (see that proc's doc comment), so `d[10]` and a literal `{10: ...}`
+// agree on the same key. A Value
 // that's already a string returns its own canonical pointer directly,
 // no re-interning (see core/obj_dict.odin's doc comment on why that
 // matters); anything else goes through value_to_string once and interns
@@ -28,13 +26,9 @@ dict_key :: proc(v: core.Value) -> ^core.String_Object {
 	return core.intern_string(s)
 }
 
-// do_index handles Op_Index (`obj[idx]`). Real bug, found porting the
-// stdlib: this used to unconditionally require an int index before
-// even checking what obj was, so `dict["key"]` -- a real, expected
-// feature (glox's own index() has a full OBJECT_DICT case) -- always
-// failed with "Index must be an integer.", regardless of obj's actual
-// type. Fixed by checking the container type first and only requiring
-// an int for List/String, matching glox's own per-type dispatch.
+// do_index handles Op_Index (`obj[idx]`). Checks the container's own
+// type first -- Dict indexing takes any coercible key (see dict_key)
+// and only List/String indexing requires idx to be an int.
 do_index :: proc(vm: ^VM) -> bool {
 	idx := pop(vm)
 	obj := pop(vm)
@@ -81,8 +75,8 @@ do_index :: proc(vm: ^VM) -> bool {
 	return false
 }
 
-// do_index_assign handles Op_Index_Assign (`obj[idx] = value`). Same
-// missing-Dict-case bug as do_index, fixed the same way.
+// do_index_assign handles Op_Index_Assign (`obj[idx] = value`), with
+// the same Dict-first type dispatch as do_index.
 do_index_assign :: proc(vm: ^VM) -> bool {
 	value := pop(vm)
 	idx := pop(vm)
@@ -233,16 +227,12 @@ create_dict :: proc(vm: ^VM, pair_count: int) -> bool {
 		value := pop(vm)
 		key := pop(vm)
 		// A non-string key is coerced to its string representation, not
-		// rejected -- matches glox's own createDict exactly (`key.String()`
-		// for anything that isn't already a StringObject). Real bug: this
-		// used to reject non-string keys outright, which broke any real
-		// glox source using an int-keyed dict literal -- found porting
-		// src/modules/logging.lox, whose Logger._LEVEL_NAMES is exactly
-		// `{10: "DEBUG", 20: "INFO", ...}`, looked up later via
-		// `str(level)`. core.value_to_string is the same stringification
-		// Op_Str's own generic (non-toString) fallback uses, so a level
-		// int and its str() lookup key always agree. dict_key shares this
-		// coercion with do_index/do_index_assign.
+		// rejected -- an int-keyed dict literal like `{10: "DEBUG", 20:
+		// "INFO", ...}` is valid, and looked up later via `str(level)`.
+		// core.value_to_string is the same stringification Op_Str's own
+		// generic (non-toString) fallback uses, so a coerced key and its
+		// later str() lookup always agree. dict_key shares this coercion
+		// with do_index/do_index_assign.
 		items[dict_key(key)] = value
 	}
 	d := core.make_dict_object(items)

@@ -3,10 +3,7 @@ package core
 import "core:fmt"
 
 // Environment is the runtime home for one compilation unit's globals --
-// a deliberate two-tier design carried over from glox as-is (it's
-// already the fix for a real perf problem there: globals used to be
-// map-backed, and this slot-array design was itself an earlier
-// optimization pass):
+// a deliberate two-tier design:
 //
 //   - globals/defined: slot-indexed (compile-time-assigned integer
 //     slots), for O(1) Get_Global/Set_Global with no hashing.
@@ -15,17 +12,15 @@ import "core:fmt"
 //     `__all__`-style iteration, where the importing side has no
 //     compile-time slot of its own for the exported name.
 //   - global_names: slot -> name, for error messages and for resolving
-//     an exception class by name from an arbitrary frame (see glox's
-//     docs/exception-handling.md) -- populated only on the top-level
+//     an exception class by name from an arbitrary frame (see
+//     src/vm/exceptions.odin) -- populated only on the top-level
 //     script's own chunk/Environment (see chunk.odin's Chunk doc
 //     comment), but reachable from every function in the compilation
 //     unit since they all share this one Environment.
 //
-// No mutex anywhere on this struct: glox's `varsMu sync.RWMutex` exists
-// solely so a built-in module's Environment stays safe when shared
-// across the parent VM and thread-module workers spawned from it --
-// out of scope entirely here (see docs/ARCHITECTURE.md's Scope
-// section), so `vars` is a plain, unsynchronized map.
+// No mutex anywhere on this struct: `vars` is a plain, unsynchronized
+// map, since Environments are never shared across threads (see
+// docs/ARCHITECTURE.md's Scope section).
 Environment :: struct {
 	name:         string,
 	vars:         map[^String_Object]Value,

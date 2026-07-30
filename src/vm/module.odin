@@ -6,15 +6,15 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 
-// Module import execution. A process-wide module cache would need a
-// mutex in glox (shared across thread-module workers); with threads
-// out of scope entirely (see docs/ARCHITECTURE.md's Scope section),
-// vm.module_cache is just a plain per-VM map, no lock.
+// Module import execution. With threads out of scope entirely (see
+// docs/ARCHITECTURE.md's Scope section), vm.module_cache is just a
+// plain per-VM map, no lock needed.
 //
-// Built-in modules (sys/os so far -- see builtins.odin/builtins_sys.odin/
-// builtins_os.odin) resolve through vm.builtin_modules; gfx/re/pickle/
-// process/colour_utils/inspect aren't registered yet (Phase 6b). A *.lox
-// source module resolves through read_module_source below.
+// Built-in modules (sys/os, registered in builtins.odin; gfx/re/pickle/
+// process/colour_utils/inspect/physics, registered from the natives/
+// package -- see each one's own register_* proc) resolve through
+// vm.builtin_modules. A *.lox source module resolves through
+// read_module_source below.
 
 // module_source_cache holds every imported module's own source text,
 // keyed by its bare import name -- unlike module_cache above, this one
@@ -87,16 +87,12 @@ bind_imported_name :: proc(vm: ^VM, name: string, val: core.Value) {
 // would mean something is broken. `import *` has no such guarantee: it
 // walks whatever names the module's environment happens to hold, most
 // of which the importing script's own compiled code never mentioned by
-// identifier at all, so there's no reason a global slot would exist for
-// them -- and no reason one needs to, either, since nothing in the
-// importing script can ever try to *read* a name it never referenced.
-// Real bug, found porting math.lox: `from math import *` failed
-// immediately with "Internal error: import name 'vec3' has no global
-// slot" purely because math.lox's own `rotate2d` happens to call
-// `vec3(...)` internally (unrelated to anything the importing script
-// asked for) -- confirmed against glox's own importFunctionFromModule,
-// which silently skips the fast-slot write when no matching slot is
-// found in the current chunk, rather than erroring.
+// identifier at all -- e.g. a name the module's own top-level code
+// happened to reference internally but the importing script never did
+// -- so there's no reason a global slot would exist for them, and no
+// reason one needs to, either, since nothing in the importing script
+// can ever try to *read* a name it never referenced. A missing slot is
+// silently skipped here rather than treated as an error.
 @(private = "file")
 bind_imported_name_soft :: proc(vm: ^VM, name: string, val: core.Value) {
 	core.env_set_var(vm.environment, core.intern_string(name), val)
@@ -149,23 +145,22 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	// initializers). Every object that code allocated -- including e.g.
 	// a module-level `var _pool = [];` list a script mutates long after
 	// import -- was gc_track()ed onto *sub's* vm.objects, not the parent
-	// vm's. Once sub is discarded below, those objects would still be
-	// reachable (via mod.environment, correctly walked by the parent's
-	// mark_roots) but never actually swept by anyone: sweep() only walks
-	// vm.objects, so their mark bit, once set on the first cycle that
-	// reaches them, would never get cleared again -- and mark_object's
-	// "already marked, don't re-queue" fast path then means they never
-	// get re-traced either. A List's own object surviving that way is
-	// harmless (it just never becomes unreachable), but anything added
-	// to it *after* this point (e.g. every particle a pool holds beyond
-	// its first GC cycle) is invisible to every future mark phase and
-	// gets swept as garbage while still genuinely referenced --
-	// confirmed as the exact mechanism behind a real, reproducible
-	// use-after-free (lox_examples/fireworks.lox, see ROADMAP.md).
-	// Splicing sub's object list into the parent's, and folding its
-	// allocation total in too, makes the parent's own sweep the sole
-	// owner of everything the module allocated, fixing this at the
-	// source rather than special-casing module-level containers.
+	// vm's. If sub were simply discarded below, those objects would
+	// still be reachable (via mod.environment, correctly walked by the
+	// parent's mark_roots) but never actually swept by anyone: sweep()
+	// only walks vm.objects, so their mark bit, once set on the first
+	// cycle that reaches them, would never get cleared again -- and
+	// mark_object's "already marked, don't re-queue" fast path then
+	// means they never get re-traced either. A List's own object
+	// surviving that way is harmless (it just never becomes
+	// unreachable), but anything added to it *after* this point (e.g.
+	// every particle a pool holds beyond its first GC cycle) would be
+	// invisible to every future mark phase and get swept as garbage
+	// while still genuinely referenced -- a use-after-free. Splicing
+	// sub's object list into the parent's, and folding its allocation
+	// total in too, makes the parent's own sweep the sole owner of
+	// everything the module allocated, avoiding this instead of
+	// special-casing module-level containers.
 	if sub.objects != nil {
 		tail := sub.objects
 		for tail.next != nil {
@@ -177,8 +172,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	vm.bytes_allocated += sub.bytes_allocated
 
 	// Publish the module's slot-indexed globals into its own name-keyed
-	// Vars map too, so `from mod import x` (name-based lookup) works --
-	// mirrors glox's post-import sync step.
+	// Vars map too, so `from mod import x` (name-based lookup) works.
 	for gname, slot in sub.environment.global_names {
 		if slot < len(sub.environment.defined) && sub.environment.defined[slot] {
 			core.env_set_var(sub.environment, core.intern_string(gname), sub.environment.globals[slot])
@@ -227,18 +221,10 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string) -> Interp
 // then alongside the *top-level entry* script (vm.root_script -- not
 // vm.script, the module currently being loaded, see the VM struct's
 // doc comment on root_script), then a recursive search of the entry
-// script's own directory tree -- matching glox's own three-tier search
-// (`getPath`/`findModuleInSubdirs` in glox's vm.go) so scripts can
-// group their own modules into subfolders, with one deliberate path
-// difference: glox looks under `$LOX_PATH/src/modules`, its own repo's
-// Lox-source-stdlib location; odlox's `src/` is exclusively Odin
-// source, so the equivalent convention here is a `modules/` directory
-// at the LOX_PATH root instead (see `ROADMAP.md`'s Phase 6 section --
-// this is that fix). An earlier version of this proc checked the
-// script's own directory first and never searched subdirectories at
-// all, silently diverging from glox's search order; fixed here rather
-// than left for `import math` (or any other stdlib module) to keep
-// failing "not found" once those get copied over.
+// script's own directory tree -- so scripts can group their own
+// modules into subfolders. The stdlib modules live under a `modules/`
+// directory at the LOX_PATH root, since `src/` in this repository is
+// exclusively Odin source, not Lox source.
 @(private = "file")
 read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string, found: bool) {
 	filename := strings.concatenate({name, ".lox"})
@@ -257,14 +243,7 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 
 	// filepath.dir (os.dir) returns a slice *into* vm.root_script, not a
 	// fresh allocation (see os/path.odin's split_path) -- deleting it
-	// is a bad free of memory this proc doesn't own. Real bug, not
-	// hypothetical: it silently corrupted the heap on every successful
-	// module import since Phase 4 first wrote this line, without
-	// crashing immediately (bad frees don't always crash where they
-	// happen) -- surfaced reliably once find_module_in_subdirs' extra
-	// allocations changed the heap layout enough to turn latent
-	// corruption into an actual segfault on the very first test of
-	// this phase's subdirectory-search addition.
+	// would be a bad free of memory this proc doesn't own.
 	dir := filepath.dir(vm.root_script)
 	if dir == "" {
 		dir = "."
@@ -288,11 +267,9 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 
 // find_module_in_subdirs recursively searches root for a file named
 // target, skipping directories that are never going to contain a
-// script's own Lox modules (VCS/build/cache dirs -- glox's own
-// equivalent skips just `__loxcache__`, its bytecode-cache directory;
-// this port has no bytecode cache -- see ARCHITECTURE.md's Bytecode
-// cache section -- but the same principle applies to its own
-// build/tooling directories).
+// script's own Lox modules -- VCS/build/cache dirs, including
+// `__loxcache__`, the bytecode-cache directory (see
+// docs/ARCHITECTURE.md's Bytecode cache section and bc_cache.odin).
 @(private = "file")
 find_module_in_subdirs :: proc(root: string, target: string) -> (string, bool) {
 	w := os.walker_create(root)

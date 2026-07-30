@@ -1,11 +1,10 @@
 package core
 
-// Float_Array_Object: a flat, row-major w*h buffer of f64s -- ported from
-// glox's src/builtin/obj_builtin_farray.go's FloatArrayObject/FloatArray.
-// glox's own version panics on an out-of-range Get/Set; this port returns
-// an ok bool instead and leaves raising a proper Lox runtime error to the
-// caller (vm package), matching every other bounds check in this port
-// rather than a native crash.
+// Float_Array_Object: a flat, row-major w*h buffer of f64s. Get/Set
+// return an ok bool on an out-of-range index rather than panicking,
+// leaving raising a proper Lox runtime error to the caller (vm
+// package), consistent with every other bounds check in this
+// interpreter.
 Float_Array_Object :: struct {
 	using obj:     Obj,
 	width, height: int,

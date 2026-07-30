@@ -1,13 +1,11 @@
 package core
 
-// The three built-in iterator kinds -- one Object_Type each (see
-// object.odin's comment on why this splits glox's single shared
-// "Iterator" tag into three). Each has its own `next` proc rather than a
-// shared interface method; the vm package (Phase 4) dispatches on
-// `obj.type` at the two call sites that need "the next value" (native
-// OP_FOREACH/OP_NEXT fast path for list/string, vs. the user-level
-// `__iter__`/`__next__` protocol for class instances, which never
-// touches these types at all).
+// The three built-in iterator kinds -- one Object_Type each. Each has
+// its own `next` proc rather than a shared interface method; the vm
+// package dispatches on `obj.type` at the two call sites that need "the
+// next value" (native OP_FOREACH/OP_NEXT fast path for list/string, vs.
+// the user-level `__iter__`/`__next__` protocol for class instances,
+// which never touches these types at all).
 
 List_Iterator_Object :: struct {
 	using obj: Obj,

@@ -14,8 +14,7 @@ import "core:time"
 //
 // No mutex/lock anywhere in this package: the VM is single-threaded for
 // its whole life (see docs/ARCHITECTURE.md's Scope section -- threads
-// are out of scope entirely), unlike glox's Go VM, which needs several
-// for the (excluded here) thread module.
+// are out of scope entirely).
 
 FRAMES_MAX :: 64
 STACK_MAX :: FRAMES_MAX * 256
@@ -30,8 +29,7 @@ Call_Frame :: struct {
 
 // Exception_Handler is a cons-list node pushed by Op_Try and popped by
 // Op_End_Try/a successful catch -- see exceptions.odin's raise_exception
-// for the full matching loop, and glox's own docs/exception-handling.md
-// for the bytecode-level design this mirrors.
+// for the full matching loop.
 Exception_Handler :: struct {
 	except_ip: int,
 	stack_top: int,
@@ -54,7 +52,7 @@ Debug_Hook :: #type proc(vm: ^VM, event: Debug_Event)
 
 VM :: struct {
 	script:      string, // path/name of the running script, for error messages
-	root_script: string, // the top-level entry script's path -- module.odin's read_module_source resolves local (non-stdlib) imports relative to *this*, not `script`, so a nested import (e.g. a module in npc/ importing one that actually lives in game/) still finds it by searching from the entry script's own directory down, matching glox's own vm.Args()-propagation behavior (subvm.SetArgs(vm.Args()) in vm.go's importModule) instead of resolving relative to whichever module happens to be doing the importing.
+	root_script: string, // the top-level entry script's path -- module.odin's read_module_source resolves local (non-stdlib) imports relative to *this*, not `script`, so a nested import (e.g. a module in npc/ importing one that actually lives in game/) still finds it by searching from the entry script's own directory down, instead of resolving relative to whichever module happens to be doing the importing.
 	source:      string, // its source text, for stack-trace context lines
 
 	stack:       [STACK_MAX]core.Value,
@@ -65,10 +63,9 @@ VM :: struct {
 	open_upvalues: ^core.Upvalue_Object, // sorted descending by stack slot
 
 	// Error state: opcodes/native calls set error_msg (see
-	// runtime_error) rather than raising directly, matching glox's
-	// design (see exceptions.odin's doc comment) -- run()'s dispatch
+	// runtime_error) rather than raising directly -- run()'s dispatch
 	// loop checks it once per instruction and converts it into a real
-	// exception via raise_exception_by_name.
+	// exception via raise_exception (see exceptions.odin).
 	error_msg:               string,
 	pending_exception_class: string,
 	stack_trace:             [dynamic]string,
@@ -92,9 +89,9 @@ VM :: struct {
 
 	// sys.clock()/sys.args() support (builtins.odin/builtins_sys.odin):
 	// start_time is captured once at construction so `sys.clock()` can
-	// report elapsed seconds the same way glox's `time.Since(vm.StartTime())`
-	// does; script_args is empty unless main.odin's CLI parsing populates
-	// it with argv entries after the script path.
+	// report elapsed seconds since VM startup; script_args is empty
+	// unless main.odin's CLI parsing populates it with argv entries
+	// after the script path.
 	start_time:  time.Time,
 	script_args: []string,
 
@@ -116,11 +113,11 @@ VM :: struct {
 
 	debug_hook: Debug_Hook,
 
-	// force_compile mirrors glox's own -f/--force-compile: when set,
-	// module.odin's load_module skips bc_cache_load's lookup entirely
-	// (never even stat-ing the .lxc) but still writes a fresh cache
-	// afterward -- see docs/plans/bytecode-cache.md. Never affects the
-	// entry script, which never consults the cache at all.
+	// force_compile: when set, module.odin's load_module skips
+	// bc_cache_load's lookup entirely (never even stat-ing the .lxc)
+	// but still writes a fresh cache afterward -- see
+	// docs/plans/bytecode-cache.md. Never affects the entry script,
+	// which never consults the cache at all.
 	force_compile: bool,
 }
 
@@ -145,9 +142,8 @@ new_vm_raw :: proc(script: string) -> ^VM {
 }
 
 // new_vm constructs a VM ready to run script (used for error messages;
-// pass "" for a REPL session). Built-in registration (Phase 6) is a
-// separate step the caller performs afterward, same as glox's
-// `defineBuiltins` being optional (`-s`/`--skip-builtins`).
+// pass "" for a REPL session). Built-in registration is a separate,
+// optional step the caller performs afterward (see builtins.odin).
 new_vm :: proc(script: string) -> ^VM {
 	vm := new_vm_raw(script)
 	bootstrap_exceptions(vm)
@@ -169,11 +165,11 @@ frame :: proc(vm: ^VM) -> ^Call_Frame {
 	return &vm.frames[vm.frame_count - 1]
 }
 
-// print_stack_trace mirrors glox's own PrintStackTrace (vm.go) -- called
-// from main.odin right after printing an uncaught runtime error's own
-// message, on every such error in both the file-run and REPL paths, not
-// as an opt-in debug feature. vm.stack_trace is built up by
-// exceptions.odin's append_stack_trace as raise_exception unwinds.
+// print_stack_trace is called from main.odin right after printing an
+// uncaught runtime error's own message, on every such error in both the
+// file-run and REPL paths, not as an opt-in debug feature.
+// vm.stack_trace is built up by exceptions.odin's append_stack_trace as
+// raise_exception unwinds.
 print_stack_trace :: proc(vm: ^VM) {
 	for line in vm.stack_trace {
 		fmt.println(line)

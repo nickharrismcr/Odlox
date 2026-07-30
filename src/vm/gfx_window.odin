@@ -7,30 +7,27 @@ import "core:c"
 import "core:math"
 import "core:strings"
 
-// gfx_window: the raylib-backed window/2D-drawing surface. Ported from
-// glox's obj_builtin_window.go/win_methods.go -- window lifecycle, frame
-// begin/end, input, 2D primitive drawing, texture/render_texture
-// drawing, blend/shader modes, 3D drawing (see begin_3d's own doc
-// comment), draw_array, and batch/batch_instanced (vm/gfx_batch.odin,
-// vm/gfx_batch_instanced.odin).
+// gfx_window: the raylib-backed window/2D-drawing surface -- window
+// lifecycle, frame begin/end, input, 2D primitive drawing,
+// texture/render_texture drawing, blend/shader modes, 3D drawing (see
+// begin_3d's own doc comment), draw_array, and batch/batch_instanced
+// (vm/gfx_batch.odin, vm/gfx_batch_instanced.odin).
 //
 // Colors cross the Lox boundary as vec4, each channel 0-255 -- matches
-// natives/colour_utils.odin's existing, already-shipped convention
+// natives/colour_utils.odin's existing convention
 // (colour_utils_fade's clamp255/alpha-at-255 usage), not a 0-1
 // normalized float.
 //
-// Deliberate deviation from glox: end() does *not* call rl.DrawFPS(10,
-// 10) unconditionally the way glox's own end() does -- that's a debug
-// overlay side effect baked into a call every script makes every frame
-// regardless of whether it wants one. Opt-in instead: .show_fps(bool)
+// end() does *not* call rl.DrawFPS unconditionally -- that would be a
+// debug overlay side effect baked into every frame regardless of
+// whether the script wants one. It's opt-in instead: .show_fps(bool)
 // toggles it (off by default), and get_fps() remains available too for
 // a script that wants to draw its own FPS text some other way entirely.
 //
-// No GC-triggered window teardown: unlike glox, which doesn't call
-// CloseWindow from GCFree either, Window_Object owns no GPU resource of
-// its own to free -- raylib's window/GL context is process-global, torn
-// down only by an explicit .close() call (idempotent via the closed
-// bool), never implicitly by garbage collection.
+// No GC-triggered window teardown: Window_Object owns no GPU resource
+// of its own to free -- raylib's window/GL context is process-global,
+// torn down only by an explicit .close() call (idempotent via the
+// closed bool), never implicitly by garbage collection.
 
 // vec4_to_rl_color/arg_color are package-visible (not file-private): both
 // gfx_window.odin (Window's own drawing methods) and gfx_texture.odin
@@ -135,9 +132,9 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 			runtime_error(vm, "get_screen_width() takes no arguments.")
 			return false
 		}
-		// Real, deliberate deviation from glox: returns int, not float
-		// -- a screen width has no fractional part, and every other
-		// pixel-coordinate argument throughout this file is an int too.
+		// Returns int, not float -- a screen width has no fractional part,
+		// and every other pixel-coordinate argument throughout this file
+		// is an int too.
 		result = core.make_int_value(int(rl.GetScreenWidth()))
 	case "get_screen_height":
 		if arg_count != 0 {
@@ -465,13 +462,10 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "draw_texture_pro":
 		// Unlike every other draw_texture* method here, the source can be
-		// either a Texture *or* a Render_Texture -- matches glox's own
-		// win_methods.go exactly (it type-switches on both). Draws straight
-		// to whatever the current GL target already is, no BeginTextureMode
-		// wrapping (unlike render_texture's own draw_texture_pro). Found
-		// needed by lox_examples/kaleido.lox, which uses it to blit a
-		// triangle-masked, blend-moded render_texture segment onto the
-		// window every frame.
+		// either a Texture or a Render_Texture. Draws straight to
+		// whatever the current GL target already is, with no
+		// BeginTextureMode wrapping (render_texture's own draw_texture_pro
+		// brackets the draw in one instead).
 		if arg_count != 13 {
 			runtime_error(
 				vm,
@@ -507,22 +501,13 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		rl.DrawTexturePro(texture, src, dst, origin, f32(core.as_float(rot_val)), col)
 		result = core.NIL_VALUE
 
-	// begin_blend_mode/end_blend_mode: a narrow, deliberate exception to
-	// "blend modes are out of scope this pass" (see this file's header
-	// comment) -- found needed by lox_examples/defender's fx.lox, which
-	// calls win.begin_blend_mode("BLEND_ADD") around its particle-effect
-	// draw calls. Matches glox's own win_methods.go exactly, *including*
-	// its latent bug: glox's BeginBlendMode passes modeVal.AsInt() straight
-	// through with no type check, and AsInt() on a non-numeric Value (a
-	// string, here) returns 0 (core.Value.AsInt()'s own default case) --
-	// so that real, currently-played script's "additive blend" call has
-	// always actually meant rl.BlendMode(0), i.e. BlendAlpha (normal
-	// blending), never BlendAdditive. core.as_int has the identical
-	// default-to-0 behavior for a non-numeric Value (see value.odin), so
-	// this port reproduces that behavior byte for byte rather than adding
-	// the stricter type validation every other method in this file has --
-	// doing so here would turn a silent content bug into a hard crash for
-	// a script that has always run, just not quite as its author intended.
+	// begin_blend_mode() deliberately skips the argument-type validation
+	// every other method in this file has: core.as_int returns 0 for a
+	// non-numeric Value (see value.odin), so passing something other
+	// than one of the win.BLEND_* constants silently falls back to
+	// rl.BlendMode(0) (ordinary alpha blending) rather than raising a
+	// runtime error -- a bad blend-mode argument produces a
+	// visually-wrong frame instead of crashing the script.
 	case "begin_blend_mode":
 		if arg_count != 1 {
 			runtime_error(vm, "begin_blend_mode() expects 1 argument (mode).")
@@ -539,12 +524,11 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		rl.EndBlendMode()
 		result = core.NIL_VALUE
 
-	// begin_shader_mode/end_shader_mode: redirect subsequent draw calls
-	// through a custom GLSL shader, matching glox's own win_methods.go.
-	// Only affects draws that use raylib's currently-bound shader --
-	// plain 2D primitives, win.draw_texture*, and win.draw_render_texture*
-	// all qualify; batch_instanced (not implemented here) always renders
-	// with its own fixed shader regardless, per glox's own doc note.
+	// begin_shader_mode/end_shader_mode redirect subsequent draw calls
+	// through a custom GLSL shader. Only affects draws that use raylib's
+	// currently-bound shader -- plain 2D primitives, win.draw_texture*,
+	// and win.draw_render_texture* all qualify; batch_instanced always
+	// renders with its own fixed shader regardless.
 	case "begin_shader_mode":
 		if arg_count != 1 {
 			runtime_error(vm, "begin_shader_mode() expects 1 argument (shader).")
@@ -610,17 +594,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		}
 		target := core.as_render_texture(rt_val).render_texture.texture
 		// Render textures are stored bottom-up in OpenGL -- a negative
-		// source height draws it right-side-up, matching glox's own
-		// draw_render_texture exactly.
+		// source height draws it right-side-up.
 		src := rl.Rectangle{0, 0, f32(target.width), -f32(target.height)}
 		rl.DrawTextureRec(target, src, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
 		result = core.NIL_VALUE
 	case "draw_render_texture_ex":
-		// Unlike draw_render_texture, glox's own draw_render_texture_ex
-		// (win_methods.go) draws via plain rl.DrawTextureEx with no
-		// Y-flip correction at all -- ported to match exactly, upside-down
-		// quirk included, not "fixed" to be consistent with the non-ex
-		// version. Found needed by lox_examples/tile_planes.lox.
+		// Unlike draw_render_texture, this draws via plain rl.DrawTextureEx
+		// with no Y-flip correction -- the render texture's bottom-up
+		// OpenGL storage (see draw_render_texture's own comment) is not
+		// compensated for here, so the result renders upside-down.
 		if arg_count != 6 {
 			runtime_error(vm, "draw_render_texture_ex() expects 6 arguments (render_texture, x, y, rotation, scale, color).")
 			return false
@@ -651,11 +633,10 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// Draws a float_array (each cell an RGB-encoded float, same
 		// convention as gfx.encode_rgba/decode_rgba) one DrawPixel call
 		// per cell, straight to whatever the current render target
-		// already is -- unlike render_texture's own draw_array_fast,
-		// no GPU texture involved at all, matching glox's own win_methods.go
-		// exactly (a direct per-pixel loop, not a bulk upload). Slower
-		// than draw_array_fast for anything but small arrays; kept for
-		// parity since real scripts call both depending on array size.
+		// already is -- unlike render_texture's own draw_array_fast, no
+		// GPU texture is involved at all: a direct per-pixel loop, not a
+		// bulk upload. Slower than draw_array_fast for anything but small
+		// arrays.
 		if arg_count != 1 {
 			runtime_error(vm, "draw_array() expects 1 argument (float_array).")
 			return false
@@ -735,7 +716,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// raylib has no DrawCube overload that takes a rotation -- draws
 		// the window's own shared unit-cube mesh (core/obj_window.odin's
 		// window_cube_model) via DrawMesh with a scale*rotate*translate
-		// transform instead, matching glox's own win_methods.go exactly.
+		// transform instead.
 		if arg_count != 5 {
 			runtime_error(vm, "cube_rotated() expects 5 arguments (position, size, axis, angle, color).")
 			return false
@@ -764,13 +745,11 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// the left), so composing "scale, then rotate, then translate"
 		// needs translation * rotation * scale: transform * v expands as
 		// translation * (rotation * (scale * v)), applying scale to the
-		// vertex first and translation last. scale * rotation *
-		// translation (the reverse) applies translation to the mesh's
-		// still-local-space vertices first, then rotates the whole
-		// already-displaced object around the world origin instead of
-		// its own center -- a real bug, found via a real script
-		// (lox_examples/3d_balls_physics_shaders.lox) whose rotated ramps
-		// rendered nowhere near their actual physics_world position.
+		// vertex first and translation last. The reverse order, scale *
+		// rotation * translation, would apply translation to the mesh's
+		// still-local-space vertices first, then rotate the whole
+		// already-displaced object around the world origin instead of its
+		// own center.
 		transform := translation * rotation * scale
 		material.maps[rl.MaterialMapIndex.ALBEDO].color = col
 		rl.DrawMesh(mesh, material, transform)
@@ -780,8 +759,8 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// shared solid mesh in wireframe polygon mode would also show its
 		// internal triangle diagonals, not clean cube edges -- so this
 		// transforms a unit cube's 8 corners directly and draws its 12
-		// edges as lines instead, matching glox's own win_methods.go
-		// exactly (same transform composition as cube_rotated above).
+		// edges as lines instead (same transform composition as
+		// cube_rotated above).
 		if arg_count != 5 {
 			runtime_error(vm, "cube_wires_rotated() expects 5 arguments (position, size, axis, angle, color).")
 			return false
@@ -893,9 +872,8 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		rl.DrawPlane(rl.Vector3{f32(center.x), f32(center.y), f32(center.z)}, rl.Vector2{f32(size.x), f32(size.y)}, col)
 		result = core.NIL_VALUE
 	case "ellipse3":
-		// Drawn as a flattened cylinder (near-zero height), matching
-		// glox's own win_methods.go exactly -- raylib has no dedicated
-		// 3D ellipse primitive.
+		// Drawn as a flattened cylinder (near-zero height) -- raylib has
+		// no dedicated 3D ellipse primitive.
 		if arg_count != 4 {
 			runtime_error(vm, "ellipse3() expects 4 arguments (center, radius_x, radius_z, color).")
 			return false
@@ -982,18 +960,14 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 }
 
 // window_constant answers a `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` property
-// read (properties.odin's get_property .Window case) -- glox registers all
-// of these directly on the window object (RegisterAllWindowConstants,
-// win_methods.go), not as module-level constants; a real script (found via
-// porting the lox_examples/defender game, and BLEND_ALPHA/BLEND_MULTIPLY/
-// WRAP_REPEAT via tile_planes.lox) accesses them as `win.KEY_SPACE`/
-// `win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`, so that's the surface this
-// ports. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
-// (Android-only buttons glox's own raylib-go binding exposes that
-// vendor:raylib's Odin binding does not); full BLEND_*/WRAP_*/BATCH_*
-// coverage. Values are plain immutable ints, identical across every
-// Window instance, so this is a pure function of the name rather than
-// per-object state.
+// read (properties.odin's get_property .Window case). These are exposed
+// directly on the window object rather than as module-level constants,
+// so scripts access them as `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not
+// `gfx.KEY_SPACE`. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
+// (Android-only buttons not exposed by vendor:raylib's Odin binding);
+// full BLEND_*/WRAP_*/BATCH_* coverage. Values are plain immutable ints,
+// identical across every Window instance, so this is a pure function of
+// the name rather than per-object state.
 window_constant :: proc(name: string) -> (core.Value, bool) {
 	switch name {
 	case "BLEND_ADD": return core.make_int_value(int(rl.BlendMode.ADDITIVE), true), true
@@ -1006,7 +980,7 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "WRAP_MIRROR_REPEAT": return core.make_int_value(int(rl.TextureWrap.MIRROR_REPEAT), true), true
 	case "WRAP_MIRROR_CLAMP": return core.make_int_value(int(rl.TextureWrap.MIRROR_CLAMP), true), true
 	// Ordinal values match core.Batch_Primitive exactly (Cube=0, Sphere=1,
-	// Triangle3=2, Circle3=3), same as glox's own BatchPrimitive iota order.
+	// Triangle3=2, Circle3=3).
 	case "BATCH_CUBE": return core.make_int_value(int(core.Batch_Primitive.Cube), true), true
 	case "BATCH_SPHERE": return core.make_int_value(int(core.Batch_Primitive.Sphere), true), true
 	case "BATCH_TRIANGLE3": return core.make_int_value(int(core.Batch_Primitive.Triangle3), true), true
@@ -1129,11 +1103,9 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	return core.make_int_value(int(key), true), true
 }
 
-// draw_textured_cube ports glox's own DrawTexturedCube (win_methods.go)
-// exactly: six manually-specified quads (raylib's DrawCube has no
-// textured variant), each vertex carrying its own normal/texcoord/
-// position via rlgl's immediate-mode API -- the same shape every raylib
-// language binding exposes this through, not an odlox-specific choice.
+// draw_textured_cube builds six manually-specified quads (raylib's
+// DrawCube has no textured variant), each vertex carrying its own
+// normal/texcoord/position via rlgl's immediate-mode API.
 @(private = "file")
 draw_textured_cube :: proc(texture: rl.Texture2D, position: rl.Vector3, width, height, length: f32, tint: rl.Color) {
 	x, y, z := position.x, position.y, position.z

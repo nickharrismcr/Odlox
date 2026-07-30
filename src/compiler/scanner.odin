@@ -4,8 +4,8 @@ package compiler
 // Scanner: turns Lox-derived source text into a fully materialized token
 // list up front (not a lazy one-token-at-a-time stream). This is load
 // bearing, not just a style choice: the compiler's `finally`-block
-// handling (Phase 3) snapshots a token index and replays a range of
-// already-scanned tokens later, which only works if the whole stream is
+// handling snapshots a token index and replays a range of already-
+// scanned tokens later, which only works if the whole stream is
 // already a stable array by the time parsing starts. See
 // docs/ARCHITECTURE.md's Scanner section.
 
@@ -321,8 +321,8 @@ error_token :: proc(s: ^Scanner, msg: string) -> Token {
 }
 
 // synthetic_token is package-visible (not file-private): the compiler
-// (Phase 3) also needs it, to fabricate the implicit `this`/unnamed slot
-// at the head of every function's local table.
+// also needs it, to fabricate the implicit `this`/unnamed slot at the
+// head of every function's local table.
 @(private)
 synthetic_token :: proc(type: Token_Type, text: string, line: int) -> Token {
 	return Token{type = type, source = text, start = 0, length = len(text), line = line}
@@ -499,16 +499,12 @@ scan_string :: proc(s: ^Scanner, quote: u8) -> Token {
 		}
 		if c == '\n' {
 			// A literal newline inside a string is content, not an error --
-			// matches glox's own scanner.go (`string`, its Peek() == "\n"
-			// case just increments s.Line and continues). Found missing via
-			// gfx.shader()'s natural usage pattern: a script embeds GLSL
-			// source as a multi-line string literal
-			// (`var vs = "\n#version 330\n..."`), same shape
-			// lox_examples/julia.lox actually uses. Every other character
-			// in this loop already falls through to the generic
-			// write-and-advance below; '\n' just also needs the line
-			// counter bumped so later tokens/error messages still report
-			// accurate line numbers.
+			// e.g. a multi-line string literal embedding another
+			// language's source verbatim. Every other character in this
+			// loop already falls through to the generic write-and-advance
+			// below; '\n' just also needs the line counter bumped so
+			// later tokens/error messages still report accurate line
+			// numbers.
 			s.line += 1
 		}
 		if c == '$' && peek_next(s) == '$' {

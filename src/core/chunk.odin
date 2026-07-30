@@ -2,11 +2,10 @@ package core
 
 // Op_Code: one variant per bytecode instruction. Odin's enums are
 // namespaced under the type (`.Constant` reads fine at a use site), so
-// there's no need for glox's `OP_` prefix, which exists only to avoid
-// colliding in Go's flat package-level namespace.
+// no prefix is needed to avoid collisions.
 //
 // Two families are worth knowing about up front, both fully explained
-// where the compiler/VM (Phases 3-4) actually implement them:
+// where the compiler/VM actually implement them:
 //
 //   - Add_Nn/Add_Ii/Add_Ff and Incr_Const_N/Incr_Const_I/Incr_Const_F are
 //     a compile-time peephole fusion (Add_Nn, Incr_Const_N) that the VM
@@ -15,9 +14,8 @@ package core
 //     type-specific Ii/Ff variants.
 //   - Try/End_Try/Except/End_Except/Finally/Raise implement
 //     try/except/finally -- the bytecode shape and VM-side matching loop
-//     are involved enough that they get their own design document
-//     (glox's docs/exception-handling.md) rather than a summary here;
-//     read that directly when implementing them.
+//     are involved enough to read directly in src/vm/exceptions.odin
+//     rather than summarize here.
 Op_Code :: enum u8 {
 	Return,
 	Noop,

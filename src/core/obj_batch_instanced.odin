@@ -6,18 +6,14 @@ import rl "vendor:raylib"
 
 // Batch_Instanced_Object: GPU-instanced rendering of a single textured
 // cube mesh, for scenes with too many identical cubes for individual
-// win.cube()/batch() draw calls to keep up (tens of thousands). Ported
-// from glox's obj_builtin_batch_instanced.go.
+// win.cube()/batch() draw calls to keep up (tens of thousands).
 //
 // The instancing shader (src/shaders/instanced/*) is loaded once, lazily,
-// as a process-wide singleton shared by every Batch_Instanced_Object --
-// matching glox's own package-level `shaderInstanced` exactly. Unlike
-// glox, which loads the shader from disk paths relative to the process's
-// working directory (a script-execution-directory dependency), this port
-// embeds the shader source directly into the binary via #load and loads
-// it with rl.LoadShaderFromMemory -- a deliberate improvement, since this
-// is an internal implementation asset, not something a Lox script ever
-// supplies or edits.
+// as a process-wide singleton shared by every Batch_Instanced_Object.
+// The shader source is embedded directly into the binary via #load and
+// loaded with rl.LoadShaderFromMemory rather than read from a disk path
+// at runtime, since it's an internal implementation asset, not something
+// a Lox script ever supplies or edits.
 @(private = "file")
 instanced_vs_src := #load("../shaders/instanced/base_lighting_instanced.vs", string)
 @(private = "file")
@@ -80,10 +76,9 @@ make_batch_instanced_object :: proc(texture: rl.Texture2D, cube_size: f32, max_i
 	return o
 }
 
-// batch_instanced_add mirrors glox's Batch.AddInstance exactly: a fixed
-// capacity set at construction (max_instances), false once full so the
-// caller can raise a runtime error -- no silent growth past the
-// pre-sized transforms array.
+// batch_instanced_add has a fixed capacity set at construction
+// (max_instances), returning false once full so the caller can raise a
+// runtime error -- no silent growth past the pre-sized transforms array.
 batch_instanced_add :: proc(b: ^Batch_Instanced_Object, x, y, z, axis_x, axis_y, axis_z, angle: f64) -> bool {
 	if len(b.entries) >= b.max_instances {
 		return false
@@ -96,9 +91,9 @@ batch_instanced_add :: proc(b: ^Batch_Instanced_Object, x, y, z, axis_x, axis_y,
 }
 
 // batch_instanced_make_transforms recomputes the whole transforms array
-// from the current entries -- a separate, explicit step from add(),
-// matching glox's own two-phase API (add every instance, then call
-// make_transforms() once before the first draw()).
+// from the current entries -- a separate, explicit step from add():
+// scripts add every instance, then call make_transforms() once before
+// the first draw().
 batch_instanced_make_transforms :: proc(b: ^Batch_Instanced_Object) {
 	for i in 0 ..< len(b.entries) {
 		e := b.entries[i]
@@ -115,15 +110,12 @@ batch_instanced_count :: proc(b: ^Batch_Instanced_Object) -> int {
 	return len(b.entries)
 }
 
-// batch_instanced_draw: the camera argument glox's own Lox-facing API
-// requires (`.draw(camera)`) is intentionally not part of this proc's
-// signature -- glox's Draw(camera *CameraObject) never actually reads
-// its camera parameter either (confirmed by reading obj_builtin_batch_
-// instanced.go in full); the MVP raylib uses comes from the active
-// BeginMode3D(camera) call the script already made before drawing. The
-// dispatch layer (vm/gfx_batch_instanced.odin) still validates and
-// requires a camera argument to preserve the same script-facing call
-// shape real scripts use (e.g. lox_examples/cube_stack_fly2.lox).
+// batch_instanced_draw takes no camera argument even though the
+// Lox-facing API is `.draw(camera)`: the MVP raylib uses comes from the
+// active BeginMode3D(camera) call the script already made before
+// drawing, not from an explicit parameter here. The dispatch layer
+// (vm/gfx_batch_instanced.odin) still validates and requires a camera
+// argument, to preserve the script-facing call shape.
 batch_instanced_draw :: proc(b: ^Batch_Instanced_Object) {
 	count := len(b.entries)
 	if count == 0 {

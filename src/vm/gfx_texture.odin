@@ -97,26 +97,17 @@ invoke_builtin_texture :: proc(vm: ^VM, t: ^core.Texture_Object, name: string, a
 
 // invoke_builtin_render_texture: width/height/unload, a mirror of Window's
 // own 2D primitive set (clear/pixel/line/line_ex/triangle/rectangle/circle/
-// circle_fill/text/draw_texture) -- found needed by lox_examples/tile_planes.lox
-// ("frame.line_ex(...)"/"this.texture.clear(...)") and confirmed against
-// several other example scripts (cobweb-bifurc.lox, kaleido.lox,
-// cube_stack_fly2.lox, textured_batch_demo2.lox) that draw directly onto a
-// render_texture the same way, not only via
-// win.begin_texture_mode/end_texture_mode/win.<primitive> (defender's own
-// pattern, still supported separately in gfx_window.odin) -- plus
-// get_texture()/draw_texture_pro() (found needed by kaleido.lox, which
-// re-samples a live-painted canvas into a Texture every frame and blits
-// triangle-masked, blend-moded segments of it via draw_texture_pro), and
-// draw_array_fast() (found needed by julia.lox/mandel_gfx.lox, which each
-// rewrite an entire float_array-computed fractal into a render_texture
-// every frame). Matches glox's own render_texture_methods.go exactly: each
-// drawing call brackets *just that one draw* in its own
-// BeginTextureMode/EndTextureMode, not a persistent mode switch -- unlike
-// Window's own drawing methods, which draw against whatever the current
-// global GL target already is. text() is genuinely narrower than Window's
-// own -- glox's own RenderTexture.text() takes (x, y, string) only, fixed
-// font size 10, hardcoded white, not Window's (string, x, y, size, color) --
-// ported to match that real shape, not Window's.
+// circle_fill/text/draw_texture), letting a script draw directly onto a
+// render_texture the same way it draws onto the window, not only via
+// win.begin_texture_mode/end_texture_mode/win.<primitive> (still supported
+// separately in gfx_window.odin) -- plus get_texture()/draw_texture_pro()
+// and draw_array_fast() for bulk-uploading a computed float_array into a
+// render_texture every frame. Each drawing call here brackets *just that
+// one draw* in its own BeginTextureMode/EndTextureMode, not a persistent
+// mode switch -- unlike Window's own drawing methods, which draw against
+// whatever the current global GL target already is. text() is narrower
+// than Window's own: (x, y, string) only, fixed font size 10, hardcoded
+// white, not Window's (string, x, y, size, color).
 invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
@@ -294,9 +285,8 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case "text":
-		// glox's RenderTexture.text() is narrower than Window's own
-		// text(): (x, y, string) only, fixed font size 10, hardcoded
-		// white -- ported to match that exactly, not Window's
+		// Narrower than Window's own text(): (x, y, string) only, fixed
+		// font size 10, hardcoded white, not Window's
 		// (string, x, y, size, color) shape.
 		if arg_count != 3 {
 			runtime_error(vm, "text() expects 3 arguments (x, y, text).")
@@ -318,11 +308,8 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case "draw_texture":
-		// glox's RenderTexture.draw_texture is narrower than Window's own
-		// (obj_builtin_render_texture.go's render_texture_methods.go): 3
-		// args (texture, x, y), always tinted rl.White, no frame-rect/
-		// animation support at all -- ported to match that exactly, not
-		// Window's own draw_texture.
+		// Narrower than Window's own draw_texture: 3 args (texture, x, y),
+		// always tinted rl.White, no frame-rect/animation support at all.
 		if arg_count != 3 {
 			runtime_error(vm, "draw_texture() expects 3 arguments (texture, x, y).")
 			return false
@@ -345,14 +332,12 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		// A pixel readback (LoadImageFromTexture/UnloadImage, result
 		// discarded) forces the GPU driver to finish any prior writes to
 		// this render texture before the caller starts sampling it
-		// elsewhere -- matches glox's own get_texture() exactly, including
-		// its own doc comment's rationale: the render_texture's own
-		// drawing methods each open and close their own texture-mode
-		// context, so without an explicit sync point here the GPU can
-		// still be mid-flight on those writes when the returned Texture
-		// starts getting drawn from. Found needed by kaleido.lox, which
-		// re-samples a live-painted canvas every frame
-		// (`tex = canvas.get_texture()`).
+		// elsewhere. This render texture's own drawing methods each open
+		// and close their own texture-mode context, so without an
+		// explicit sync point here the GPU can still be mid-flight on
+		// those writes when the returned Texture starts getting drawn
+		// from -- relevant for a script that re-samples a live-painted
+		// canvas into a texture every frame.
 		if arg_count != 0 {
 			runtime_error(vm, "get_texture() takes no arguments.")
 			return false
@@ -399,13 +384,13 @@ invoke_builtin_render_texture :: proc(vm: ^VM, rt: ^core.Render_Texture_Object, 
 		// Bulk-uploads a float_array (each cell a packed-RGB float, same
 		// encoding as gfx.encode_rgba/decode_rgba) as one texture and
 		// blits it in a single draw, instead of one draw call per cell --
-		// found needed by lox_examples/julia.lox, which rewrites its
-		// entire fractal every frame. Reuses rt's own array_texture
-		// across calls (Load only on the first call or a size change;
-		// Update otherwise) rather than loading/unloading a fresh GPU
-		// texture every frame -- see obj_render_texture.odin's header
-		// comment for why that specifically matters here (a driver race,
-		// not just a performance nicety).
+		// useful for a script that rewrites an entire computed image
+		// every frame. Reuses rt's own array_texture across calls (Load
+		// only on the first call or a size change; Update otherwise)
+		// rather than loading/unloading a fresh GPU texture every frame --
+		// see obj_render_texture.odin's header comment for why that
+		// specifically matters here (a driver race, not just a
+		// performance nicety).
 		if arg_count != 1 {
 			runtime_error(vm, "draw_array_fast() expects 1 argument (float_array).")
 			return false

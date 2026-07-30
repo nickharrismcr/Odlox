@@ -3,13 +3,12 @@ package core
 import rl "vendor:raylib"
 
 // Render_Texture_Object wraps a raylib off-screen render target (an
-// FBO). Ported from glox's obj_builtin_render_texture.go, including its
-// persistent array_texture used by draw_array_fast (vm/gfx_texture.odin):
-// recreating (Load/Unload) a texture every frame races with the GPU
-// driver's double-buffered pipeline -- the new texture can reuse an ID
-// still referenced by an in-flight draw from the previous frame,
-// producing stray stale-colour pixels. Updating one long-lived texture
-// in place avoids that, same reasoning as glox's own arrayTexture field.
+// FBO), including a persistent array_texture used by draw_array_fast
+// (vm/gfx_texture.odin): recreating (Load/Unload) a texture every frame
+// races with the GPU driver's double-buffered pipeline -- the new
+// texture can reuse an ID still referenced by an in-flight draw from the
+// previous frame, producing stray stale-colour pixels. Updating one
+// long-lived texture in place avoids that.
 Render_Texture_Object :: struct {
 	using obj:      Obj,
 	width, height:  int,

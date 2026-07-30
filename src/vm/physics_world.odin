@@ -4,12 +4,10 @@ import "../core"
 import "core:math"
 
 // physics_world: the real simulation logic for core.Physics_World_Object
-// (struct defined there -- see its doc comment). Faithful port of
-// glox's obj_builtin_physics_world.go/physics_world_methods.go,
-// including its one known limitation: Physics_Material.friction is
-// stored and combined but never actually applied in resolve()'s
-// collision response. Not fixed here -- see core/obj_physics_world.odin's
-// doc comment on Physics_Material.
+// (struct defined there -- see its doc comment). One known limitation:
+// Physics_Material.friction is stored and combined but never actually
+// applied in resolve()'s collision response -- see
+// core/obj_physics_world.odin's doc comment on Physics_Material.
 
 // rotate_vec rotates v around axis (not required to be unit-length; a
 // near-zero axis is treated as "no rotation") by angle_deg degrees,

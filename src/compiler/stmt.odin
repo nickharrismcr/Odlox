@@ -11,21 +11,14 @@ import "core:fmt"
 // break/continue/return crossing an enclosing `try` correctly *unwind
 // exception handlers* (cross_tries, below -- so frame.handlers never
 // holds a stale entry for a try no longer lexically in scope) AND
-// replay that try's `finally` block on the way out, via the same
-// deferred-trampoline design glox's own docs/exception-handling.md
-// documents in full (read that before touching any of this): `finally`
-// is parsed *last*, so a return/break/continue written inside the try
-// body can't yet know whether cleanup code needs to run first -- it
-// defers into Try_Finally.pending (a Trampoline_Site) instead of
+// replay that try's `finally` block on the way out, via a deferred-
+// trampoline design (see docs/ARCHITECTURE.md's Exceptions section):
+// `finally` is parsed *last*, so a return/break/continue written inside
+// the try body can't yet know whether cleanup code needs to run first --
+// it defers into Try_Finally.pending (a Trampoline_Site) instead of
 // emitting its terminal instruction immediately, and
 // try_except_statement resolves every pending site (compile_pending_
-// trampolines) once it learns whether a finally exists. This was left
-// unimplemented through Phase 4 deliberately (the doc comment here used
-// to say so) since implementing it blind, with no VM yet to validate
-// against, risked a subtly wrong result hard to notice without real test
-// coverage -- the ported test suite's finally_return.lox/
-// finally_break_continue.lox/finally_nested.lox fixtures are exactly
-// that coverage, and drove this implementation.
+// trampolines) once it learns whether a finally exists.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
@@ -143,18 +136,12 @@ expression_statement :: proc(p: ^Parser) {
 print_statement :: proc(p: ^Parser) {
 	expression(p)
 	consume_eol(p, "Expect newline after value.")
-	// Op_Str first, matching glox's own printStatement exactly -- not
-	// just for the generic string conversion (display_string's job in
-	// run.odin's Op_Print handler already covers that on its own) but
-	// because Op_Str is also the toString() dispatch point (see
-	// run.odin's Op_Str case). Missing this meant `print instance`
-	// always showed the generic "<instance ClassName>" form even when
-	// the class defined its own toString() -- found immediately after
-	// wiring toString dispatch up in Op_Str itself: `str(x)` (which
-	// compiles straight to Op_Str, see expr.odin's str_call) picked up
-	// the new dispatch correctly, but `print x` on the exact same
-	// instance still didn't, because it never went through Op_Str at
-	// all before this fix.
+	// Op_Str first: not just for the generic string conversion
+	// (display_string's job in run.odin's Op_Print handler already
+	// covers that on its own) but because Op_Str is also the toString()
+	// dispatch point (see run.odin's Op_Str case) -- so `print instance`
+	// shows a class's own toString() result, not just the generic
+	// "<instance ClassName>" form.
 	emit_op(p, .Str)
 	emit_op(p, .Print)
 }
@@ -230,11 +217,10 @@ implicit_assignment_statement :: proc(p: ^Parser) {
 // "first mention creates a binding rather than emitting a Set_Global
 // against a slot nothing ever Defined" semantics, but ends in `;` rather
 // than an Eol/newline, so it can't call implicit_assignment_statement
-// directly. Real bug, found via break_unbraced.lox: for_statement's own
-// init-clause "else" branch called plain expression(p) unconditionally,
-// which routes `i = 0` through expr.odin's named_variable -- a bare
-// Set_Global with no preceding Define_Global, since global_slot alone
-// doesn't mark a slot defined -- and failed at runtime with "Undefined
+// directly. Routing a bare init-clause assignment through plain
+// expression(p) instead would go through expr.odin's named_variable --
+// a Set_Global with no preceding Define_Global, since global_slot alone
+// doesn't mark a slot defined -- and fail at runtime with "Undefined
 // variable 'i'." on the very first iteration.
 @(private = "file")
 implicit_assignment_core :: proc(p: ^Parser) {
@@ -277,11 +263,9 @@ implicit_assignment_core :: proc(p: ^Parser) {
 		// const check: expr.odin's named_variable (the Pratt-parser path
 		// for `x = 1` used as a sub-expression) already rejects const
 		// locals, but bare `x = 1` as a full statement is dispatched here
-		// instead (see statement()'s .Identifier case) and skipped that
-		// check entirely -- `const a = 5` followed by a statement-level
-		// `a = 6` silently reassigned it (returned 6, no error) until this
-		// fix, since this branch went straight to Set_Local with no
-		// is_const test of its own.
+		// instead (see statement()'s .Identifier case), so this branch
+		// needs its own is_const check to reject `const a = 5` followed
+		// by a statement-level `a = 6`.
 		if c.locals[existing_local].is_const {
 			error(p, fmt.tprintf("Cannot assign to const '%s'.", name))
 		}
@@ -403,8 +387,7 @@ function_declaration :: proc(p: ^Parser) {
 	slot := 0
 	if is_local {
 		// Declared (and marked initialised) *before* the body compiles,
-		// same as glox/clox -- so the function can call itself by name
-		// for recursion.
+		// so the function can call itself by name for recursion.
 		declare_variable(p)
 		mark_initialised(p)
 	} else {
@@ -428,15 +411,13 @@ if_statement :: proc(p: ^Parser) {
 
 	then_jump := emit_jump(p, .Jump_If_False)
 	emit_op(p, .Pop)
-	// statement(p), not a hardcoded block: a braced `{ ... }` body still
-	// goes through statement()'s own .Left_Brace case (identical
-	// begin_scope/block/end_scope to what used to be inlined here), but
-	// this also accepts a bare unbraced single statement -- needed for
-	// `if (cond) break`/`if (n < 2) return n` in the ported test suite,
-	// which previously couldn't even compile (Expect '{' after if
-	// condition). See parse_condition's own doc comment for why the
-	// parens themselves are optional rather than made mandatory to
-	// match glox exactly.
+	// statement(p), not a hardcoded block: a braced `{ ... }` body goes
+	// through statement()'s own .Left_Brace case
+	// (begin_scope/block/end_scope), but this also accepts a bare
+	// unbraced single statement (`if (cond) break`/`if (n < 2) return n`).
+	// See parse_condition's own doc comment for why the parens
+	// themselves are optional.
+	//
 	// The match(p, .Eol) immediately before each statement(p) call below
 	// is load-bearing, not cosmetic: statement()'s own dispatch has a
 	// `case .Semicolon, .Eol: advance(p)` "empty statement" case, so
@@ -444,9 +425,8 @@ if_statement :: proc(p: ^Parser) {
 	// would have that Eol consumed AS the entire then/else body (a
 	// silent no-op), leaving `{ body }` to be parsed afterward as a
 	// completely separate, unconditional statement -- the block would
-	// run regardless of cond, with no compile error. Confirmed by direct
-	// repro: `if (false)\n{ print "x" }` printed "x" anyway before this
-	// fix. Same reasoning applies to while/foreach's body below.
+	// run regardless of cond, with no compile error. Same reasoning
+	// applies to while/foreach's body below.
 	match(p, .Eol)
 	statement(p)
 
@@ -465,16 +445,9 @@ if_statement :: proc(p: ^Parser) {
 }
 
 // parse_condition compiles a control-flow header's condition
-// expression, tolerating an optional wrapping `(...)`. glox's own
-// grammar requires the parens unconditionally (`p.consume(TOKEN_LEFT_PAREN,
-// "Expect '(' after if.")`, no bare form at all) -- this port initially
-// accepted only the bare form, which meant every `if (cond)`/`while (cond)`
-// fixture in the ported test suite failed to compile. Made optional
-// rather than mandatory specifically to stay backward compatible with
-// the bare style this compiler's own test suite (compile_test.odin,
-// vm_test.odin) and every hand-written example already use -- flipping
-// to "mandatory" would have matched glox exactly but broken everything
-// already passing for no real benefit.
+// expression, tolerating an optional wrapping `(...)`: both `if cond`
+// and `if (cond)` are accepted, so the parenthesized C-family style and
+// the bare style can coexist across a codebase.
 @(private = "file")
 parse_condition :: proc(p: ^Parser) {
 	has_paren := match(p, .Left_Paren)
@@ -512,18 +485,13 @@ while_statement :: proc(p: ^Parser) {
 // instead of the condition -- the standard trick that turns "run
 // increment before re-checking condition" into code that reads in
 // natural source order without a special third jump kind.
+//
 // has_paren tracks whether `(` was seen so the matching `)` can be
 // required/consumed at the right spot -- optional, not mandatory (see
-// parse_condition's doc comment for why), which for `for` specifically
-// means the body is *not* extended to accept a bare unbraced statement
-// the way if/while/foreach's bodies now do: without parens, there's no
-// unambiguous way to tell where an omittable increment clause ends and
-// an unbraced body begins (glox's own grammar sidesteps this by making
-// the parens -- and therefore the closing `)` as an unambiguous
-// delimiter -- mandatory). No fixture in the ported test suite needs
-// an unbraced `for` body, so this keeps the existing brace-required
-// body exactly as it was and only adds the optional paren wrapping
-// around the header.
+// parse_condition's doc comment). Unlike if/while/foreach, the body
+// here is always a braced block, never a bare unbraced statement:
+// without mandatory parens there would be no unambiguous way to tell
+// where an omittable increment clause ends and an unbraced body begins.
 for_statement :: proc(p: ^Parser) {
 	begin_scope(p) // owns the init-variable's scope, if any
 
@@ -584,10 +552,7 @@ for_statement :: proc(p: ^Parser) {
 		consume(p, .Right_Paren, "Expect ')' after for clauses.")
 	}
 	// `for (...)\n{` -- same Eol-before-brace tolerance as if/while/foreach
-	// and every clause boundary in try/except/finally. Found via
-	// closure_list.lox, which places the body's `{` on the line after a
-	// parenthesized for-header; this proc's own doc comment previously
-	// (wrongly) claimed no fixture in the suite needed this.
+	// and every clause boundary in try/except/finally.
 	match(p, .Eol)
 	consume(p, .Left_Brace, "Expect '{' before for body.")
 	begin_scope(p)
@@ -609,32 +574,27 @@ for_statement :: proc(p: ^Parser) {
 
 // foreach_statement: `foreach [(]  [var]  x in iterable  [)]  body`. The
 // parens and the `var` keyword are both optional (see parse_condition's
-// doc comment on if_statement for why odlox makes glox's mandatory
-// parens optional instead); body goes through statement(p) so both a
-// `{ block }` and a bare single statement work. Reserves two hidden
+// doc comment on if_statement); body goes through statement(p) so both
+// a `{ block }` and a bare single statement work. Reserves two hidden
 // locals -- the visible loop variable and `__iter`, which holds the
 // iterable/iterator across iterations -- then emits the Foreach/Next/
 // End_Foreach trio. See core/chunk.odin's Op_Code doc comment and the
-// operand-layout notes inline below; both this compiler and the VM
-// that reads this bytecode (Phase 4) are implemented by this port, so
-// the exact encoding is this port's own choice as long as it's
-// internally consistent, which these two emission sites (here and
-// Phase 4's foreach handler) need to agree on.
+// operand-layout notes inline below; this bytecode's exact encoding is
+// an internal contract between the compiler (here) and the VM's own
+// foreach handler, which must agree on it.
 foreach_statement :: proc(p: ^Parser) {
 	begin_scope(p)
 	has_paren := match(p, .Left_Paren)
-	match(p, .Var) // `foreach (var x in y)` -- optional, same as glox's own p.match(TOKEN_VAR)
+	match(p, .Var) // `foreach (var x in y)` -- the `var` keyword is optional
 	consume(p, .Identifier, "Expect loop variable name.")
 	// A local's compile-time slot must correspond to an actual runtime
 	// stack push (see add_local/finish_declare elsewhere) -- but the
 	// loop variable has no initializer expression of its own (Op_Foreach/
-	// Op_Next fill it in directly, every iteration); without this
+	// Op_Next fill it in directly, every iteration). Without this
 	// explicit Nil push, its slot would silently alias whatever
 	// `expression(p)` (the iterable, below) pushes instead, and __iter's
 	// own slot would end up one past the end of anything actually
-	// written -- reading uninitialised stack garbage at runtime. Found
-	// the hard way: this exact bug crashed every real foreach loop
-	// during Phase 4's first end-to-end test run.
+	// written -- reading uninitialised stack garbage at runtime.
 	emit_op(p, .Nil)
 	add_local(p, p.previous)
 	mark_initialised(p)
@@ -721,7 +681,7 @@ pop_loop :: proc(p: ^Parser) {
 break_statement :: proc(p: ^Parser) {
 	loop := p.current_compiler.loop
 	if loop == nil {
-		error(p, "Cannot use break outside loop.") // matches glox's own wording (compile.go)
+		error(p, "Cannot use break outside loop.")
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
@@ -732,7 +692,7 @@ break_statement :: proc(p: ^Parser) {
 continue_statement :: proc(p: ^Parser) {
 	loop := p.current_compiler.loop
 	if loop == nil {
-		error(p, "Cannot use continue outside loop.") // matches glox's own wording (compile.go)
+		error(p, "Cannot use continue outside loop.")
 		return
 	}
 	pop_locals_above(p, loop.scope_depth)
@@ -754,11 +714,9 @@ return_statement :: proc(p: ^Parser) {
 	// as a one-line block's last statement (`func g() { return }`, no `;`
 	// separating it from the `}`) has nothing after it but the block's
 	// own closing brace, which consume_eol below already treats as an
-	// implied terminator (matching glox's checkStatementEnd exactly);
-	// this check just needed to agree with it. Without Right_Brace here,
-	// this fell into the "has a value" branch below and tried to parse
-	// `}` as the start of an expression -- "Expect expression." -- found
-	// via oneline_blocks.lox.
+	// implied terminator; this check needs to agree with it, or `}`
+	// would fall into the "has a value" branch and be parsed (and fail)
+	// as the start of an expression.
 	if check(p, .Eol) || check(p, .Eof) || check(p, .Semicolon) || check(p, .Right_Brace) {
 		if p.current_compiler.type == .Initializer {
 			emit_op_byte(p, .Get_Local, 0) // implicit `return this`
@@ -779,9 +737,7 @@ return_statement :: proc(p: ^Parser) {
 	// Op_End_Try needed here the way break/continue's cross_tries emits
 	// one per crossing: Op_Return already tears down the whole frame
 	// (see run.odin), which discards frame.handlers wholesale -- popping
-	// them one at a time first would be redundant, not incorrect, but
-	// glox's own returnStatement (compile.go) skips it for exactly this
-	// reason and this port matches that.
+	// them one at a time first would be redundant, not incorrect.
 	chain: [dynamic]^Try_Finally
 	for t := p.current_compiler.tries; t != nil; t = t.previous {
 		append(&chain, t)
@@ -992,15 +948,14 @@ compile_pending_trampolines :: proc(p: ^Parser, try_ctx: ^Try_Finally) {
 // -----------------------------------------------------------------------
 // try / except / finally
 //
-// Bytecode shape and the two invariants that matter most (End_Except
-// must be immediately followed by the next clause's Except/Finally;
-// Try's operand is patched exactly once, to the first clause) are
-// documented in full in glox's docs/exception-handling.md -- read that
-// before changing this code. Summary of what's below: `finally`'s
-// source is compiled twice via snapshot/restore (see parser.odin) --
-// once right after Op_Finally (the always-matching handler, followed by
-// Op_Raise to propagate whatever wasn't otherwise handled) and once at
-// the shared normal-completion landing point every non-exceptional exit
+// Bytecode shape and invariants: End_Except must be immediately
+// followed by the next clause's Except/Finally, and Try's operand is
+// patched exactly once, to the first clause (see docs/ARCHITECTURE.md's
+// Exceptions section for the full picture). `finally`'s source is
+// compiled twice via snapshot/restore (see parser.odin) -- once right
+// after Op_Finally (the always-matching handler, followed by Op_Raise
+// to propagate whatever wasn't otherwise handled) and once at the
+// shared normal-completion landing point every non-exceptional exit
 // (End_Try, each clause's own fallthrough) jumps to.
 
 try_except_statement :: proc(p: ^Parser) {
@@ -1023,22 +978,13 @@ try_except_statement :: proc(p: ^Parser) {
 	clause_exit_jumps: [dynamic]int
 	saw_except := false
 
-	// Real bug, found via the ported test suite's own finally_bare_ns.lox
-	// (`}` and `finally`/`except` on separate lines -- a real, common
-	// style, and byte-identical to finally_bare.lox otherwise): block()
-	// leaves the parser positioned right after the try body's `}`, and
-	// unlike inside a class body (stmt.odin's class_declaration has its
-	// own explicit "Eol between two methods" branch for exactly this
-	// reason) or a function's `)`/`{` gap (functions.odin's compile_function_body),
-	// nothing here tolerated an Eol sitting between that `}` and the
-	// `except`/`finally` keyword that's supposed to follow it -- the
-	// scanner keeps that Eol (Right_Brace isn't in keep_eol's suppress
-	// set), so `check(p, .Except)`/`check(p, .Finally)` saw an Eol
-	// instead and this whole try/except/finally construct failed to
-	// parse. Skipped consistently at every point a clause boundary is
-	// checked, not just the first: between the try body and the first
-	// except clause, between successive except clauses, and before the
-	// finally check.
+	// block() leaves the parser positioned right after the try body's
+	// `}`, and an Eol commonly sits between that `}` and the following
+	// `except`/`finally` keyword (the scanner keeps it -- Right_Brace
+	// isn't in keep_eol's suppress set). Skipped consistently at every
+	// point a clause boundary is checked, not just the first: between
+	// the try body and the first except clause, between successive
+	// except clauses, and before the finally check.
 	match(p, .Eol)
 	for check(p, .Except) {
 		saw_except = true
@@ -1047,13 +993,12 @@ try_except_statement :: proc(p: ^Parser) {
 		type_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
 		emit_op(p, .Except)
 		emit_byte(p, type_const)
-		// Except's own 2-byte skip offset -- a deliberate improvement
-		// over glox's byte-pattern scan for "the next clause" (see
-		// vm/exceptions.odin's header comment for why that's fragile
-		// once a clause body can itself contain a nested try): this
-		// port's Op_Except is self-describing, so the VM never has to
-		// scan bytecode looking for End_Except at all. Patched below,
-		// after the clause body, exactly like any other jump.
+		// Except's own 2-byte skip offset makes Op_Except self-describing,
+		// so the VM never has to scan bytecode looking for the next
+		// clause boundary (which would be fragile once a clause body can
+		// itself contain a nested try) -- see vm/exceptions.odin's header
+		// comment. Patched below, after the clause body, exactly like
+		// any other jump.
 		skip_jump := len(current_chunk(p).code)
 		emit_byte(p, 0xff)
 		emit_byte(p, 0xff)
@@ -1065,12 +1010,8 @@ try_except_statement :: proc(p: ^Parser) {
 			mark_initialised(p)
 		}
 		// Same Eol-tolerance-before-brace need as functions.odin's
-		// compile_function_body: `except Exception as e\n{` (found in
-		// the same fixture as the try-body-to-clause gap fixed above) --
-		// found once porting the .lox standard library kept turning up
-		// this exact class of gap, spot by spot, wherever this compiler
-		// requires a `{` immediately after something with no tolerance
-		// for it landing on the next line instead.
+		// compile_function_body: `except Exception as e\n{` must parse
+		// the same as the same-line form.
 		match(p, .Eol)
 		consume(p, .Left_Brace, "Expect '{' after except clause.")
 		block(p)
@@ -1182,22 +1123,15 @@ class_declaration :: proc(p: ^Parser) {
 		}
 		method(p)
 		// Unlike declaration() at the top level (see this file's
-		// declaration() proc), this loop had no panic_mode check of
-		// its own -- a malformed method whose error path leaves
-		// panic_mode set without consuming a token (e.g. consume()
-		// failing on `.Left_Brace` for a method body) meant this
-		// loop's condition (still not Right_Brace/Eof) stayed true
-		// forever and called method() again on the exact same token,
-		// looping without ever making progress. Found via a genuinely
-		// hung `odlox` process (not a wrong compile) on a method
-		// declared with its `{` on the following line -- reproduces
-		// with any malformed method, same root cause as the
-		// already-fixed "Eol between methods" bug above: an error
-		// path inside method() that returns without the token
-		// advancing. synchronize() is the same recovery declaration()
-		// already uses; safe to reuse here since it always advances
-		// at least one token before returning, so it can't loop
-		// forever either.
+		// declaration() proc), this loop needs its own panic_mode
+		// check: a malformed method whose error path leaves panic_mode
+		// set without consuming a token (e.g. consume() failing on
+		// `.Left_Brace` for a method body) would otherwise leave this
+		// loop's condition (still not Right_Brace/Eof) true forever,
+		// calling method() again on the exact same token with no
+		// progress. synchronize() is the same recovery declaration()
+		// uses; safe to reuse here since it always advances at least
+		// one token before returning, so it can't loop forever either.
 		if p.panic_mode {
 			synchronize(p)
 		}
@@ -1265,9 +1199,9 @@ import_statement :: proc(p: ^Parser) {
 		emit_op_byte(p, .Import, module_const)
 		emit_byte(p, alias_const)
 
-		// Op_Import defines the alias's global itself at runtime (Phase
-		// 4); the compiler only needs the slot to exist so later code
-		// in this compilation unit (and, for the REPL, later lines) can
+		// Op_Import defines the alias's global itself at runtime; the
+		// compiler only needs the slot to exist so later code in this
+		// compilation unit (and, for the REPL, later lines) can
 		// resolve the name.
 		global_slot(p, alias)
 		mark_global_declared(p, alias)

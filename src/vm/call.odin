@@ -49,12 +49,10 @@ call_value :: proc(vm: ^VM, callee: core.Value, arg_count: int) -> bool {
 }
 
 // call is where arity/default/variadic argument shaping actually
-// happens -- see docs/plans/default-variadic-params.md in the glox
-// reference repo for the design this ports. Pads any omitted optional
-// parameters with Value.Undefined (which the callee's own
-// Op_Jump_If_Defined prologue, emitted by functions.odin, checks for)
-// and collects surplus positional arguments into a fresh list for a
-// trailing `*rest` parameter.
+// happens. Pads any omitted optional parameters with Value.Undefined
+// (which the callee's own Op_Jump_If_Defined prologue, emitted by
+// functions.odin, checks for) and collects surplus positional arguments
+// into a fresh list for a trailing `*rest` parameter.
 call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 	fn := closure.function
 	fixed_count := fn.arity
@@ -120,7 +118,7 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 
 // invoke: Op_Invoke's fast path. A field holding a callable shadows a
 // method of the same name (`this.fn(x)` calls the field value, not a
-// method called `fn`) -- checked first for instances, matching glox.
+// method called `fn`) -- checked first for instances.
 // name is an already-interned ^core.String_Object throughout this file
 // (see properties.odin's get_property doc comment for why) -- the
 // String/List/Dict/Float_Array/Regex/Process builtin dispatch procs
@@ -196,13 +194,10 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;
 		// whatever the module's top-level code exported, for an
-		// imported *.lox file). Found missing via the first real
-		// smoke test of any built-in module function (`sys.clock()`):
-		// `.name(args)` always compiles through Op_Invoke (see
-		// expr.odin's dot), never a separate Get_Property+Call, so
-		// without this case every built-in module call fell through
-		// to "Undefined method" regardless of whether the member
-		// existed.
+		// imported *.lox file). `.name(args)` always compiles through
+		// Op_Invoke (see expr.odin's dot), never a separate
+		// Get_Property+Call, so this case is required for any built-in
+		// module call to resolve at all.
 		mod := core.as_module(receiver)
 		fn, found := core.env_get_var(mod.environment, name)
 		if !found {
@@ -216,32 +211,29 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 	return false
 }
 
-// invoke_vector_method mirrors glox's own VectorMethodCall (vm.go): the
-// only method glox itself gives a vec2/3/4 is `.add(other)` -- in-place
-// addition with an argument of the *same* vec type, mutating the
-// receiver and leaving it on the stack as its own return value (popping
-// just the argument(s), matching the receiver+args -> single-return-value
-// convention every other Invoke path follows).
+// invoke_vector_method implements the small method surface a vec2/3/4
+// value has: `.add(other)` is in-place addition with an argument of the
+// *same* vec type, mutating the receiver and leaving it on the stack as
+// its own return value (popping just the argument(s), matching the
+// receiver+args -> single-return-value convention every other Invoke
+// path follows). `.set(x, y[, z[, w]])` updates an existing vector's
+// components in place (`this.lastp.set(this.pos.x, this.pos.y)`)
+// instead of allocating a fresh `vec2(...)`/etc. every time, the same
+// low-allocation idiom `.add()` already enables for accumulation.
 //
-// `.set(x, y[, z[, w]])` below is an odlox-only addition, not a glox
-// port -- glox has no equivalent. Added so a script can update an
-// existing vector's components in place (`this.lastp.set(this.pos.x,
-// this.pos.y)`) instead of allocating a fresh `vec2(...)`/etc. every
-// time, the same low-allocation idiom `.add()` already enables for
-// accumulation. Deliberately dispatched through this exact same runtime
-// type-checked path rather than a dedicated opcode: Lox has no static
-// types, so nothing at compile time can tell `expr.set(...)` apart from
-// a call to some unrelated user-defined class's own `set` method --
-// only checking the receiver's actual runtime type (as this whole
-// function already does for `.add()`) can, which is exactly what
-// Op_Invoke's existing dispatch in `invoke()` above already provides.
+// Both are dispatched through this runtime type-checked path rather
+// than a dedicated opcode: Lox has no static types, so nothing at
+// compile time can tell `expr.set(...)` apart from a call to some
+// unrelated user-defined class's own `set` method -- only checking the
+// receiver's actual runtime type (as this whole function does) can,
+// which is exactly what Op_Invoke's existing dispatch in `invoke()`
+// above already provides.
 //
 // Anything else -- wrong arg count, a mismatched vec type on `.add()`,
 // a non-numeric argument to `.set()`, or any other method name -- is
-// "Invalid use of '.' operator", matching glox's own fallback error
-// exactly. `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/`.a` on Vec4) are a
-// separate, already-implemented Get/Set_Property fast path
-// (properties.odin) -- not method calls, so not handled here.
+// "Invalid use of '.' operator". `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/
+// `.a` on Vec4) are a separate, already-implemented Get/Set_Property
+// fast path (properties.odin) -- not method calls, so not handled here.
 @(private = "file")
 invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_count: int) -> bool {
 	if name == "add" && arg_count == 1 {
@@ -393,9 +385,9 @@ collapse_call :: proc(vm: ^VM, arg_count: int, result: core.Value) {
 
 // -----------------------------------------------------------------------
 // Built-in list/dict/string methods -- the small, VM-primitive subset
-// wired up now (Phase 4) using the pure-data procs Phase 2 already
-// wrote (core.list_append etc.); the fuller method surface (raylib
-// natives, sys/os/regexp/pickle modules) is Phase 6's job.
+// built on the pure-data procs in core (core.list_append etc.). The
+// fuller method surface (raylib natives, sys/os/regexp/pickle modules)
+// lives elsewhere -- see natives/.
 
 @(private = "file")
 invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_count: int) -> bool {
@@ -450,11 +442,9 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 	return true
 }
 
-// invoke_builtin_float_array ports glox's own farray_methods.go
-// (RegisterAllFloatArrayMethods) exactly -- get/set/clear/width/height,
-// same argument order -- except an out-of-range get/set is a proper Lox
-// runtime error here (core.float_array_get/set's own ok bool) rather
-// than glox's native Go panic (obj_builtin_farray.go's FloatArray.Get/Set).
+// invoke_builtin_float_array implements get/set/clear/width/height.
+// An out-of-range get/set is a proper Lox runtime error (via
+// core.float_array_get/set's own ok bool), not a crash.
 @(private = "file")
 invoke_builtin_float_array :: proc(vm: ^VM, f: ^core.Float_Array_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
@@ -571,14 +561,8 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 invoke_builtin_string :: proc(vm: ^VM, s: ^core.String_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
-	// "length" isn't one of glox's real string methods (glox strings
-	// only have replace/join -- string length goes through the free
-	// `len(s)` function instead, see builtins.odin's len_builtin) --
-	// kept anyway as a harmless, documented superset addition from
-	// Phase 4 rather than removed as part of this phase's "match
-	// glox's real method tables" pass, since nothing in the ported
-	// test suite depends on its absence and it's a reasonable
-	// convenience.
+	// "length" is a convenience alongside the free `len(s)` function
+	// (see builtins.odin's len_builtin), which also works on strings.
 	case "length":
 		if arg_count != 0 {
 			runtime_error(vm, "length takes no arguments.")

@@ -2,16 +2,14 @@ package core
 
 // Class_Object. `methods`/`static_methods`/`statics` are keyed by the
 // canonical `^String_Object` for the member's name (see obj_string.odin)
-// -- a direct map lookup, same shape as glox's `map[int]Value` keyed by
-// interned name id, just keyed by the pointer itself instead of a
-// separate id.
+// -- a direct map lookup keyed by the interned pointer itself, with no
+// separate name-id indirection.
 //
-// Unlike glox's experimental GC (which deliberately never sweeps classes
-// -- see docs/ARCHITECTURE.md's Garbage collector section on why that
-// exemption existed and why this port drops it), a Class_Object here is
-// an ordinary sweepable Obj with no side-registry keeping it artificially
-// alive; only genuine reachability (a global slot, a closure's captured
-// class reference, an instance's `.class` field, etc.) keeps it around.
+// A Class_Object is an ordinary sweepable Obj with no side-registry
+// keeping it artificially alive; only genuine reachability (a global
+// slot, a closure's captured class reference, an instance's `.class`
+// field, etc.) keeps it around -- see docs/ARCHITECTURE.md's Garbage
+// collector section.
 Class_Object :: struct {
 	using obj:      Obj,
 	name:           ^String_Object,

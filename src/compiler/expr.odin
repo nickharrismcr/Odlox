@@ -105,7 +105,7 @@ unary :: proc(p: ^Parser, can_assign: bool) {
 // The compiler can't know an operand's runtime type, so `+`/`++` pick
 // *which* opcode to emit (Add_Numeric vs. Add_Vector) rather than
 // deciding the actual arithmetic -- each opcode does its own runtime
-// type check/dispatch (Phase 4). `<=`/`>=` have no opcode of their own;
+// type check/dispatch. `<=`/`>=` have no opcode of their own;
 // they compile as the flipped strict comparison plus Not, exactly like
 // `!=` compiles as Equal+Not.
 binary :: proc(p: ^Parser, can_assign: bool) {
@@ -198,14 +198,11 @@ variable :: proc(p: ^Parser, can_assign: bool) {
 // otherwise it's a read.
 named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
 	// name's own lexeme is captured up front, not re-derived from `name`
-	// later in this proc: name is a Token value that (empirically, in
-	// this compiler's build) does not stay stable across a subsequent
-	// advance(p) call in the same frame -- the compound-assignment
-	// branch below saw name.type flip from Identifier to Plus_Equal
-	// after its own advance(p) despite name being passed by value, which
-	// meant the "Cannot assign to const 'a'" message came out as
-	// "Cannot assign to const '+='" instead. Grabbing the string once,
-	// immediately, sidesteps whatever is going on there.
+	// later in this proc: the compound-assignment branch below calls
+	// advance(p), which mutates p.current/p.previous and must not be
+	// allowed to affect the token this function is still working from --
+	// re-deriving the lexeme after that advance(p) would read the wrong
+	// token (e.g. `+=` instead of the variable name) in an error message.
 	name_lexeme := lexeme(name)
 	arg, get_op, set_op := resolve_variable(p, name)
 	is_const_local := get_op == .Get_Local && p.current_compiler.locals[arg].is_const
@@ -376,8 +373,7 @@ dot :: proc(p: ^Parser, can_assign: bool) {
 // -----------------------------------------------------------------------
 // Indexing & slicing
 //
-// Stack convention (this port's own choice, since both compiler and VM
-// are implemented here): the indexed/sliced object is already on the
+// Stack convention: the indexed/sliced object is already on the
 // stack (its own expression compiled before subscript() ever runs, as
 // the infix operator's left operand); subscript then pushes start
 // (Nil if the bound before `:` was omitted) and, for a slice, end
@@ -447,7 +443,7 @@ list_literal :: proc(p: ^Parser, can_assign: bool) {
 
 // dict_literal emits key-expr, value-expr pairs -- keys are ordinary
 // expressions at compile time; whether a given key Value is usable
-// (i.e. a string) is a runtime check (Phase 4's Op_Code.Create_Dict
+// (i.e. a string) is a runtime check (the Op_Code.Create_Dict
 // handler), same as core.Dict_Object requiring string keys.
 dict_literal :: proc(p: ^Parser, can_assign: bool) {
 	count := 0

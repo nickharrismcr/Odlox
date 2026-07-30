@@ -5,7 +5,7 @@ import "core:strings"
 // Function_Object is the compiled form of a `func` declaration or lambda
 // -- one per compile-time function, stored as a Chunk constant and
 // wrapped in a Closure_Object at runtime by OP_CLOSURE (see the compiler
-// and vm packages, Phases 3-4). `min_arity`/`is_variadic` back default
+// and vm packages). `min_arity`/`is_variadic` back default
 // and variadic parameters: `min_arity` is the fewest args a caller must
 // supply (fixed params with no default), `arity` counts every named
 // parameter slot including a trailing `*rest`, and `is_variadic` marks

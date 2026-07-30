@@ -6,19 +6,14 @@ import "core:math/rand"
 import "core:strconv"
 import "core:strings"
 
-// Port of glox's src/vm/builtin.go's core (non-raylib) registrations --
-// the free functions and the sys/os module functions. glox's own split
-// (src/vm/builtin.go for core, src/builtin/*.go for the much larger
-// raylib-backed surface) maps onto this port's package layout exactly:
-// core builtins live directly in `vm` (this file plus builtins_math.odin/
-// builtins_sys.odin/builtins_os.odin), and the raylib-backed equivalent
-// of glox's src/builtin becomes odlox's `natives` package -- not created
-// yet, since there's nothing to put in it until that sub-phase.
+// Registers the core (non-raylib) builtins: the free functions defined
+// in this file, plus the sys/os module functions in builtins_math.odin/
+// builtins_sys.odin/builtins_os.odin. The much larger raylib-backed
+// builtin surface lives in the separate `natives` package instead.
 //
 // define_builtins is an explicit, separate step from new_vm (see
 // vm.odin's doc comment) -- a caller can construct a VM and skip this
-// entirely, same as glox's own `defineBuiltins` being optional
-// (`-s`/`--skip-builtins`).
+// entirely.
 
 // native_vm is the one place a Builtin_Fn's raw `vm: rawptr` parameter
 // gets cast back to a concrete `^VM` -- see obj_native.odin's doc
@@ -62,17 +57,16 @@ define_builtins :: proc(vm: ^VM) {
 // names are builtins, so a bare call to a builtin free function
 // compiles to an ordinary Op_Get_Global on a slot nothing has called
 // Define_Global for. Op_Get_Global has no map-fallback path of its
-// own (by design -- see run.odin, a direct slice index is the whole
-// point of slot-indexed globals over glox's earlier map-backed one) --
-// mirrors glox's own initGlobals: after every compile, walk the
-// slots this compilation unit's top-level chunk actually names
-// (fn.chunk.global_names is only populated there -- see chunk.odin)
-// and seed any still-undefined slot whose name matches a registered
-// builtin or built-in module. "Still-undefined" matters for the REPL
-// (and for module re-imports) exactly as it does in glox: a slot the
-// script has already assigned into must never be clobbered back to
-// the builtin, or a user global that happens to shadow a builtin name
-// would silently revert on the next line.
+// own (see run.odin and docs/ARCHITECTURE.md's notes on slot-indexed
+// globals) -- so after every compile, this walks the slots the
+// compilation unit's top-level chunk actually names (fn.chunk.
+// global_names is only populated there -- see chunk.odin) and seeds
+// any still-undefined slot whose name matches a registered builtin or
+// built-in module. "Still-undefined" matters for the REPL and for
+// module re-imports: a slot the script has already assigned into must
+// never be clobbered back to the builtin, or a user global that
+// happens to shadow a builtin name would silently revert on the next
+// line.
 seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 	for name, slot in fn.chunk.global_names {
 		if slot < len(vm.environment.defined) && vm.environment.defined[slot] {
@@ -92,10 +86,10 @@ seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 	}
 }
 
-// Package-public (not private) -- the natives package (Phase 6b+)
-// creates its own built-in modules (gfx, colour_utils, physics, ...)
-// through this exact same mechanism, same reasoning as define_builtin's
-// own doc comment just below.
+// Package-public (not private) -- the natives package creates its own
+// built-in modules (gfx, colour_utils, physics, ...) through this exact
+// same mechanism, same reasoning as define_builtin's own doc comment
+// just below.
 make_builtin_module :: proc(vm: ^VM, name: string) {
 	env := core.make_environment(name)
 	mod := core.make_module_object(name, env)
@@ -104,9 +98,9 @@ make_builtin_module :: proc(vm: ^VM, name: string) {
 
 // define_builtin registers fn as name, either globally (module == "")
 // or as a member of an already-created built-in module. Package-public
-// (not file- or package-private) since the natives package (Phase 6b+)
-// registers its own native functions through this exact same mechanism --
-// see docs/ARCHITECTURE.md's Native/builtin functions section for why
+// (not file- or package-private) since the natives package registers
+// its own native functions through this exact same mechanism -- see
+// docs/ARCHITECTURE.md's Native/builtin functions section for why
 // natives imports vm directly rather than through an abstract interface.
 define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_Fn) {
 	native := core.make_native_object(fn)
@@ -120,7 +114,7 @@ define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_F
 }
 
 // -----------------------------------------------------------------------
-// Core free functions (glox's builtin.core_functions.go)
+// Core free functions
 
 @(private = "file")
 type_name :: proc(v: core.Value) -> string {
@@ -161,39 +155,13 @@ type_name :: proc(v: core.Value) -> string {
 			return "module"
 		case .File:
 			return "file"
-		case .Float_Array:
-			// Matches glox's own type() exactly: FloatArrayObject.GetType()
-			// (obj_builtin_farray.go) deliberately returns OBJECT_NATIVE,
-			// not a dedicated float-array kind, so glox's type() reports
-			// "builtin" for it too -- not a claim that it literally *is* a
-			// bare native function, just glox's own established behavior
-			// this port matches rather than "corrects".
-			return "builtin"
-		case .Regex_Pattern, .Regex_Match:
-			// Matches glox's own type() exactly -- RegexPatternObject/
-			// RegexMatchObject.GetType() (obj_builtin_regex_*.go) both
-			// deliberately return OBJECT_NATIVE, same reasoning as
-			// Float_Array above.
-			return "builtin"
-		case .Process:
-			// Matches glox's own type() exactly -- ProcessObject.GetType()
-			// (obj_builtin_process.go) also returns OBJECT_NATIVE.
-			return "builtin"
-		case .Physics_World:
-			// Matches glox's own type() exactly -- PhysicsWorldObject.GetType()
-			// (obj_builtin_physics_world.go) also returns OBJECT_NATIVE.
-			return "builtin"
-		case .Window:
-			// Matches glox's own type() exactly -- WindowObject.GetType()
-			// (obj_builtin_window.go) also returns OBJECT_NATIVE.
-			return "builtin"
-		case .Image, .Texture, .Render_Texture, .Shader, .Camera, .Batch, .Batch_Instanced:
-			// Matches glox's own type() exactly -- ImageObject/TextureObject/
-			// RenderTextureObject/ShaderObject/CameraObject/BatchObject.GetType()
-			// (obj_builtin_image.go, obj_builtin_texture.go,
-			// obj_builtin_render_texture.go, obj_builtin_shader.go,
-			// obj_builtin_camera.go, obj_builtin_batch.go) all return
-			// OBJECT_NATIVE.
+		case .Float_Array, .Regex_Pattern, .Regex_Match, .Process, .Physics_World, .Window,
+		     .Image, .Texture, .Render_Texture, .Shader, .Camera, .Batch, .Batch_Instanced:
+			// These object kinds are all implemented as native objects
+			// under the hood, so type() reports them as "builtin" rather
+			// than a dedicated per-kind name -- consistent behavior across
+			// every native-backed object kind, not a claim that any of them
+			// literally is a bare native function.
 			return "builtin"
 		}
 	}
@@ -329,13 +297,12 @@ replace_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.V
 	return core.string_replace(core.as_string(target), core.as_string(from), core.as_string(to))
 }
 
-// format ports glox's FormatBuiltIn (Go's fmt.Sprintf over converted
-// Lox values). Odin's core:fmt verbs are otherwise a close match for
-// Go's, with one default that differs enough to break the exact
-// expected output the ported test suite checks: a bare `%f` with no
-// explicit precision is 3 decimal places in Odin vs. Go's 6 -- see
-// rewrite_bare_percent_f below for the (deliberately narrow, not a
-// general printf reimplementation) fix.
+// format() runs a printf-style template through core:fmt.aprintf over
+// converted Lox values. core:fmt's own default for a bare `%f` (no
+// explicit precision) is 3 decimal places; rewrite_bare_percent_f below
+// rewrites any bare `%f` to `%.6f` first so format()'s output uses the
+// more common printf convention of 6 decimal places by default. This is
+// a deliberately narrow rewrite, not a general printf reimplementation.
 @(private = "file")
 format_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	vm := native_vm(vm_ptr)
@@ -352,11 +319,11 @@ format_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Va
 	defer delete(template)
 
 	// `any` only ever stores a pointer to its underlying value, never a
-	// copy -- boxing each converted value on the heap (freed below,
-	// once aprintf has consumed them) instead of returning `any` from
-	// a helper proc, which would silently wrap the address of that
-	// proc's own temporary and dangle the moment it returned. Found by
-	// an actual segfault on the very first `format(...)` smoke test.
+	// copy, so each converted value is boxed on the heap (freed below,
+	// once aprintf has consumed them) rather than returned as `any`
+	// from a helper proc -- a helper's return value would wrap the
+	// address of that proc's own temporary and dangle the moment it
+	// returned.
 	args := make([dynamic]any, 0, argc - 1)
 	defer delete(args)
 	boxes := make([dynamic]rawptr, 0, argc - 1)

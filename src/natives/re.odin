@@ -3,14 +3,13 @@ package natives
 import "../core"
 import "../vm"
 
-// re: regular expressions, ported from glox's src/builtin/regexp_functions.go
-// (itself built on Go's regexp/RE2) -- this port builds on Odin's own
-// core:text/regex engine instead. See vm/regex.odin for the actual
-// engine (pattern preprocessing for named groups, search/match/
-// fullmatch/sub/subn/split/findall, and the Pattern/Match objects'
-// own method dispatch) -- this file is just the module-level free
-// functions, each compiling its pattern argument fresh and delegating
-// to the same vm-package helpers a compiled Pattern's own methods use.
+// re: regular expressions, built on Odin's core:text/regex engine. See
+// vm/regex.odin for the actual engine (pattern preprocessing for named
+// groups, search/match/fullmatch/sub/subn/split/findall, and the
+// Pattern/Match objects' own method dispatch) -- this file is just the
+// module-level free functions, each compiling its pattern argument
+// fresh and delegating to the same vm-package helpers a compiled
+// Pattern's own methods use.
 
 @(private)
 register_re :: proc(v: ^vm.VM) {

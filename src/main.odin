@@ -1,9 +1,8 @@
 package main
 
 // CLI entry point: file execution, REPL, the standalone `--print-tokens`
-// scanner smoke test kept from Phase 1, and Phase 5's debug-tooling
-// flags (--compile-only, --disassemble, --info, --debug, --instrument,
-// --no-peephole).
+// scanner smoke test, and debug-tooling flags (--compile-only,
+// --disassemble, --info, --debug, --instrument, --no-peephole).
 
 import "core:bufio"
 import "core:fmt"
@@ -65,33 +64,22 @@ main :: proc() {
 		case "--no-peephole":
 			compiler.DebugSkipPeephole = true
 		case "--force-compile":
-			// Real bug, found via the ported pytest suite's own
-			// lox_helper.py, which calls every fixture twice, once with
-			// this flag: before this case existed, "--force-compile"
-			// fell into the `case:` branch below same as any real file
-			// path would, so *it* became file_path (the very next arg,
-			// the real path, then landed in script_args instead --
-			// "everything after the script path is passed through
-			// verbatim", per this loop's own comment above, and once
-			// file_path is set to anything, nothing overwrites it
-			// again). Every force_compile=True test invocation failed
-			// to even find its own script. Mirrors glox's own -f/
-			// --force-compile: bypasses the bytecode cache's read for
-			// imported modules (see docs/plans/bytecode-cache.md) --
-			// never affects the entry script, which never consults the
-			// cache at all.
+			// Must be handled as an explicit case here: this loop treats
+			// the first unrecognized argument as file_path, and every
+			// argument after that is passed straight through as the
+			// script's own argv (per this loop's own comment above). If
+			// "--force-compile" fell into the `case:` branch below, it
+			// would become file_path itself, bumping the real script
+			// path into script_args instead.
+			//
+			// Bypasses the bytecode cache's read for imported modules
+			// (see docs/plans/bytecode-cache.md) -- never affects the
+			// entry script, which never consults the cache at all.
 			opts.force_compile = true
 		case:
-			// glox's own sys.args() (ArgsBuiltIn, core_functions.go) includes
-			// the script's own path as args()[0] -- main.go passes os.Args[1:]
-			// straight through to SetArgs, unfiltered, and args[0] there is
-			// the same "first non-flag argument" this file_path is. This port
-			// previously only appended args seen *after* file_path was set,
-			// so sys.args() here was always one element short (missing the
-			// script path itself) -- found via logging_file_writer.lox, which
-			// does `os.dirname(sys.args()[0])` to build an output path
-			// alongside the running script and got "List index out of range"
-			// against an empty list.
+			// file_path is also appended to script_args: sys.args()
+			// (see builtins_sys.odin) includes the script's own path as
+			// args()[0], matching how a real argv is structured.
 			file_path = a
 			append(&script_args, a)
 		}
@@ -161,11 +149,9 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	case .Compile_Error:
 		os.exit(65)
 	case .Runtime_Error:
-		// Matches glox's own main.go exactly (`fmt.Println(vmInstance.ErrorMsg)`,
-		// not Fprintln(os.Stderr, ...)) -- an uncaught exception's report is
-		// plain stdout there, not stderr. Found via test_except_break_stale_handler,
-		// which asserts on run_lox()'s stdout-only capture and got an
-		// IndexError (one line short) while this was still on stderr.
+		// An uncaught exception's report goes to stdout, not stderr --
+		// callers that capture the script's stdout (e.g. the test suite's
+		// run_lox() helper) rely on it landing there.
 		fmt.println(vm_instance.error_msg)
 		vm.print_stack_trace(vm_instance)
 		os.exit(70)
@@ -174,9 +160,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	}
 }
 
-// compile_only reports whether path compiles, without running it --
-// the `odlox --compile-only` milestone check ROADMAP.md's Phase 3
-// section refers to.
+// compile_only reports whether path compiles, without running it.
 compile_only :: proc(path: string) {
 	fn, ok := compile_file(path)
 	if !ok {
@@ -188,7 +172,7 @@ compile_only :: proc(path: string) {
 
 // disassemble_file compiles path and dumps the full bytecode listing
 // (the top-level chunk plus every nested function's own chunk) without
-// running it -- Phase 5's primary deliverable, wired up.
+// running it.
 disassemble_file :: proc(path: string) {
 	fn, ok := compile_file(path)
 	if !ok {
@@ -199,11 +183,7 @@ disassemble_file :: proc(path: string) {
 
 // info_file compiles path and prints a compact summary rather than the
 // full instruction-by-instruction dump `--disassemble` gives -- a
-// quick "how big is this program" check. glox's own `--info`/`-i`
-// output isn't available to compare against in this workspace (glox
-// itself isn't checked out here, only the unrelated odin-lang/examples
-// reference), so this is this port's own reasonable definition of what
-// the flag should report, not a verified port of glox's exact format.
+// quick "how big is this program" check.
 info_file :: proc(path: string) {
 	fn, ok := compile_file(path)
 	if !ok {
@@ -255,11 +235,10 @@ compile_file :: proc(path: string) -> (^core.Function_Object, bool) {
 	return compiler.Compile(string(data), path, env)
 }
 
-// repl mirrors glox's own REPL behavior: prints every result except
-// the literal "nil" (the implicit value of a statement that isn't an
-// expression), and buffers input across lines until
-// replInputComplete's bracket-balance check says the buffered text
-// forms one complete statement.
+// repl prints every result except the literal "nil" (the implicit
+// value of a statement that isn't an expression), and buffers input
+// across lines until repl_input_complete's bracket-balance check says
+// the buffered text forms one complete statement.
 repl :: proc() {
 	fmt.println("odlox:")
 	vm_instance := vm.new_vm("__repl__")

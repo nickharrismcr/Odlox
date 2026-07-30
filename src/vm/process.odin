@@ -6,21 +6,18 @@ import "core:sys/windows"
 import "core:time"
 
 // process: spawns other odlox processes and communicates with them over
-// a pipe carrying pickled values -- ported from glox's own process
-// module (src/builtin/obj_builtin_process.go/process_functions.go/
-// process_methods.go), glox's answer to Python's multiprocessing. glox's
-// version runs a background goroutine per Process reading continuously
-// into a channel, so wait_any can Go-select across every process's
-// channel at once; this port has no general-purpose threading model
-// exposed anywhere (see docs/ARCHITECTURE.md's Scope section -- threads
-// are out of scope entirely), so recv/try_recv poll the pipe directly
-// instead (Windows' PeekNamedPipe, checked before an actual read) and
-// wait_any round-robins try_recv across every still-live process with a
-// short sleep between full rounds rather than blocking on a true
-// multi-handle select. Same observable behavior (blocks until something
-// is ready, returns nil once every process has finished, raises
-// Process_Error on a genuine I/O problem) -- just polling latency
-// instead of an OS-level wait, and no background thread to manage.
+// a pipe carrying pickled values. There is no general-purpose threading
+// model exposed anywhere in this interpreter (see docs/ARCHITECTURE.md's
+// Scope section -- threads are out of scope entirely), so recv/try_recv
+// poll the pipe directly instead of blocking on a background reader
+// (Windows' PeekNamedPipe, checked before an actual read), and wait_any
+// round-robins try_recv across every still-live process with a short
+// sleep between full rounds rather than blocking on a true multi-handle
+// select. Observable behavior is what a true blocking wait would give
+// (blocks until something is ready, returns nil once every process has
+// finished, raises Process_Error on a genuine I/O problem) -- just with
+// polling latency instead of an OS-level wait, and no background thread
+// to manage.
 
 FRAME_LEN_SIZE :: 4
 
@@ -54,9 +51,8 @@ write_full :: proc(f: ^os.File, buf: []u8) -> bool {
 }
 
 // frame_write pickle-encodes v and writes it to f as a 4-byte little-
-// endian length prefix followed by the encoded bytes -- mirrors glox's
-// own WriteFramedValue (core/pickle.go) so multiple values can share one
-// stream without running together.
+// endian length prefix followed by the encoded bytes, so multiple
+// values can share one stream without running together.
 frame_write :: proc(f: ^os.File, v: core.Value) -> (err: string, ok: bool) {
 	data, eerr, eok := core.pickle_encode(v)
 	if !eok {
@@ -122,17 +118,15 @@ try_frame_read :: proc(v: ^VM, f: ^os.File) -> (result: core.Value, err: string,
 	// NOT treated as an immediate EOF signal here: Windows' PeekNamedPipe
 	// can report a broken pipe as soon as the writer closes its end, even
 	// while buffered data the writer already sent is still sitting
-	// unread in the pipe -- found via process_wait_any_pool.lox (workers
-	// that fire off several messages back-to-back and then exit
-	// immediately), where treating a failed peek as EOF lost whichever
-	// messages hadn't been drained yet, and one that hadn't even
-	// finished being *read* got reported as "truncated message" instead.
-	// A real (blocking) read is the actual authority on EOF vs a genuine
-	// message -- and since CreatePipe's anonymous pipes are ordinary
-	// blocking pipes, a read attempted here either returns already-
-	// buffered bytes immediately or discovers true EOF immediately (the
-	// write end really is gone and the buffer really is empty); it does
-	// not hang the round-robin poll this feeds into.
+	// unread in the pipe. Treating a failed peek as EOF would lose
+	// whichever messages hadn't been drained yet, and misreport a message
+	// that hadn't even finished being *read* as "truncated message"
+	// instead. A real (blocking) read is the actual authority on EOF vs a
+	// genuine message -- and since CreatePipe's anonymous pipes are
+	// ordinary blocking pipes, a read attempted here either returns
+	// already-buffered bytes immediately or discovers true EOF
+	// immediately (the write end really is gone and the buffer really is
+	// empty); it does not hang the round-robin poll this feeds into.
 	result, err, eof, ok = frame_read(v, f)
 	return result, err, eof, true, ok
 }
@@ -186,8 +180,7 @@ process_try_recv :: proc(v: ^VM, p: ^core.Process_Object) -> (had_data: bool, re
 // process that reports a clean EOF is dropped from consideration (not
 // an error for the wait as a whole) rather than ending the loop; once
 // every process has finished, returns ok=false with no error raised --
-// ROADMAP.md/the language reference's own doc for this module documents
-// nil as the unambiguous "the whole pool is done" signal, distinct from
+// nil is the unambiguous "the whole pool is done" signal, distinct from
 // a raised ProcessError on a genuine I/O problem.
 process_wait_any :: proc(v: ^VM, processes: []^core.Process_Object) -> (index: int, result: core.Value, ok: bool) {
 	for {

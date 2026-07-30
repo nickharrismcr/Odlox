@@ -2,11 +2,9 @@ package core
 
 import rl "vendor:raylib"
 
-// Camera_Object wraps a raylib 3D camera. Ported from glox's
-// obj_builtin_camera.go -- always perspective projection with a 45°
-// default field of view, matching glox's own constructor exactly (glox
-// exposes no way to change projection mode or construct an orthographic
-// camera, so this port doesn't invent one either).
+// Camera_Object wraps a raylib 3D camera. Always perspective projection
+// with a 45° default field of view -- there is no way to change
+// projection mode or construct an orthographic camera from Lox.
 Camera_Object :: struct {
 	using obj: Obj,
 	camera:    rl.Camera3D,

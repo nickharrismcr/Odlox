@@ -4,8 +4,8 @@ import "core:strings"
 
 // Instance_Object.fields is keyed by canonical `^String_Object`, same
 // reasoning as Class_Object's method maps -- see obj_string.odin's doc
-// comment on why this is a plain, direct map key rather than glox's
-// intern-to-an-int-first step.
+// comment on why this is a plain, direct map key with no separate
+// name-id indirection.
 Instance_Object :: struct {
 	using obj: Obj,
 	class:     ^Class_Object,

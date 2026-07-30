@@ -7,8 +7,8 @@ import rl "vendor:raylib"
 
 // gfx_shader: method dispatch for Shader_Object. Construction (both the
 // load-from-files and empty-then-load-from-memory shapes) lives in
-// natives/gfx.odin, matching the split every other gfx native type in
-// this port uses.
+// natives/gfx.odin, matching the split every other gfx native type
+// uses.
 invoke_builtin_shader :: proc(vm: ^VM, s: ^core.Shader_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {

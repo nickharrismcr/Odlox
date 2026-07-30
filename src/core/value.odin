@@ -3,14 +3,10 @@ package core
 import "core:fmt"
 
 // Value: the tagged union every VM stack slot, local, global, and
-// constant is. See docs/ARCHITECTURE.md's Value representation section
-// for the full reasoning -- in short, glox's Go Value is 32 bytes because
-// its `Obj Object` field is a Go interface (a 16-byte fat pointer), and
-// Go's own tracing GC needs that interface to identify heap pointers by
-// static type. Odin has no such constraint (this project writes its own
-// collector, see the vm package's Phase 4 GC), so `data` and `obj` can
-// safely share one 8-byte slot via a raw union -- exactly like clox's
-// own `as` union -- giving a 16-byte Value with no unsafe code at all.
+// constant is. `data` and `obj` share one 8-byte slot via a raw union
+// (see Value_Payload below), giving a 16-byte Value with no unsafe code
+// at all. See docs/ARCHITECTURE.md's Value representation section for
+// the full reasoning.
 
 Value_Type :: enum u8 {
 	Nil,
@@ -116,9 +112,8 @@ is_vec2 :: proc(v: Value) -> bool { return v.type == .Vec2 }
 is_vec3 :: proc(v: Value) -> bool { return v.type == .Vec3 }
 is_vec4 :: proc(v: Value) -> bool { return v.type == .Vec4 }
 
-// is_string reports whether v is a Value.Obj carrying a String_Object --
-// mirrors glox's IsString, which checks the cached ObjType tag rather
-// than dereferencing the object.
+// is_string reports whether v is a Value.Obj carrying a String_Object,
+// checking the cached obj_type tag rather than dereferencing the object.
 is_string :: proc(v: Value) -> bool {
 	return v.type == .Obj && v.obj_type == .String
 }
@@ -293,12 +288,8 @@ values_equal :: proc(a, b: Value, types_must_match: bool) -> bool {
 }
 
 // objects_equal implements object-kind equality for two Values already
-// confirmed to share an Object_Type. Deliberately NOT a port of glox's
-// generic fallback (`a.Obj.String() == b.Obj.String()`, i.e. stringify
-// and compare text) -- that's a real oddity worth fixing rather than
-// carrying over: comparing two lists with `==` in glox today round-trips
-// both through String(). Strings get the canonical-pointer fast path
-// (interning guarantees equal content <=> equal pointer, see
+// confirmed to share an Object_Type. Strings get the canonical-pointer
+// fast path (interning guarantees equal content <=> equal pointer, see
 // obj_string.odin); lists/dicts get real recursive structural equality;
 // every other kind (functions, closures, classes, instances, modules,
 // natives, files, iterators, bound methods) is reference/identity

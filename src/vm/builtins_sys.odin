@@ -3,8 +3,7 @@ package vm
 import "../core"
 import "core:time"
 
-// Port of glox's sys.* functions (src/builtin/core_functions.go's
-// Args/Clock/Sleep/Today/Now built-ins).
+// The sys.* module: args/clock/sleep/today/now built-ins.
 
 @(private)
 define_sys_builtins :: proc(vm: ^VM) {

@@ -6,9 +6,9 @@ import "core:strings"
 // to_string against unbounded recursion when a container holds a
 // reference to itself, directly or via another container (`l.append(l)`).
 // Package-private (shared by obj_list.odin and obj_dict.odin, not
-// exported) and a plain int rather than glox's `atomic.Int32` -- the VM
-// is single-threaded (see docs/ARCHITECTURE.md's Scope section), so
-// there's no concurrent String() call to guard against here.
+// exported) and a plain int, not an atomic -- the VM is single-threaded
+// (see docs/ARCHITECTURE.md's Scope section), so there's no concurrent
+// String() call to guard against here.
 @(private)
 string_depth: int
 @(private)
@@ -48,9 +48,9 @@ list_clear :: proc(l: ^List_Object) {
 }
 
 // list_join concatenates l's items (which must all be strings) with sep
-// between them, mirroring glox's ListObject.Join -- the underlying
-// logic for the `sep.join(list)` string method (vm/call.odin), named
-// for the list here since the joining itself only touches list items.
+// between them -- the underlying logic for the `sep.join(list)` string
+// method (vm/call.odin), named for the list here since the joining
+// itself only touches list items.
 list_join :: proc(l: ^List_Object, sep: string) -> (Value, bool) {
 	if len(l.items) == 0 {
 		return make_string_value(""), true

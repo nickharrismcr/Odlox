@@ -4,25 +4,20 @@ import "../core"
 import "core:fmt"
 
 // The main opcode dispatch loop. Run_Mode.Current_Function backs the
-// nested, re-entrant call glox calls its "RUN_CURRENT_FUNCTION" mode --
-// not yet exercised by anything in this phase (the user-level foreach
-// iterator protocol and instance toString dispatch that would use it
-// are both documented, deferred gaps -- see foreach.odin and this
-// file's Op_Str case), but the mode exists now so those can be added
-// later without reshaping run() itself.
+// nested, re-entrant call used by the user-level foreach iterator
+// protocol and instance toString dispatch -- see foreach.odin and this
+// file's Op_Str case.
 Run_Mode :: enum {
 	To_Completion,
 	Current_Function,
 }
 
 // Frame_Locals hoists the current frame's hot-path fields into local
-// variables -- Odin has no closure-over-mutable-outer-locals the way
-// Go does, so this is a small value returned by refresh_frame and
-// reassigned at every call site that might change frame_count, rather
-// than glox's `refreshFrame()` closure mutating captured variables in
-// place. Same reasoning either way: re-deriving `frame(vm)` and
-// chasing `.closure.function.chunk...` on every single instruction
-// would be needless indirection on the hottest path in the VM.
+// variables -- a small value returned by refresh_frame and reassigned
+// at every call site that might change frame_count. Re-deriving
+// `frame(vm)` and chasing `.closure.function.chunk...` on every single
+// instruction would be needless indirection on the hottest path in the
+// VM.
 @(private = "file")
 Frame_Locals :: struct {
 	f:         ^Call_Frame,
@@ -48,10 +43,9 @@ refresh_frame :: proc(vm: ^VM) -> Frame_Locals {
 // nested display (a string inside a printed list/dict) and for
 // round-trip-able output; neither applies to a top-level `print`
 // statement, or to a raised value's own .msg field (wrapping `raise
-// "boom"` should produce a message reading `boom`, not `"boom"` --
-// found via exactly that mismatch during Phase 4's first end-to-end
-// exception test). Package-visible so exceptions.odin's
-// ensure_exception_instance can share it.
+// "boom"` should produce a message reading `boom`, not `"boom"`).
+// Package-visible so exceptions.odin's ensure_exception_instance can
+// share it.
 display_string :: proc(v: core.Value) -> string {
 	if core.is_string(v) {
 		return core.string_get(core.as_string(v))
@@ -90,45 +84,38 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 	fl := refresh_frame(vm)
 
-	// ip is a genuine loop-local mirror of fl.f.ip -- not a struct field
-	// read through the fl.f pointer on every single opcode/operand byte
-	// the way `fl.f.ip` was before. See docs/ARCHITECTURE.md's VM
-	// dispatch loop section: the documented design called for a raw
-	// `ip: ^u8` pointer specifically, reasoning that Go can't do this
-	// (no safe raw-pointer-into-slice idiom) but Odin can. That's true,
-	// but beside the point once `-no-bounds-check` is already the
-	// release flag (see bin/build.sh): `fl.code[ip]` for a hoisted `int`
-	// local and `ip^`/`ip[0]` for a hoisted `^u8` compile to identical
-	// pointer arithmetic either way -- bounds checking, not pointer-vs-
-	// int, is the only thing that idiom was ever buying in C/clox. The
-	// actual, load-bearing property is just "a genuine local, not a
-	// pointer-chased struct field, for the loop's whole body" -- Odin
-	// has no aliasing reason to reload a plain local from fl.f between
-	// sync points, so the optimizer keeps it register-resident, and an
-	// int stays a drop-in match for every other place in the codebase
-	// that already treats ip as a plain offset (exceptions.odin,
-	// debug/inspect.odin, chunk line lookups) with zero conversion.
+	// ip is a genuine loop-local mirror of fl.f.ip, kept as a plain int
+	// rather than a struct field read through the fl.f pointer on every
+	// single opcode/operand byte. See docs/ARCHITECTURE.md's VM
+	// dispatch loop section for more on this design. The load-bearing
+	// property is that it's a genuine local, not a pointer-chased
+	// struct field, for the loop's whole body: Odin has no aliasing
+	// reason to reload a plain local from fl.f between sync points, so
+	// the optimizer keeps it register-resident, and a plain int matches
+	// every other place in the codebase that already treats ip as a
+	// plain offset (exceptions.odin, debug/inspect.odin, chunk line
+	// lookups) with zero conversion.
 	//
 	// Sync discipline: every existing point in this loop that already
-	// called refresh_frame() (because frame_count might have changed)
+	// calls refresh_frame() (because frame_count might have changed)
 	// re-seeds `ip` from the new fl.f.ip right after; every call this
 	// loop makes into anything that could transitively read or
 	// reposition *this* frame's ip while it's suspended --
 	// call_value/invoke/do_super_invoke, raise_exception,
 	// do_foreach/do_next, and the per-opcode debug hook -- writes
-	// `fl.f.ip = ip` immediately before the call. Verified exhaustively
-	// against every other reader of Call_Frame.ip in the codebase
-	// (exceptions.odin's stack-trace/handler-matching, debug/
-	// inspect.odin's frame introspection natives, debug/trace.odin's
-	// disassembler): all of them are only ever reached via one of these
-	// same call points, so this set of sync points is complete.
+	// `fl.f.ip = ip` immediately before the call. Every other reader of
+	// Call_Frame.ip in the codebase (exceptions.odin's stack-trace/
+	// handler-matching, debug/inspect.odin's frame introspection
+	// natives, debug/trace.odin's disassembler) is only ever reached
+	// via one of these same call points, so this set of sync points is
+	// complete.
 	ip := fl.f.ip
 
 	for {
 		// Safe to collect here, and only here -- see gc.odin's
 		// maybe_collect_garbage doc comment on why checking between
-		// instructions (never mid-opcode) removes the need for
-		// glox's "pre-mark a just-linked object" trick entirely.
+		// instructions (never mid-opcode) keeps the value stack always
+		// consistent for root scanning.
 		maybe_collect_garbage(vm)
 
 		if vm.debug_hook != nil {
@@ -179,13 +166,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// peephole_optimise). On a monomorphic int/int or float/float
 		// hit, patch this call site's opcode byte in place to the
 		// _Ii/_Ff child so every later execution skips the type check
-		// entirely -- a minimal inline cache, mirroring glox's own
-		// OP_ADD_NN/OP_INCR_CONST_N (vm.go) exactly, including *not*
-		// patching a mixed-type site (it just computes the generic
-		// float result and stays Add_Nn/Incr_Const_N forever, same as
-		// glox). fl.code aliases the chunk's own backing array (see
-		// refresh_frame), so the patch is a real, persistent bytecode
-		// rewrite, not a per-call cache.
+		// entirely -- a minimal inline cache. A mixed-type site is
+		// deliberately never patched: it just computes the generic
+		// float result and stays Add_Nn/Incr_Const_N forever. fl.code
+		// aliases the chunk's own backing array (see refresh_frame), so
+		// the patch is a real, persistent bytecode rewrite, not a
+		// per-call cache.
 		case .Add_Nn:
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
@@ -291,11 +277,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			// fires, its ordinary return handling (pop back to
 			// fl.f.slots, push the result) leaves exactly the string
 			// result sitting where the original receiver was, which is
-			// exactly Op_Str's contract. Same trick glox's own OP_STR
-			// uses (`continue` after `vm.call(...)`/`refreshFrame()`,
-			// no vm.run(RUN_CURRENT_FUNCTION) there either -- that mode
-			// is reserved for Op_Foreach/Op_Next, whose call result
-			// really is needed mid-opcode).
+			// exactly Op_Str's contract. Run_Mode.Current_Function is
+			// reserved for Op_Foreach/Op_Next, whose call result really
+			// is needed mid-opcode.
 			v := peek(vm, 0)
 			if core.is_string(v) {
 				// already a string; nothing to do
@@ -318,31 +302,24 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 		// --- globals ---
 		//
-		// Real bug, found while porting the .lox standard library: every
-		// one of these four cases used vm.environment (the *running VM
-		// instance's own* Environment field) instead of the *currently
-		// executing frame's function's own* environment (fl.fn.environment,
-		// already hoisted by refresh_frame -- every Function_Object
-		// records which Environment it was compiled against, see
-		// compiler_state.odin's init_root_compiler/init_function_compiler).
-		// Those are only the same Environment for the top-level script
-		// itself. The moment an *imported module's* function is called --
-		// e.g. `math.sin(x)`, where math.lox's own `sin` body calls
-		// `_sin(angle)`, a global reference -- the Closure being executed
-		// belongs to the module's own Environment (built by its own,
-		// separate sub-VM compile in module.odin's load_module), but
-		// global reads/writes were resolving against the *importing
-		// script's* vm.environment instead: a completely different global
-		// slot space. Any imported function that referenced a global at
-		// all (calling another top-level function in its own module,
-		// reading a module-level var, or calling an underscore-prefixed
-		// native like _sin) read/wrote the wrong slot or hit "Undefined
-		// variable '#N'" outright. Reproduced with the simplest possible
-		// case: a two-function module where one calls the other by name.
-		// Fixed by resolving through fl.fn.environment throughout --
-		// correct for the top-level script too, since Function_Object.environment
-		// there is set to the same vm.environment Compile() was called
-		// with in the first place.
+		// Every one of these four cases resolves through
+		// fl.fn.environment -- the *currently executing frame's
+		// function's own* environment (already hoisted by refresh_frame
+		// -- every Function_Object records which Environment it was
+		// compiled against, see compiler_state.odin's
+		// init_root_compiler/init_function_compiler) -- rather than
+		// vm.environment, the *running VM instance's own* Environment
+		// field. Those two are only the same Environment for the
+		// top-level script itself: an *imported module's* function
+		// (e.g. `math.sin(x)`, where math.lox's own `sin` body calls
+		// `_sin(angle)`, a global reference) runs as a Closure belonging
+		// to the module's own Environment (built by its own, separate
+		// sub-VM compile in module.odin's load_module), a completely
+		// different global slot space from the importing script's
+		// vm.environment. Resolving through fl.fn.environment is
+		// correct for the top-level script too, since its own
+		// Function_Object.environment is set to the same vm.environment
+		// Compile() was called with in the first place.
 		case .Define_Global:
 			slot := fl.code[ip]
 			ip += 1
@@ -351,14 +328,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			// carry an immutable tag (e.g. a texture/window/tuple/regex-
 			// match object -- see natives/gfx.odin's constructors, which
 			// return immutable=true Values for reasons unrelated to
-			// variable-reassignment semantics entirely). Without this,
-			// `tex = canvas.get_texture()` followed later by a second
-			// `tex = canvas.get_texture()` failed with "Cannot assign to
-			// const variable 'tex'" -- Set_Global below refuses to
-			// overwrite a slot whose *currently stored value* is tagged
-			// immutable, and the first assignment had stored one uncleared.
-			// Matches glox's own OP_DEFINE_GLOBAL exactly (`core.Mutable(vm.pop())`,
-			// vm.go) -- only OP_DEFINE_GLOBAL_CONST forces the tag on.
+			// variable-reassignment semantics entirely). Set_Global below
+			// refuses to overwrite a slot whose *currently stored value*
+			// is tagged immutable, so clearing the tag here matters: a
+			// variable holding an immutable-tagged value must still be
+			// freely reassignable by ordinary `=`. Only Define_Global_Const
+			// forces the tag on.
 			v := pop(vm)
 			v.immutable = false
 			core.env_set_global(fl.fn.environment, int(slot), v)
@@ -387,8 +362,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				// Same reasoning as Define_Global above: an ordinary `=`
 				// assignment always leaves the slot mutable, even if the
 				// newly assigned value itself happens to carry an
-				// immutable tag -- matches glox's OP_SET_GLOBAL exactly
-				// (`core.Mutable(vm.Peek(0))`, vm.go).
+				// immutable tag.
 				v := peek(vm, 0)
 				v.immutable = false
 				core.env_set_global(fl.fn.environment, int(slot), v)
@@ -601,23 +575,17 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			h.prev = fl.f.handlers
 			fl.f.handlers = h
 		case .End_Try:
-			// Real bug, found via an actual "try { ... } finally { ... }"
-			// run with no exception raised: the compiler emits a real,
-			// non-zero forward jump here (stmt.odin's try_except_statement
-			// patches normal_end_jump with the distance past the
+			// Reads and applies the forward jump offset the compiler
+			// emits here (stmt.odin's try_except_statement patches
+			// normal_end_jump with the distance past the
 			// exceptional-path finally replay, straight to the
 			// normal-path finally replay -- see that proc's "Shared
-			// normal-completion landing point" comment), but this case
-			// was treating the offset as inert padding (the two
-			// operand bytes were just skipped, not read and applied),
-			// on the wrong assumption that "the compiler always emits
-			// 0,0 here". It doesn't -- normal completion fell straight
-			// through into the *exceptional* finally copy instead of
-			// jumping past it, which ends in an unconditional Op_Raise
-			// (re-propagate) -- so every try/finally with no except
-			// clause raised a bogus uncaught exception on perfectly
-			// normal completion. Fixed to actually jump, same pattern
-			// as Op_Jump.
+			// normal-completion landing point" comment), same pattern as
+			// Op_Jump. The offset is not always zero: a try/finally with
+			// no except clause needs it to skip past the
+			// exceptional-path finally replay (which ends in an
+			// unconditional Op_Raise, re-propagating) on normal
+			// completion.
 			offset := read_u16(fl.code, ip)
 			ip += 2
 			ip += offset
@@ -659,17 +627,17 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			delete(names)
 
 		case .Breakpoint:
-		// no-op for now -- Phase 5's debugger would hook here.
+		// no-op -- reserved for a future debugger hook.
 
 		case:
 			runtime_error(vm, "Invalid opcode.")
 		}
 
-		// Shared error-conversion tail, matching glox's design: opcodes/
-		// natives set vm.error_msg rather than raising directly (see
-		// vm.odin's runtime_error doc comment), and this is the one
-		// place that turns it into a real exception, checked once per
-		// instruction rather than after every single fallible operation.
+		// Shared error-conversion tail: opcodes/natives set vm.error_msg
+		// rather than raising directly (see vm.odin's runtime_error doc
+		// comment), and this is the one place that turns it into a real
+		// exception, checked once per instruction rather than after
+		// every single fallible operation.
 		if vm.error_msg != "" {
 			msg := vm.error_msg
 			class_name := vm.pending_exception_class if vm.pending_exception_class != "" else "RunTimeError"

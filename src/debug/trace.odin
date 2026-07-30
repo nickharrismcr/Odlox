@@ -6,8 +6,7 @@ import "core:fmt"
 
 // Trace_Hook and Instrument_Hook implement vm.Debug_Hook -- wire either
 // one to a running VM.debug_hook field (see main.odin's --debug flag)
-// to watch it execute, matching glox's own hot-loop debug hook
-// (core.HotLoopDebugHookCompiled).
+// to watch it execute.
 //
 // Gated with `when ODIN_DEBUG` inside each proc body, not by leaving
 // the procs out of a release build entirely: vm.odin's call sites
@@ -16,9 +15,8 @@ import "core:fmt"
 // release (`-o:speed`, no `-debug`) build is the actual per-instruction
 // disassembly/formatting work these hooks do, which *is* real
 // overhead. ODIN_DEBUG is Odin's own builtin constant, true exactly
-// when the binary was built with `-debug` -- using it directly means
-// there's no separate flag to keep in sync with the build script, and
-// no glox-style shell-script uncomment/recomment dance needed either.
+// when the binary was built with `-debug`, so there's no separate flag
+// to keep in sync with the build script.
 
 // Trace_Hook dumps the value stack, then disassembles the instruction
 // about to execute, every step. Very verbose -- meant for debugging
@@ -46,16 +44,14 @@ print_stack :: proc(v: ^vm.VM) {
 	fmt.println()
 }
 
-// Instrument_Hook just counts executed instructions (Opcode events) --
-// glox's equivalent is its own hot-loop instruction counter. A
+// Instrument_Hook just counts executed instructions (Opcode events). A
 // package-level counter, not a field threaded through every call, is
 // fine here for the same reason the rest of this VM has no
 // synchronization anywhere: a single VM is never touched from more
-// than one goroutine/thread in this port's scope (see
-// docs/ARCHITECTURE.md's Scope section) -- two VMs run concurrently
-// would share this counter, but that's not a supported use of
-// --instrument in the first place (it's a single-script debugging
-// aid, not a production metric).
+// than one goroutine/thread (see docs/ARCHITECTURE.md's Scope
+// section) -- two VMs run concurrently would share this counter, but
+// that's not a supported use of --instrument in the first place (it's
+// a single-script debugging aid, not a production metric).
 @(private)
 instruction_count_val: int
 

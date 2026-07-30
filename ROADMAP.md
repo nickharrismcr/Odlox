@@ -3609,43 +3609,43 @@ in a source comment that's really making an architectural case belongs
 there instead, cross-referenced (`see docs/ARCHITECTURE.md's <section>`)
 rather than re-argued in place.
 
-- [ ] Read through every `.odin` file under `src/` and rewrite comments
-      that reference: phase numbers ("Phase 4", "Phase 6d", ...), this
-      port's own name ("this port", "odlox" used reflexively rather than
-      just naming the thing), specific pytest/fixture names that found a
-      bug, "real bug, found via...", before/after behavior descriptions,
-      comparisons to glox ("matches glox's X", "unlike glox", "glox does
-      Y but this doesn't"), or anything else that reads as a changelog
-      entry or a comparison rather than a plain description of this
-      interpreter's current architecture/functionality.
-- [ ] Keep the comments that carry real, still-load-bearing information
-      about *this* codebase, stated on its own terms: *why* code is
-      shaped a particular way when the reason isn't obvious from reading
-      it (a genuine invariant, a non-obvious bytecode/VM contract) —
-      stated as a fact about how this interpreter works, not as a diff
-      against glox. Cutting the narrative/comparison framing doesn't mean
-      cutting the substance — "X must happen before Y because Z" survives
-      regardless of phrasing; "found this was broken via fixture W in
-      phase N" and "unlike glox, which does X, this does Y" don't, though
-      the underlying fact (if still relevant) may need to survive as a
-      plain, un-attributed statement ("code assumes Y").
-- [ ] Migrate anything genuinely worth keeping from the comparison-to-glox
-      material into `docs/ARCHITECTURE.md` before deleting it from source
-      — don't just delete a deviation's rationale outright if it isn't
-      already captured there.
-- [ ] Don't do this piecemeal alongside ordinary feature work before this
-      phase — every phase section above this one *deliberately* documents
-      its own bugs/fixtures/history/glox-comparisons in ROADMAP.md
-      precisely so the in-code comments don't have to carry that weight
-      forever; doing the cleanup only once, at the end, avoids fighting
-      an ongoing stream of new narrative comments from concurrent work.
-- [ ] Spot-check a representative file from each package (`core`,
-      `compiler`, `vm`, `debug`, `natives`, `main.odin`) once done: could
-      someone who has never seen glox and doesn't care that it exists
-      read this file and understand the architecture and behavior from
-      the comments alone? That's the actual bar — "shorter than before"
-      or "no longer mentions glox" are necessary but not sufficient
-      checks on their own.
+**Done.** All 80 non-test `.odin` files under `src/` (18,750 lines) were read in full and had their comments
+rewritten to this standard, split by package across six parallel review passes (`core`; `compiler`; `vm`'s
+dispatch-loop/GC/module-loading core; `vm`'s builtins/regex/process/physics glue; `vm`'s raylib graphics
+files; `debug`+`natives`+`main.odin`) so each pass could give its files real per-line attention rather than a
+mechanical keyword strip. 75 files ended up with real edits (net -584 lines); a handful (`obj_bound_method.odin`,
+`obj_closure.odin`, `compile.odin`) were already clean and untouched. A repo-wide sweep after all six passes
+landed found zero remaining occurrences of "glox", "phase N", "this port", "found via", or "real bug" in any
+non-test source comment.
+
+Every pass verified its own diff was comment-only before finishing (`git diff`, filtered for any changed line
+that wasn't a `//` comment or a trailing-comment edit on an otherwise-unchanged code line) and confirmed
+`odin check src -vet` still passed clean — one pass (`vm/builtins.odin`) merged six near-identical
+`case X: return "builtin"` blocks (each carrying its own copy of the same comment) into a single multi-value
+case with one comment, verified to cover the exact same set of thirteen `Object_Type` values before and
+after; a mid-edit `rules.odin` CRLF slip from one pass's own editing tool was caught and fixed by that same
+pass before reporting done. Both confirmed independently afterward (a byte-level scan of every changed file
+found zero stray `\r` bytes anywhere).
+
+Each pass separately flagged genuine cross-cutting architectural material its files were trimmed of that
+wasn't yet in `docs/ARCHITECTURE.md`; folded in afterward rather than left only as local source comments:
+a factual correction to the VM dispatch loop section (`ip` is a hoisted plain `int`, not the `^u8` pointer an
+earlier planning-era passage called for — the release build's `-no-bounds-check` flag already gets the real
+performance property either way, so the pointer-vs-int choice turned out to be moot), the deferred-trampoline
+design break/continue/return crossing a `try` actually uses (the Exceptions section referenced this by name
+without ever explaining it), a new "two narrow, deliberate exceptions to no concurrency" note under Garbage
+collector (`gfx_julia`/`gfx_mandel`'s one-opcode-atomicity threading pattern, and `process`'s
+`PeekNamedPipe`-polling design plus its Windows EOF-vs-broken-pipe gotcha), and a new "Raylib-backed
+graphics: non-obvious constraints" subsection under Native/builtin functions (matrix composition order for
+rotated meshes, `begin_blend_mode`'s deliberate permissiveness, a Y-flip inconsistency between two sibling
+render-texture draw methods, `get_texture`'s GPU-sync-point round trip, and two GPU-ordering/race gotchas in
+the batch and instanced-array-texture code).
+
+Spot-checked one representative file per package (`main.odin`, `core/object.odin`, `vm/gc.odin`,
+`vm/run.odin`, `debug/disassemble.odin`, `natives/gfx.odin`, `compiler/stmt.odin`) against the actual bar —
+read cold, with no assumed familiarity with glox — and all read cleanly. `python -m pytest tests/new_tests/`
+held at 223/0/26 throughout (a pure regression gate — comment-only changes should never move this number),
+cold and warm, on both build modes.
 
 ---
 

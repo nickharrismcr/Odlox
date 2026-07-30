@@ -6,12 +6,8 @@ import "../core"
 // to one of the three built-in iterator kinds in place, pulled with no
 // Lox-level call overhead) plus the user-level protocol (a class
 // instance defining __iter__/__next__), which needs a nested
-// re-entrant call into run() to invoke those methods -- glox's
-// Run_Current_Function mode, here Run_Mode.Current_Function (see
-// run.odin). Deferred out of Phase 4 to keep that phase's scope
-// tractable; picked back up once the native path had real test
-// coverage to build the nested-call path against, per that phase's
-// own note.
+// re-entrant call into run() to invoke those methods -- Run_Mode.Current_Function
+// (see run.odin).
 
 @(private = "file")
 make_iterator :: proc(vm: ^VM, val: core.Value) -> (core.Value, bool) {
@@ -36,10 +32,8 @@ make_iterator :: proc(vm: ^VM, val: core.Value) -> (core.Value, bool) {
 
 // make_user_iterator implements the __iter__ half of the user-level
 // protocol: val.__iter__() must return another instance that itself
-// has a __next__ method (checked here, once, rather than on every
-// subsequent pull) -- mirrors glox's own OP_FOREACH instance-branch
-// checks exactly, including checking *for* a __next__ method rather
-// than assuming one.
+// has a __next__ method -- checked here, once, rather than assumed and
+// left to fail on every subsequent pull.
 @(private = "file")
 make_user_iterator :: proc(vm: ^VM, val: core.Value) -> (core.Value, bool) {
 	inst := core.as_instance(val)

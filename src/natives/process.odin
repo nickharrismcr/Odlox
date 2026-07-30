@@ -7,9 +7,7 @@ import "core:strings"
 
 // process: module-level entry points (spawn/parent/wait_any) -- see
 // vm/process.odin for the actual object, its methods, and the pipe-
-// framing/polling logic they share, and that file's own header comment
-// for how wait_any's polling design differs from glox's background-
-// goroutine one.
+// framing/polling logic they share.
 
 @(private)
 register_process :: proc(v: ^vm.VM) {

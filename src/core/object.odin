@@ -2,16 +2,11 @@ package core
 
 import "core:fmt"
 
-// The heap object model. Go's version of this (glox's src/core/object.go)
-// uses an interface (`Object`) implemented by every heap type, discriminated
-// at hot-loop call sites by a cached tag byte to avoid a vtable call. Odin
-// has no structural interfaces, so this doesn't port as "find the Odin
-// equivalent of an interface" -- it ports as the pattern Odin actually has
-// for a closed set of heap-object kinds: a common base struct embedded via
-// `using`, plus an enum tag and a type switch on the concrete pointer. See
-// docs/ARCHITECTURE.md's Object model section for the full reasoning,
-// including the correctness bug (Go's typed-nil-interface gotcha) this
-// approach can't even express, let alone need a workaround for.
+// The heap object model: a closed set of heap-object kinds represented
+// as a common base struct (Obj) embedded via `using` in every concrete
+// object type, plus an enum tag (Object_Type) and a type switch on the
+// concrete pointer at each dispatch site. See docs/ARCHITECTURE.md's
+// Object model section for the full reasoning.
 
 Object_Type :: enum u8 {
 	String,
@@ -27,13 +22,9 @@ Object_Type :: enum u8 {
 	Module,
 	File,
 
-	// glox gives all three of these one shared Object_Type ("Iterator")
-	// and distinguishes the concrete Go type with a type switch instead
-	// of the tag, because Go's blackenObject dispatches on the concrete
-	// type anyway. Odin's dispatch convention is "the tag alone is
-	// sufficient" (switch on .type, then cast) -- so each iterator kind
-	// gets its own tag here rather than reusing one, a small deliberate
-	// deviation to fit that convention.
+	// Each iterator kind gets its own tag rather than sharing one, so the
+	// tag alone is sufficient at every dispatch site (switch on .type,
+	// then cast) with no secondary type switch needed.
 	List_Iterator,
 	Int_Iterator,
 	String_Iterator,
@@ -61,19 +52,15 @@ Object_Type :: enum u8 {
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
-// struct, exactly mirroring how glox's Go structs embed GCHeader. `next`
-// is the intrusive singly-linked list pointer the garbage collector (see
-// the vm package, Phase 4) walks to sweep every live allocation --
-// unused, and simply zero, for anything constructed here in Phase 2
-// before a VM's registry exists to link it into.
+// struct. `next` is the intrusive singly-linked list pointer the
+// garbage collector (see the vm package) walks to sweep every live
+// allocation -- zero/unused until a VM's registry exists to link an
+// object into it.
 //
-// `marked`/`next` living directly on this plain pointer, rather than
-// behind an interface method, is what removes a real class of bug glox
-// has to work around: a nil `^Class_Object` stored in an `Obj`-shaped
-// slot is just a nil pointer, full stop -- there is no "non-nil box
-// wrapping a nil pointer" state for Odin's mark phase to trip over the
-// way Go's `reflect.ValueOf(obj).IsNil()` check exists specifically to
-// catch.
+// `marked`/`next` living directly on this plain pointer means a nil
+// `^Class_Object` stored in an `Obj`-shaped slot is just a nil pointer,
+// full stop -- there is no "non-nil box wrapping a nil pointer" state
+// for the mark phase to trip over.
 Obj :: struct {
 	type:   Object_Type,
 	marked: bool,
@@ -81,12 +68,11 @@ Obj :: struct {
 }
 
 // object_to_string dispatches to each concrete type's own text
-// representation -- the Odin equivalent of glox's `Object.String()`
-// interface method, just a switch-and-cast instead of a virtual call.
-// Kinds with nothing more interesting to print than a fixed label are
-// handled directly here; the ones whose text depends on their own
-// fields (functions, instances, ...) delegate to a proc living
-// alongside that type's definition.
+// representation via a switch-and-cast on obj.type. Kinds with nothing
+// more interesting to print than a fixed label are handled directly
+// here; the ones whose text depends on their own fields (functions,
+// instances, ...) delegate to a proc living alongside that type's
+// definition.
 object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	switch obj.type {
 	case .String:
@@ -168,9 +154,9 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		}
 		return fmt.aprintf("<Batch %s [%d entries]>", type_name, batch_count(b), allocator = allocator)
 	case .Batch_Instanced:
-		// glox's own String() for BatchInstancedObject returns this
-		// literal, unembellished string (not the "<Type ...>" bracket
-		// convention every other native type here uses) -- ported as-is.
+		// Unlike every other native type here, this returns a plain,
+		// unembellished string rather than the "<Type ...>" bracket
+		// convention.
 		return "BatchInstancedObject"
 	}
 	return "<unknown>"

@@ -3,13 +3,10 @@ package debug
 import "../core"
 import "core:fmt"
 
-// Port of glox's src/debug/debug.go: a bytecode disassembler for
-// `Chunk`. One case per opcode below, each picking the formatter that
-// matches its operand shape. The operand shapes themselves aren't
-// duplicated from anywhere — they're this port's own choice (this
-// compiler and this VM are both implemented here), and the
-// authoritative source for each is the emission site in
-// src/compiler/*.odin. Where a shape isn't obvious from the opcode
+// A bytecode disassembler for `Chunk`. One case per opcode below, each
+// picking the formatter that matches its operand shape. The
+// authoritative source for each operand shape is the emission site in
+// src/compiler/*.odin; where a shape isn't obvious from the opcode
 // name alone, the comment says which emission site to check.
 //
 // This is deliberately a different, fuller tool than
@@ -20,7 +17,7 @@ import "core:fmt"
 // upvalue-capture kind, etc.
 
 // disassemble_chunk prints every instruction in c, prefixed with a
-// `== name ==` banner (matches clox's own `disassembleChunk`).
+// `== name ==` banner.
 disassemble_chunk :: proc(c: ^core.Chunk, name: string) {
 	fmt.printfln("== %s ==", name)
 	offset := 0

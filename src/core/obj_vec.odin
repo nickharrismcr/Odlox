@@ -6,8 +6,8 @@ package core
 // free-list allocator given how allocation-heavy vector-arithmetic loops
 // tend to be (see docs/ARCHITECTURE.md's Performance section). Arithmetic
 // itself (`+`, in-place `++=`, swizzle field access) is a VM opcode
-// concern (Phase 4), not part of the object model -- only the plain
-// data shape and constructors live here.
+// concern, not part of the object model -- only the plain data shape and
+// constructors live here.
 
 Vec2_Object :: struct {
 	using obj: Obj,

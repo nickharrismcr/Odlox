@@ -51,8 +51,8 @@ compile_function_body :: proc(p: ^Parser) {
 			if match(p, .Equal) {
 				saw_default = true
 				// Prologue guard: only run the default expression if
-				// the caller actually omitted this argument (the VM,
-				// Phase 4, pads an omitted optional param with a
+				// the caller actually omitted this argument (the VM
+				// pads an omitted optional param with a
 				// Value.Undefined sentinel before the body starts).
 				jump := emit_jump_if_defined(p, slot)
 				expression(p)
@@ -77,20 +77,11 @@ compile_function_body :: proc(p: ^Parser) {
 	// A `{` on its own line after the parameter list -- e.g.
 	//   func f()
 	//   { ... }
-	// -- is valid: found via a real hang in the ported test suite
-	// (tests/new_tests/lox/str_class_toString.lox writes a method
-	// this way). The scanner's Eol-suppression rule only looks at the
+	// -- is valid: the scanner's Eol-suppression rule only looks at the
 	// *previous* token (see scanner.odin's keep_eol), and Right_Paren
 	// isn't in its suppress set, so this Eol survives into the token
-	// stream same as it does in glox's own scanner -- glox's parser
-	// then explicitly tolerates it here (`p.match(TOKEN_EOL) // allow
-	// EOL after parameters`, compile.go) rather than the scanner
-	// swallowing it. This port had the scanner behavior but not the
-	// parser-side tolerance, which is worse than just "wrong output":
-	// consume()'s failure path doesn't advance the token, and (before
-	// the class_declaration member-loop fix documented in stmt.odin)
-	// nothing forced the enclosing loop to make progress either, so a
-	// real script hit an actual infinite loop, not merely a bad parse.
+	// stream and must be tolerated here explicitly rather than left for
+	// consume(p, .Left_Brace, ...) to choke on.
 	match(p, .Eol)
 	consume(p, .Left_Brace, "Expect '{' before function body.")
 	block(p)
