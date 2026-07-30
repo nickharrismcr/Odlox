@@ -2,6 +2,8 @@ from gfx import *
 import levels
 import colour
 import text
+import math
+from sprite import Sprite
 from player import state_play, state_safe_start
 
 // Drives the level/game-state machine: intro -> level_start -> level ->
@@ -35,6 +37,28 @@ const BOMB_ICON_MAX   = 7
 const BOMB_COLUMN_GAP  = 8    // gap between the icon column and the radar's left edge
 const BOMB_COLUMN_Y    = 0
 
+// Intro screen sequence: Williams logo flash -> "presents" colour-cycles in
+// -> DEFENDER title shatters into place (reusing the same disperse-draw
+// effect as NPC materialise) with a colour-cycling highlight overlay ->
+// instructions. SPACE skips straight to level_start at any point.
+const INTRO_WILLIAMS_FLASH_FRAMES = 12  // 0.2s per colour
+const INTRO_PRESENTS_AT = 120           // 2s
+const INTRO_TITLE_AT = 240              // 4s
+const INTRO_TEXT_AT = 360               // 6s
+const INTRO_DISPERSE_START = 30
+const INTRO_DISPERSE_RATE = 0.25        // ~2s (120 frames) to fully converge
+const INTRO_PRESENTS_CYCLE_STEPS = 30   // 0.5s period
+const INTRO_HILITE_CYCLE_STEPS = 6      // 0.1s period
+const INTRO_WILLIAMS_Y = 100
+const INTRO_PRESENTS_Y = 220
+const INTRO_TITLE_Y = 400
+// presents.png ships as a huge mostly-transparent canvas with the actual
+// artwork in this sub-rectangle.
+const INTRO_PRESENTS_SRC_X = 304
+const INTRO_PRESENTS_SRC_Y = 259
+const INTRO_PRESENTS_SRC_W = 361
+const INTRO_PRESENTS_SRC_H = 406
+
 class GameController {
     init(cfg, entities, ship, ship_img, smartbomb_img) {
         this.cfg = cfg
@@ -57,6 +81,15 @@ class GameController {
         this.bomb_icon = texture(smartbomb_img, 1, 1, 1)   // smartbomb.png is a single frame already
         // same palette/speed as the score (see score.lox), for a consistent HUD look
         this.banner_cycle = text.ColourCycle([colour.RED, colour.BLUE, colour.PURPLE, colour.YELLOW], 45)
+
+        this.intro_timer = 0
+        this.title_disperse = INTRO_DISPERSE_START
+        this.presents_cycle = text.ColourCycle([colour.RED, colour.BLUE, colour.PURPLE, colour.YELLOW], INTRO_PRESENTS_CYCLE_STEPS)
+        this.hilite_cycle = text.ColourCycle([colour.RED, colour.BLUE, colour.PURPLE, colour.YELLOW], INTRO_HILITE_CYCLE_STEPS)
+        this.williams = texture(image("pngs/williams.png"), 1, 1, 1)
+        this.presents = texture(image("pngs/presents.png"), 1, 1, 1)
+        this.title_sprite = Sprite(vec2(0, 0), image("pngs/title.png"), 1, 1, 1)
+        this.title_hilite_sprite = Sprite(vec2(0, 0), image("pngs/title_hilite.png"), 1, 1, 1)
 
         entities.events.on("lander_killed", this.on_lander_killed())
         entities.events.on("mutant_killed", this.on_lander_killed())
@@ -99,9 +132,7 @@ class GameController {
 
     draw(win, width, height, font) {
         if (this.state == "intro") {
-            draw_centered(win, font, "DEFENDER", width/2, height/2 - 60, colour.YELLOW)
-            draw_centered(win, font, "PRESS SPACE TO PLAY", width/2, height/2, colour.WHITE)
-            draw_centered(win, font, "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE BACKSPACE=BOMB", width/2, height/2 + 60, colour.GRAY)
+            this.draw_intro(win, width, height, font)
         } else if (this.state == "level_finish") {
             draw_centered(win, font, this.banner, width/2, height/2, this.banner_cycle.get())
         } else if (this.state == "game_over") {
@@ -110,6 +141,31 @@ class GameController {
         if (this.state != "intro") {
             this.draw_lives(win)
             this.draw_bombs(win, width)
+        }
+    }
+
+    draw_intro(win, width, height, font) {
+        flash_on = (this.intro_timer / INTRO_WILLIAMS_FLASH_FRAMES) % 2 == 0
+        will_tint = colour.RED
+        if (!flash_on) {
+            will_tint = colour.YELLOW
+        }
+        will_x = width / 2 - this.williams.width() / 2
+        win.draw_texture(this.williams, will_x, INTRO_WILLIAMS_Y, will_tint)
+
+        if (this.intro_timer > INTRO_PRESENTS_AT) {
+            pres_x = width / 2 - INTRO_PRESENTS_SRC_W / 2
+            win.draw_texture_rect(this.presents, pres_x, INTRO_PRESENTS_Y, INTRO_PRESENTS_SRC_X, INTRO_PRESENTS_SRC_Y, INTRO_PRESENTS_SRC_W, INTRO_PRESENTS_SRC_H, this.presents_cycle.get())
+        }
+
+        if (this.intro_timer > INTRO_TITLE_AT) {
+            title_x = width / 2 - this.title_sprite.get_texture().frame_width() / 2
+            this.title_sprite.draw_disperse(win, title_x, INTRO_TITLE_Y, this.title_disperse, colour.WHITE)
+            this.title_hilite_sprite.draw_disperse(win, title_x, INTRO_TITLE_Y, this.title_disperse, this.hilite_cycle.get())
+        }
+
+        if (this.intro_timer > INTRO_TEXT_AT) {
+            draw_centered(win, font, "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE BACKSPACE=BOMB - PRESS SPACE TO PLAY", width/2, height - 100, colour.BLUE)
         }
     }
 
@@ -154,6 +210,12 @@ func enter_intro(g) {
     g.update_func = state_intro
 }
 func state_intro(g, win, input) {
+    g.intro_timer = g.intro_timer + 1
+    g.presents_cycle.update()
+    g.hilite_cycle.update()
+    if (g.intro_timer > INTRO_TITLE_AT) {
+        g.title_disperse = math.max(g.title_disperse - INTRO_DISPERSE_RATE, 1)
+    }
     if (input.reverse) {   // SPACE, same key as the arcade "press space to start"
         enter_level_start(g)
     }
