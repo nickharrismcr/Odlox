@@ -24,8 +24,8 @@ import "../vm"
 // define_natives registers every native (raylib-backed) object/function
 // with v -- called from main.odin right after vm.define_builtins. Each
 // module it registers (colour_utils, gfx, physics, inspect, re, pickle,
-// process) is implemented in its own sibling file; see that file's own
-// doc comment for what it covers.
+// process, sound) is implemented in its own sibling file; see that
+// file's own doc comment for what it covers.
 define_natives :: proc(v: ^vm.VM) {
 	register_colour_utils(v)
 	register_gfx(v)
@@ -34,4 +34,5 @@ define_natives :: proc(v: ^vm.VM) {
 	register_re(v)
 	register_pickle(v)
 	register_process(v)
+	register_sound(v)
 }

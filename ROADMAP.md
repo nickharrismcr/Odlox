@@ -3649,6 +3649,61 @@ cold and warm, on both build modes.
 
 ---
 
+## Phase 10 — Sound
+
+Shipped, per `docs/plans/sound.md`'s design. odlox had no audio support at all — `d:\odin\defender` (a
+separate Odin/raylib project) was the design reference: a thin wrapper around raylib's own sound/music API,
+plus a "manager" layer of game-level policy on top. That split is followed exactly: the thin wrapper is a
+new native `sound` module; the manager-level policy is ordinary Lox code, `modules/sound_mgr.lox`, reusable
+by any script without touching Odin.
+
+**Native layer**: `core/obj_sound.odin` (`Sound_Object`/`Music_Object`, each with the idempotent `freed`-flag
+unload pattern already established by `Texture_Object`/`Shader_Object` — a real per-instance GPU/OS
+resource, unlike `Window_Object`'s process-global exception), `vm/sound.odin` (`invoke_builtin_sound`/
+`invoke_builtin_music` method dispatch, wired into `vm/call.odin`'s central invoke switch and `vm/gc.odin`'s
+`object_size`/`free_object` cases, exactly the same three-layer shape every other native object type
+follows), `natives/sound.odin` (`register_sound`, an `audio_device_ready` guard mirroring `natives/gfx.odin`'s
+own `window_created`). `sound` is its own top-level module, not nested under `gfx` — a script that wants
+audio but no window shouldn't need to import graphics.
+
+Sound methods: `play`/`stop`/`pause`/`resume`/`is_playing`/`set_volume`/`set_pitch`/`set_pan`/`unload`.
+Music methods: the same set plus `update` (raylib only advances streamed playback while this is polled, so
+a script's own per-frame loop is responsible for calling it), `seek`/`time_played`/`time_length`/
+`set_looping`/`is_looping`. Device-level: `sound.init`/`close`/`is_ready`/`set_master_volume`/
+`get_master_volume`, plus the `sound.load`/`load_music` constructors (both require `sound.init()` to have
+already run, raising a catchable runtime error otherwise, and both raise a catchable error on a bad
+path/format rather than returning a broken handle).
+
+**Lox layer**: `modules/sound_mgr.lox`'s `SoundManager` class reproduces the policy `defender`'s own manager
+adds — exclusivity groups (playing a sound in a nonzero group stops every other currently-playing sound in
+that same group first), `play_if_not` (re-trigger only if not already playing), a mute switch, and
+per-frame music-stream polling — generalized from a fixed compile-time table into runtime dicts a script
+populates itself (`load(name, path, group)`/`load_music(key, path)`).
+
+**Real fixes found while smoke-testing, not anticipated by the design**:
+- The manager library's first draft used `for x in y.keys() { ... }` for its group/mute iteration loops —
+  a real compile error (`for` requires C-style parens and a three-clause header; collection iteration is a
+  separate keyword, `foreach (x in y) { ... }`). Caught immediately by actually running the script rather
+  than assuming it compiled.
+- `sound.init()` needed the same `rl.SetTraceLogLevel(.NONE)` call `win.init()` already makes before
+  `rl.InitWindow` — without it, raylib's own audio-device/file-load trace logging (`INFO: AUDIO: ...`,
+  `INFO: FILEIO: ...`) goes to stdout, not stderr, polluting any script's real output (and specifically
+  breaking exact-output pytest assertions, which is how this was found).
+- `Music.is_playing()` immediately after `.play()` + one `.update()` call is not reliable enough to assert
+  on in a test — real driver/timing behavior, not a bug in this code — so the pytest-level assertions use
+  `Sound.is_playing()` (reliable, confirmed by direct manual testing) for both the grouping and mute
+  behavior checks, and only structural values (`time_length() > 0`, `is_looping()`) for `Music`.
+
+**Verified**: a 4 KB synthetic test WAV (`tests/new_tests/lox/assets/test_tone.wav`, a short synthesized
+tone, generated with Python's stdlib `wave` module — small enough to commit permanently) backs two new
+pytest tests, `tests/new_tests/test_sound.py`: `sound_smoke.lox` (device lifecycle, Sound and Music object
+methods, idempotent double-unload/double-close, exact-output asserted) and `sound_mgr_smoke.lox`
+(`SoundManager`'s grouping and mute behavior, exact-output asserted). Both were also run manually, directly
+against the built binary, before being wired into pytest, to confirm real behavior first. `pytest` held at
+225/0/26 (223 baseline + 2 new), cold and warm, on both build modes.
+
+---
+
 ## Testing every phase
 
 **The ported test suite is the acceptance gate for every phase above, not

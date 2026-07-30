@@ -1,0 +1,16 @@
+import sound_mgr
+import sys
+
+mgr=sound_mgr.SoundManager()
+mgr.load("drop","assets/dropping.wav")
+mgr.play("drop")
+
+// play() is fire-and-forget -- raylib mixes it on a background thread,
+// so the process has to stay alive for as long as it takes to be heard,
+// or it plays nothing at all. Sound (unlike Music) exposes no duration
+// query, so poll is_playing() until it reports done rather than
+// guessing a fixed sleep.
+while (mgr.sounds["drop"].is_playing()) {
+	sys.sleep(0.05)
+}
+

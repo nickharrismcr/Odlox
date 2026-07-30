@@ -1,0 +1,43 @@
+// SoundManager (modules/sound_mgr.lox) smoke test: exclusivity groups
+// and the mute switch, the two pieces of real policy this library adds
+// on top of the native `sound` module.
+
+import sound
+import sound_mgr
+
+sound.init()
+mgr = sound_mgr.SoundManager()
+mgr.load("a", "lox/assets/test_tone.wav", 1)
+mgr.load("b", "lox/assets/test_tone.wav", 1)
+mgr.load("c", "lox/assets/test_tone.wav")
+
+// Group exclusivity: playing "b" (same group as "a") must stop "a".
+mgr.play("a")
+mgr.play("b")
+print mgr.sounds["a"].is_playing()
+print mgr.sounds["b"].is_playing()
+
+// Ungrouped sound is unaffected by group activity.
+mgr.play("c")
+print mgr.sounds["c"].is_playing()
+
+// play_if_not does not restart an already-playing sound.
+mgr.play_if_not("c")
+print mgr.sounds["c"].is_playing()
+
+// Mute stops everything currently playing and blocks further play().
+mgr.set_muted(true)
+print mgr.sounds["a"].is_playing()
+print mgr.sounds["b"].is_playing()
+print mgr.sounds["c"].is_playing()
+print mgr.is_muted()
+
+mgr.play("c")
+print mgr.sounds["c"].is_playing()
+
+mgr.set_muted(false)
+mgr.play("c")
+print mgr.sounds["c"].is_playing()
+
+sound.close()
+print "sound_mgr_smoke complete"

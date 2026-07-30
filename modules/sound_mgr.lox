@@ -1,0 +1,95 @@
+// SoundManager: exclusivity groups, play-if-not-playing, a mute switch,
+// and per-frame music polling on top of the native `sound` module. Data-
+// driven -- load() takes a name/path/group at runtime rather than a
+// fixed compiled-in table, so any script can populate its own sound set.
+
+import sound
+
+class SoundManager {
+	init() {
+		this.sounds = {}   // name -> Sound object
+		this.groups = {}   // name -> group id (absent = no exclusivity)
+		this.music = {}    // key -> Music object
+		this.muted = false
+		sound.init()
+	}
+
+	// load registers a Sound under name, loaded from path. group, if
+	// given and nonzero, makes this sound mutually exclusive with every
+	// other sound sharing that group: playing one stops every other
+	// currently-playing sound in the same group first.
+	load(name, path, group=0) {
+		this.sounds[name] = sound.load(path)
+		if group != 0 {
+			this.groups[name] = group
+		}
+	}
+
+	load_music(key, path) {
+		this.music[key] = sound.load_music(path)
+	}
+
+	play(name) {
+		if this.muted { return }
+		group = this.groups.get(name, 0)
+		if group != 0 {
+			foreach (other in this.groups.keys()) {
+				if other != name and this.groups[other] == group {
+					this.sounds[other].stop()
+				}
+			}
+		}
+		this.sounds[name].stop()
+		this.sounds[name].play()
+	}
+
+	// play_if_not re-triggers name only if it isn't already playing --
+	// keeps a one-shot clip effectively looping for as long as it's
+	// called every frame some condition holds.
+	play_if_not(name) {
+		if !this.muted and !this.sounds[name].is_playing() {
+			this.sounds[name].play()
+		}
+	}
+
+	stop(name) {
+		this.sounds[name].stop()
+	}
+
+	play_music(key) {
+		if !this.muted {
+			this.music[key].play()
+		}
+	}
+
+	stop_music(key) {
+		this.music[key].stop()
+	}
+
+	// update polls every registered Music stream -- call once per frame
+	// from the game's own loop, or streamed playback stalls.
+	update() {
+		foreach (key in this.music.keys()) {
+			this.music[key].update()
+		}
+	}
+
+	// set_muted(true) stops everything currently playing and silences
+	// future play()/play_music() calls; set_muted(false) just lifts the
+	// silence -- nothing resumes automatically.
+	set_muted(m) {
+		this.muted = m
+		if m {
+			foreach (name in this.sounds.keys()) {
+				this.sounds[name].stop()
+			}
+			foreach (key in this.music.keys()) {
+				this.music[key].stop()
+			}
+		}
+	}
+
+	is_muted() {
+		return this.muted
+	}
+}

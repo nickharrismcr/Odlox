@@ -190,6 +190,10 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_batch(vm, core.as_batch(receiver), core.string_get(name), arg_count)
 	case .Batch_Instanced:
 		return invoke_builtin_batch_instanced(vm, core.as_batch_instanced(receiver), core.string_get(name), arg_count)
+	case .Sound:
+		return invoke_builtin_sound(vm, core.as_sound(receiver), core.string_get(name), arg_count)
+	case .Music:
+		return invoke_builtin_music(vm, core.as_music(receiver), core.string_get(name), arg_count)
 	case .Module:
 		// `mod.fn(args)` -- a module has no "methods" of its own, just
 		// name-keyed members (native functions, for a built-in module;

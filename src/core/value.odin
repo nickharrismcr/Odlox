@@ -190,6 +190,12 @@ as_batch :: proc(v: Value) -> ^Batch_Object {
 as_batch_instanced :: proc(v: Value) -> ^Batch_Instanced_Object {
 	return cast(^Batch_Instanced_Object)v.obj
 }
+as_sound :: proc(v: Value) -> ^Sound_Object {
+	return cast(^Sound_Object)v.obj
+}
+as_music :: proc(v: Value) -> ^Music_Object {
+	return cast(^Music_Object)v.obj
+}
 as_function :: proc(v: Value) -> ^Function_Object {
 	return cast(^Function_Object)v.obj
 }

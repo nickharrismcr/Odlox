@@ -49,6 +49,9 @@ Object_Type :: enum u8 {
 	Camera,
 	Batch,
 	Batch_Instanced,
+
+	Sound,
+	Music,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -158,6 +161,10 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		// unembellished string rather than the "<Type ...>" bracket
 		// convention.
 		return "BatchInstancedObject"
+	case .Sound:
+		return "<sound>"
+	case .Music:
+		return "<music>"
 	}
 	return "<unknown>"
 }

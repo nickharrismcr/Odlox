@@ -1,0 +1,46 @@
+// Native `sound` module smoke test: correct API sequencing across the
+// device lifecycle plus a Sound and a Music object, run under a bounded
+// timeout by the pytest driver. Actual audible playback can't be
+// asserted on here (no speaker in CI) -- this checks what the API
+// itself can report: is_ready()/is_playing() transitions, structural
+// values (time_length), and clean unload/close with no crash or hang.
+
+import sound
+
+print sound.is_ready()
+sound.init()
+print sound.is_ready()
+
+s = sound.load("lox/assets/test_tone.wav")
+print s.is_playing()
+s.play()
+print s.is_playing()
+s.pause()
+s.resume()
+s.set_volume(0.5)
+s.set_pitch(1.0)
+s.set_pan(0.5)
+s.stop()
+print s.is_playing()
+s.unload()
+s.unload() // idempotent -- must not crash
+
+m = sound.load_music("lox/assets/test_tone.wav")
+m.play()
+m.update()
+print m.time_length() > 0.0
+m.set_looping(true)
+print m.is_looping()
+m.set_looping(false)
+print m.is_looping()
+m.stop()
+m.unload()
+m.unload() // idempotent -- must not crash
+
+sound.set_master_volume(0.8)
+print sound.get_master_volume() > 0.7
+
+sound.close()
+print sound.is_ready()
+
+print "sound_smoke complete"

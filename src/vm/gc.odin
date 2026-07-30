@@ -449,6 +449,14 @@ free_object :: proc(obj: ^core.Obj) {
 		delete(bi.entries)
 		delete(bi.transforms)
 		free(bi)
+	case .Sound:
+		s := cast(^core.Sound_Object)obj
+		core.sound_unload(s) // no-op if already .unload()ed
+		free(s)
+	case .Music:
+		m := cast(^core.Music_Object)obj
+		core.music_unload(m) // no-op if already .unload()ed
+		free(m)
 	case:
 		free(obj)
 	}
@@ -528,6 +536,10 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size_of(core.Batch_Instanced_Object) +
 			len(bi.entries) * size_of(core.Batch_Instanced_Entry) +
 			len(bi.transforms) * size_of(rl.Matrix)
+	case .Sound:
+		return size_of(core.Sound_Object)
+	case .Music:
+		return size_of(core.Music_Object)
 	case:
 		return 32
 	}
