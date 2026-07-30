@@ -168,7 +168,10 @@ mark_roots :: proc(vm: ^VM) {
 	for _, m in vm.builtin_modules {
 		mark_object(vm, &m.obj)
 	}
-	for _, m in vm.module_cache {
+	// module_cache is process-wide (see module.odin), not per-VM -- every
+	// VM's own mark phase walks the same shared cache, so a module stays
+	// alive as long as *any* running VM might still call into it.
+	for _, m in module_cache {
 		mark_object(vm, &m.obj)
 	}
 }
@@ -282,8 +285,8 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 	case .List_Iterator:
 		it := cast(^core.List_Iterator_Object)obj
 		mark_object(vm, &it.data.obj)
-	// String, Native, File, Int_Iterator, String_Iterator, Vec2/3/4: no
-	// Object-typed children to trace.
+	// String, Native, File, Int_Iterator, String_Iterator, Vec2/3/4,
+	// Sound, Music: no Object-typed children to trace.
 	}
 }
 

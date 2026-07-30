@@ -155,6 +155,7 @@ func enter_dropping(e) {
     e.dy = 0
     e.drop_start_y = e.pos.y
     e.update_func = state_dropping
+    e.mgr.events.emit("human_dropped", e)
 }
 
 func state_dropping(e, width, height) {

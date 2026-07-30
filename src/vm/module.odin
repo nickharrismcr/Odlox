@@ -7,8 +7,8 @@ import "core:path/filepath"
 import "core:strings"
 
 // Module import execution. With threads out of scope entirely (see
-// docs/ARCHITECTURE.md's Scope section), vm.module_cache is just a
-// plain per-VM map, no lock needed.
+// docs/ARCHITECTURE.md's Scope section), module_cache is a plain
+// process-wide map, no lock needed.
 //
 // Built-in modules (sys/os, registered in builtins.odin; gfx/re/pickle/
 // process/colour_utils/inspect/physics, registered from the natives/
@@ -16,15 +16,23 @@ import "core:strings"
 // vm.builtin_modules. A *.lox source module resolves through
 // read_module_source below.
 
+// module_cache holds every imported module, keyed by its bare import
+// name, shared by every VM in the process rather than kept per-VM: a
+// module reached via two different import paths (e.g. two files that
+// both `import particle_sys`) resolves to the *same* Class_Objects and
+// the *same* module-level state (a `var` free list, a `static` class
+// field, ...), not two independent copies.
+@(private)
+module_cache: map[string]^core.Module_Object
+
 // module_source_cache holds every imported module's own source text,
-// keyed by its bare import name -- unlike module_cache above, this one
-// genuinely is process-wide (no per-VM copy would work): a module's own
-// functions run as ordinary closures in whichever VM calls them, often
-// long after the sub-VM that originally compiled the module's source has
-// gone out of scope, but the stack trace (exceptions.odin's
-// append_stack_trace/source_line) still needs that module's source text
-// to print a context line for a frame inside one of its functions. No
-// mutex needed for the same reason module_cache doesn't have one.
+// keyed by its bare import name -- genuinely process-wide for the same
+// reason module_cache above is: a module's own functions run as
+// ordinary closures in whichever VM calls them, often long after the
+// sub-VM that originally compiled the module's source has gone out of
+// scope, but the stack trace (exceptions.odin's append_stack_trace/
+// source_line) still needs that module's source text to print a
+// context line for a frame inside one of its functions.
 @(private)
 module_source_cache: map[string]string
 
@@ -106,11 +114,11 @@ bind_imported_name_soft :: proc(vm: ^VM, name: string, val: core.Value) {
 
 @(private = "file")
 load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
-	if cached, ok := vm.module_cache[name]; ok {
+	if cached, ok := module_cache[name]; ok {
 		return cached, true
 	}
 	if builtin, ok := vm.builtin_modules[core.intern_string(name)]; ok {
-		vm.module_cache[name] = builtin
+		module_cache[name] = builtin
 		return builtin, true
 	}
 
@@ -181,7 +189,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 
 	mod := core.make_module_object(name, sub.environment)
 	gc_track(vm, &mod.obj)
-	vm.module_cache[name] = mod
+	module_cache[name] = mod
 	return mod, true
 }
 

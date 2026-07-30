@@ -35,18 +35,27 @@ make_music_object :: proc(m: rl.Music) -> ^Music_Object {
 	return o
 }
 
+// sound_unload stops s before unloading it -- unloading a still-playing
+// clip risks the audio mixer thread reading from a buffer this call is
+// about to free out from under it. Reachable not just from a script's
+// own .unload() call but from a GC sweep too (see vm/gc.odin's
+// free_object), which has no way to know whether s happened to still be
+// playing at the moment it became unreachable.
 sound_unload :: proc(s: ^Sound_Object) {
 	if s.freed {
 		return
 	}
 	s.freed = true
+	rl.StopSound(s.sound)
 	rl.UnloadSound(s.sound)
 }
 
+// music_unload: same reasoning as sound_unload above, for a streamed clip.
 music_unload :: proc(m: ^Music_Object) {
 	if m.freed {
 		return
 	}
 	m.freed = true
+	rl.StopMusicStream(m.music)
 	rl.UnloadMusicStream(m.music)
 }

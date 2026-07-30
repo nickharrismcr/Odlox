@@ -8,9 +8,9 @@ from math import *
 import particle_sys;
 
 MIN_PARTICLES=20
-MAX_PARTICLES=200
-MIN_DELAY=50
-MAX_DELAY=100
+MAX_PARTICLES=100
+MIN_DELAY=20
+MAX_DELAY=50
 
  
 // particle update function

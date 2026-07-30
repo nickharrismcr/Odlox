@@ -82,7 +82,6 @@ VM :: struct {
 
 	builtins:        map[^core.String_Object]core.Value,
 	builtin_modules:  map[^core.String_Object]^core.Module_Object,
-	module_cache:    map[string]^core.Module_Object,
 
 	repl:        bool,
 	repl_state:  compiler.Repl_State,
@@ -137,7 +136,6 @@ new_vm_raw :: proc(script: string) -> ^VM {
 	vm.next_gc = INITIAL_GC_THRESHOLD
 	vm.builtins = make(map[^core.String_Object]core.Value)
 	vm.builtin_modules = make(map[^core.String_Object]^core.Module_Object)
-	vm.module_cache = make(map[string]^core.Module_Object)
 	return vm
 }
 

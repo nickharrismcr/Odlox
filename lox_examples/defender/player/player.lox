@@ -400,6 +400,8 @@ func enter_die(e) {
     if (e.mgr != nil) {
         e.mgr.freeze_enemies()
         e.mgr.clear_lasers()
+        e.mgr.sound.stop("laser")
+        e.mgr.sound.stop_music("thruster")
     }
     e.mgr.events.emit("player_die", e)
 }

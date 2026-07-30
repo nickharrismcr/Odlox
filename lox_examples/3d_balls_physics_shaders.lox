@@ -10,6 +10,7 @@ import math
 win = window(800,600)
 win.init()
 win.toggle_fullscreen()
+win.show_fps(true)
 
 // Create a 3D camera with orbital view
 // Position: (20, 10, 10), Target: origin, Up: Y-axis
@@ -65,14 +66,14 @@ const BOUNCE_DAMPING = 0.5     // Energy loss factor on boundary collisions (0.9
 const AIR_DAMPING = 0.9999       // Per-step velocity multiplier (air resistance). Originally
                                 // applied to horizontal velocity only; physics_world applies
                                 // it uniformly to all three axes each step.
-const SHAPES = 500            // Total number of balls to spawn in the simulation - 500 is max to get 60fps on my machine.
+const SHAPES = 450            // Total number of balls to spawn in the simulation - 500 is max to get 60fps on my machine.
 const FORCE = 0.6             // Explosion force multiplier (affects blast radius impact)
 const DISTANCE = 40.0          // Camera orbital distance from center
 const NORMAL=0
 const RAINBOW=1
 const PULSE=2
 const EXP_MIN=400                // Minimum frames before explosion
-const EXP_MAX=6000                // Maximum frames before explosion
+const EXP_MAX=700                // Maximum frames before explosion
 
 // Static edge ramps -- see STATIC RAMPS setup below.
 const RAMP_ANGLE = 15.0                  // Tilt in degrees

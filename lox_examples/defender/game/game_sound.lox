@@ -1,0 +1,150 @@
+import sound
+import sound_mgr
+
+// Event -> sound-effect mapping. A mutated lander's kill event is
+// "mutant_killed" (see lander.lox's enter_die -- the entity is renamed
+// "mutant" on mutation but is still the same underlying lander), and
+// plays the same death clip as an ordinary lander kill.
+const SOUND_EVENTS = {
+    "level_start":    "level_start",
+    "lander_spawn":   "materialize",
+    "pod_spawn":      "materialize",
+    "swarmer_spawn":  "materialize",
+    "baiter_spawn":   "materialize",
+    "bomber_spawn":   "materialize",
+    "laser_fire":     "laser",
+    "player_explode": "die",
+    "lander_killed":  "lander_die",
+    "mutant_killed":  "lander_die",
+    "bomber_killed":  "bomber_die",
+    "baiter_killed":  "baiter_die",
+    "pod_killed":     "pod_die",
+    "human_grabbed":  "grabbed",
+    "human_dropped":  "dropping",
+    "human_killed":   "human_die",
+    "human_caught":   "caught_human",
+    "human_saved":    "place_human"
+}
+
+// Exclusivity groups, emulating a limited hardware voice count: sounds
+// sharing a group stop each other before playing, so e.g. firing the
+// laser can cut off an NPC death sound or the swarmer buzz, and vice
+// versa.
+const SOUND_GROUPS = {
+    "laser":      1,
+    "lander_die": 1,
+    "bomber_die": 1,
+    "baiter_die": 1,
+    "swarmer":    1,
+    "dropping":   1
+}
+
+const SOUND_PATHS = {
+    "baiter_die":   "assets/baiterdie.wav",
+    "bomber_die":   "assets/bomberdie.wav",
+    "bullet":       "assets/bullet.wav",
+    "caught_human": "assets/caughthuman.wav",
+    "die":          "assets/die.wav",
+    "dropping":     "assets/dropping.wav",
+    "grabbed":      "assets/grabbed.wav",
+    "human_die":    "assets/humandie.wav",
+    "lander_die":   "assets/landerdie.wav",
+    "laser":        "assets/laser.wav",
+    "level_start":  "assets/levelstart.wav",
+    "materialize":  "assets/materialise.wav",
+    "mutant":       "assets/mutant.wav",
+    "place_human":  "assets/placehuman.wav",
+    "pod_die":      "assets/poddie.wav",
+    "start":        "assets/start.wav",
+    "swarmer":      "assets/swarmer.wav"
+}
+
+// GameSound wraps a sound_mgr.SoundManager with this game's own event
+// wiring and continuous "buzz while visible" cues (swarmer/mutant),
+// attached directly onto EntityMgr (as `entities.sound`) the same way
+// `cam`/`mountains`/`player` already are.
+//
+// mute is taken as a constructor argument and applied to this file's own
+// imported sound_mgr, since each module import gets its own independent
+// copy -- setting the flag on a different file's copy wouldn't reach it.
+class GameSound {
+    init(mute) {
+        sound_mgr.SoundManager.no_sound = mute
+        this.mgr = sound_mgr.SoundManager()
+        foreach (var name in SOUND_PATHS.keys()) {
+            this.mgr.load(name, SOUND_PATHS[name], SOUND_GROUPS.get(name, 0))
+        }
+        this.mgr.load_music("background", "assets/background.wav")
+        this.mgr.set_music_looping("background", true)
+        this.mgr.load_music("thruster", "assets/thruster.wav")
+        this.mgr.set_music_looping("thruster", true)
+        this.mgr.set_music_volume("thruster", 0.3)
+        this.mgr.play_music("background")
+        this.cam = nil
+    }
+
+    // Subscribes every SOUND_EVENTS entry to a listener that plays the
+    // mapped clip -- mirrors Score.attach()'s own event -> value table
+    // pattern. bullet_fire is wired separately: NPC bullets can be fired
+    // off screen (intentional -- they linger as hazards), but should
+    // stay silent until something on screen is actually shooting, so it
+    // needs the camera to check.
+    attach(events, cam) {
+        this.cam = cam
+        foreach (var ev in SOUND_EVENTS.keys()) {
+            events.on(ev, this.handler_for(SOUND_EVENTS[ev]))
+        }
+        events.on("bullet_fire", this.on_bullet_fire())
+    }
+
+    // Returns a listener closed over `this` and this event's mapped
+    // sound name.
+    handler_for(sound_name) {
+        func on_event(data) {
+            this.mgr.play(sound_name)
+        }
+        return on_event
+    }
+
+    on_bullet_fire() {
+        func on_event(pos) {
+            if (this.cam == nil or this.cam.translate(pos.x) != nil) {
+                this.mgr.play("bullet")
+            }
+        }
+        return on_event
+    }
+
+    // Background plays through every game state; the thruster loop
+    // tracks the ship's thrust input edge. Call once per frame,
+    // unconditionally (not just during active gameplay), or streamed
+    // playback stalls and the ambience cuts out on non-gameplay screens.
+    update(thrusting) {
+        this.mgr.update()
+        if (thrusting) {
+            this.mgr.play_music_if_not("thruster")
+        } else {
+            this.mgr.stop_music("thruster")
+        }
+    }
+
+    play(name) {
+        this.mgr.play(name)
+    }
+
+    play_if_not(name) {
+        this.mgr.play_if_not(name)
+    }
+
+    stop(name) {
+        this.mgr.stop(name)
+    }
+
+    stop_music(key) {
+        this.mgr.stop_music(key)
+    }
+
+    close() {
+        sound.close()
+    }
+}

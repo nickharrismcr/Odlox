@@ -41,4 +41,9 @@ func state_chase(e, width, height) {
     // keep inside the play area vertically
     if (e.pos.y < 110) { e.pos.y = 110 }
     if (e.pos.y > height - 40) { e.pos.y = height - 40 }
+
+    on_screen = e.mgr.cam == nil or e.mgr.cam.translate(e.pos.x) != nil
+    if (on_screen) {
+        e.mgr.sound.play_if_not("swarmer")
+    }
 }

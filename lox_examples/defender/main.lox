@@ -15,6 +15,7 @@ import score
 import config
 import controller
 import game_controller
+import game_sound
 
 // --- Game events -------------------------------------------------------------
 // Emitted via entities.events; subscribe with entities.events.on(name, fn).
@@ -106,10 +107,16 @@ font = text.Font(image("pngs/font.png"))
 hud_score = score.Score(font, 10, 10)  // left of the radar strip
 hud_score.attach(entities.events)
 
+snd = game_sound.GameSound(cfg.mute_sound)
+snd.attach(entities.events, cam)
+entities.sound = snd
+snd.play("start")   // the intro screen is showing from startup
+
 while (!win.should_close() and !game.done) {
 
     input.update(win)
     game.update(win, input)
+    snd.update(ship.thrusting)   // unconditional -- background/thruster track every game state
 
     if (game.gameplay_active()) {
         ship.update(input)          // also handles firing the laser and the smart bomb
@@ -141,4 +148,5 @@ while (!win.should_close() and !game.done) {
     win.draw_render_texture(play_area, offset_x, offset_y, colour.WHITE)
     win.end()
 }
+snd.close()
 win.close()

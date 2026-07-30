@@ -236,6 +236,11 @@ func state_mutated(e,width, height) {
             aim_bullet_at(e, e.mgr.player)
         }
     }
+
+    on_screen = e.mgr.cam == nil or e.mgr.cam.translate(e.pos.x) != nil
+    if (on_screen) {
+        e.mgr.sound.play_if_not("mutant")
+    }
 }
 
 func enter_die(e) {

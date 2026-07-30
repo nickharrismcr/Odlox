@@ -2,7 +2,7 @@ from gfx import *
 import levels
 import colour
 import text
-from player import state_play
+from player import state_play, state_safe_start
 
 // Drives the level/game-state machine: intro -> level_start -> level ->
 // level_finish -> level_start (loops), or level_start -> ... -> game_over.
@@ -178,10 +178,10 @@ func enter_level_start(g) {
     }
 
     // Only force the ship visible if it's just coasting along in normal play
-    // -- if it's mid death-sequence/hyperspace/spawn-wait, that state's own
-    // enter_/state_ functions already own visibility and know better (e.g. a
-    // level ending mid-explode shouldn't reveal the ship early).
-    if (g.ship.update_func == state_play) {
+    // or its post-respawn invulnerability window -- if it's mid
+    // death-sequence/hyperspace, that state's own enter_/state_ functions
+    // already own visibility and know better.
+    if (g.ship.update_func == state_play or g.ship.update_func == state_safe_start) {
         g.ship.visible = true
     }
     g.state = "level_start"
