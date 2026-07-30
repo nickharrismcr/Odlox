@@ -67,13 +67,13 @@ const AIR_DAMPING = 0.9999       // Per-step velocity multiplier (air resistance
                                 // applied to horizontal velocity only; physics_world applies
                                 // it uniformly to all three axes each step.
 const SHAPES = 450            // Total number of balls to spawn in the simulation - 500 is max to get 60fps on my machine.
-const FORCE = 0.6             // Explosion force multiplier (affects blast radius impact)
+const FORCE = 0.9             // Explosion force multiplier (affects blast radius impact)
 const DISTANCE = 40.0          // Camera orbital distance from center
 const NORMAL=0
 const RAINBOW=1
 const PULSE=2
-const EXP_MIN=400                // Minimum frames before explosion
-const EXP_MAX=700                // Maximum frames before explosion
+const EXP_MIN=200                // Minimum frames before explosion
+const EXP_MAX=2000                // Maximum frames before explosion
 
 // Static edge ramps -- see STATIC RAMPS setup below.
 const RAMP_ANGLE = 15.0                  // Tilt in degrees
@@ -414,7 +414,7 @@ while (!win.should_close()) {
 
     // Trigger floor flash effect when any explosions occur
     if (explosions.length() > 0) {
-        floor_flash_timer = 5 // Flash duration in frames
+        floor_flash_timer = 2 // Flash duration in frames
     }
 
     // Countdown floor flash timer
