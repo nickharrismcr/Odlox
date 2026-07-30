@@ -131,10 +131,14 @@ while (!win.should_close() and !game.done) {
     // draw the whole game into the fixed-size play_area texture
     win.begin_texture_mode(play_area)
     win.clear(colour.BLACK)
-    mountain.draw(win, height, cam, width)   // no-ops while hidden, see Mountain.attach()
-    starfield.draw(win)
+    if (game.state != "game_over") {
+        mountain.draw(win, height, cam, width)   // no-ops while hidden, see Mountain.attach()
+        starfield.draw(win)
+    }
     entities.draw(win, cam)
-    ship.draw(win, cam)
+    if (game.state != "game_over") {
+        ship.draw(win, cam)
+    }
     radar.draw(win, cam, entities, mountain)
     hud_score.draw(win)
     game.draw(win, width, height, font)

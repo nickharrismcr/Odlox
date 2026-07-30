@@ -31,12 +31,14 @@ const SOUND_EVENTS = {
 // laser can cut off an NPC death sound or the swarmer buzz, and vice
 // versa.
 const SOUND_GROUPS = {
-    "laser":      1,
-    "lander_die": 1,
-    "bomber_die": 1,
-    "baiter_die": 1,
-    "swarmer":    1,
-    "dropping":   1
+    "laser":        1,
+    "lander_die":   1,
+    "bomber_die":   1,
+    "baiter_die":   1,
+    "swarmer":      1,
+    "dropping":     1,
+    "caught_human": 1,
+    "place_human":  1
 }
 
 const SOUND_PATHS = {

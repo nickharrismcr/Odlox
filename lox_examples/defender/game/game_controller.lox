@@ -226,7 +226,10 @@ func enter_level_start(g) {
     levels.apply_level(g.cfg, g.level)
 
     g.landers_killed = 0
-    g.level_landers = g.cfg.landers_per_wave * g.cfg.lander_waves
+    // +1 for the guaranteed near-spawn below -- it's a genuine extra lander,
+    // not one of the landers_per_wave*lander_waves already counted, so the
+    // kill target must include it or the level can finish one lander short.
+    g.level_landers = g.cfg.landers_per_wave * g.cfg.lander_waves + 1
 
     foreach (var i in range(0, g.cfg.lander_waves)) {
         g.entities.add_landers(g.cfg.landers_per_wave, i * g.cfg.lander_wave_delay)

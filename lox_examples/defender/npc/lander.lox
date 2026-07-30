@@ -113,7 +113,7 @@ func state_descend(e, width, height) {
 }
 
 func enter_search(e) {
-    e.human = e.mgr.pick_a_human()
+    e.human = e.mgr.pick_a_human(e.pos.x)
     e.dp.x = -e.mgr.config.lander_search_speed
     e.dp.y = 0
     e.update_func = state_search
@@ -128,7 +128,7 @@ func state_search(e, width, height) {
     e.maybe_fire_bullet(2.0)   // slower, more lenient shot while wandering/searching
 
     if (e.human != nil and (e.human.state == "dying" or !e.human.alive)) {
-        e.human = e.mgr.pick_a_human()   // target died before being grabbed -- find another
+        e.human = e.mgr.pick_a_human(e.pos.x)   // target died before being grabbed -- find another
     }
 
     if (e.human != nil) {
@@ -174,7 +174,11 @@ func state_abduct(e,width, height) {
     // the human tracks us itself now (its `grabbed` state), so just ascend
     e.pos.y = e.pos.y + e.dp.y
     if (e.pos.y < 150 ) {
-        enter_mutated(e)
+        if (e.human != nil and (e.human.state == "dying" or !e.human.alive)) {
+            enter_die(e)   // the carried human was shot mid-flight -- die instead of mutating
+        } else {
+            enter_mutated(e)
+        }
     }
     e.maybe_fire_bullet()
 }

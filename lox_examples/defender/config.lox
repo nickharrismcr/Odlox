@@ -42,10 +42,10 @@ class Config {
         this.starting_bombs = 5   // smart bombs (Backspace); EntityMgr.trigger_smart_bomb() decrements
 
         // --- player ship ---
-        this.player_maxspeed = 28
+        this.player_maxspeed = 32
         this.player_accel    = 0.7
         this.player_friction = 0.96
-        this.player_vspeed   = 7
+        this.player_vspeed   = 8
         this.player_lean_speed = 1.5 // px/frame the ship's screen lean eases in/out by while thrusting (see player.lox)
         this.nodie = false // if true, the player ship cannot die (for testing)
         this.hyperspace_death_chance = 8 // 1-in-N chance of dying on hyperspace arrival
