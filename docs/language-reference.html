@@ -249,13 +249,13 @@ bin/odlox.exe --repl
 <tr><td><code>--debug</code></td><td>Attach a live execution trace while running</td></tr>
 <tr><td><code>--instrument</code></td><td>Count executed instructions while running</td></tr>
 <tr><td><code>--no-peephole</code></td><td>Disable the peephole optimiser</td></tr>
-<tr><td><code>--force-compile</code></td><td>Accepted for script compatibility; has no effect (see below)</td></tr>
+<tr><td><code>--force-compile</code></td><td>Bypass the bytecode cache's read for imported modules (see below); still refreshes the cache afterward</td></tr>
 <tr><td><code>-h</code>, <code>--help</code></td><td>Show usage and exit</td></tr>
 </tbody>
 </table>
 <div class="note"><strong>No short-flag aliases</strong>Every flag is long-form only — there are no single-letter equivalents.</div>
 <div class="note"><strong><code>--debug</code>/<code>--instrument</code> need a debug build</strong>These attach a per-instruction hook that costs real dispatch-loop performance if it's always compiled in, so a release build (<code>bin/build.sh --release</code>) compiles it out entirely — passing either flag there prints a warning and produces no trace/count output. Use the default debug build (<code>bin/build.sh</code>, no arguments) for real trace/instrument output.</div>
-<div class="note"><strong>No bytecode cache</strong>odlox recompiles every imported module from source on every run — there is no on-disk cache to invalidate. <code>--force-compile</code> is accepted for script compatibility but has no effect.</div>
+<div class="note"><strong>Bytecode cache</strong>Imported modules (never the entry script) are cached as compiled bytecode in a <code>__loxcache__/&lt;name&gt;.lxc</code> file alongside the module's own source — the cache is used whenever it exists and is newer than the source, and is invalidated (recompiled and refreshed) the moment the source changes. <code>--force-compile</code> skips the cache lookup for that run but still refreshes it afterward.</div>
 
 <h3>The REPL</h3>
 <p><code>bin/odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
@@ -602,7 +602,7 @@ try {
 
 <!-- ==================== MODULES ==================== -->
 <h2 class="section" id="modules">Modules &amp; imports</h2>
-<p>Modules are imported by name and compiled from source on every run (see <a href="#running">Running odlox</a> — there is no bytecode cache).</p>
+<p>Modules are imported by name and compiled from source, or loaded from a bytecode cache if a fresh one exists (see <a href="#running">Running odlox</a>) — the entry script itself always compiles from source.</p>
 <pre><code class="lox">import math
 import particle_sys as ps        // alias
 import random, colour as clr     // multiple, with alias</code></pre>

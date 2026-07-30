@@ -1,5 +1,6 @@
 package vm
 
+import "../compiler"
 import "../core"
 import "core:os"
 import "core:path/filepath"
@@ -136,7 +137,8 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	// hazard despite every sub-VM pointing at the same underlying map.
 	sub.builtins = vm.builtins
 	sub.builtin_modules = vm.builtin_modules
-	status, _ := interpret(sub, string(data))
+	sub.force_compile = vm.force_compile
+	status := compile_and_run_module(sub, path, string(data))
 	if status != .Ok {
 		runtime_error(vm, "Failed to import module '%s'.", name)
 		return nil, false
@@ -187,6 +189,38 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	gc_track(vm, &mod.obj)
 	vm.module_cache[name] = mod
 	return mod, true
+}
+
+// compile_and_run_module is load_module's own compile-or-cache-hit step
+// -- deliberately not routed through interpret (which always compiles
+// from source unconditionally), since an imported module is the only
+// place a bytecode-cache hit can skip compilation entirely (see
+// docs/plans/bytecode-cache.md). Mirrors interpret's own reset-state
+// prelude, since it bypasses interpret altogether, but never touches
+// sub.repl -- a module's own sub-VM is never a REPL session.
+@(private = "file")
+compile_and_run_module :: proc(sub: ^VM, path: string, source: string) -> Interpret_Result {
+	reset_stack(sub)
+	delete(sub.stack_trace)
+	sub.stack_trace = nil
+	sub.error_msg = ""
+	sub.pending_exception_class = ""
+	sub.source = source
+
+	if fn, hit := bc_cache_load(sub, path, sub.environment); hit {
+		status, _ := run_compiled(sub, fn)
+		return status
+	}
+
+	fn, ok := compiler.Compile(source, sub.script, sub.environment)
+	if !ok {
+		return .Compile_Error
+	}
+	status, _ := run_compiled(sub, fn)
+	if status == .Ok {
+		bc_cache_write(path, fn)
+	}
+	return status
 }
 
 // read_module_source tries, in order: `$LOX_PATH/modules/<name>.lox`,

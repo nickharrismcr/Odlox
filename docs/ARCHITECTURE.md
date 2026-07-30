@@ -58,8 +58,8 @@ Explicitly **out of scope** for this port, per the porting brief:
   the basics) are a later phase (see ROADMAP Phase 6+), layered on top of a
   working core VM. This document's core sections (2–13) are unaffected by
   when/whether that phase happens.
-- **The `.lxc` bytecode cache** is deferred — see
-  [Bytecode cache](#bytecode-cache-lxc) for why.
+- **The `.lxc` bytecode cache** is shipped (Phase 8) — see
+  [Bytecode cache](#bytecode-cache-lxc) for the design.
 
 **In scope**, matching glox's actual language surface (per
 `docs/language-reference.html`): scanner → single-pass Pratt compiler → VM,
@@ -1257,35 +1257,56 @@ registration call would be scaffolding with no purpose (see
 
 ## Bytecode cache (.lxc)
 
-**Deferred, not ported at V1.** glox's `.lxc` cache
-(`src/vm/bc_cache.go`) is a direct binary mirror of the in-memory
-`Chunk`/`Function_Object`/`Value` shapes, mtime-invalidated (cache valid
-only if the `.lxc` file is strictly newer than the source `.lox`), used
-purely to skip recompiling an imported module's source on every run.
+**Shipped (Phase 8, `docs/plans/bytecode-cache.md`, `ROADMAP.md`'s own
+Phase 8 section) — a completeness/faithfulness feature, not a performance
+one.** Imported modules (never the entry script, matching glox) are
+cached as compiled bytecode in `<module_dir>/__loxcache__/<name>.lxc`,
+mtime-invalidated exactly like glox's own `.lxc` (cache used iff the
+`.lxc` exists and is strictly newer than the source `.lox`) — `core/bc_cache.odin`
+holds the pure format (a hand-rolled, length-prefixed, bounds-checked
+binary encoding of a `Function_Object` tree, modeled on `core/pickle.odin`'s
+own reader/writer shape rather than a straight port of glox's
+`readValue`/`readChunk`), and `vm/bc_cache.odin` holds the file I/O, path
+derivation, mtime comparison, and the `Function_Object.environment`
+fixup a decoded tree needs before it's callable (core has no
+`vm.Environment` in scope to do that itself).
 
-Reasons to defer rather than port immediately:
+Two deliberate points of departure from glox's own `.lxc`, both
+explicit, not silent:
 
-- It's a pure performance optimization for module *load* time, not
-  execution time — orthogonal to the scanner→compiler→VM core path this
-  port is building first, and to the "approach clox performance" goal
-  (which is about the interpreter loop, not disk I/O).
-- Its binary format is bespoke and tightly coupled to `Value`/`Chunk`'s
-  exact shape — glox's own `CLAUDE.md` warns that *any* change to `Value`,
-  `Chunk`, or the serializer requires clearing all `.lxc` files, which is
-  exactly the kind of format churn a young, still-changing port should
-  avoid committing to early.
-- If revisited, an Odin version has a much simpler option than
-  hand-rolling a tagged binary reader/writer: `core:encoding/*` or a
-  straight `mem.copy` of the (now much smaller, pointer-light-in-the-
-  right-places) `Chunk` struct plus manual handling of the dynamic-array/
-  string fields — worth a fresh design pass rather than transliterating
-  glox's `readValue`/`readChunk` tag-byte format verbatim.
+- **A 6-byte magic+version header.** glox's own `bc_cache.go` has none
+  at all and relies solely on mtime for validity — its own `CLAUDE.md`
+  documents the real cost of that: a stale `.lxc` written by an older
+  binary schema can cause a hang or OOM panic when a newer binary blindly
+  reinterprets its bytes under the current layout, since rebuilding the
+  glox binary never touches any `.lox` file's mtime. odlox's decoder is
+  already bounds-checked against the buffer it was given (no allocation
+  is ever sized from an untrusted length — see `core/bc_cache.odin`'s own
+  doc comment), which closes the hang/OOM failure mode on its own; the
+  header closes the other one bounds-checking can't: a schema change
+  whose bytes still happen to parse as *plausible*, differently-meaning
+  data. A version mismatch falls back to a fresh compile exactly like any
+  other unusable cache — never a hard error.
+- **Int constants round-trip the full 8-byte payload, no truncation.**
+  glox's own format truncates every int constant to a `uint32` on the
+  cache round trip — a real, acknowledged bug there. `core/pickle.odin`
+  had already settled this the other way for a different value
+  population (see that file's own doc comment); this format follows the
+  same precedent rather than reintroducing glox's bug.
 
-Revisit only if module-recompilation time is actually measured to matter
-(most modules are small; this may simply not be worth the format-stability
-cost for a personal project). Until then, every module import recompiles
-from source every run — simpler, and one less moving part while the rest
-of the port is still in motion.
+Verification: `core/bc_cache_test.odin`/`compiler/bc_cache_test.odin`
+round-trip both hand-built and real-`compiler.Compile`-produced
+`Function_Object` trees and check every documented decode-error case
+(bad magic, wrong version, truncation, a corrupted `property_caches`
+count) never panics; `vm/bc_cache_test.odin` exercises the real
+integration (a cache hit through a live module import, including a
+closure nested two levels deep capturing a module global and a class
+method invoked twice through one call site — the two places a subtly
+wrong implementation would silently corrupt rather than crash); the
+pytest-level `tests/new_tests/test_bc_cache.py` asserts byte-identical
+output on a cold run (no cache) versus an immediately-following warm run
+(cache hit) for `tests/new_tests/lox/bc_cache_roundtrip_stress.lox`. See
+`ROADMAP.md`'s Phase 8 section for the full verification record.
 
 ---
 

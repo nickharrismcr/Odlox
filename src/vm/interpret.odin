@@ -31,7 +31,15 @@ interpret :: proc(vm: ^VM, source: string) -> (Interpret_Result, string) {
 	if !ok {
 		return .Compile_Error, ""
 	}
+	return run_compiled(vm, fn)
+}
 
+// run_compiled is everything interpret does once a ^Function_Object
+// already exists, regardless of how it got there -- a fresh Compile
+// above, or a bytecode-cache hit (module.odin's load_module calls this
+// directly on that path, bypassing Compile entirely -- see
+// docs/plans/bytecode-cache.md).
+run_compiled :: proc(vm: ^VM, fn: ^core.Function_Object) -> (Interpret_Result, string) {
 	// The compiler only *computes* how many global slots this
 	// compilation unit needs (fn.chunk.global_count); actually sizing
 	// Environment.globals/defined is a separate runtime step -- grow

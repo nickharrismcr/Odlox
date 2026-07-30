@@ -81,14 +81,6 @@ Only after Phases 1–6 are correct and green against the test suite.
       bottleneck after the above.
 - [ ] Re-run the full benchmark suite after each change; keep a results table.
 
-## Phase 8 (optional, low priority) — Bytecode cache
-
-Only if module-recompilation time is measured to actually matter.
-
-- [ ] Design a fresh serialization format for `Chunk`/`Function_Object`/`Value`.
-- [ ] mtime-based cache invalidation.
-- [ ] `--force-compile`-equivalent CLI flag.
-
 ## Phase 9 (final, do last) — Comment cleanup pass
 
 Housekeeping only, done once the port is otherwise feature-complete and stable — see `ROADMAP.md`'s Phase

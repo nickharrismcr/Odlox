@@ -3486,18 +3486,96 @@ every frame) and `fireworks.lox` (colour module usage) running clean on both bui
 orphaned processes. `docs/plans/pool-allocator.md`/`TODO.md` updated: Tier 1+2 shipped, only upvalues/bound
 methods (Tier 3) left outstanding.
 
-## Phase 8 (optional, low priority) — Bytecode cache
+## Phase 8 — Bytecode cache
 
-Only if module-recompilation time is measured to actually matter for a
-real use case. See `ARCHITECTURE.md` § [Bytecode cache](docs/ARCHITECTURE.md#bytecode-cache-lxc)
-for why this is deferred rather than ported alongside Phase 4.
+Shipped, not as a performance optimization (module-recompilation time was never measured to matter) but for
+completeness of the port: glox has a working `.lxc` bytecode cache for imported modules
+(`glox_reference/src/vm/bc_cache.go`); odlox had none at all, and its `--force-compile` CLI flag was a
+documented, deliberate no-op with nothing yet to bypass. Full design in `docs/plans/bytecode-cache.md`,
+written and reviewed before implementation, following the same practice `docs/plans/pool-allocator.md`
+established for design-doc-first work.
 
-- [ ] Design a fresh serialization format for `Chunk`/`Function_Object`/
-      `Value` (don't transliterate glox's tag-byte format verbatim —
-      Odin's core library offers better options).
-- [ ] mtime-based cache invalidation (`__loxcache__/*` convention, or a
-      renamed equivalent).
-- [ ] `--force-compile`-equivalent CLI flag.
+**Format**: `core/bc_cache.odin` — a hand-rolled, length-prefixed, bounds-checked binary encoding of a
+`Function_Object` tree, modeled directly on `core/pickle.odin`'s own reader/writer shape (tag-byte dispatch,
+`Bc_Encoder`/`Bc_Decoder`, every decode step bounds-checked against the buffer rather than trusting a count
+read from it) rather than transliterating glox's `readValue`/`readChunk` verbatim. Exhaustively confirmed
+(grepping every `chunk_add_constant` call site in `compiler/`) that a compile-time constant is always exactly
+one of Int/Float/String/Function — nothing else ever needs representing. `property_caches` serializes as a
+bare count (its *contents* — a live `^Class_Object` pointer and a resolved method `Value` — are runtime
+state, never written), decoded back to a zero-valued array of that exact length; getting the length wrong
+would be a real out-of-bounds read, since `Get_Property`/`Invoke` index that array with a `u8` operand baked
+into the bytecode at compile time. `local_vars` (debug-only, never opcode-indexed) is omitted entirely.
+
+Two deliberate, explicit departures from glox's own `.lxc`, each reasoned through rather than silently copied
+or silently "improved":
+
+- **A 6-byte magic+version header**, which glox's own format has none of at all. glox's `CLAUDE.md`
+  documents the real cost of that omission: a stale `.lxc` written by an older binary schema can cause a
+  hang or OOM panic when a newer binary blindly reinterprets its bytes under the current layout, since
+  rebuilding the glox binary never touches any `.lox` file's mtime. odlox's decoder already structurally
+  defeats the hang/OOM half of that (no allocation is ever sized from an untrusted length — every
+  `[dynamic]` collection starts at zero capacity and grows one bounds-checked element at a time; the one
+  count with no per-entry bytes to bound it against, `property_caches`, gets an explicit
+  `BC_CACHE_MAX_PROPERTY_CACHES` cap instead, since `chunk_add_property_cache` can never legitimately
+  produce more than 256 real entries). The header closes the other half bounds-checking can't: a schema
+  change whose bytes still happen to parse as *plausible*, differently-meaning data. A version mismatch is
+  never a hard error — it's treated exactly like "no cache yet," a silent fallback to compiling from source,
+  with one non-fatal `stderr` diagnostic line for the specifically-interesting case (recognized magic, wrong
+  version — a real cache of ours from a different schema, worth knowing about, as opposed to "not a cache
+  file at all," which stays silent since that's the common first-import case).
+- **Int constants round-trip the full 8-byte payload, never truncated.** glox's own `bc_cache.go` truncates
+  every int constant to a `uint32` on the cache round trip — a real, acknowledged bug there. `core/pickle.odin`
+  had already settled this the other way for a different value population (see that file's own doc comment);
+  this format follows that precedent rather than reintroducing glox's bug.
+
+**Integration**: `vm/interpret.odin`'s `interpret` split into its existing compile step plus a new
+`run_compiled(vm, fn)` covering everything after a `^Function_Object` exists (global-slot sizing, builtin
+seeding, closure/call/run) — pure refactor for the entry-script/REPL paths, which still call `interpret`
+exactly as before. `vm/module.odin`'s `load_module` gained a `compile_and_run_module` step that tries
+`vm/bc_cache.odin`'s `bc_cache_load` first (unless `--force-compile`), falling back to `compiler.Compile` +
+`bc_cache_write` on a miss — the existing use-after-free-fix splice block (module.odin's `sub.objects`
+relinking, from an earlier phase) was left completely untouched, downstream of either path. Cache path
+mirrors glox exactly: `<module_dir>/__loxcache__/<name>.lxc` (a name already reserved/skipped by
+`find_module_in_subdirs`, written in anticipation of this feature before it existed).
+
+**Real bug found and fixed during implementation, not anticipated by the design doc**: `core.Environment` has
+*two* separate `global_names` fields in play — `Chunk.global_names` (what the cache format actually
+serializes) and `Environment.global_names` (populated as a side effect of `compiler.Compile` itself running,
+inside `end_compiler`) — and `module.odin`'s post-import sync step (publishing a module's slot-indexed
+globals into its name-keyed `vars` map, the mechanism `mod.name` / `from mod import x` actually reads)
+depends on the *Environment's* copy, not the Chunk's. A cache hit skips `compiler.Compile` entirely, so
+nothing populated `Environment.global_names` on that path — found immediately by
+`vm/bc_cache_test.odin`'s own integration test (`helper.make_counter()` failed with "Undefined module
+property 'make_counter'" the moment a real cache hit was exercised end-to-end, never surfaced by the
+format-level round-trip tests alone, which only ever look at the `Chunk` in isolation). Fixed in
+`bc_cache_load` itself: after wiring `.environment` onto every node of the decoded tree, also clear-and-repopulate
+the target `Environment.global_names` from the decoded root's `Chunk.global_names`, mirroring
+`end_compiler`'s own clear-then-append pattern (which exists for an unrelated reason — REPL environment
+reuse — but is the exact right shape here too). A clean illustration of this project's own established
+lesson: hand-built fixtures and format-level tests prove the *bytes* round-trip; only exercising a cache hit
+through a real, running module import — calling a function twice, invoking a method twice — proves the
+*behavior* does.
+
+**Verification**: `core/bc_cache_test.odin` + `compiler/bc_cache_test.odin` round-trip both hand-built and
+real-`compiler.Compile`-produced `Function_Object` trees (ints spanning the 32-bit boundary, floats, strings,
+nested functions) and confirm every decode-error case — bad magic, wrong version, truncation, a corrupted
+`property_caches` count simulating glox's actual documented OOM/hang trigger — comes back as a clean `ok=false`
+never a panic. `vm/bc_cache_test.odin` exercises the real integration end-to-end: a cache hit used by a live
+module import with a closure nested two levels deep capturing/mutating a module global (the
+environment-fixup-on-every-node requirement) and a class method invoked twice through the same call site
+(the property-caches-array-length requirement); a real write-then-reimport round trip with no hand-built
+fixture; mtime invalidation (editing a module's source after a cache exists triggers recompilation, not a
+stale serve); `--force-compile` bypassing a deliberately-planted *valid-but-wrong* cache while still
+refreshing it afterward (proving the bypass is real, not merely "any corrupt cache falls back anyway"); and
+three kinds of on-disk corruption (bad version, truncation, garbage bytes) each falling back cleanly and
+self-healing (the next write replaces the bad file with a valid one). At the pytest level,
+`tests/new_tests/test_bc_cache.py` runs `tests/new_tests/lox/bc_cache_roundtrip_stress.lox` (a module
+exercising every constant kind, modeled on `pool_reuse_stress.lox`'s exact-value-assertion discipline) twice
+back to back — once cold, once warm — and asserts byte-identical output, plus a separate assertion that
+`--force-compile` still produces correct output against a warm cache. Full suite held at 223/0/26 (the two
+new pytest tests are additive to the existing 221/0/26 baseline) — identical whether run cold (no
+`__loxcache__` anywhere) or warm (every module's cache freshly populated from the previous run), on both
+build modes.
 
 ## Phase 9 (final, do last) — Comment cleanup pass
 

@@ -1,0 +1,43 @@
+// Imported module for bc_cache_roundtrip_stress.lox (see
+// docs/plans/bytecode-cache.md). Only imported modules are ever
+// bytecode-cached, never the entry script -- deliberately exercises
+// every compile-time constant kind the cache format handles (Int
+// spanning the 32-bit boundary, Float, String, nested Function), a
+// closure nested two levels deep capturing/mutating a module-level
+// global (the environment-fixup-on-every-node requirement), and a class
+// method invoked from the same call site more than once (the
+// property-caches array-length requirement) -- run twice, once cold and
+// once against a warm cache, by the pytest driver, asserting identical
+// output either way.
+
+var counter = 1000000000
+
+func make_bumper(step) {
+	func bump() {
+		counter = counter + step
+		return counter
+	}
+	return bump
+}
+
+func big_ints() {
+	return [2147483647, 2147483648, 4294967296, -2147483648]
+}
+
+func pi_ish() {
+	return 3.14159265
+}
+
+func greeting(name) {
+	return "hello, " & name
+}
+
+class Adder {
+	init() {
+		this.total = 0
+	}
+	add(n) {
+		this.total = this.total + n
+		return this.total
+	}
+}

@@ -115,6 +115,13 @@ VM :: struct {
 	vec2_free, vec3_free, vec4_free: ^core.Obj,
 
 	debug_hook: Debug_Hook,
+
+	// force_compile mirrors glox's own -f/--force-compile: when set,
+	// module.odin's load_module skips bc_cache_load's lookup entirely
+	// (never even stat-ing the .lxc) but still writes a fresh cache
+	// afterward -- see docs/plans/bytecode-cache.md. Never affects the
+	// entry script, which never consults the cache at all.
+	force_compile: bool,
 }
 
 // new_vm_raw constructs a bare VM with no exception hierarchy bootstrapped

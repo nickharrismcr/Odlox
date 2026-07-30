@@ -26,7 +26,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Anonymous functions (lambdas)** — `func (x) { ... }` as expressions; full closures.
 - **Default & variadic parameters** — `func f(a, b=expr)` (defaults evaluated at call time) and a trailing `*rest` that collects surplus positional arguments into a list.
 - **Exceptions** — `try` / `except` / `finally`, `raise`, custom `Exception` subclasses, catchable runtime errors.
-- **Module imports** — `import m`, `import m as alias`, `from m import ...`; a project's own modules resolve alongside the entry script and recursively through its subdirectories, so they can be grouped into subfolders freely.
+- **Module imports** — `import m`, `import m as alias`, `from m import ...`; a project's own modules resolve alongside the entry script and recursively through its subdirectories, so they can be grouped into subfolders freely. Imported modules are cached as compiled bytecode (`__loxcache__/*.lxc`, invalidated on source change); `--force-compile` bypasses a stale-looking cache for one run.
 
 **Types & operators**
 - **Lists** — slicing, slice assignment, `&` concatenation, `in` membership, `append`/`remove`.

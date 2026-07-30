@@ -5,6 +5,9 @@
 odlox
 __pycache__/
 .pytest_cache/
+# Bytecode cache (docs/plans/bytecode-cache.md) -- generated, mirrors
+# glox's own .gitignore treatment of the same directory name.
+__loxcache__/
 # test_type.py's fixture (lox/type.lox) opens this relative to cwd --
 # same artifact glox's own .gitignore excludes for the same reason.
 tests/new_tests/tmp

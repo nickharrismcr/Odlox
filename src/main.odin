@@ -17,8 +17,9 @@ import "natives"
 import "vm"
 
 Options :: struct {
-	trace:      bool, // --debug: attach debug.Trace_Hook while running
-	instrument: bool, // --instrument: attach debug.Instrument_Hook, report the count after running
+	trace:         bool, // --debug: attach debug.Trace_Hook while running
+	instrument:    bool, // --instrument: attach debug.Instrument_Hook, report the count after running
+	force_compile: bool, // --force-compile: bypass the bytecode cache's read (imported modules only)
 }
 
 main :: proc() {
@@ -74,13 +75,12 @@ main :: proc() {
 			// verbatim", per this loop's own comment above, and once
 			// file_path is set to anything, nothing overwrites it
 			// again). Every force_compile=True test invocation failed
-			// to even find its own script. glox's -f/--force-compile
-			// bypasses its bytecode cache (see ARCHITECTURE.md's
-			// Bytecode cache section) -- there's no cache here at all
-			// (Phase 8, deferred), so every run already recompiles from
-			// source unconditionally; explicitly accepting and ignoring
-			// the flag is the correct behavior, not a stopgap.
-			continue
+			// to even find its own script. Mirrors glox's own -f/
+			// --force-compile: bypasses the bytecode cache's read for
+			// imported modules (see docs/plans/bytecode-cache.md) --
+			// never affects the entry script, which never consults the
+			// cache at all.
+			opts.force_compile = true
 		case:
 			// glox's own sys.args() (ArgsBuiltIn, core_functions.go) includes
 			// the script's own path as args()[0] -- main.go passes os.Args[1:]
@@ -141,6 +141,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 
 	vm_instance := vm.new_vm(path)
 	vm_instance.script_args = script_args
+	vm_instance.force_compile = opts.force_compile
 	vm.define_builtins(vm_instance)
 	natives.define_natives(vm_instance)
 	if opts.trace {
