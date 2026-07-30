@@ -176,6 +176,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#shader">shader</a>
       <a href="#float-array">float_array</a>
       <a href="#physics-world">physics_world</a>
+      <a href="#sound">sound</a>
       <div class="group">Library Modules</div>
       <a href="#mod-math">math</a>
       <a href="#mod-random">random</a>
@@ -188,6 +189,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#mod-colour-utils">colour_utils</a>
       <a href="#mod-particle">particle_sys</a>
       <a href="#mod-sprite">sprite</a>
+      <a href="#mod-sound-mgr">sound_mgr</a>
       <a href="#mod-plot">plot_grey / plot_rgb</a>
       <div class="group">System Modules</div>
       <a href="#mod-os">os</a>
@@ -611,7 +613,7 @@ import random, colour as clr     // multiple, with alias</code></pre>
 <pre><code class="lox">from math import sin, cos, PI
 from colour import *
 from gfx import window, batch     // native built-in module</code></pre>
-<p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/modules/foo.lox</code> (the standard library); <code>foo.lox</code> alongside the top-level script being run; then <code>foo.lox</code> in any subdirectory of that script's own directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), and <a href="#mod-physics">physics</a> (physics_world).</p>
+<p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/modules/foo.lox</code> (the standard library); <code>foo.lox</code> alongside the top-level script being run; then <code>foo.lox</code> in any subdirectory of that script's own directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), <a href="#mod-physics">physics</a> (physics_world), and <a href="#sound">sound</a>.</p>
 
 <!-- ==================== NUMBERS ==================== -->
 <h2 class="section" id="numbers">Numbers</h2>
@@ -1240,6 +1242,63 @@ while (!win.should_close()) {
 </table>
 <div class="note"><strong>Static bodies bypass the broad-phase grid</strong>Dynamic spheres from <code>add</code> still use the collision grid, so <code>cell_size</code> should exceed the largest sphere's diameter as before. Static boxes from <code>add_static_box</code> are checked directly against every dynamic sphere instead, since a single grid cell can't represent a large platform's true extent — so static geometry can be arbitrarily large regardless of <code>cell_size</code>. Two static bodies never collide with each other.</div>
 
+<!-- ==================== MODULE: SOUND ==================== -->
+<h2 class="section" id="sound">sound <span class="pill">native module</span></h2>
+<p><code>import sound</code> — a thin wrapper over raylib's audio API. <a href="#sound-obj">Sound</a> clips are fully decoded up front (short one-shot effects); <a href="#music-obj">Music</a> is streamed from disk and needs <code>update()</code> called every frame to keep playing. No window/<a href="#mod-gfx">gfx</a> dependency — audio works standalone.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>sound.init()</code></td><td>Open the audio device. Idempotent — safe to call more than once.</td></tr>
+<tr><td><code>sound.close()</code></td><td>Close the audio device. Idempotent.</td></tr>
+<tr><td><code>sound.is_ready()</code></td><td>Whether the audio device is currently open</td></tr>
+<tr><td><code>sound.set_master_volume(volume)</code></td><td>Set the global volume (0.0–1.0)</td></tr>
+<tr><td><code>sound.get_master_volume()</code></td><td>Current global volume</td></tr>
+<tr><td><code>sound.load(path)</code></td><td>Load and fully decode a short clip. Returns a <a href="#sound-obj">Sound</a>. Requires <code>sound.init()</code> first; raises a runtime error on a bad path/format.</td></tr>
+<tr><td><code>sound.load_music(path)</code></td><td>Open a clip for streamed playback. Returns a <a href="#music-obj">Music</a>. Same preconditions as <code>load()</code>.</td></tr>
+</tbody>
+</table>
+<h3 id="sound-obj">Sound objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>play()</code></td><td>Play the clip. Overlapping calls mix rather than cut each other off.</td></tr>
+<tr><td><code>stop()</code> / <code>pause()</code> / <code>resume()</code></td><td>Stop, pause, or resume playback</td></tr>
+<tr><td><code>is_playing()</code></td><td>Whether the clip is currently audible</td></tr>
+<tr><td><code>set_volume(v)</code> / <code>set_pitch(v)</code> / <code>set_pan(v)</code></td><td>Adjust volume/pitch/stereo pan</td></tr>
+<tr><td><code>unload()</code></td><td>Release the clip's decoded buffer. Idempotent — also called automatically by the garbage collector if never called explicitly.</td></tr>
+</tbody>
+</table>
+<h3 id="music-obj">Music objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>play()</code></td><td>Start the stream</td></tr>
+<tr><td><code>stop()</code> / <code>pause()</code> / <code>resume()</code></td><td>Stop, pause, or resume playback</td></tr>
+<tr><td><code>update()</code></td><td>Advance the stream's decode buffer — must be called every frame a Music is playing, or playback stalls</td></tr>
+<tr><td><code>is_playing()</code></td><td>Whether the stream is currently audible</td></tr>
+<tr><td><code>set_volume(v)</code> / <code>set_pitch(v)</code> / <code>set_pan(v)</code></td><td>Adjust volume/pitch/stereo pan</td></tr>
+<tr><td><code>seek(seconds)</code></td><td>Jump to a position in the stream</td></tr>
+<tr><td><code>time_played()</code> / <code>time_length()</code></td><td>Seconds played so far / total duration</td></tr>
+<tr><td><code>set_looping(bool)</code> / <code>is_looping()</code></td><td>Set or query whether the stream restarts on reaching the end</td></tr>
+<tr><td><code>unload()</code></td><td>Release the stream. Idempotent — also called automatically by the garbage collector if never called explicitly.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">import sound
+
+sound.init()
+laser = sound.load("assets/laser.wav")
+laser.play()
+
+music = sound.load_music("assets/background.wav")
+music.set_looping(true)
+music.play()
+while (music.is_playing()) {
+    music.update()   // required every frame for streamed playback to advance
+}
+
+sound.close()</code></pre>
+<div class="note"><strong>Use <a href="#mod-sound-mgr">sound_mgr</a> for real games</strong><code>sound</code> is deliberately low-level (raw load/play calls, no policy). <a href="#mod-sound-mgr"><code>sound_mgr</code></a>'s <code>SoundManager</code> adds exclusivity groups, play-if-not-playing, a mute switch, and per-frame music polling on top of it — most scripts should reach for that instead of calling <code>sound</code> directly.</div>
+
 <!-- ==================== MODULE: MATH ==================== -->
 <h2 class="section" id="mod-math">math <span class="pill">module</span></h2>
 <p><code>import math</code> — extended mathematical utilities, including trig wrappers, rounding, and 2D/3D vector helpers. Wraps the native <code>_sin</code>/<code>_cos</code>/… intrinsics with friendly names.</p>
@@ -1449,6 +1508,42 @@ os.close(file)</code></pre>
 <tr><td><code>get_texture()</code></td><td>Return the underlying texture for drawing</td></tr>
 </tbody>
 </table>
+
+<!-- ==================== MODULE: SOUND_MGR ==================== -->
+<h2 class="section" id="mod-sound-mgr">sound_mgr <span class="pill">module</span></h2>
+<p><code>import sound_mgr</code> — <code>SoundManager</code>, the policy layer built on the native <a href="#sound">sound</a> module: exclusivity groups (one sound stopping others sharing its group id, for a limited-voice-count feel), play-if-not-already-playing (for a one-shot clip re-triggered as a continuous cue), a mute switch, and per-frame music polling.</p>
+<div class="sig"><span class="nm">SoundManager</span>()</div>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>load(name, path [, group])</code></td><td>Register a <a href="#sound-obj">Sound</a> under <code>name</code>. <code>group</code>, if nonzero, makes every sound sharing that group stop each other before playing.</td></tr>
+<tr><td><code>load_music(key, path)</code></td><td>Register a <a href="#music-obj">Music</a> stream under <code>key</code></td></tr>
+<tr><td><code>play(name)</code></td><td>Play a registered sound, stopping any other sound in the same group first</td></tr>
+<tr><td><code>play_if_not(name)</code></td><td>Play only if not already playing — keeps a one-shot clip effectively looping for as long as it's called every frame some condition holds</td></tr>
+<tr><td><code>stop(name)</code></td><td>Stop a registered sound</td></tr>
+<tr><td><code>play_music(key)</code> / <code>play_music_if_not(key)</code> / <code>stop_music(key)</code></td><td>Same shape as <code>play</code>/<code>play_if_not</code>/<code>stop</code>, for a registered Music stream</td></tr>
+<tr><td><code>set_music_looping(key, looping)</code> / <code>set_music_volume(key, volume)</code></td><td>Configure a registered Music stream without reaching into it directly</td></tr>
+<tr><td><code>update()</code></td><td>Poll every registered Music stream — call once per frame, or streamed playback stalls</td></tr>
+<tr><td><code>set_muted(bool)</code></td><td><code>true</code> stops everything currently playing and silences future <code>play()</code>/<code>play_music()</code> calls; <code>false</code> just lifts the silence — nothing resumes automatically</td></tr>
+<tr><td><code>is_muted()</code></td><td>Current mute state</td></tr>
+</tbody>
+</table>
+<p><code>SoundManager.no_sound</code> is a <code>static</code> kill switch, set before constructing any <code>SoundManager</code> (e.g. from a config flag) to run with audio fully disabled — every method above becomes a no-op.</p>
+<pre><code class="lox">import sound_mgr
+
+mgr = sound_mgr.SoundManager()
+mgr.load("laser", "assets/laser.wav", 1)      // group 1
+mgr.load("explosion", "assets/explosion.wav", 1)  // same group -- mutually exclusive
+mgr.load_music("bg", "assets/background.wav")
+mgr.set_music_looping("bg", true)
+mgr.play_music("bg")
+
+mgr.play("laser")   // stops "explosion" first, if it was playing
+
+while (!win.should_close()) {
+    mgr.update()   // per-frame music polling
+    ...
+}</code></pre>
 
 <!-- ==================== MODULE: PLOT ==================== -->
 <h2 class="section" id="mod-plot">plot_grey / plot_rgb <span class="pill">modules</span></h2>
