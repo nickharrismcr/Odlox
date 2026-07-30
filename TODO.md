@@ -75,9 +75,9 @@ Only after Phases 1–6 are correct and green against the test suite.
       `collections.lox`'s `dict` phase still trails CPython after fixing the redundant-intern cost there
       (Phase 7f fixed the hashing cost, not this allocation cost, and `dict_ops` in that benchmark calls
       `.keys()` every iteration). Lower priority than the object-model item above; not investigated further.
-- [ ] Free-list/pool allocator (`docs/plans/pool-allocator.md`) — Tier 1 done (vec2/3/4 arithmetic +
-      constructor call sites, Phase 7g). Still outstanding: Tier 2 (native query methods returning a fresh
-      vec — camera/batch/physics_world queries, `colour_utils`, `pickle.loads`) and upvalues/bound methods.
+- [ ] Free-list/pool allocator (`docs/plans/pool-allocator.md`) — vec2/3/4 fully pooled (Phase 7g/7h:
+      arithmetic, constructors, and every native query call site except `pickle.loads`, which is
+      structurally unreachable from `core` package). Still outstanding: upvalues/bound methods (Tier 3).
 - [ ] Stretch: NaN-boxing `Value` down to 8 bytes — only if profiling still shows `Value` width as a
       bottleneck after the above.
 - [ ] Re-run the full benchmark suite after each change; keep a results table.

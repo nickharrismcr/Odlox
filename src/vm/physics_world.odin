@@ -514,9 +514,8 @@ p_vec3_of :: proc(v: core.Value) -> core.P_Vec3 {
 
 @(private = "file")
 make_vec3_result :: proc(vm: ^VM, v: core.P_Vec3) -> core.Value {
-	result := core.make_vec3_value(v.x, v.y, v.z)
-	gc_track(vm, result.obj)
-	return result
+	o := alloc_vec3(vm, v.x, v.y, v.z)
+	return core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
 }
 
 invoke_builtin_physics_world :: proc(vm: ^VM, w: ^core.Physics_World_Object, name: string, arg_count: int) -> bool {

@@ -2933,9 +2933,10 @@ for the full reasoning behind each item; this is the checklist form.
 - [x] Monomorphic inline cache on `Op_Get_Property`/`Op_Invoke` — see
       Phase 7e below.
 - [x] Free-list/pool allocator for high-churn small fixed-size objects —
-      vec2/3/4 done (arithmetic + constructor call sites); upvalues/bound
-      methods, and vec2/3/4's remaining native-query call sites, not yet —
-      see Phase 7g below.
+      vec2/3/4 fully pooled (arithmetic, constructors, and every native
+      query call site except `pickle.loads`, which is structurally
+      unreachable — see Phase 7h). Upvalues/bound methods still not
+      pooled — see Phase 7g/7h below.
 - [ ] Stretch: NaN-boxing `Value` down to 8 bytes (see `ARCHITECTURE.md`'s
       note on odinLox's existing Odin implementation of this) — only if
       profiling still shows `Value` width as a bottleneck after the above.
@@ -3450,6 +3451,40 @@ crashes, zero orphaned processes.
 
 `docs/plans/pool-allocator.md` and `TODO.md` updated to reflect Tier 1 shipped, Tier 2/upvalues/bound-methods
 still outstanding.
+
+### Phase 7h: pool allocator Tier 2 — native query methods
+
+Direct continuation of Phase 7g, same session. Routes every Tier 2 call site named there through
+`alloc_vec2/3/4` instead of `core.make_vec{2,3,4}_object`/`_value` directly, with one exception found to be
+structurally impossible:
+
+**Routed**: `physics_world.odin`'s `make_vec3_result` (the shared helper behind `get_position` and every
+vec3 field of `get_box_transform`'s tuple), `gfx_camera.odin`'s `Camera.get_position()`, `gfx_batch.odin`'s
+`get_position`/`get_color`/`get_size`, and all six `vec4` return sites in `natives/colour_utils.odin`
+(`fade`/`tint`/`brightness`/`lerp`/`hsv_to_rgb`-shaped helper/`random_colour`). Same shape every time: build
+via `alloc_vec{3,4}(vm, ...)` instead of `core.make_vec{3,4}_value(...)` + a separate `gc_track` call, then
+hand-construct the tagged `core.Value` the same way `push_vec2/3/4` already does. `colour_utils` is in the
+`natives` package, not `vm` — confirms `alloc_vec2/3/4` are genuinely package-exported (no `@(private)`
+needed), reachable from `natives` the same way `gc_track`/`runtime_error` already are.
+
+**Not routed, and can't be**: `core/pickle.odin`'s `pickle.loads` vector deserialization (`.Vec2`/`.Vec3`/
+`.Vec4` cases in the decode switch). `core` package sits *below* `vm` in the package DAG — it structurally
+cannot reference `vm.VM`/`alloc_vec{2,3,4}` without a circular import. Compounding that, `pickle_decode` can
+run with no VM in scope at all (the `process` module's background pipe-reader path — see `gc_adopt`'s own
+doc comment), so even a differently-shaped pooled allocator couldn't reach a free list here without deeper
+restructuring. Left as a genuine, permanent structural exclusion, not a deferred TODO — pickle deserialization
+is also a much colder path than per-frame graphics/physics query methods, so the ceiling here was low anyway.
+
+Upvalues and bound methods (design doc's Tier 3) remain the only genuinely open item.
+
+**Verified**: `pytest` held at 221/0/26. A new smoke test exercised every routed method explicitly
+(`camera.get_position`, `batch.get_position`/`get_color`/`get_size`, `physics_world.get_position`/
+`get_box_transform`, `colour_utils.fade`) with hand-checked expected values, not just "doesn't crash" —
+confirmed every returned vec2/3/4's fields exactly match what the underlying engine state actually held.
+Confirmed against the real `3d_balls_physics_shaders.lox` (exercises camera/batch/physics_world queries
+every frame) and `fireworks.lox` (colour module usage) running clean on both build modes, zero crashes, zero
+orphaned processes. `docs/plans/pool-allocator.md`/`TODO.md` updated: Tier 1+2 shipped, only upvalues/bound
+methods (Tier 3) left outstanding.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 

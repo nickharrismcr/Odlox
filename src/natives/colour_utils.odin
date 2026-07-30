@@ -52,9 +52,8 @@ colour_utils_fade :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core
 	g := clamp255(core.as_float(g_val))
 	b := clamp255(core.as_float(b_val))
 	alpha := clamp01(core.as_float(alpha_val))
-	result := core.make_vec4_value(f64(int(r * alpha)), f64(int(g * alpha)), f64(int(b * alpha)), 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, f64(int(r * alpha)), f64(int(g * alpha)), f64(int(b * alpha)), 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }
 
 @(private = "file")
@@ -81,9 +80,8 @@ colour_utils_tint :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core
 	new_r := f64(int((r1 * r2) / 255.0))
 	new_g := f64(int((g1 * g2) / 255.0))
 	new_b := f64(int((b1 * b2) / 255.0))
-	result := core.make_vec4_value(new_r, new_g, new_b, 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, new_r, new_g, new_b, 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }
 
 @(private = "file")
@@ -105,9 +103,8 @@ colour_utils_brightness :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -
 	new_r := f64(int(clamp255(r * factor)))
 	new_g := f64(int(clamp255(g * factor)))
 	new_b := f64(int(clamp255(b * factor)))
-	result := core.make_vec4_value(new_r, new_g, new_b, 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, new_r, new_g, new_b, 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }
 
 @(private = "file")
@@ -135,9 +132,8 @@ colour_utils_lerp :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core
 	new_r := f64(int(r1 + (r2 - r1) * amount))
 	new_g := f64(int(g1 + (g2 - g1) * amount))
 	new_b := f64(int(b1 + (b2 - b1) * amount))
-	result := core.make_vec4_value(new_r, new_g, new_b, 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, new_r, new_g, new_b, 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }
 
 @(private = "file")
@@ -176,9 +172,8 @@ colour_utils_hsv_to_rgb :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -
 		r, g, b = c, 0, x
 	}
 
-	result := core.make_vec4_value(f64(int((r + m) * 255)), f64(int((g + m) * 255)), f64(int((b + m) * 255)), 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, f64(int((r + m) * 255)), f64(int((g + m) * 255)), f64(int((b + m) * 255)), 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }
 
 @(private = "file")
@@ -188,7 +183,6 @@ colour_utils_random :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> co
 		vm.runtime_error(v, "random expects 0 arguments")
 		return core.NIL_VALUE
 	}
-	result := core.make_vec4_value(f64(rand.int_max(256)), f64(rand.int_max(256)), f64(rand.int_max(256)), 255.0)
-	vm.gc_track(v, result.obj)
-	return result
+	o := vm.alloc_vec4(v, f64(rand.int_max(256)), f64(rand.int_max(256)), f64(rand.int_max(256)), 255.0)
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }

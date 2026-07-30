@@ -172,9 +172,8 @@ invoke_builtin_batch :: proc(vm: ^VM, b: ^core.Batch_Object, name: string, arg_c
 			runtime_error(vm, "get_position(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		v := core.make_vec3_value(f64(p.x), f64(p.y), f64(p.z))
-		gc_track(vm, v.obj)
-		result = v
+		o := alloc_vec3(vm, f64(p.x), f64(p.y), f64(p.z))
+		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
 	case "get_color":
 		if arg_count != 1 {
 			runtime_error(vm, "get_color() expects 1 argument (index).")
@@ -190,9 +189,8 @@ invoke_builtin_batch :: proc(vm: ^VM, b: ^core.Batch_Object, name: string, arg_c
 			runtime_error(vm, "get_color(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		v := core.make_vec4_value(f64(col.r), f64(col.g), f64(col.b), f64(col.a))
-		gc_track(vm, v.obj)
-		result = v
+		o := alloc_vec4(vm, f64(col.r), f64(col.g), f64(col.b), f64(col.a))
+		result = core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 	case "get_size":
 		if arg_count != 1 {
 			runtime_error(vm, "get_size() expects 1 argument (index).")
@@ -208,9 +206,8 @@ invoke_builtin_batch :: proc(vm: ^VM, b: ^core.Batch_Object, name: string, arg_c
 			runtime_error(vm, "get_size(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		v := core.make_vec3_value(f64(size.x), f64(size.y), f64(size.z))
-		gc_track(vm, v.obj)
-		result = v
+		o := alloc_vec3(vm, f64(size.x), f64(size.y), f64(size.z))
+		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
 	case "draw":
 		if arg_count != 0 {
 			runtime_error(vm, "draw() takes no arguments.")

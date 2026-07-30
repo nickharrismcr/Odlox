@@ -4,12 +4,14 @@ Design record for `TODO.md`'s Phase 7 item: "Consider a free-list/pool allocator
 fixed-size objects (vec2/3/4, upvalues, bound methods)." Grounded in a direct audit of the current
 allocation lifecycle for these five types (every allocation site, every GC integration point), not assumed.
 
-**Status**: Tier 1 shipped (`ROADMAP.md`'s Phase 7g) — vec2/3/4, routed through the two highest-frequency
-call sites (arithmetic ops, the `vec2()`/`vec3()`/`vec4()` constructors). Tier 2 (native query methods —
-camera/batch/physics_world queries, `colour_utils`, `pickle.loads`) and upvalues/bound methods are still
-outstanding; the sections below describe the full original design, not just what's landed so far. Measured
-result on Tier 1: no change in GC cycle count (expected — see "why" below), ~8% faster wall-clock on an
-allocation-dominated microbenchmark. Modest, real, not the dramatic win a first guess might expect.
+**Status**: Tier 1+2 shipped (`ROADMAP.md`'s Phase 7g/7h) — vec2/3/4 is fully pooled: arithmetic ops, the
+`vec2()`/`vec3()`/`vec4()` constructors, and every native query call site (camera/batch/physics_world
+queries, `colour_utils`) except `pickle.loads`, which turned out to be structurally unreachable from `core`
+package (below `vm` in the DAG, and sometimes runs with no VM in scope at all — see Phase 7h for the full
+reasoning) and is now a permanent exclusion, not a deferred item. Only upvalues/bound methods (Tier 3) are
+still outstanding; the sections below describe the full original design, not just what's landed so far.
+Measured result on Tier 1: no change in GC cycle count (expected — see "why" below), ~8% faster wall-clock
+on an allocation-dominated microbenchmark. Modest, real, not the dramatic win a first guess might expect.
 
 ## Why this, why now
 
@@ -163,12 +165,18 @@ helpers instead of `core.make_vec{2,3,4}_object`/`_value` directly. This alone c
 that matter most in practice.
 
 **Tier 2 — native query methods returning a fresh vec** (`gfx_camera.odin`, `gfx_batch.odin`,
-`physics_world.odin`, `colour_utils.odin`) and **`pickle.loads`** — lower frequency per-call (each fires at
-most once per native call site per frame, vs. potentially several vector arithmetic ops per line of script),
-but real and easy to fold in once Tier 1 proves the mechanism: same `alloc_vec{2,3,4}` helpers, called from
-`vm` package (already have `^VM` in scope) or via whatever boundary natives end up using (this has a natural
-synergy with the host-interface refactor plan, if/when that lands — either way, it's an additive change to
-each call site, not a redesign).
+`physics_world.odin`, `colour_utils.odin`) — lower frequency per-call (each fires at most once per native
+call site per frame, vs. potentially several vector arithmetic ops per line of script), but real and easy to
+fold in once Tier 1 proves the mechanism: same `alloc_vec{2,3,4}` helpers. **Shipped** (Phase 7h) — including
+from `natives/colour_utils.odin`, which confirmed `alloc_vec{2,3,4}` are genuinely package-exported (no
+`@(private)`), reachable the same way `gc_track`/`runtime_error` already are from `natives`.
+
+**`pickle.loads` — not Tier 2 after all, a permanent exclusion.** `core/pickle.odin`'s vector deserialization
+lives in `core` package, structurally below `vm` in the DAG — it cannot reference `vm.VM`/`alloc_vec{2,3,4}`
+without a circular import, and `pickle_decode` can run with no VM in scope at all (the `process` module's
+background pipe-reader path). Not a deferred item; there's no version of this design that reaches it without
+restructuring the module system itself, and the ceiling is low anyway (deserialization is a cold path
+compared to per-frame graphics/physics queries).
 
 Not applicable to pooling at all: `set_vec_swizzle`/`get_vec_swizzle`, `.add()`/`.set()` — already
 allocation-free, nothing to intercept.
@@ -181,7 +189,7 @@ allocation-free, nothing to intercept.
 | Explicit constructor | `vec3(x, y, z)` | Yes | Tier 1 |
 | Field mutation | `this.pos.x = 5` | No — mutates in place | N/A, already optimal |
 | Vec passed to a native call | `win.cube_rotated(pos, size, axis, angle, color)` | No, on the call itself — every consuming native copies `x`/`y`/`z` out immediately and never retains the Lox object (confirmed for every raylib draw call this session) | N/A for the call; if an argument is an inline literal (`win.clear(vec4(0,0,0,255))`), that's the constructor pattern above, not this one |
-| Native query returning a vec | `world.get_position(id)`, `cam.get_position()` | Yes | Tier 2 |
+| Native query returning a vec | `world.get_position(id)`, `cam.get_position()` | Yes | Tier 2 — shipped |
 | Stored in a variable/field/list/dict | `this.pos = vec3(...)` | The store itself doesn't allocate — the vec was already allocated by whichever pattern above produced it | Identity doesn't change; returns to its type's free list whenever it *later* becomes unreachable, same as any other object |
 | `.add(other)` / `.set(...)` mutating methods | `pos.add(delta)` | No — mutates receiver in place | N/A, already optimal |
 | `world.get_position_into(id, vec3)`-style write-into-existing-object APIs (this session's own fix for the dominant `3d_balls` allocation source) | — | No — by design, this is the *alternative* to allocating at all | N/A — script-level reuse and pooling are complementary, not competing: a script that already reuses its own vecs benefits less from pooling (there's less to pool), which is fine |
@@ -213,7 +221,8 @@ built for vecs), but sequence them after vec2/3/4 land and prove out, not alongs
 3. ✅ Measure — done (Phase 7g): no cycle-count change (expected, see "why" note added above), ~8% faster
    wall-clock on an allocation-dominated microbenchmark. Real but modest; worth doing, not worth
    overselling.
-4. Tier 2 call sites (native query methods, `pickle.loads`) — not started.
+4. ✅ Tier 2 call sites (native query methods) — done (Phase 7h). `pickle.loads` turned out to be a
+   permanent structural exclusion, not a deferred item — see above.
 5. Upvalue/bound-method pooling, same shape, lowest priority — not started.
 
 ## Verification plan

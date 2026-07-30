@@ -59,9 +59,8 @@ invoke_builtin_camera :: proc(vm: ^VM, c: ^core.Camera_Object, name: string, arg
 			return false
 		}
 		p := c.camera.position
-		v := core.make_vec3_value(f64(p.x), f64(p.y), f64(p.z))
-		gc_track(vm, v.obj)
-		result = v
+		o := alloc_vec3(vm, f64(p.x), f64(p.y), f64(p.z))
+		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
 	case:
 		runtime_error(vm, "Undefined Camera method '%s'.", name)
 		return false
