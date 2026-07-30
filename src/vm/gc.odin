@@ -42,6 +42,58 @@ gc_track :: proc(vm: ^VM, obj: ^core.Obj) {
 	vm.bytes_allocated += object_size(obj)
 }
 
+// alloc_vec2/3/4: the pool-aware allocators for vec2/3/4 (see
+// docs/plans/pool-allocator.md) -- check this VM's own per-type free
+// list first (objects parked there by sweep() instead of actually
+// freed) before falling back to a fresh core.make_vec{2,3,4}_object.
+// Either path ends with gc_track, exactly as a bare
+// core.make_vec2_object(...) + gc_track call site would -- every
+// vec2/3/4 constructor site (arithmetic, the vec2()/vec3()/vec4()
+// builtins, native query methods) should go through these instead of
+// calling core.make_vec{2,3,4}_object/_value directly, or it won't
+// benefit from pooling.
+alloc_vec2 :: proc(vm: ^VM, x, y: f64) -> ^core.Vec2_Object {
+	if vm.vec2_free != nil {
+		o := cast(^core.Vec2_Object)vm.vec2_free
+		vm.vec2_free = vm.vec2_free.next
+		o.marked = false
+		o.x, o.y = x, y
+		gc_track(vm, &o.obj)
+		return o
+	}
+	o := core.make_vec2_object(x, y)
+	gc_track(vm, &o.obj)
+	return o
+}
+
+alloc_vec3 :: proc(vm: ^VM, x, y, z: f64) -> ^core.Vec3_Object {
+	if vm.vec3_free != nil {
+		o := cast(^core.Vec3_Object)vm.vec3_free
+		vm.vec3_free = vm.vec3_free.next
+		o.marked = false
+		o.x, o.y, o.z = x, y, z
+		gc_track(vm, &o.obj)
+		return o
+	}
+	o := core.make_vec3_object(x, y, z)
+	gc_track(vm, &o.obj)
+	return o
+}
+
+alloc_vec4 :: proc(vm: ^VM, x, y, z, w: f64) -> ^core.Vec4_Object {
+	if vm.vec4_free != nil {
+		o := cast(^core.Vec4_Object)vm.vec4_free
+		vm.vec4_free = vm.vec4_free.next
+		o.marked = false
+		o.x, o.y, o.z, o.w = x, y, z, w
+		gc_track(vm, &o.obj)
+		return o
+	}
+	o := core.make_vec4_object(x, y, z, w)
+	gc_track(vm, &o.obj)
+	return o
+}
+
 // gc_adopt recursively gc_tracks every collectible object reachable from
 // v -- used for a value tree built with no VM in scope to register
 // objects with as they were allocated (core.pickle_decode, which can run
@@ -264,7 +316,25 @@ sweep :: proc(vm: ^VM) {
 			// (len(l.items), len(inst.fields), ...) that free_object's own
 			// delete() calls invalidate.
 			vm.bytes_allocated -= object_size(obj)
-			free_object(obj)
+			// vec2/3/4 are parked on a per-type free list (see
+			// docs/plans/pool-allocator.md) instead of actually freed --
+			// alloc_vec2/3/4 check these before calling new(). obj.next is
+			// safe to repurpose as the free-list link here: `next` (the
+			// sweep loop's own continuation pointer) was already captured
+			// above, before this reassignment.
+			#partial switch obj.type {
+			case .Vec2:
+				obj.next = vm.vec2_free
+				vm.vec2_free = obj
+			case .Vec3:
+				obj.next = vm.vec3_free
+				vm.vec3_free = obj
+			case .Vec4:
+				obj.next = vm.vec4_free
+				vm.vec4_free = obj
+			case:
+				free_object(obj)
+			}
 			if prev == nil {
 				vm.objects = next
 			} else {

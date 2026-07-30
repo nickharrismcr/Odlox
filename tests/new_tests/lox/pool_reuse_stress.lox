@@ -1,0 +1,48 @@
+// Correctness stress test for the vec2/3/4 pool allocator (see
+// docs/plans/pool-allocator.md). A pool allocator's real failure mode is
+// silent data corruption -- a reused object whose fields weren't fully
+// overwritten leaking a stale value from its previous logical identity --
+// not a crash. This constructs many thousands of vec2/3/4 values, each
+// immediately discarded (garbage the very next iteration), with
+// monotonically-changing field values so any stale leftover from a reused
+// slot would show up as a mismatch against what was *just* written.
+// N is large enough to comfortably force several real GC cycles (each
+// Vec3_Object is 40 bytes; INITIAL_GC_THRESHOLD is 1 MiB), so the free
+// list gets populated and drained from repeatedly, not just once.
+
+const N = 60000;
+
+fails = 0;
+
+for (i = 0; i < N; i = i + 1) {
+    v2 = vec2(i, i + 1);
+    if (v2.x != i or v2.y != i + 1) {
+        fails = fails + 1;
+    }
+
+    v3 = vec3(i, i + 1, i + 2);
+    if (v3.x != i or v3.y != i + 1 or v3.z != i + 2) {
+        fails = fails + 1;
+    }
+
+    v4 = vec4(i, i + 1, i + 2, i + 3);
+    if (v4.x != i or v4.y != i + 1 or v4.z != i + 2 or v4.w != i + 3) {
+        fails = fails + 1;
+    }
+
+    // Also exercise the arithmetic allocation path (push_vec2/3/4), not
+    // just the constructor builtins -- both route through alloc_vec2/3/4
+    // but are separate call sites.
+    sum2 = vec2(i, 0) ++ vec2(0, i);
+    if (sum2.x != i or sum2.y != i) {
+        fails = fails + 1;
+    }
+
+    sum3 = vec3(i, 0, 0) ++ vec3(0, i, 0);
+    if (sum3.x != i or sum3.y != i or sum3.z != 0) {
+        fails = fails + 1;
+    }
+}
+
+print fails;
+print "pool_reuse_stress complete";

@@ -76,18 +76,15 @@ add_vector :: proc(vm: ^VM) -> bool {
 }
 
 push_vec2 :: proc(vm: ^VM, x, y: f64) {
-	o := core.make_vec2_object(x, y)
-	gc_track(vm, &o.obj)
+	o := alloc_vec2(vm, x, y)
 	push(vm, core.Value{type = .Vec2, obj_type = .Vec2, obj = &o.obj})
 }
 push_vec3 :: proc(vm: ^VM, x, y, z: f64) {
-	o := core.make_vec3_object(x, y, z)
-	gc_track(vm, &o.obj)
+	o := alloc_vec3(vm, x, y, z)
 	push(vm, core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj})
 }
 push_vec4 :: proc(vm: ^VM, x, y, z, w: f64) {
-	o := core.make_vec4_object(x, y, z, w)
-	gc_track(vm, &o.obj)
+	o := alloc_vec4(vm, x, y, z, w)
 	push(vm, core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj})
 }
 

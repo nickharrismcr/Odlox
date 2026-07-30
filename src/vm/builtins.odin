@@ -485,9 +485,8 @@ vec2_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Valu
 		runtime_error(vm, "vec2 arguments must be numbers")
 		return core.NIL_VALUE
 	}
-	v := core.make_vec2_value(core.as_float(x), core.as_float(y))
-	gc_track(vm, v.obj)
-	return v
+	o := alloc_vec2(vm, core.as_float(x), core.as_float(y))
+	return core.Value{type = .Vec2, obj_type = .Vec2, obj = &o.obj}
 }
 
 @(private = "file")
@@ -502,9 +501,8 @@ vec3_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Valu
 		runtime_error(vm, "vec3 arguments must be numbers")
 		return core.NIL_VALUE
 	}
-	v := core.make_vec3_value(core.as_float(x), core.as_float(y), core.as_float(z))
-	gc_track(vm, v.obj)
-	return v
+	o := alloc_vec3(vm, core.as_float(x), core.as_float(y), core.as_float(z))
+	return core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
 }
 
 @(private = "file")
@@ -522,7 +520,6 @@ vec4_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Valu
 		runtime_error(vm, "vec4 arguments must be numbers")
 		return core.NIL_VALUE
 	}
-	v := core.make_vec4_value(core.as_float(x), core.as_float(y), core.as_float(z), core.as_float(w))
-	gc_track(vm, v.obj)
-	return v
+	o := alloc_vec4(vm, core.as_float(x), core.as_float(y), core.as_float(z), core.as_float(w))
+	return core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
 }

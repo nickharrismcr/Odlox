@@ -2932,9 +2932,10 @@ for the full reasoning behind each item; this is the checklist form.
       `binary_trees` gap — this is what's left.
 - [x] Monomorphic inline cache on `Op_Get_Property`/`Op_Invoke` — see
       Phase 7e below.
-- [ ] Consider a free-list/pool allocator for high-churn small fixed-size
-      objects (vec2/3/4, upvalues, bound methods) — reuse sweep-freed
-      slots instead of round-tripping through the general allocator.
+- [x] Free-list/pool allocator for high-churn small fixed-size objects —
+      vec2/3/4 done (arithmetic + constructor call sites); upvalues/bound
+      methods, and vec2/3/4's remaining native-query call sites, not yet —
+      see Phase 7g below.
 - [ ] Stretch: NaN-boxing `Value` down to 8 bytes (see `ARCHITECTURE.md`'s
       note on odinLox's existing Odin implementation of this) — only if
       profiling still shows `Value` width as a bottleneck after the above.
@@ -3398,6 +3399,57 @@ about as hard a target as exists in the entire runtime to begin with —
 see the `TODO.md` entry and this section's own reasoning for why
 closing the rest of this gap has a much lower ceiling than the
 property-access fix did.
+
+### Phase 7g: free-list pool allocator for vec2/3/4 (Tier 1)
+
+Implements `docs/plans/pool-allocator.md`'s design, Tier 1 scope (see that doc for the full lifecycle audit
+and design rationale this is grounded in — struct sizes, every allocation site, why an intrusive per-type
+free list reusing `Obj.next` rather than a separate pointer array).
+
+**What shipped**: three new `VM` fields (`vec2_free`/`vec3_free`/`vec4_free: ^core.Obj`, `vm.odin`).
+`sweep()` (`gc.odin`) parks unmarked `.Vec2`/`.Vec3`/`.Vec4` objects onto the matching free list instead of
+calling `free_object`'s generic `free(obj)` case — `obj.next` is free to repurpose as the free-list link
+since the sweep loop's own continuation pointer was already captured into a local before this reassignment.
+Three new `alloc_vec2/3/4(vm, ...)` procs (`gc.odin`, next to `gc_track`) check the free list first (pop,
+reinitialize every field, clear `marked`) before falling back to `core.make_vec{2,3,4}_object`; either path
+ends by calling `gc_track` — relinking into `vm.objects` and re-incrementing `vm.bytes_allocated` exactly as
+a fresh allocation would, so reused objects need no separate accounting logic. `push_vec2/3/4`
+(`arithmetic.odin`, the shared tail of `add_vector` and the vector-subtract branch of `numeric_binop` — i.e.
+Lox `++` and `-`) and the `vec2()`/`vec3()`/`vec4()` constructor builtins (`builtins.odin`) now route through
+these instead of calling `core.make_vec{2,3,4}_object`/`_value` directly — the two highest-frequency
+allocation sites per the design doc's own audit.
+
+**Not done this pass** (Tier 2/3 in the design doc, deliberately deferred, not silently dropped): native
+query methods that return a fresh vec (`Camera.get_position()`, batch position/size/color queries,
+`physics_world`'s position/velocity queries, `colour_utils`' RGBA helpers, `pickle.loads`) still allocate
+directly; upvalues and bound methods aren't pooled at all yet. The design doc's own staging calls for
+measuring Tier 1's actual impact before spending more effort on Tier 2 — see the result below.
+
+**Correctness verification** — a pool allocator's real failure mode is silent stale-data corruption from
+incomplete reinitialization, not a crash, so this needed a dedicated test, not just "doesn't crash": new
+`tests/new_tests/lox/pool_reuse_stress.lox` + `test_vec_pool.py`, permanently added to the suite (not
+throwaway). 60,000 iterations, each constructing a vec2/vec3/vec4 with monotonically-changing field values
+via both allocation paths (constructors *and* `++` arithmetic) and asserting every field matches what was
+just written before the object becomes garbage the very next iteration — 300,000 individual field checks,
+comfortably forcing several real GC cycles' worth of free-list population and drain. `0` failures.
+
+**Performance verification** — the honest result, not the hoped-for one: this does **not** reduce GC *cycle
+count* (confirmed directly: `3d_balls_physics_shaders.lox`'s cycle count over an identical 20s window was
+132 before this change, 145 after — noise-level, not a real change) — and thinking through *why* matters:
+`vm.bytes_allocated` still increases by the same amount per allocation whether the underlying memory came
+from the free list or a fresh `new()`, so the threshold-based collection trigger (`bytes_allocated >
+next_gc`) fires at the same cadence either way. What pooling actually buys is a *cheaper individual
+allocation/free*, which a cycle counter can't see at all. Measured instead with a dedicated wall-clock
+microbenchmark (300,000-iteration variant of the correctness stress test, timed directly, pre- vs. post-
+change binaries built from the same source tree via `git stash`): **~8% faster** (2.59s → 2.38s average of 3
+runs each) on this allocation-dominated workload. Real, but modest — Odin's default context allocator is
+already reasonably efficient for small fixed-size objects, so the saving is avoiding its own bookkeeping
+overhead, not a fundamentally cheaper path. `pytest` held at 221/0/26 (220 plus the new pool test) throughout;
+confirmed against `fireworks.lox` and `3d_balls_physics_shaders.lox` running clean on both build modes, zero
+crashes, zero orphaned processes.
+
+`docs/plans/pool-allocator.md` and `TODO.md` updated to reflect Tier 1 shipped, Tier 2/upvalues/bound-methods
+still outstanding.
 
 ## Phase 8 (optional, low priority) — Bytecode cache
 

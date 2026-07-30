@@ -1,10 +1,15 @@
 # Pool allocator for high-churn small objects
 
 Design record for `TODO.md`'s Phase 7 item: "Consider a free-list/pool allocator for high-churn small
-fixed-size objects (vec2/3/4, upvalues, bound methods)." Written before any code exists — this is the
-blueprint, kept up to date as decisions change, matching [`ARCHITECTURE.md`](../ARCHITECTURE.md)'s own
-convention. Grounded in a direct audit of the current allocation lifecycle for these five types (every
-allocation site, every GC integration point), not assumed.
+fixed-size objects (vec2/3/4, upvalues, bound methods)." Grounded in a direct audit of the current
+allocation lifecycle for these five types (every allocation site, every GC integration point), not assumed.
+
+**Status**: Tier 1 shipped (`ROADMAP.md`'s Phase 7g) — vec2/3/4, routed through the two highest-frequency
+call sites (arithmetic ops, the `vec2()`/`vec3()`/`vec4()` constructors). Tier 2 (native query methods —
+camera/batch/physics_world queries, `colour_utils`, `pickle.loads`) and upvalues/bound methods are still
+outstanding; the sections below describe the full original design, not just what's landed so far. Measured
+result on Tier 1: no change in GC cycle count (expected — see "why" below), ~8% faster wall-clock on an
+allocation-dominated microbenchmark. Modest, real, not the dramatic win a first guess might expect.
 
 ## Why this, why now
 
@@ -202,13 +207,14 @@ built for vecs), but sequence them after vec2/3/4 land and prove out, not alongs
 
 ## Implementation order
 
-1. Free-list fields on `VM` + `sweep`'s five new cases (park instead of free) + `alloc_vec{2,3,4}` helpers
-   in `vm` package.
-2. Route Tier 1 call sites (`push_vec{2,3,4}`, the three constructor builtins) through the new helpers.
-3. Measure (see below) before going further — confirm the mechanism actually delivers the expected
-   reduction on the two already-profiled real scripts before spending more effort on Tier 2.
-4. Tier 2 call sites (native query methods, `pickle.loads`).
-5. Upvalue/bound-method pooling, same shape, lowest priority.
+1. ✅ Free-list fields on `VM` (vec2/3/4 only so far) + `sweep`'s three new cases (park instead of free) +
+   `alloc_vec{2,3,4}` helpers in `vm` package.
+2. ✅ Route Tier 1 call sites (`push_vec{2,3,4}`, the three constructor builtins) through the new helpers.
+3. ✅ Measure — done (Phase 7g): no cycle-count change (expected, see "why" note added above), ~8% faster
+   wall-clock on an allocation-dominated microbenchmark. Real but modest; worth doing, not worth
+   overselling.
+4. Tier 2 call sites (native query methods, `pickle.loads`) — not started.
+5. Upvalue/bound-method pooling, same shape, lowest priority — not started.
 
 ## Verification plan
 
