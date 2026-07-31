@@ -24,7 +24,9 @@ import colour
 
 const CELL_SIZE = 10
 const RESET_TICKS = 200
-const ALIVE_PERCENT = 20 // chance (0-99) a cell starts alive
+const NUM_LINES = 40  // straight lines (horizontal/vertical/diagonal) per reset
+const NUM_BOXES = 15  // rectangle outlines per reset
+const NUM_BLOCKS = 10 // filled rectangles per reset
 
 const ALIVE_COLOUR = vec4(0, 230, 120, 255)
 const BG_COLOUR = colour.BLACK
@@ -41,20 +43,99 @@ var rows = screen_h / CELL_SIZE
 
 var rt = render_texture(screen_w, screen_h)
 
-// randomise seeds every cell to state 1 ("fully alive") with ALIVE_PERCENT
-// chance, else 0 ("dead") -- shared by every strategy below, since a
-// strategy's richer states (e.g. Generations' dying states) only ever
-// emerge from simulation, never from the initial seed.
-func randomise(grid) {
-    for (var y = 0; y < rows; y = y + 1) {
-        for (var x = 0; x < cols; x = x + 1) {
-            if (random.integer(0, 99) < ALIVE_PERCENT) {
-                grid.set(x, y, 1.0)
-            } else {
-                grid.set(x, y, 0.0)
-            }
+// set_wrapped writes `value` into grid at (x, y), wrapping toroidally --
+// consistent with every other cell access in this file (see
+// horiz_sum_of's own wraparound), so a shape drawn near an edge below can
+// straddle it exactly like a live pattern already can once simulation
+// starts, rather than getting clipped.
+func set_wrapped(grid, x, y, value) {
+    var wx = ((x % cols) + cols) % cols
+    var wy = ((y % rows) + rows) % rows
+    grid.set(wx, wy, value)
+}
+
+// draw_random_line plots a straight run of cells from a random start
+// point: horizontal, vertical, or diagonal (chosen with equal probability),
+// a random length between 1/8 and 1/2 of the grid's width.
+func draw_random_line(grid, value) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var length = random.integer(cols / 8, cols / 2)
+    var kind = random.integer(0, 2)
+    var dx = 0
+    var dy = 0
+    if (kind == 0) {
+        dx = 1
+    } else if (kind == 1) {
+        dy = 1
+    } else {
+        dx = 1
+        dy = random.integer(0, 1) * 2 - 1 // +1 or -1
+    }
+    for (var i = 0; i < length; i = i + 1) {
+        set_wrapped(grid, x0 + dx * i, y0 + dy * i, value)
+    }
+}
+
+// draw_random_box plots the border of a random axis-aligned rectangle
+// (interior left empty) -- width/height 1/12 to 1/4 of the grid.
+func draw_random_box(grid, value) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 12, cols / 4)
+    var h = random.integer(rows / 12, rows / 4)
+    for (var i = 0; i < w; i = i + 1) {
+        set_wrapped(grid, x0 + i, y0, value)
+        set_wrapped(grid, x0 + i, y0 + h - 1, value)
+    }
+    for (var j = 0; j < h; j = j + 1) {
+        set_wrapped(grid, x0, y0 + j, value)
+        set_wrapped(grid, x0 + w - 1, y0 + j, value)
+    }
+}
+
+// draw_random_block plots a solid random rectangle -- width/height 1/20
+// to 1/6 of the grid, smaller than draw_random_box's range so filled
+// blocks don't dominate the seed the way a handful of huge ones would.
+func draw_random_block(grid, value) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 20, cols / 6)
+    var h = random.integer(rows / 20, rows / 6)
+    for (var j = 0; j < h; j = j + 1) {
+        for (var i = 0; i < w; i = i + 1) {
+            set_wrapped(grid, x0 + i, y0 + j, value)
         }
     }
+}
+
+// seed_shapes clears the grid, then plants NUM_LINES lines, NUM_BOXES box
+// outlines, and NUM_BLOCKS filled blocks at random positions/sizes/
+// orientations -- value_fn is called once per shape (not once per cell),
+// so a whole line/box/block is a single colour, not per-cell noise;
+// single-colour strategies always return 1.0, but a strategy with
+// multiple competing colours (Immigration Game, QuadLife) can return a
+// different one per shape, seeding recognisable territories instead of
+// scattered dots.
+func seed_shapes(grid, value_fn) {
+    grid.clear(0.0)
+    for (var i = 0; i < NUM_LINES; i = i + 1) {
+        draw_random_line(grid, value_fn())
+    }
+    for (var i = 0; i < NUM_BOXES; i = i + 1) {
+        draw_random_box(grid, value_fn())
+    }
+    for (var i = 0; i < NUM_BLOCKS; i = i + 1) {
+        draw_random_block(grid, value_fn())
+    }
+}
+
+// randomise seeds the grid via seed_shapes with every shape at state 1
+// ("fully alive") -- shared by every single-colour strategy below, since
+// a strategy's richer states (e.g. Generations' dying states) only ever
+// emerge from simulation, never from the initial seed.
+func randomise(grid) {
+    seed_shapes(grid, func () { return 1.0 })
 }
 
 // horiz_sum_of returns a `cols`-length list where entry x is the sum of
@@ -452,19 +533,12 @@ const IMMIGRATION_COLOUR_A = vec4(255, 60, 60, 255)
 const IMMIGRATION_COLOUR_B = vec4(60, 140, 255, 255)
 
 func randomise_immigration(grid) {
-    for (var y = 0; y < rows; y = y + 1) {
-        for (var x = 0; x < cols; x = x + 1) {
-            if (random.integer(0, 99) < ALIVE_PERCENT) {
-                if (random.integer(0, 1) == 0) {
-                    grid.set(x, y, 1.0)
-                } else {
-                    grid.set(x, y, 2.0)
-                }
-            } else {
-                grid.set(x, y, 0.0)
-            }
+    seed_shapes(grid, func () {
+        if (random.integer(0, 1) == 0) {
+            return 1.0
         }
-    }
+        return 2.0
+    })
 }
 
 func step_immigration(grid, next) {
@@ -528,24 +602,19 @@ const QUADLIFE_COLOUR_3 = vec4(80, 140, 255, 255)
 const QUADLIFE_COLOUR_4 = vec4(255, 220, 60, 255)
 
 func randomise_quadlife(grid) {
-    for (var y = 0; y < rows; y = y + 1) {
-        for (var x = 0; x < cols; x = x + 1) {
-            if (random.integer(0, 99) < ALIVE_PERCENT) {
-                var c = random.integer(1, 4)
-                if (c == 1) {
-                    grid.set(x, y, 1.0)
-                } else if (c == 2) {
-                    grid.set(x, y, 2.0)
-                } else if (c == 3) {
-                    grid.set(x, y, 3.0)
-                } else {
-                    grid.set(x, y, 4.0)
-                }
-            } else {
-                grid.set(x, y, 0.0)
-            }
+    seed_shapes(grid, func () {
+        var c = random.integer(1, 4)
+        if (c == 1) {
+            return 1.0
         }
-    }
+        if (c == 2) {
+            return 2.0
+        }
+        if (c == 3) {
+            return 3.0
+        }
+        return 4.0
+    })
 }
 
 // quadlife_birth_colour picks a birth's colour from its exactly-3 live
