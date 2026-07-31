@@ -9,26 +9,23 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 0 — Project scaffolding
 
-- [ ] `odin test src/vm -all-packages` is unreliable — confirmed **pre-existing and unrelated to any change
-      in this session** (reproduces on a clean worktree at the commit before today's build-script work).
-      `python -m pytest tests/new_tests/` (the project's actual correctness gate) is unaffected throughout.
-      Bisection ruled out a single broken test (every individual test passes alone; `core`/`compiler`
-      packages alone never fail) and pointed at first toward a data race on `core/obj_string.odin`'s
-      unsynchronized global `intern_table` (multiple `vm`-package tests compile/run real Lox code
-      concurrently under the test runner's default 16-thread parallelism) — `-define:ODIN_TEST_THREADS=1`
-      made a known-crashing batch pass reliably, which looked like confirmation. **But it isn't a full fix**:
-      re-running the identical `-all-packages -define:ODIN_TEST_THREADS=1` command twice produced two
-      different failure modes on two different runs — a genuine infinite-loop hang (an orphaned child test
-      process burning real CPU, not blocked/waiting) once, a segfault at a different point in the log the
-      next time. Same input, same flags, different outcomes each run — meaning either `ODIN_TEST_THREADS=1`
-      isn't fully honored by this Odin dev-build's test runner, or there's a genuine memory-corruption bug
-      (use-after-free / stale pointer / buffer overrun) whose *symptom* varies with heap layout, independent
-      of threading. Not root-caused, and a genuine compiler/test-runner bug can't be ruled out either — this
-      is a `dev-YYYY-MM` from-source Odin build, not a numbered release (see the workspace root `CLAUDE.md`),
-      so pre-1.0 toolchain bugs are a real possibility alongside a bug in odlox's own code. Needs proper
-      tooling (a memory sanitizer, if available for this Odin build, or testing against a different Odin
-      build/version to see if the instability follows) rather than further ad hoc bisection before this is
-      trustworthy as a verification step again.
+- [ ] `odin test src -all-packages` is still not fully reliable, even with `-define:ODIN_TEST_THREADS=1` (now
+      the required invocation for this codebase — see below). Root cause (see `ROADMAP.md`'s Phase 0 section
+      for the full writeup): `vm/module.odin`'s `module_cache` holds GC-managed `^core.Module_Object` values
+      allocated via the ambient `context.allocator`, which under `odin test` is a short-lived per-task
+      allocator recycled between test tasks — the same allocator-lifetime bug already fixed for
+      `core/obj_string.odin`'s `intern_table` and `module_source_cache` this session. Fixing `module_cache`
+      the same way needs `gc.odin`'s free path reconciled too (its values are freed by GC sweep, unlike
+      permanent interned strings), which risks changing production GC behavior for a test-harness-only
+      payoff — deliberately left unfixed pending a safer approach. `python -m pytest tests/new_tests/` (the
+      project's actual correctness gate) is unaffected throughout.
+- [ ] Always invoke `odin test` for this project with `-define:ODIN_TEST_THREADS=1`. Not a workaround for
+      flakiness — the codebase's own design is explicitly single-threaded (`docs/ARCHITECTURE.md`'s Scope
+      section; `core/obj_string.odin`'s `intern_string` doc comment), and the test runner's default 16-thread
+      parallelism creates a genuine, real data race on unsynchronized global state
+      (`core.test_intern_string_returns_canonical_pointer` observed failing intermittently at the default
+      thread count once the allocator bug above stopped masking it). The fix is running tests the way this
+      VM is actually meant to run, not adding locks to the interpreter's hot path.
 
 ## Phase 6 — Native/builtin functions & standard library
 

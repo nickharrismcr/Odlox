@@ -1,5 +1,7 @@
+#+feature global-context
 package core
 
+import "core:mem"
 import "core:strings"
 
 // String_Object: the one Object kind that's always permanent (see the
@@ -23,6 +25,23 @@ String_Object :: struct {
 @(private = "file")
 intern_table: map[string]^String_Object
 
+// intern_allocator is captured once, at package init (before `odin test`'s
+// runner exists and hands every test task its own short-lived, recycled
+// scratch allocator) -- not left to the ambient context.allocator active
+// on whichever call first grows intern_table. Interned strings are meant
+// to outlive any single test task or VM run (see String_Object's own doc
+// comment), so a later lookup must never dereference an entry whose
+// backing memory was reclaimed when some earlier caller's allocator scope
+// ended.
+@(private = "file")
+intern_allocator: mem.Allocator
+
+@(init)
+init_intern_table :: proc() {
+	intern_allocator = context.allocator
+	intern_table = make(map[string]^String_Object, allocator = intern_allocator)
+}
+
 // intern_string returns the canonical String_Object for s, allocating
 // and registering one on first sight. No lock: the VM is single-threaded
 // (see docs/ARCHITECTURE.md's Scope section -- threads are out of scope
@@ -31,8 +50,8 @@ intern_string :: proc(s: string) -> ^String_Object {
 	if existing, ok := intern_table[s]; ok {
 		return existing
 	}
-	owned := strings.clone(s)
-	obj := new(String_Object)
+	owned := strings.clone(s, intern_allocator)
+	obj := new(String_Object, intern_allocator)
 	obj.obj.type = .String
 	obj.chars = owned
 	intern_table[owned] = obj

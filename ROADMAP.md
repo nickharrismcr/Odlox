@@ -131,6 +131,67 @@ doesn't reliably hold. Tracked in `TODO.md`; needs proper tooling (a
 memory sanitizer if available for this Odin build, or bisecting against
 a different Odin version) before it's worth resuming.
 
+**Root-caused (follow-up session)**: two distinct bugs, not one, which is
+why the single-variable "just serialize it" story above never held.
+
+1. **Allocator-lifetime mismatch, not a data race, and not threading-
+   dependent at all.** `core/obj_string.odin`'s `intern_table` and
+   `vm/module.odin`'s `module_cache`/`module_source_cache` are process-
+   lifetime caches by design — correct in production, where
+   `context.allocator` never changes for the life of the process. But
+   `odin test`'s runner hands every test task its own short-lived
+   `mem.rollback_stack_allocator`, one per thread slot, reset and reused
+   for the next task scheduled on that slot — including under
+   `-define:ODIN_TEST_THREADS=1`, which only changes worker-thread
+   *count*, not this per-task recycling. Any entry one of these caches
+   wrote via the ambient `context.allocator` becomes a dangling pointer
+   the moment the next task on that slot reuses the memory: a corrupted
+   map (hang, on a bad probe chain) or a dereferenced-freed-memory
+   segfault, depending on heap layout. This also explains the "+++ leak"
+   warning nearly every test in `-all-packages` output: not real leaks,
+   just the per-task tracker correctly noticing allocations that were
+   always meant to outlive their task. Verified directly: 10,000
+   `intern_string` calls split across 20 tiny test tasks crashed 3/3 runs;
+   the identical 10,000 calls inside a single test task passed cleanly 3/3
+   runs, single-threaded throughout — isolating the mechanism precisely
+   to the task boundary, nothing else. This also corrects the earlier
+   "`core`/`compiler` packages alone never fail" bisection above: rerun
+   today, `odin test src/compiler` alone (no `vm`, no real Lox execution)
+   crashed 1 run in 3 with the default thread count. **Fixed** for
+   `intern_table` and `module_source_cache`: each now captures a stable
+   allocator once, in an `@(init)` proc (which runs before the test
+   runner exists, so it always captures the real process allocator, never
+   a task's scratch one), and allocates explicitly through that instead
+   of ambient `context.allocator` (`#+feature global-context` added to
+   both files, required for `@(init)` to touch `context` in this Odin
+   build). **Not fixed**: `module_cache`'s values (`^core.Module_Object`)
+   are GC-managed — freed by `gc.odin`'s sweep — so pinning their
+   allocation without also reconciling `gc.odin`'s free path risks a new
+   allocator-mismatch bug; left as a known follow-up rather than risking
+   production GC behavior for a test-harness-only payoff.
+2. **A genuine, separate data race**, previously masked by bug 1
+   corrupting `intern_table` before the race could even manifest cleanly.
+   Once bug 1 was fixed, `core.test_intern_string_returns_canonical_pointer`
+   failed intermittently under the test runner's default 16 threads: two
+   sequential `intern_string("abc")` calls *within one test* returned
+   different pointers, because a concurrently-running test on another
+   thread wrote to the same unsynchronized global map in between. Real,
+   but not a bug to fix with a lock — it's the test runner's default
+   parallelism violating this codebase's explicit, deliberate design
+   (`docs/ARCHITECTURE.md`'s Scope section: "threads are out of scope
+   entirely"; `intern_string`'s own doc comment: "No lock: the VM is
+   single-threaded"). Locking every string/name lookup in the
+   interpreter's hot path to satisfy a test-runner convenience would cost
+   real production performance (see Phase 7) for zero production benefit.
+   Resolution: always invoke `odin test` here with
+   `-define:ODIN_TEST_THREADS=1`.
+
+Net effect: `odin test src -all-packages -define:ODIN_TEST_THREADS=1` is
+markedly more reliable after the bug-1 fix, but **still not fully clean**
+— `module_cache`'s unfixed instance of bug 1 can still produce a rare
+hang/segfault even single-threaded. `pytest` remains the actual
+correctness gate and is unaffected throughout. Tracked in `TODO.md`.
+
 ## Phase 1 — Scanner
 
 Port `src/compiler/scanner.go`. See `ARCHITECTURE.md` §

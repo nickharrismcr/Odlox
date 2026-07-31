@@ -1,7 +1,9 @@
+#+feature global-context
 package vm
 
 import "../compiler"
 import "../core"
+import "core:mem"
 import "core:os"
 import "core:path/filepath"
 import "core:strings"
@@ -35,6 +37,21 @@ module_cache: map[string]^core.Module_Object
 // context line for a frame inside one of its functions.
 @(private)
 module_source_cache: map[string]string
+
+// module_source_allocator is captured once, at package init -- same
+// rationale as core.obj_string.odin's intern_allocator: module_source_cache
+// must outlive any single test task or VM run, so it can't allocate
+// through whichever ambient context.allocator happens to be active on
+// the call that first populates it (under `odin test`, a short-lived,
+// recycled per-task scratch allocator).
+@(private = "file")
+module_source_allocator: mem.Allocator
+
+@(init)
+init_module_source_cache :: proc() {
+	module_source_allocator = context.allocator
+	module_source_cache = make(map[string]string, allocator = module_source_allocator)
+}
 
 do_import :: proc(vm: ^VM, module_name: string, alias: string) {
 	mod, ok := load_module(vm, module_name)
@@ -128,7 +145,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return nil, false
 	}
 	defer delete(data)
-	module_source_cache[name] = strings.clone(string(data))
+	module_source_cache[name] = strings.clone(string(data), module_source_allocator)
 
 	sub := new_vm_raw(path)
 	sub.root_script = vm.root_script

@@ -85,7 +85,17 @@ bin/odlox.exe --repl
 python -m pytest tests/new_tests/ -q
 ```
 
-Tests live in `tests/new_tests/` — one Python module per language feature, each running a `.lox` script and making semantic assertions on the output. The `.lox` scripts used by the tests are in `tests/new_tests/lox/`.
+Tests live in `tests/new_tests/` — one Python module per language feature, each running a `.lox` script and making semantic assertions on the output. The `.lox` scripts used by the tests are in `tests/new_tests/lox/`. This is the project's actual correctness gate.
+
+### Odin unit tests
+
+```bash
+odin test src -all-packages -define:ODIN_TEST_THREADS=1
+```
+
+`-define:ODIN_TEST_THREADS=1` is required, not optional — always include it. This codebase's global state (`core/obj_string.odin`'s string-interning table, `vm/module.odin`'s module caches) is deliberately single-threaded by design (see `docs/ARCHITECTURE.md`'s Scope section), and the test runner's default 16-thread parallelism races on it. It isn't a workaround for flakiness; it's running the tests the way the VM is actually meant to run.
+
+Even single-threaded, this suite is a known, not-fully-reliable secondary check, not a substitute for `pytest` above: `vm/module.odin`'s `module_cache` holds GC-managed values allocated through the test runner's short-lived per-task allocator, which can still produce a rare hang or segfault unrelated to any real bug in a change under test. See `TODO.md`/`ROADMAP.md` (Phase 0) for the full root-cause writeup.
 
 ---
 
