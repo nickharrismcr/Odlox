@@ -1,9 +1,9 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus seven other rulesets (Generations, HighLife, Seeds, Brian's
-// Brain, Day & Night, Replicator, 2x2) sharing the same grid/
-// neighbour-counting/rendering machinery. Each run cycles to the next
-// ruleset in `strategies` (see below) when the grid resets.
+// Life plus eight other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain, Day & Night, Replicator, 2x2, Immigration Game) sharing the same
+// grid/neighbour-counting/rendering machinery. Each run cycles to the
+// next ruleset in `strategies` (see below) when the grid resets.
 //
 // The grid is a float_array (per-cell state, not just 0/1 -- see each
 // strategy's own rule for what its states mean), sized to the actual
@@ -117,16 +117,18 @@ func step_generic(source, grid, next, rule) {
     }
 }
 
-// only_fully_alive builds a 0/1 indicator array from grid's wider state
-// range, 1.0 only where state is exactly 1.0 -- shared by every strategy
-// whose intermediate/dying states (however many it has) must not count
-// as live neighbours, only a cell's single "fully alive" state does (see
-// Generations and Brian's Brain below for why).
-func only_fully_alive(grid) {
+// state_indicator builds a 0/1 indicator array from grid's wider state
+// range, 1.0 only where state is exactly target_state -- shared by every
+// strategy whose intermediate/dying states (however many it has) must
+// not count as live neighbours, only one particular state does (see
+// Generations and Brian's Brain below for why), and by Immigration
+// Game's two competing colours (each needs its own indicator, counted
+// separately).
+func state_indicator(grid, target_state) {
     var ind = float_array(cols, rows)
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
-            if (grid.get(x, y) == 1.0) {
+            if (grid.get(x, y) == target_state) {
                 ind.set(x, y, 1.0)
             } else {
                 ind.set(x, y, 0.0)
@@ -134,6 +136,33 @@ func only_fully_alive(grid) {
         }
     }
     return ind
+}
+
+// neighbour_count_array materialises step_generic's own per-cell
+// neighbour-count computation (same rolling horiz_sum_of window, same
+// "subtract self once" math) into a whole float_array, instead of
+// immediately consuming each count via a rule callback. step_generic
+// itself doesn't need this (fusing count + rule application into one
+// pass avoids the extra float_array of storage and its own get/set
+// overhead), but a strategy like Immigration Game needs *two* full
+// neighbour-count arrays at once (one per competing colour, see below)
+// before it can decide anything per cell, so there's no single rule
+// callback to fuse into.
+func neighbour_count_array(source) {
+    var counts = float_array(cols, rows)
+    var h_prev = horiz_sum_of(source, rows - 1)
+    var h_curr = horiz_sum_of(source, 0)
+    for (var y = 0; y < rows; y = y + 1) {
+        var h_next = horiz_sum_of(source, (y + 1) % rows)
+        for (var x = 0; x < cols; x = x + 1) {
+            var total = h_prev[x] + h_curr[x] + h_next[x]
+            var self_indicator = source.get(x, y)
+            counts.set(x, y, total - self_indicator)
+        }
+        h_prev = h_curr
+        h_curr = h_next
+    }
+    return counts
 }
 
 // -----------------------------------------------------------------------
@@ -205,7 +234,7 @@ func gen_rule(state, n) {
 }
 
 func step_generations(grid, next) {
-    step_generic(only_fully_alive(grid), grid, next, gen_rule)
+    step_generic(state_indicator(grid, 1.0), grid, next, gen_rule)
 }
 
 func generations_colour(state) {
@@ -302,7 +331,7 @@ func brain_rule(state, n) {
 }
 
 func step_brain(grid, next) {
-    step_generic(only_fully_alive(grid), grid, next, brain_rule)
+    step_generic(state_indicator(grid, 1.0), grid, next, brain_rule)
 }
 
 func brain_colour(state) {
@@ -403,31 +432,109 @@ func twobytwo_colour(state) {
 }
 
 // -----------------------------------------------------------------------
+// Strategy: Immigration Game -- Conway's own birth (exactly 3 neighbours)
+// and survival (2 or 3) counts, but 3 states instead of 2: two competing
+// "colours" of alive cell (1, 2) plus dead (0). Survivors keep their own
+// colour; a newly-born cell's colour is decided by majority vote among
+// its exactly-3 live parent neighbours (never a tie -- 3 neighbours split
+// between 2 colours is always 3-0, 2-1, 1-2, or 0-3, one side always
+// wins). Unlike every strategy above, this can't be expressed as
+// step_generic(source, grid, next, rule): that abstraction only ever
+// hands a rule a single neighbour *count*, but deciding a birth's colour
+// needs to know the breakdown *by colour*, not just the total -- so this
+// strategy computes two full neighbour_count_array()s (one per colour)
+// and combines them itself instead. Also the first strategy with its own
+// randomiser (randomise_immigration): the shared randomise() only ever
+// seeds a single "on" state, but a fair fight needs both colours seeded
+// from the start, not one colour only ever arising from later births.
+
+const IMMIGRATION_COLOUR_A = vec4(255, 60, 60, 255)
+const IMMIGRATION_COLOUR_B = vec4(60, 140, 255, 255)
+
+func randomise_immigration(grid) {
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            if (random.integer(0, 99) < ALIVE_PERCENT) {
+                if (random.integer(0, 1) == 0) {
+                    grid.set(x, y, 1.0)
+                } else {
+                    grid.set(x, y, 2.0)
+                }
+            } else {
+                grid.set(x, y, 0.0)
+            }
+        }
+    }
+}
+
+func step_immigration(grid, next) {
+    var count_a = neighbour_count_array(state_indicator(grid, 1.0))
+    var count_b = neighbour_count_array(state_indicator(grid, 2.0))
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            var ca = count_a.get(x, y)
+            var cb = count_b.get(x, y)
+            var n = ca + cb
+            var state = grid.get(x, y)
+            if (state > 0.5) {
+                if (n == 2 or n == 3) {
+                    next.set(x, y, state) // survives, keeps its own colour
+                } else {
+                    next.set(x, y, 0.0)
+                }
+            } else {
+                if (n == 3) {
+                    if (ca > cb) {
+                        next.set(x, y, 1.0)
+                    } else {
+                        next.set(x, y, 2.0)
+                    }
+                } else {
+                    next.set(x, y, 0.0)
+                }
+            }
+        }
+    }
+}
+
+func immigration_colour(state) {
+    if (state == 1.0) {
+        return IMMIGRATION_COLOUR_A
+    }
+    if (state == 2.0) {
+        return IMMIGRATION_COLOUR_B
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
 // Strategy registry -- runs cycle through these, one per RESET_TICKS
-// generations. A "strategy" bundles a step rule and a state->colour
-// lookup; both share the same grid storage, sliding-window neighbour
-// counting (step_generic/horiz_sum_of), randomise(), and draw pipeline --
-// only the state-transition rule and the colour mapping differ. `step`/
-// `colour` are plain fields holding functions, not class methods, so
-// calling them (`strategy.step(grid, next)`) just invokes the stored
-// function directly -- no implicit `this` involved.
+// generations. A "strategy" bundles a step rule, a state->colour lookup,
+// and a randomiser; all but Immigration Game share the same grid storage,
+// sliding-window neighbour counting (step_generic/horiz_sum_of), and
+// randomise() -- only the state-transition rule and the colour mapping
+// differ. `step`/`colour`/`randomise` are plain fields holding functions,
+// not class methods, so calling them (`strategy.step(grid, next)`) just
+// invokes the stored function directly -- no implicit `this` involved.
 class Strategy {
-    init(name, step_fn, colour_fn) {
+    init(name, step_fn, colour_fn, randomise_fn) {
         this.name = name
         this.step = step_fn
         this.colour = colour_fn
+        this.randomise = randomise_fn
     }
 }
 
 var strategies = [
-    Strategy("Conway's Game of Life", step_conway, conway_colour),
-    Strategy("Generations (B2/S345/C5)", step_generations, generations_colour),
-    Strategy("HighLife (B36/S23)", step_highlife, highlife_colour),
-    Strategy("Seeds (B2/S)", step_seeds, seeds_colour),
-    Strategy("Brian's Brain", step_brain, brain_colour),
-    Strategy("Day & Night (B3678/S34678)", step_day_night, day_night_colour),
-    Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour),
-    Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour),
+    Strategy("Conway's Game of Life", step_conway, conway_colour, randomise),
+    Strategy("Generations (B2/S345/C5)", step_generations, generations_colour, randomise),
+    Strategy("HighLife (B36/S23)", step_highlife, highlife_colour, randomise),
+    Strategy("Seeds (B2/S)", step_seeds, seeds_colour, randomise),
+    Strategy("Brian's Brain", step_brain, brain_colour, randomise),
+    Strategy("Day & Night (B3678/S34678)", step_day_night, day_night_colour, randomise),
+    Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour, randomise),
+    Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour, randomise),
+    Strategy("Immigration Game", step_immigration, immigration_colour, randomise_immigration),
 ]
 var strategy_index = 0
 
@@ -447,8 +554,8 @@ func draw_grid(grid, colour_fn) {
 
 var grid = float_array(cols, rows)
 var next_grid = float_array(cols, rows)
-randomise(grid)
 var strategy = strategies[strategy_index]
+strategy.randomise(grid)
 draw_grid(grid, strategy.colour)
 
 var generation = 0
@@ -467,7 +574,7 @@ while (!win.should_close()) {
     if (generation >= RESET_TICKS) {
         strategy_index = (strategy_index + 1) % len(strategies)
         strategy = strategies[strategy_index]
-        randomise(grid)
+        strategy.randomise(grid)
         generation = 0
     }
 
