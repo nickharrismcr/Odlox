@@ -207,7 +207,7 @@ var result = helper.value()
 
 // -----------------------------------------------------------------------
 // Stage 5: --force-compile bypasses the cache *read* but still refreshes
-// the *write* -- matching glox's own -f semantics exactly (see
+// the *write* -- matching the reference implementation's own -f semantics exactly (see
 // docs/plans/bytecode-cache.md). Verified by planting a *valid* cache
 // holding a deliberately wrong result: a run with force_compile=false
 // must be fooled by it (sanity-checking this test's own mechanism), one
@@ -259,7 +259,7 @@ var result = helper.value()
 }
 
 // -----------------------------------------------------------------------
-// Corruption recovery: glox's own documented weakness here is a stale/
+// Corruption recovery: the reference implementation's own documented weakness here is a stale/
 // malformed .lxc causing a hang or OOM panic (see bc_cache.odin's own
 // doc comment); every one of these must instead fall back to a correct
 // source compile with no crash/hang, and the module import must still

@@ -19,7 +19,7 @@ test_write_op_and_byte_track_lines :: proc(t: ^testing.T) {
 
 // Plain values (ints, floats, strings, bools) should be deduplicated:
 // the same literal appearing twice in one chunk shares one constant-pool
-// slot, exactly like glox.
+// slot, exactly like the reference implementation.
 @(test)
 test_add_constant_dedups_plain_values :: proc(t: ^testing.T) {
 	c := new_chunk("test.lox")

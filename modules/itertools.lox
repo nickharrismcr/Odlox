@@ -2,7 +2,7 @@ import random
 
 //
 // @file itertools.lox
-// @brief Iterator and sequence utilities for GLOX
+// @brief Iterator and sequence utilities for odlox
 // 
 // This module provides utilities for working with iterables including strings and lists.
 // Inspired by Python's itertools module, it offers functions for manipulating and
@@ -12,7 +12,7 @@ import random
 // - reverse(sequence) - Reverse a string or list
 // - sort(list, cmp) - Sort a list using a custom comparison function
 // 
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

@@ -88,8 +88,8 @@ test_bc_cache_roundtrips_hand_built_chunk :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(dc.constants), 5)
 	testing.expect_value(t, as_int(dc.constants[0]), -5)
 	// The int constant round-trips its full width, not truncated to
-	// 32 bits the way glox's own bc_cache.go does -- a regression here
-	// would look exactly like that known, acknowledged glox bug
+	// 32 bits the way the reference implementation's own bc_cache.go does -- a regression here
+	// would look exactly like that known, acknowledged reference-implementation bug
 	// reappearing (see bc_cache.odin's own doc comment).
 	testing.expect_value(t, as_int(dc.constants[1]), 4294967296)
 	testing.expect_value(t, as_float(dc.constants[2]), 3.14159)
@@ -127,8 +127,8 @@ test_bc_cache_deserialise_rejects_truncated_data :: proc(t: ^testing.T) {
 	defer delete(data)
 
 	// Cut the buffer off partway through the body -- must fail cleanly,
-	// not panic or hang, regardless of where the cut lands (glox's own
-	// documented bc_cache.go weakness is a stale/malformed cache causing
+	// not panic or hang, regardless of where the cut lands (the reference
+	// implementation's own documented bc_cache.go weakness is a stale/malformed cache causing
 	// a hang or OOM panic instead of a clean decode failure like this).
 	for cut := 6; cut < len(data); cut += 3 {
 		_, err := function_deserialise(data[:cut])
@@ -147,8 +147,8 @@ test_bc_cache_deserialise_rejects_garbage_property_cache_count :: proc(t: ^testi
 
 	// The property_cache_count field is the last thing chunk_serialise
 	// writes -- overwrite it (the trailing 4 bytes) with an enormous
-	// value, simulating exactly the kind of corruption glox's own
-	// documented OOM-panic bug is triggered by. Must be rejected before
+	// value, simulating exactly the kind of corruption the reference
+	// implementation's own documented OOM-panic bug is triggered by. Must be rejected before
 	// any allocation is attempted (see BC_CACHE_MAX_PROPERTY_CACHES),
 	// not merely "eventually" fail.
 	corrupted := slice.clone(data)

@@ -1,7 +1,7 @@
 package compiler
 
 // Standalone unit tests for the scanner (Phase 1). These exist because
-// the ported glox test suite (tests/new_tests/, see ROADMAP.md's Testing
+// the ported reference-implementation test suite (tests/new_tests/, see ROADMAP.md's Testing
 // section) drives a whole compiled binary end to end and can't exercise
 // tokenization in isolation -- by the time that suite is usable, a
 // scanner bug would show up as a confusing parse/compile failure several

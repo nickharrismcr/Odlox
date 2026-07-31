@@ -16,7 +16,7 @@ print p.recv();
 
 print p.wait();
 
-// spawning a script that doesn't exist starts a glox process fine (the
+// spawning a script that doesn't exist starts an odlox process fine (the
 // binary itself exists) -- but that child exits immediately without ever
 // writing a reply, so recv() sees the closed pipe and raises ProcessError
 broken = process.spawn(os.join(here, "does_not_exist.lox"));

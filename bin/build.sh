@@ -20,11 +20,12 @@
 #               (see bin/benchmarks.sh) -- don't change it without
 #               re-measuring.
 #
-# Mirrors glox's own fast-vs-debug build split (bin/build.sh vs.
-# bin/build_debug.sh / core.HotLoopDebugHookCompiled) -- see ROADMAP.md's
-# Phase 0 entry for this decision. Simpler here than glox's own version:
-# Odin's `when ODIN_DEBUG` is real conditional compilation, so there's no
-# glox-style temporary source-edit-then-restore dance needed to toggle
+# Mirrors the reference implementation's own fast-vs-debug build split
+# (bin/build.sh vs. bin/build_debug.sh / core.HotLoopDebugHookCompiled) --
+# see ROADMAP.md's Phase 0 entry for this decision. Simpler here than the
+# reference implementation's own version: Odin's `when ODIN_DEBUG` is real
+# conditional compilation, so there's no temporary source-edit-then-restore
+# dance needed to toggle
 # the hot-loop debug hook in and out of the binary -- just a different
 # set of odin build flags.
 set -e

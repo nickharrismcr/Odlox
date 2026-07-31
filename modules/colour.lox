@@ -1,6 +1,6 @@
 //
 // @file colour.lox
-// @brief Color utilities and constants for GLOX graphics programming
+// @brief Color utilities and constants for odlox graphics programming
 // 
 // This module provides high-level color manipulation functions, predefined color constants,
 // and wrapper functions for native color utilities. It uses the native colour_utils module
@@ -13,7 +13,7 @@
 // - Random color generation
 // - Color scaling utilities
 // 
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

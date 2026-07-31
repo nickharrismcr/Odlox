@@ -2,7 +2,7 @@ from gfx import *
 
 //
 // @file sprite.lox
-// @brief Sprite management system for GLOX graphics
+// @brief Sprite management system for odlox graphics
 // 
 // This module provides a Sprite class for managing 2D graphics sprites with
 // support for animation, positioning, and texture management. Useful for
@@ -17,7 +17,7 @@ from gfx import *
 // - Position management and movement
 // - Texture frame selection and animation timing
 // 
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

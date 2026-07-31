@@ -290,10 +290,10 @@ test_dict_get_and_set :: proc(t: ^testing.T) {
 // Regression test for a real, pre-existing gap: do_index (Op_Index)
 // unconditionally required an integer index *before even checking
 // what the container was* -- so `dict["key"]`, a real, expected
-// feature (glox's own index() has a full dict case), always failed
+// feature (the reference implementation's own index() has a full dict case), always failed
 // with "Index must be an integer.". Found porting logging.lox, whose
 // Logger.level_name does exactly this. Fixed by checking the
-// container's type first, matching glox's own per-type dispatch, not
+// container's type first, matching the reference implementation's own per-type dispatch, not
 // by relaxing the int-index requirement for List/String.
 @(test)
 test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
@@ -306,7 +306,7 @@ test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
 
 // Regression test: create_dict used to reject any non-string dict key
 // outright ("Dict keys must be strings.") instead of coercing it to
-// its string representation the way glox's own createDict does
+// its string representation the way the reference implementation's own createDict does
 // (`key.String()` for anything that isn't already a StringObject).
 // Found porting logging.lox, whose Logger._LEVEL_NAMES is exactly
 // `{10: "DEBUG", 20: "INFO", ...}`, looked up later via `str(level)` --

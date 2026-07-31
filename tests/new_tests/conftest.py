@@ -3,7 +3,7 @@ import sys, os, pytest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-GLOX      = os.path.join(REPO_ROOT, "bin", "odlox.exe")
+ODLOX     = os.path.join(REPO_ROOT, "bin", "odlox.exe")
 
 
 def pytest_configure(config):
@@ -12,7 +12,7 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items):
-    if not os.path.exists(GLOX):
+    if not os.path.exists(ODLOX):
         skip = pytest.mark.skip(reason="bin/odlox.exe not built — run: odin build src -out:bin/odlox.exe")
         for item in items:
             item.add_marker(skip)

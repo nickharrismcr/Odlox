@@ -442,8 +442,8 @@ test_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Parenthesized control-flow headers and unbraced bodies (glox's real
-// grammar requires the parens unconditionally -- see stmt.odin's
+// Parenthesized control-flow headers and unbraced bodies (the reference
+// implementation's real grammar requires the parens unconditionally -- see stmt.odin's
 // parse_condition doc comment; this port makes them optional instead,
 // to add the parenthesized fixtures the ported test suite actually
 // uses without breaking the bare style every existing test already
@@ -593,7 +593,7 @@ class Point {
 
 // Regression test for a real bug found via the ported pytest suite
 // (tests/new_tests/lox/str_class_toString.lox writes exactly this
-// shape): glox's own parser explicitly tolerates an Eol between a
+// shape): the reference implementation's own parser explicitly tolerates an Eol between a
 // method's `)` and its `{` (compile.go: `p.match(TOKEN_EOL) // allow
 // EOL after parameters`) -- this port initially didn't, so any method
 // written with its opening brace on its own line failed to compile.
@@ -713,7 +713,7 @@ test_from_import_star :: proc(t: ^testing.T) {
 // Both the default-enabled and explicitly-disabled peephole behaviors
 // are checked in one test function (rather than two separate @(test)
 // procs) deliberately: DebugSkipPeephole is a package-level flag
-// (mirroring glox's own core.DebugSkipPeephole -- a real CLI-flag-backed
+// (mirroring the reference implementation's own core.DebugSkipPeephole -- a real CLI-flag-backed
 // toggle, not just a test convenience) that end_compiler snapshots into
 // each Parser's own skip_peephole field at construction time (see
 // parser.odin), specifically so one compile's behavior can't be

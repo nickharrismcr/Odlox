@@ -16,7 +16,7 @@
 // - json.JSONDecodeError / json.JSONEncodeError -- raised on malformed
 //   input / on values that cannot be represented in JSON
 //
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

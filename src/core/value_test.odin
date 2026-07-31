@@ -8,7 +8,7 @@ package core
 import "core:testing"
 
 // Pins down the whole point of the #raw_union design: Value must be 16
-// bytes, matching clox, not the 32 bytes glox's Go interface-based
+// bytes, matching clox, not the 32 bytes the reference implementation's Go interface-based
 // Value costs. If this regresses (e.g. a field gets added without
 // checking alignment/size first), it should fail loudly here rather
 // than silently show up later as "the VM is slower than expected".
@@ -100,9 +100,10 @@ test_different_strings_are_not_equal :: proc(t: ^testing.T) {
 	testing.expect(t, !values_equal(a, b, true))
 }
 
-// Deliberate improvement over glox (see value.odin's objects_equal doc
-// comment): two distinct list objects with equal contents compare equal
-// by structure, not by glox's stringify-and-compare fallback.
+// Deliberate improvement over the reference implementation (see value.odin's
+// objects_equal doc comment): two distinct list objects with equal contents
+// compare equal by structure, not by the reference implementation's
+// stringify-and-compare fallback.
 @(test)
 test_lists_compare_structurally :: proc(t: ^testing.T) {
 	items_a := make([dynamic]Value)

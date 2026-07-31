@@ -1,6 +1,6 @@
 //
 // @file math.lox
-// @brief Extended mathematical utilities for GLOX
+// @brief Extended mathematical utilities for odlox
 // 
 // This module provides additional mathematical functions beyond the built-in math
 // functions, with a focus on 2D vector operations and geometric calculations.
@@ -16,7 +16,7 @@
 // 
 // Note: Some functions may be moved to native implementation for better performance.
 // 
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

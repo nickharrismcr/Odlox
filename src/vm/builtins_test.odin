@@ -106,8 +106,8 @@ test_vec_constructors :: proc(t: ^testing.T) {
 // always fell straight through to the generic "Only instances,
 // classes, and modules have settable properties." error, even though
 // *reading* v.x already worked (get_property has its own vec-swizzle
-// case). glox's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case.
-// Found porting particle_sys.lox, a real glox module that assigns
+// case). The reference implementation's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case.
+// Found porting particle_sys.lox, a real module that assigns
 // `this.pos.x = ...` directly.
 @(test)
 test_vec_field_assignment :: proc(t: ^testing.T) {

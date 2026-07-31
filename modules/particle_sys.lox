@@ -1,11 +1,11 @@
 
 //
 // @file particle_sys.lox
-// @brief Particle system framework for GLOX graphics
+// @brief Particle system framework for odlox graphics
 // 
 // This module provides a flexible particle system implementation for creating
 // visual effects like explosions, smoke, fire, rain, and other particle-based
-// animations in GLOX graphics applications.
+// animations in odlox graphics applications.
 // 
 // Classes:
 // - Particle - Individual particle with position, velocity, and lifecycle
@@ -14,7 +14,7 @@
 // 
  
 // 
-// @author GLOX Project
+// @author odlox Project
 // @date 2025
 //
 

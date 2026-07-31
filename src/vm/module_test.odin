@@ -85,8 +85,8 @@ test_import_finds_module_in_subdirectory :: proc(t: ^testing.T) {
 }
 
 // Regression test for the search-order fix: $LOX_PATH/modules is
-// checked *before* the script's own directory (matching glox's own
-// $LOX_PATH/src/modules-first order -- see read_module_source's doc
+// checked *before* the script's own directory (matching the reference
+// implementation's own $LOX_PATH/src/modules-first order -- see read_module_source's doc
 // comment for why the subdirectory name differs). A module of the same
 // name sitting in both places must resolve to the LOX_PATH copy.
 @(test)
@@ -241,7 +241,7 @@ func get_base_plus(x) {
 //     one of those into the importing script raised "has no global
 //     slot" whenever the importing script's own code never happened
 //     to reference that same name itself. Fixed with
-//     bind_imported_name_soft, which (like glox's own
+//     bind_imported_name_soft, which (like the reference implementation's own
 //     importFunctionFromModule) silently skips the fast-slot write
 //     when none exists, rather than treating that as an error.
 @(test)

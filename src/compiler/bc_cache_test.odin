@@ -91,7 +91,7 @@ constants_structurally_equal :: proc(a, b: core.Value) -> bool {
 // A source exercising every constant kind the cache format handles: an
 // int on each side of the 32-bit boundary (a regression in the cache's
 // no-truncation guarantee -- see bc_cache.odin's own doc comment -- would
-// look exactly like glox's own acknowledged bc_cache.go bug reappearing),
+// look exactly like the reference implementation's own acknowledged bc_cache.go bug reappearing),
 // a float, a string, and a nested closure capturing an enclosing
 // parameter (exercises the recursive Function-as-constant path that
 // vm/bc_cache.odin's environment fixup, wired up in a later stage, has

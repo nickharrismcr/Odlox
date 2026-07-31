@@ -1,7 +1,7 @@
 // Per-level difficulty overrides, applied to Config at the start of each
 // level. Values match the original Lua reference's game/levels.lua exactly
 // (landers/pods/bombers/max_baiters directly; npc_bullet_time converted from
-// seconds to frames, *60, since glox's aim_bullet_at() works in frames where
+// seconds to frames, *60, since odlox's aim_bullet_at() works in frames where
 // Lua's BulletMgr:fireEvent() worked in seconds -- see calc_fire() in
 // game/util.lua). Notably: no pods or bombers at all until level 2/3. Index
 // is 1-based; levels past the end of the list repeat the last one (the Lua
