@@ -1,9 +1,9 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus four other rulesets (Generations, HighLife, Seeds, Brian's
-// Brain) sharing the same grid/neighbour-counting/rendering machinery.
-// Each run cycles to the next ruleset in `strategies` (see below) when
-// the grid resets.
+// Life plus eight other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain, Day & Night, Maze, Life without Death, Anneal) sharing the same
+// grid/neighbour-counting/rendering machinery. Each run cycles to the
+// next ruleset in `strategies` (see below) when the grid resets.
 //
 // The grid is a float_array (per-cell state, not just 0/1 -- see each
 // strategy's own rule for what its states mean), sized to the actual
@@ -23,7 +23,7 @@ import random
 import colour
 
 const CELL_SIZE = 10
-const RESET_TICKS = 600
+const RESET_TICKS = 300
 const ALIVE_PERCENT = 20 // chance (0-99) a cell starts alive
 
 const ALIVE_COLOUR = vec4(0, 230, 120, 255)
@@ -313,6 +313,130 @@ func brain_colour(state) {
 }
 
 // -----------------------------------------------------------------------
+// Strategy: Day & Night (B3678/S34678) -- 2 states, same shape as
+// Conway/HighLife/Seeds. Symmetric under swapping dead and alive (the
+// birth and survival neighbour sets are each other's complement against
+// 0-8), so large dead regions and large alive regions behave like mirror
+// images of each other -- solid fields with moving boundaries, rather
+// than Conway's sparse blobs and gliders.
+
+const DAY_NIGHT_COLOUR = vec4(230, 230, 230, 255)
+
+func day_night_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 3 or n == 4 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    if (!alive and (n == 3 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_day_night(grid, next) {
+    step_generic(grid, grid, next, day_night_rule)
+}
+
+func day_night_colour(state) {
+    if (state > 0.5) {
+        return DAY_NIGHT_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Maze (B3/S12345) -- 2 states. Conway's own birth condition,
+// but a much wider survival range (1 through 5, instead of just 2-3)
+// means sparse connected lines rarely break -- corridors and loops
+// persist instead of collapsing into blobs, giving this one its name.
+
+const MAZE_COLOUR = vec4(0, 190, 190, 255)
+
+func maze_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and n >= 1 and n <= 5) {
+        return 1.0
+    }
+    if (!alive and n == 3) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_maze(grid, next) {
+    step_generic(grid, grid, next, maze_rule)
+}
+
+func maze_colour(state) {
+    if (state > 0.5) {
+        return MAZE_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Life without Death (B3/S012345678) -- 2 states, but survival
+// is unconditional: once a cell is alive, no neighbour count ever kills
+// it. The only way this grid changes is by filling in further, so unlike
+// every other strategy above it never oscillates or empties out --
+// starting sparse (ALIVE_PERCENT) and spreading via ordinary births
+// (exactly 3 neighbours) grows slow coral-like structures instead.
+
+const LWOD_COLOUR = vec4(255, 210, 0, 255)
+
+func lwod_rule(state, n) {
+    if (state > 0.5) {
+        return 1.0 // never dies, regardless of n
+    }
+    if (n == 3) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_lwod(grid, next) {
+    step_generic(grid, grid, next, lwod_rule)
+}
+
+func lwod_colour(state) {
+    if (state > 0.5) {
+        return LWOD_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Anneal (B4678/S35678) -- 2 states. Both birth and survival
+// favour high neighbour counts, so small/noisy regions get absorbed or
+// erased rather than persisting -- the initial random seed "anneals"
+// into a handful of large, smooth-edged blobs instead of the fine-
+// grained texture every other strategy above keeps.
+
+const ANNEAL_COLOUR = vec4(180, 90, 255, 255)
+
+func anneal_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 3 or n == 5 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    if (!alive and (n == 4 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_anneal(grid, next) {
+    step_generic(grid, grid, next, anneal_rule)
+}
+
+func anneal_colour(state) {
+    if (state > 0.5) {
+        return ANNEAL_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
 // Strategy registry -- runs cycle through these, one per RESET_TICKS
 // generations. A "strategy" bundles a step rule and a state->colour
 // lookup; both share the same grid storage, sliding-window neighbour
@@ -335,6 +459,10 @@ var strategies = [
     Strategy("HighLife (B36/S23)", step_highlife, highlife_colour),
     Strategy("Seeds (B2/S)", step_seeds, seeds_colour),
     Strategy("Brian's Brain", step_brain, brain_colour),
+    Strategy("Day & Night (B3678/S34678)", step_day_night, day_night_colour),
+    Strategy("Maze (B3/S12345)", step_maze, maze_colour),
+    Strategy("Life without Death (B3/S012345678)", step_lwod, lwod_colour),
+    Strategy("Anneal (B4678/S35678)", step_anneal, anneal_colour),
 ]
 var strategy_index = 0
 
