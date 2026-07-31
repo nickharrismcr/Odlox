@@ -1,7 +1,11 @@
 from gfx import *
-// Conway's Game of Life, fullscreen.
+// Cellular automata in the "Life" family, fullscreen -- Conway's Game of
+// Life plus other rulesets sharing the same grid/neighbour-counting/
+// rendering machinery. Each run cycles to the next ruleset in `strategies`
+// (see below) when the grid resets.
 //
-// The grid is a float_array (0.0 dead / 1.0 alive), sized to the actual
+// The grid is a float_array (per-cell state, not just 0/1 -- see each
+// strategy's own rule for what its states mean), sized to the actual
 // fullscreen resolution / CELL_SIZE. Neighbour counting wraps toroidally
 // (edges connect to the opposite edge) so patterns don't just die off at
 // the screen border. Each tick's cells are drawn once into a render_texture
@@ -10,8 +14,9 @@ from gfx import *
 // be the actual bottleneck otherwise), then blitted to the screen with one
 // draw_render_texture() call.
 //
-// ESC to quit. The grid clears and re-randomises every RESET_TICKS
-// generations (most random starts stabilise or die out well before that).
+// ESC to quit. The grid clears, re-randomises, and switches to the next
+// strategy every RESET_TICKS generations (most random starts stabilise or
+// die out well before that).
 
 import random
 import colour
@@ -35,6 +40,10 @@ var rows = screen_h / CELL_SIZE
 
 var rt = render_texture(screen_w, screen_h)
 
+// randomise seeds every cell to state 1 ("fully alive") with ALIVE_PERCENT
+// chance, else 0 ("dead") -- shared by every strategy below, since a
+// strategy's richer states (e.g. Generations' dying states) only ever
+// emerge from simulation, never from the initial seed.
 func randomise(grid) {
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
@@ -47,22 +56,18 @@ func randomise(grid) {
     }
 }
 
-// horiz_sum returns a `cols`-length list where entry x is the sum of row
-// y's three cells around column x (x-1, x, x+1, wrapping at the edges) --
-// the horizontal half of each cell's 3x3 neighbourhood. Computed with a
-// sliding window (prev/curr/next locals), so after the first cell each
-// later x only costs one new float_array read, not three -- combined with
-// step's own vertical reuse below, this cuts total float_array.get() calls
-// roughly 5x versus reading all 8 neighbours fresh per cell (measured:
-// 0.33s -> 0.06s per tick on a 192x108 grid), since each native
-// float_array method call costs far more than the plain list-index reads
-// (h_prev[x]/h_curr[x]/h_next[x] below) it replaces.
-func horiz_sum(grid, y) {
+// horiz_sum_of returns a `cols`-length list where entry x is the sum of
+// row y's three cells around column x (x-1, x, x+1, wrapping at the
+// edges) in `source` -- the horizontal half of each cell's 3x3
+// neighbourhood. Computed with a sliding window (prev/curr/next locals),
+// so after the first cell each later x only costs one new float_array
+// read, not three.
+func horiz_sum_of(source, y) {
     var row = []
-    var prev = grid.get(cols - 1, y)
-    var curr = grid.get(0, y)
+    var prev = source.get(cols - 1, y)
+    var curr = source.get(0, y)
     for (var x = 0; x < cols; x = x + 1) {
-        var next = grid.get((x + 1) % cols, y)
+        var next = source.get((x + 1) % cols, y)
         row.append(prev + curr + next)
         prev = curr
         curr = next
@@ -70,54 +75,174 @@ func horiz_sum(grid, y) {
     return row
 }
 
-// step applies the standard rules (birth on exactly 3 live neighbours,
-// survival on 2 or 3, death otherwise) reading from `grid` and writing
-// the next generation into `next` -- separate arrays so a cell's update
-// never sees an already-updated neighbour from the same generation.
+// step_generic computes each cell's neighbour count from `source` (a 0/1
+// "is this neighbour alive" indicator -- for Conway that's `grid` itself,
+// since its only states already are 0/1; for a richer ruleset like
+// Generations it's a derived array, decoupled from grid's own wider state
+// range) and calls rule(state, neighbours) -> next_state per cell,
+// writing the result into `next`. state comes from `grid` (which may
+// differ from `source`), so a rule can see a cell's full state (e.g.
+// which dying stage it's in) even though only a 0/1 indicator feeds the
+// neighbour count.
 //
-// Rather than re-reading all 8 neighbours from `grid` for every cell
-// (toroidal topology -- otherwise a pattern reaching the border loses
-// neighbours it "should" have, and gliders/oscillators near an edge
-// behave differently from ones in the middle), this keeps a rolling
-// window of three horiz_sum() rows (the one above, the current one, and
-// the one below the row being processed). Their sum at column x is the
-// cell's full 3x3 neighbourhood total *including itself* (h_curr[x]
-// already counts grid[x,y]), so subtracting the cell's own value once
-// gives the live-neighbour count. After each row, the window just slides
-// down (h_prev <- h_curr <- h_next) instead of recomputing from scratch.
+// Uses the same rolling window of three horiz_sum_of() rows (above,
+// current, below the row being processed) regardless of ruleset --
+// their sum at column x is `source`'s full 3x3 neighbourhood total
+// *including itself* (h_curr[x] already counts source[x,y]), so
+// subtracting the cell's own `source` value once gives the neighbour-only
+// count. After each row, the window just slides down (h_prev <- h_curr
+// <- h_next) instead of recomputing from scratch -- roughly 5x fewer
+// float_array native calls than reading all 8 neighbours fresh per cell
+// (measured on Conway's rule: 0.33s -> 0.06s per tick on a 192x108 grid),
+// since each native float_array method call costs far more than the
+// plain list-index reads (h_prev[x]/h_curr[x]/h_next[x]) it replaces.
 // Verified to produce identical output to the naive 8-neighbour version
 // against a known blinker oscillator and 20 generations of a random
 // 30x30 grid before landing.
-func step(grid, next) {
-    var h_prev = horiz_sum(grid, rows - 1)
-    var h_curr = horiz_sum(grid, 0)
+func step_generic(source, grid, next, rule) {
+    var h_prev = horiz_sum_of(source, rows - 1)
+    var h_curr = horiz_sum_of(source, 0)
     for (var y = 0; y < rows; y = y + 1) {
-        var h_next = horiz_sum(grid, (y + 1) % rows)
+        var h_next = horiz_sum_of(source, (y + 1) % rows)
         for (var x = 0; x < cols; x = x + 1) {
             var total = h_prev[x] + h_curr[x] + h_next[x]
-            var self = grid.get(x, y)
-            var alive = self > 0.5
-            var n = total - self
-            if (alive and (n == 2 or n == 3)) {
-                next.set(x, y, 1.0)
-            } else if (!alive and n == 3) {
-                next.set(x, y, 1.0)
-            } else {
-                next.set(x, y, 0.0)
-            }
+            var self_indicator = source.get(x, y)
+            var n = total - self_indicator
+            var state = grid.get(x, y)
+            next.set(x, y, rule(state, n))
         }
         h_prev = h_curr
         h_curr = h_next
     }
 }
 
-func draw_grid(grid) {
+// -----------------------------------------------------------------------
+// Strategy: Conway's Game of Life (2 states: dead 0, alive 1). Birth on
+// exactly 3 live neighbours, survival on 2 or 3, death otherwise.
+
+func conway_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 2 or n == 3)) {
+        return 1.0
+    }
+    if (!alive and n == 3) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_conway(grid, next) {
+    // grid doubles as its own neighbour-indicator: Conway's only states
+    // are already 0/1, so no separate indicator array is needed.
+    step_generic(grid, grid, next, conway_rule)
+}
+
+func conway_colour(state) {
+    if (state > 0.5) {
+        return ALIVE_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Generations, the B2/S345/C5 "Star Wars" rule -- 5 states:
+// dead (0), alive (1), and 3 dying/fading states (2-4) a cell passes
+// through before returning to dead. Unlike Conway, a *dying* cell does
+// not count as a live neighbour for its neighbours' own birth/survival --
+// only state 1 does -- so births/survival can only be sustained by
+// cells that are still fully alive, not by trails of fading ones.
+
+const GEN_NUM_STATES = 5
+
+const GEN_COLOURS = [
+    vec4(255, 255, 60, 255), // state 1: alive
+    vec4(255, 140, 0, 255),  // state 2: dying
+    vec4(200, 30, 0, 255),   // state 3: dying
+    vec4(70, 0, 40, 255),    // state 4: nearly gone
+]
+
+func gen_rule(state, n) {
+    if (state == 0.0) {
+        if (n == 2) {
+            return 1.0
+        }
+        return 0.0
+    }
+    if (state == 1.0) {
+        if (n == 3 or n == 4 or n == 5) {
+            return 1.0
+        }
+        return 2.0 // starts dying
+    }
+    // Already dying (state 2..GEN_NUM_STATES-1): always advances one
+    // stage, regardless of neighbours, wrapping back to dead once it
+    // reaches the last dying state.
+    var nxt = state + 1.0
+    if (nxt >= GEN_NUM_STATES) {
+        return 0.0
+    }
+    return nxt
+}
+
+// gen_indicator builds a 0/1 "fully alive" array from grid's wider state
+// range -- see the strategy comment above for why dying cells must not
+// count as live neighbours.
+func gen_indicator(grid) {
+    var ind = float_array(cols, rows)
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            if (grid.get(x, y) == 1.0) {
+                ind.set(x, y, 1.0)
+            } else {
+                ind.set(x, y, 0.0)
+            }
+        }
+    }
+    return ind
+}
+
+func step_generations(grid, next) {
+    step_generic(gen_indicator(grid), grid, next, gen_rule)
+}
+
+func generations_colour(state) {
+    if (state < 0.5) {
+        return nil
+    }
+    return GEN_COLOURS[int(state) - 1]
+}
+
+// -----------------------------------------------------------------------
+// Strategy registry -- runs cycle through these, one per RESET_TICKS
+// generations. A "strategy" bundles a step rule and a state->colour
+// lookup; both share the same grid storage, sliding-window neighbour
+// counting (step_generic/horiz_sum_of), randomise(), and draw pipeline --
+// only the state-transition rule and the colour mapping differ. `step`/
+// `colour` are plain fields holding functions, not class methods, so
+// calling them (`strategy.step(grid, next)`) just invokes the stored
+// function directly -- no implicit `this` involved.
+class Strategy {
+    init(name, step_fn, colour_fn) {
+        this.name = name
+        this.step = step_fn
+        this.colour = colour_fn
+    }
+}
+
+var strategies = [
+    Strategy("Conway's Game of Life", step_conway, conway_colour),
+    Strategy("Generations (B2/S345/C5)", step_generations, generations_colour),
+]
+var strategy_index = 0
+
+func draw_grid(grid, colour_fn) {
     win.begin_texture_mode(rt)
     win.clear(BG_COLOUR)
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
-            if (grid.get(x, y) > 0.5) {
-                win.rectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1, ALIVE_COLOUR)
+            var col = colour_fn(grid.get(x, y))
+            if (col != nil) {
+                win.rectangle(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE - 1, CELL_SIZE - 1, col)
             }
         }
     }
@@ -127,7 +252,8 @@ func draw_grid(grid) {
 var grid = float_array(cols, rows)
 var next_grid = float_array(cols, rows)
 randomise(grid)
-draw_grid(grid)
+var strategy = strategies[strategy_index]
+draw_grid(grid, strategy.colour)
 
 var generation = 0
 
@@ -136,23 +262,25 @@ while (!win.should_close()) {
         break
     }
 
-    step(grid, next_grid)
+    strategy.step(grid, next_grid)
     var tmp = grid
     grid = next_grid
     next_grid = tmp
 
     generation = generation + 1
     if (generation >= RESET_TICKS) {
+        strategy_index = (strategy_index + 1) % len(strategies)
+        strategy = strategies[strategy_index]
         randomise(grid)
         generation = 0
     }
 
-    draw_grid(grid)
+    draw_grid(grid, strategy.colour)
 
     win.begin()
     win.clear(BG_COLOUR)
     win.draw_render_texture(rt, 0, 0, colour.WHITE)
-    win.text(format("Generation %d / %d", generation, RESET_TICKS), 10, 10, 20, colour.WHITE)
+    win.text(format("%s -- Generation %d / %d", strategy.name, generation, RESET_TICKS), 10, 10, 20, colour.WHITE)
     win.text(format("%d x %d cells, %dpx", cols, rows, CELL_SIZE), 10, 34, 16, vec4(180, 180, 180, 255))
     win.end()
 }
