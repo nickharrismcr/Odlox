@@ -1,9 +1,9 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus five other rulesets (Generations, HighLife, Seeds, Brian's
-// Brain, Day & Night) sharing the same grid/neighbour-counting/rendering
-// machinery. Each run cycles to the next ruleset in `strategies` (see
-// below) when the grid resets.
+// Life plus eight other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain, Day & Night, Replicator, Diamoeba, 2x2) sharing the same grid/
+// neighbour-counting/rendering machinery. Each run cycles to the next
+// ruleset in `strategies` (see below) when the grid resets.
 //
 // The grid is a float_array (per-cell state, not just 0/1 -- see each
 // strategy's own rule for what its states mean), sized to the actual
@@ -345,6 +345,95 @@ func day_night_colour(state) {
 }
 
 // -----------------------------------------------------------------------
+// Strategy: Replicator (B1357/S1357) -- 2 states, but birth and survival
+// share the exact same condition (any odd neighbour count), so a cell's
+// *current* state never actually matters to its next one: alive iff n is
+// odd, full stop. Every pattern spontaneously copies itself repeatedly --
+// genuinely chaotic, not just noisy like Seeds or blob-forming like the
+// others above.
+
+const REPLICATOR_COLOUR = vec4(50, 255, 180, 255)
+
+func replicator_rule(state, n) {
+    if (n == 1 or n == 3 or n == 5 or n == 7) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_replicator(grid, next) {
+    step_generic(grid, grid, next, replicator_rule)
+}
+
+func replicator_colour(state) {
+    if (state > 0.5) {
+        return REPLICATOR_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Diamoeba (B35678/S5678) -- 2 states. High survival/birth
+// thresholds favour dense clusters, but the specific neighbour sets carve
+// jagged, fractal-ish boundaries into them instead of smoothing out the
+// way Anneal's did -- large amoeba-like blobs that keep visibly churning
+// at the edges rather than settling.
+
+const DIAMOEBA_COLOUR = vec4(255, 90, 0, 255)
+
+func diamoeba_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 5 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    if (!alive and (n == 3 or n == 5 or n == 6 or n == 7 or n == 8)) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_diamoeba(grid, next) {
+    step_generic(grid, grid, next, diamoeba_rule)
+}
+
+func diamoeba_colour(state) {
+    if (state > 0.5) {
+        return DIAMOEBA_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: 2x2 (B36/S125) -- 2 states. Named for its tendency to
+// preserve and propagate 2x2 block structures from the initial noise,
+// giving it a blockier, more mechanical look than the organic blobs or
+// scattered dots every other strategy above produces.
+
+const TWOBYTWO_COLOUR = vec4(180, 180, 255, 255)
+
+func twobytwo_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 1 or n == 2 or n == 5)) {
+        return 1.0
+    }
+    if (!alive and (n == 3 or n == 6)) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_twobytwo(grid, next) {
+    step_generic(grid, grid, next, twobytwo_rule)
+}
+
+func twobytwo_colour(state) {
+    if (state > 0.5) {
+        return TWOBYTWO_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
 // Strategy registry -- runs cycle through these, one per RESET_TICKS
 // generations. A "strategy" bundles a step rule and a state->colour
 // lookup; both share the same grid storage, sliding-window neighbour
@@ -368,6 +457,9 @@ var strategies = [
     Strategy("Seeds (B2/S)", step_seeds, seeds_colour),
     Strategy("Brian's Brain", step_brain, brain_colour),
     Strategy("Day & Night (B3678/S34678)", step_day_night, day_night_colour),
+    Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour),
+    Strategy("Diamoeba (B35678/S5678)", step_diamoeba, diamoeba_colour),
+    Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour),
 ]
 var strategy_index = 0
 
