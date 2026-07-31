@@ -1,7 +1,7 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus eight other rulesets (Generations, HighLife, Seeds, Brian's
-// Brain, Day & Night, Replicator, Diamoeba, 2x2) sharing the same grid/
+// Life plus seven other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain, Day & Night, Replicator, 2x2) sharing the same grid/
 // neighbour-counting/rendering machinery. Each run cycles to the next
 // ruleset in `strategies` (see below) when the grid resets.
 //
@@ -23,7 +23,7 @@ import random
 import colour
 
 const CELL_SIZE = 10
-const RESET_TICKS = 300
+const RESET_TICKS = 200
 const ALIVE_PERCENT = 20 // chance (0-99) a cell starts alive
 
 const ALIVE_COLOUR = vec4(0, 230, 120, 255)
@@ -373,37 +373,6 @@ func replicator_colour(state) {
 }
 
 // -----------------------------------------------------------------------
-// Strategy: Diamoeba (B35678/S5678) -- 2 states. High survival/birth
-// thresholds favour dense clusters, but the specific neighbour sets carve
-// jagged, fractal-ish boundaries into them instead of smoothing out the
-// way Anneal's did -- large amoeba-like blobs that keep visibly churning
-// at the edges rather than settling.
-
-const DIAMOEBA_COLOUR = vec4(255, 90, 0, 255)
-
-func diamoeba_rule(state, n) {
-    var alive = state > 0.5
-    if (alive and (n == 5 or n == 6 or n == 7 or n == 8)) {
-        return 1.0
-    }
-    if (!alive and (n == 3 or n == 5 or n == 6 or n == 7 or n == 8)) {
-        return 1.0
-    }
-    return 0.0
-}
-
-func step_diamoeba(grid, next) {
-    step_generic(grid, grid, next, diamoeba_rule)
-}
-
-func diamoeba_colour(state) {
-    if (state > 0.5) {
-        return DIAMOEBA_COLOUR
-    }
-    return nil
-}
-
-// -----------------------------------------------------------------------
 // Strategy: 2x2 (B36/S125) -- 2 states. Named for its tendency to
 // preserve and propagate 2x2 block structures from the initial noise,
 // giving it a blockier, more mechanical look than the organic blobs or
@@ -458,7 +427,6 @@ var strategies = [
     Strategy("Brian's Brain", step_brain, brain_colour),
     Strategy("Day & Night (B3678/S34678)", step_day_night, day_night_colour),
     Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour),
-    Strategy("Diamoeba (B35678/S5678)", step_diamoeba, diamoeba_colour),
     Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour),
 ]
 var strategy_index = 0
