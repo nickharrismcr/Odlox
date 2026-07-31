@@ -1,9 +1,9 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus eight other rulesets (Generations, HighLife, Seeds, Brian's
-// Brain, Day & Night, Replicator, 2x2, Immigration Game) sharing the same
-// grid/neighbour-counting/rendering machinery. Each run cycles to the
-// next ruleset in `strategies` (see below) when the grid resets.
+// Life plus nine other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain, Day & Night, Replicator, 2x2, Immigration Game, QuadLife) sharing
+// the same grid/neighbour-counting/rendering machinery. Each run cycles to
+// the next ruleset in `strategies` (see below) when the grid resets.
 //
 // The grid is a float_array (per-cell state, not just 0/1 -- see each
 // strategy's own rule for what its states mean), sized to the actual
@@ -508,6 +508,123 @@ func immigration_colour(state) {
 }
 
 // -----------------------------------------------------------------------
+// Strategy: QuadLife -- Immigration Game's own idea (Conway's birth/
+// survival counts, competing colours, survivors keep their colour)
+// extended to 4 colours (states 1-4) instead of 2. With only 2 colours a
+// birth's 3 parents always have a clean majority (3 items split 2 ways
+// can't tie); with 4 colours they might not -- 3 parents could be 3
+// different colours with no majority at all. The standard QuadLife rule
+// handles that case cleanly: if there *is* a majority (2 or more parents
+// sharing a colour), the birth takes it, same as Immigration Game; if
+// all 3 parents are different colours, the birth takes the one colour
+// *not* among those 3 (always exactly one, since 4 colours - 3 present
+// = 1 missing) -- see quadlife_birth_colour. Needs 4 full
+// neighbour_count_array()s per tick instead of Immigration Game's 2, so
+// noticeably more work per generation than any other strategy here.
+
+const QUADLIFE_COLOUR_1 = vec4(255, 70, 70, 255)
+const QUADLIFE_COLOUR_2 = vec4(70, 220, 90, 255)
+const QUADLIFE_COLOUR_3 = vec4(80, 140, 255, 255)
+const QUADLIFE_COLOUR_4 = vec4(255, 220, 60, 255)
+
+func randomise_quadlife(grid) {
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            if (random.integer(0, 99) < ALIVE_PERCENT) {
+                var c = random.integer(1, 4)
+                if (c == 1) {
+                    grid.set(x, y, 1.0)
+                } else if (c == 2) {
+                    grid.set(x, y, 2.0)
+                } else if (c == 3) {
+                    grid.set(x, y, 3.0)
+                } else {
+                    grid.set(x, y, 4.0)
+                }
+            } else {
+                grid.set(x, y, 0.0)
+            }
+        }
+    }
+}
+
+// quadlife_birth_colour picks a birth's colour from its exactly-3 live
+// parents' per-colour counts (which always sum to 3). If one colour has
+// 2 or 3 of them, that's a clear majority. Otherwise all three parents
+// are different colours (three counts of 1, one of 0) -- the birth takes
+// the missing (count 0) colour.
+func quadlife_birth_colour(c1, c2, c3, c4) {
+    if (c1 >= 2) {
+        return 1.0
+    }
+    if (c2 >= 2) {
+        return 2.0
+    }
+    if (c3 >= 2) {
+        return 3.0
+    }
+    if (c4 >= 2) {
+        return 4.0
+    }
+    if (c1 == 0) {
+        return 1.0
+    }
+    if (c2 == 0) {
+        return 2.0
+    }
+    if (c3 == 0) {
+        return 3.0
+    }
+    return 4.0
+}
+
+func step_quadlife(grid, next) {
+    var count1 = neighbour_count_array(state_indicator(grid, 1.0))
+    var count2 = neighbour_count_array(state_indicator(grid, 2.0))
+    var count3 = neighbour_count_array(state_indicator(grid, 3.0))
+    var count4 = neighbour_count_array(state_indicator(grid, 4.0))
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            var c1 = count1.get(x, y)
+            var c2 = count2.get(x, y)
+            var c3 = count3.get(x, y)
+            var c4 = count4.get(x, y)
+            var n = c1 + c2 + c3 + c4
+            var state = grid.get(x, y)
+            if (state > 0.5) {
+                if (n == 2 or n == 3) {
+                    next.set(x, y, state)
+                } else {
+                    next.set(x, y, 0.0)
+                }
+            } else {
+                if (n == 3) {
+                    next.set(x, y, quadlife_birth_colour(c1, c2, c3, c4))
+                } else {
+                    next.set(x, y, 0.0)
+                }
+            }
+        }
+    }
+}
+
+func quadlife_colour(state) {
+    if (state == 1.0) {
+        return QUADLIFE_COLOUR_1
+    }
+    if (state == 2.0) {
+        return QUADLIFE_COLOUR_2
+    }
+    if (state == 3.0) {
+        return QUADLIFE_COLOUR_3
+    }
+    if (state == 4.0) {
+        return QUADLIFE_COLOUR_4
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
 // Strategy registry -- runs cycle through these, one per RESET_TICKS
 // generations. A "strategy" bundles a step rule, a state->colour lookup,
 // and a randomiser; all but Immigration Game share the same grid storage,
@@ -535,6 +652,7 @@ var strategies = [
     Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour, randomise),
     Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour, randomise),
     Strategy("Immigration Game", step_immigration, immigration_colour, randomise_immigration),
+    Strategy("QuadLife", step_quadlife, quadlife_colour, randomise_quadlife),
 ]
 var strategy_index = 0
 
