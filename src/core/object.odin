@@ -35,12 +35,6 @@ Object_Type :: enum u8 {
 
 	Float_Array,
 
-	Regex_Pattern,
-	Regex_Match,
-
-	Process,
-
-	Physics_World,
 	Window,
 	Image,
 	Texture,
@@ -50,8 +44,12 @@ Object_Type :: enum u8 {
 	Batch,
 	Batch_Instanced,
 
-	Sound,
-	Music,
+	// Userdata: pluggable native-extension objects (Sound/Music/Process/
+	// Regex Pattern/Match/PhysicsWorld so far -- see obj_userdata.odin's
+	// doc comment and natives/README.md). Every other native kind
+	// (Image, Texture, ...) still gets its own tag above; migrating them
+	// is ongoing.
+	Userdata,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -120,17 +118,6 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	case .Float_Array:
 		f := cast(^Float_Array_Object)obj
 		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)
-	case .Regex_Pattern:
-		p := cast(^Regex_Pattern_Object)obj
-		return fmt.aprintf("<Pattern %q>", p.source, allocator = allocator)
-	case .Regex_Match:
-		m := cast(^Regex_Match_Object)obj
-		return fmt.aprintf("<Match span=%v>", m.pos[0], allocator = allocator)
-	case .Process:
-		return "<process>"
-	case .Physics_World:
-		pw := cast(^Physics_World_Object)obj
-		return fmt.aprintf("<PhysicsWorld [%d bodies]>", physics_world_count(pw), allocator = allocator)
 	case .Window:
 		return "<window>"
 	case .Image:
@@ -161,10 +148,12 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		// unembellished string rather than the "<Type ...>" bracket
 		// convention.
 		return "BatchInstancedObject"
-	case .Sound:
-		return "<sound>"
-	case .Music:
-		return "<music>"
+	case .Userdata:
+		u := cast(^Userdata_Object)obj
+		if u.vtable.to_string != nil {
+			return u.vtable.to_string(u.data, allocator)
+		}
+		return fmt.aprintf("<%s>", u.vtable.tag, allocator = allocator)
 	}
 	return "<unknown>"
 }
