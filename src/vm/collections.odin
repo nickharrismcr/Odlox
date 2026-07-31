@@ -199,13 +199,21 @@ do_in :: proc(vm: ^VM) -> bool {
 		push(vm, core.make_bool_value(core.list_contains(core.as_list(container), item)))
 		return true
 	}
+	if container.type == .Obj && container.obj_type == .Dict {
+		// Same key coercion as subscript (dict_key), not dict.get()'s
+		// stricter string-only rule -- `10 in d` should agree with `d[10]`.
+		key := dict_key(item)
+		_, ok := core.dict_get(core.as_dict(container), key)
+		push(vm, core.make_bool_value(ok))
+		return true
+	}
 	if core.is_string(container) && core.is_string(item) {
 		hay := core.string_get(core.as_string(container))
 		needle := core.string_get(core.as_string(item))
 		push(vm, core.make_bool_value(strings.contains(hay, needle)))
 		return true
 	}
-	runtime_error(vm, "Right operand of 'in' must be a list or string.")
+	runtime_error(vm, "Right operand of 'in' must be a list, dict, or string.")
 	return false
 }
 

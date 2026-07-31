@@ -31,7 +31,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 **Types & operators**
 - **Lists** — slicing, slice assignment, `&` concatenation, `in` membership, `append`/`remove`.
 - **Tuples** — immutable sequences.
-- **Dictionaries** — `get(k, default)`, `keys()`, `remove()`.
+- **Dictionaries** — `get(k, default)`, `keys()`, `remove()`, `in` key membership.
 - **Strings** — `${expr}` interpolation, `format()`, `&` concat, `*` repeat, slicing, `in`, `replace`, `join`; all interned.
 - **Native vectors** `vec2` / `vec3` / `vec4` — a dedicated value tag gives `+`, `.add()` (in-place addition), and `.set()` (in-place replacement) a fast dispatch path distinct from generic object method calls.
 - **`float_array`** — fast native 2D float grid, with bulk RGB-encode/decode helpers for image and data work.

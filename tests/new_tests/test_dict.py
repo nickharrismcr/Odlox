@@ -17,4 +17,8 @@ def test_dict(script):
     assert lines[26] == '[ 1 , 2 , 3 , Dict({ "e":"f" }) ]'
     assert lines[27] == "1"
     assert lines[28] == "f"
+    assert lines[29] == "true"   # "a" in a
+    assert lines[30] == "false"  # "z" in a
+    assert lines[31] == "true"   # 5 in c -- coerced to "5", same as c[5]/c["5"]
+    assert lines[32] == "false"  # "not_a_key" in c
     assert lines[-1] == "nil"

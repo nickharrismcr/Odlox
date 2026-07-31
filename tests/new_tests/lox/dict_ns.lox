@@ -24,3 +24,8 @@ print e["a"]["b"]
 print e["a"]["d"]
 print e["a"]["d"][0]
 print e["a"]["d"][3]["e"]
+
+print "a" in a
+print "z" in a
+print 5 in c
+print "not_a_key" in c
