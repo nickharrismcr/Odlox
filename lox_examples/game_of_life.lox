@@ -1,8 +1,9 @@
 from gfx import *
 // Cellular automata in the "Life" family, fullscreen -- Conway's Game of
-// Life plus other rulesets sharing the same grid/neighbour-counting/
-// rendering machinery. Each run cycles to the next ruleset in `strategies`
-// (see below) when the grid resets.
+// Life plus four other rulesets (Generations, HighLife, Seeds, Brian's
+// Brain) sharing the same grid/neighbour-counting/rendering machinery.
+// Each run cycles to the next ruleset in `strategies` (see below) when
+// the grid resets.
 //
 // The grid is a float_array (per-cell state, not just 0/1 -- see each
 // strategy's own rule for what its states mean), sized to the actual
@@ -116,6 +117,25 @@ func step_generic(source, grid, next, rule) {
     }
 }
 
+// only_fully_alive builds a 0/1 indicator array from grid's wider state
+// range, 1.0 only where state is exactly 1.0 -- shared by every strategy
+// whose intermediate/dying states (however many it has) must not count
+// as live neighbours, only a cell's single "fully alive" state does (see
+// Generations and Brian's Brain below for why).
+func only_fully_alive(grid) {
+    var ind = float_array(cols, rows)
+    for (var y = 0; y < rows; y = y + 1) {
+        for (var x = 0; x < cols; x = x + 1) {
+            if (grid.get(x, y) == 1.0) {
+                ind.set(x, y, 1.0)
+            } else {
+                ind.set(x, y, 0.0)
+            }
+        }
+    }
+    return ind
+}
+
 // -----------------------------------------------------------------------
 // Strategy: Conway's Game of Life (2 states: dead 0, alive 1). Birth on
 // exactly 3 live neighbours, survival on 2 or 3, death otherwise.
@@ -184,25 +204,8 @@ func gen_rule(state, n) {
     return nxt
 }
 
-// gen_indicator builds a 0/1 "fully alive" array from grid's wider state
-// range -- see the strategy comment above for why dying cells must not
-// count as live neighbours.
-func gen_indicator(grid) {
-    var ind = float_array(cols, rows)
-    for (var y = 0; y < rows; y = y + 1) {
-        for (var x = 0; x < cols; x = x + 1) {
-            if (grid.get(x, y) == 1.0) {
-                ind.set(x, y, 1.0)
-            } else {
-                ind.set(x, y, 0.0)
-            }
-        }
-    }
-    return ind
-}
-
 func step_generations(grid, next) {
-    step_generic(gen_indicator(grid), grid, next, gen_rule)
+    step_generic(only_fully_alive(grid), grid, next, gen_rule)
 }
 
 func generations_colour(state) {
@@ -210,6 +213,103 @@ func generations_colour(state) {
         return nil
     }
     return GEN_COLOURS[int(state) - 1]
+}
+
+// -----------------------------------------------------------------------
+// Strategy: HighLife (B36/S23) -- Conway's own rule plus an extra birth
+// condition on exactly 6 neighbours. Still just 2 states (dead/alive), so
+// it reuses Conway's shape exactly, only the birth predicate differs.
+// Famous for having a small self-replicating pattern, unlike plain Conway.
+
+const HIGHLIFE_COLOUR = vec4(60, 200, 255, 255)
+
+func highlife_rule(state, n) {
+    var alive = state > 0.5
+    if (alive and (n == 2 or n == 3)) {
+        return 1.0
+    }
+    if (!alive and (n == 3 or n == 6)) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_highlife(grid, next) {
+    step_generic(grid, grid, next, highlife_rule)
+}
+
+func highlife_colour(state) {
+    if (state > 0.5) {
+        return HIGHLIFE_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Seeds (B2/S) -- births on exactly 2 neighbours, but *no*
+// survival condition at all: every live cell dies unconditionally every
+// generation, regardless of neighbour count. Never stabilises -- unlike
+// Conway/HighLife, patterns explode outward rather than settling into
+// still lifes or oscillators, a deliberately different long-run behaviour
+// from the other 2-state strategies above.
+
+const SEEDS_COLOUR = vec4(255, 60, 200, 255)
+
+func seeds_rule(state, n) {
+    if (state < 0.5 and n == 2) {
+        return 1.0
+    }
+    return 0.0
+}
+
+func step_seeds(grid, next) {
+    step_generic(grid, grid, next, seeds_rule)
+}
+
+func seeds_colour(state) {
+    if (state > 0.5) {
+        return SEEDS_COLOUR
+    }
+    return nil
+}
+
+// -----------------------------------------------------------------------
+// Strategy: Brian's Brain -- 3 states: off (0), firing (1), dying/
+// refractory (2). An off cell fires with exactly 2 firing neighbours; a
+// firing cell always becomes dying next tick, unconditionally; a dying
+// cell always goes off next tick, unconditionally -- neither transition
+// depends on neighbours at all, unlike Generations' dying stages (also
+// unconditional) or any 2-state rule's survival check. Only firing cells
+// (state 1) count as neighbours, same reasoning as Generations. Never
+// settles into still lifes -- brains "spark" and travel rather than sit.
+
+const BRAIN_COLOURS = [
+    vec4(255, 255, 255, 255), // state 1: firing
+    vec4(40, 80, 255, 255),   // state 2: dying/refractory
+]
+
+func brain_rule(state, n) {
+    if (state == 0.0) {
+        if (n == 2) {
+            return 1.0
+        }
+        return 0.0
+    }
+    if (state == 1.0) {
+        return 2.0
+    }
+    return 0.0
+}
+
+func step_brain(grid, next) {
+    step_generic(only_fully_alive(grid), grid, next, brain_rule)
+}
+
+func brain_colour(state) {
+    if (state < 0.5) {
+        return nil
+    }
+    return BRAIN_COLOURS[int(state) - 1]
 }
 
 // -----------------------------------------------------------------------
@@ -232,6 +332,9 @@ class Strategy {
 var strategies = [
     Strategy("Conway's Game of Life", step_conway, conway_colour),
     Strategy("Generations (B2/S345/C5)", step_generations, generations_colour),
+    Strategy("HighLife (B36/S23)", step_highlife, highlife_colour),
+    Strategy("Seeds (B2/S)", step_seeds, seeds_colour),
+    Strategy("Brian's Brain", step_brain, brain_colour),
 ]
 var strategy_index = 0
 
