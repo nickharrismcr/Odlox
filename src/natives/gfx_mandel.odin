@@ -2,6 +2,7 @@ package natives
 
 import "../core"
 import "../vm"
+import "core:math"
 import "core:os"
 import "core:thread"
 
@@ -78,9 +79,6 @@ gfx_lox_mandel_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> c
 	yoffset := core.as_float(yoffset_val)
 	scale := core.as_float(scale_val)
 
-	color_table := mandel_color_table(max_iteration)
-	defer delete(color_table)
-
 	max_dim := f64(max(width, height))
 	scale_over_max_dim := scale / max_dim
 	half_height := f64(height) / 2
@@ -106,7 +104,6 @@ gfx_lox_mandel_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> c
 			max_iteration       = max_iteration,
 			xoffset             = xoffset,
 			yoffset             = yoffset,
-			color_table         = color_table,
 			scale_over_max_dim  = scale_over_max_dim,
 			half_height         = half_height,
 			half_width          = half_width,
@@ -128,7 +125,6 @@ Mandel_Block :: struct {
 	width:               int,
 	max_iteration:       int,
 	xoffset, yoffset:    f64,
-	color_table:         []f64, // shared, read-only
 	scale_over_max_dim:  f64,
 	half_height:         f64,
 	half_width:          f64,
@@ -199,7 +195,13 @@ mandel_calc_block :: proc(b: ^Mandel_Block) {
 				}
 			}
 
-			b.data[row * b.array_width + col] = b.color_table[(iteration * 2) % b.max_iteration]
+			if iteration >= b.max_iteration {
+				// Interior of the set: never escaped (or provably never
+				// will, via the two early-exit paths above) -- flat black.
+				b.data[row * b.array_width + col] = 0
+			} else {
+				b.data[row * b.array_width + col] = mandel_palette_color(mandel_smooth_iteration(iteration, x, y))
+			}
 		}
 	}
 }
@@ -217,62 +219,56 @@ mandel_in_period2_bulb :: proc(x, y: f64) -> bool {
 	return dx * dx + y * y < 0.0625
 }
 
-// mandel_color_table mirrors julia_color_table's own six-band gradient
-// (gfx_julia.odin), indexed differently by its caller
-// ((iteration*2)%maxIteration here, vs plain iteration for julia).
-// Duplicated rather than shared across the two files since each is free
-// to diverge independently -- not a hard coupling worth introducing an
-// abstraction to preserve.
+// mandel_smooth_iteration turns the discrete escape-time iteration count
+// into a continuous value (the "normalized"/"renormalized" iteration
+// count -- standard technique, see e.g. the Wikipedia Mandelbrot set
+// article's "Continuous (smooth) coloring" section) using the (x, y)
+// the orbit actually escaped at. Two neighboring pixels that escape one
+// iteration apart get a continuous, not integer-stepped, color as a
+// result -- this is what removes the speckly noise a purely
+// integer-iteration palette shows deep in a zoom, where escape times
+// between adjacent pixels can differ chaotically near the boundary.
+//
+// Only called for points that actually escaped through the main loop
+// (x*x+y*y > 4.0 on exit), so log_zn > log(2) always and neither log
+// call can hit a non-positive argument.
 @(private = "file")
-mandel_color_table :: proc(max_iteration: int) -> []f64 {
-	table := make([]f64, max_iteration + 1)
-	for i in 0 ..= max_iteration {
-		if i == max_iteration {
-			table[i] = mandel_encode_rgb(0, 0, 0)
-			continue
-		}
-		t := f64(i) / f64(max_iteration)
-		r, g, b: int
-		switch {
-		case t < 0.16:
-			ratio := t / 0.16
-			r = int(ratio * 50)
-			g = int(100 + ratio * 155)
-			b = 255
-		case t < 0.32:
-			ratio := (t - 0.16) / 0.16
-			r = int(50 * (1 - ratio))
-			g = 255
-			b = int(255 * (1 - ratio))
-		case t < 0.48:
-			ratio := (t - 0.32) / 0.16
-			r = int(ratio * 255)
-			g = 255
-			b = 0
-		case t < 0.64:
-			ratio := (t - 0.48) / 0.16
-			r = 255
-			g = int(255 * (1 - ratio))
-			b = 0
-		case t < 0.80:
-			ratio := (t - 0.64) / 0.16
-			r = 255
-			g = 0
-			b = int(ratio * 255)
-		case:
-			ratio := (t - 0.80) / 0.20
-			r = 255
-			g = int(ratio * 255)
-			b = 255
-		}
-		table[i] = mandel_encode_rgb(clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255))
-	}
-	return table
+mandel_smooth_iteration :: proc(iteration: int, x, y: f64) -> f64 {
+	ln_2 :: 0.6931471805599453
+	log_zn := math.ln(x * x + y * y) / 2
+	nu := math.ln(log_zn / ln_2) / ln_2
+	return f64(iteration) + 1 - nu
+}
+
+// mandel_palette_color maps a continuous escape value to a color via a
+// cheap cosine palette (Inigo Quilez's `a + b*cos(2π(c*t+d))` formula,
+// one cos() per channel, a=b=0.5 keeps the result in [0,1]). No table,
+// no branching, and -- unlike a discrete banded palette -- continuous in
+// t, so it doesn't introduce its own stepping on top of whatever the
+// escape-time values already do. frequency controls how many full color
+// cycles happen per unit of smooth iteration count; the per-channel
+// phase offsets (0, 1/3, 2/3) spread the three channels evenly around
+// the cycle instead of moving in lockstep toward grey.
+@(private = "file")
+mandel_palette_color :: proc(smooth_iteration: f64) -> f64 {
+	// Lower frequency = a given escape-time difference between neighboring
+	// pixels rotates less far around the color wheel, which is what
+	// actually controls perceived noise near the boundary (where escape
+	// time itself varies chaotically pixel-to-pixel) -- not something a
+	// discrete/continuous choice alone fixes. 0.025 caps the color swing
+	// from a 1-iteration difference at roughly a fifth of the channel
+	// range (derivative bound is pi*frequency*255 =~ 20 out of 255).
+	frequency :: 0.025
+	t := smooth_iteration * frequency
+	r := 0.5 + 0.5 * math.cos(math.TAU * (t + 0.0))
+	g := 0.5 + 0.5 * math.cos(math.TAU * (t + 1.0 / 3.0))
+	b := 0.5 + 0.5 * math.cos(math.TAU * (t + 2.0 / 3.0))
+	return mandel_encode_rgb(int(r * 255), int(g * 255), int(b * 255))
 }
 
 // mandel_encode_rgb mirrors gfx_julia.odin's own encode_rgb (itself a
 // mirror of gfx.encode_rgba's packing) -- duplicated rather than shared,
-// same reasoning as mandel_color_table's own doc comment above.
+// not a hard coupling worth introducing an abstraction to preserve.
 @(private = "file")
 mandel_encode_rgb :: proc(r, g, b: int) -> f64 {
 	return f64(u32(r) << 16 | u32(g) << 8 | u32(b))
