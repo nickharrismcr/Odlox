@@ -189,7 +189,7 @@ win.toggle_fullscreen()
 screenHeight = win.get_screen_height()
 screenWidth = win.get_screen_width()
 
-segmentCount = 32
+segmentCount = 96
 radius,triangleWidth = get_width(segmentCount, screenHeight)
 
 // Live-painted canvas: bigger than the sample window so the sampler has room to
@@ -229,7 +229,7 @@ while (!win.should_close()) {
     kaleido(win, rt, segmentCount, centerX, centerY, tex, sampler)
     win.end()
     counter += 1
-    if (counter >= 480 ) {
+    if (counter >= 280 ) {
         canvas.clear(colour.BLACK)
         pens = make_pens(penCount, canvasWidth, canvasHeight, margin)
         counter = 0

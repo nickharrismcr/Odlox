@@ -73,7 +73,7 @@ var max_iteration = 500;
  
 var win=window(1,1);
 
-const SCREEN_SCALE = 0.4
+const SCREEN_SCALE = 0.8
 
 win.init();
 win.toggle_fullscreen();

@@ -176,6 +176,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#shader">shader</a>
       <a href="#float-array">float_array</a>
       <a href="#physics-world">physics_world</a>
+      <a href="#box2d">box2d</a>
       <a href="#sound">sound</a>
       <div class="group">Library Modules</div>
       <a href="#mod-math">math</a>
@@ -217,7 +218,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
 <!-- ==================== INTRODUCTION ==================== -->
 <h2 class="section" id="introduction">Introduction</h2>
 <p class="lead">odlox is a bytecode interpreter for the Lox language, from Bob Nystrom's <em>Crafting Interpreters</em>, written in Odin and extended with Python-inspired features and Raylib graphics bindings. Its design follows the bytecode-VM approach the book builds in C (<em>clox</em>) — a single-pass compiler emitting bytecode for a stack-based virtual machine with its own mark-and-sweep garbage collector.</p>
-<p>On top of vanilla Lox, odlox adds: lists, tuples, dictionaries and slicing; exceptions with <code>try/except</code>; module imports; <code>foreach</code>/<code>range</code> iteration; integer arithmetic and modulus; <code>break</code>/<code>continue</code>; <code>const</code>; implicit variable declaration; string interning; native vector types (<code>vec2</code>/<code>vec3</code>/<code>vec4</code>); a <code>float_array</code> type; a native <code>physics_world</code> simulation (3D internally, though only 2D drawing is implemented so far); and Raylib bindings for 2D graphics.</p>
+<p>On top of vanilla Lox, odlox adds: lists, tuples, dictionaries and slicing; exceptions with <code>try/except</code>; module imports; <code>foreach</code>/<code>range</code> iteration; integer arithmetic and modulus; <code>break</code>/<code>continue</code>; <code>const</code>; implicit variable declaration; string interning; native vector types (<code>vec2</code>/<code>vec3</code>/<code>vec4</code>); a <code>float_array</code> type; a native <code>physics_world</code> simulation (3D internally, though only 2D drawing is implemented so far); a <code>box2d</code> module wrapping Odin's Box2D v3 bindings for 2D rigid-body physics; and Raylib bindings for 2D graphics.</p>
 <p>This document is the complete language and library reference.</p>
 <div class="note"><strong>No semicolons required</strong>odlox does <em>not</em> require semicolon line terminators. A newline ends a statement, so <code>;</code> is optional (both styles are accepted). Most examples in this reference omit them. See <a href="#variables">Variables</a>.</div>
 <div class="note"><strong>Reading the signatures</strong>Method and function signatures are shown in monospace boxes. Arguments in <em>italics</em> describe the expected value type. Unless noted, <code>vec4</code> colours use 0–255 RGBA components.</div>
@@ -613,7 +614,7 @@ import random, colour as clr     // multiple, with alias</code></pre>
 <pre><code class="lox">from math import sin, cos, PI
 from colour import *
 from gfx import window, batch     // native built-in module</code></pre>
-<p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/modules/foo.lox</code> (the standard library); <code>foo.lox</code> alongside the top-level script being run; then <code>foo.lox</code> in any subdirectory of that script's own directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), <a href="#mod-physics">physics</a> (physics_world), and <a href="#sound">sound</a>.</p>
+<p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/modules/foo.lox</code> (the standard library); <code>foo.lox</code> alongside the top-level script being run; then <code>foo.lox</code> in any subdirectory of that script's own directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), <a href="#mod-physics">physics</a> (physics_world), <a href="#box2d">box2d</a> (box2d.world), and <a href="#sound">sound</a>.</p>
 
 <!-- ==================== NUMBERS ==================== -->
 <h2 class="section" id="numbers">Numbers</h2>
@@ -806,17 +807,19 @@ pos.set(10, 20)     // pos becomes vec2(10, 20) -- same object, no allocation</c
 </tbody>
 </table>
 
-<h2 class="section" id="mod-gfx">gfx &amp; physics modules</h2>
-<p>These create native objects, each documented in its own section. <code>vec2</code>/<code>vec3</code>/<code>vec4</code> are <strong>built-in</strong> (core value types, always available), but the graphics constructors and helpers live in the <code>gfx</code> module and the physics constructor in <code>physics</code> — import them before use:</p>
+<h2 class="section" id="mod-gfx">gfx, physics &amp; box2d modules</h2>
+<p>These create native objects, each documented in its own section. <code>vec2</code>/<code>vec3</code>/<code>vec4</code> are <strong>built-in</strong> (core value types, always available), but the graphics constructors live in <code>gfx</code>, the hand-rolled 3D physics constructor in <code>physics</code>, and the Box2D-backed 2D physics constructor in <code>box2d</code> — import them before use:</p>
 <pre><code class="lox">from gfx import *              // window, batch, texture, shader, camera, ...
 from physics import physics_world
+import box2d
 // or keep them namespaced:
 import gfx
 win = gfx.window(800, 600)</code></pre>
 <ul>
 <li><strong>built-in:</strong> <a href="#vectors"><code>vec2</code>/<code>vec3</code>/<code>vec4</code></a></li>
 <li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#float-array"><code>float_array</code></a>, plus the image/colour helpers below</li>
-<li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a></li>
+<li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a> — hand-rolled 3D sphere/box simulation</li>
+<li><strong id="mod-box2d-list">box2d:</strong> <a href="#box2d"><code>box2d.world</code></a> — wraps Odin's Box2D v3 bindings, 2D circle/box bodies</li>
 </ul>
 
 <h3>Colour encoding <span class="pill">gfx</span></h3>
@@ -1241,6 +1244,67 @@ while (!win.should_close()) {
 </tbody>
 </table>
 <div class="note"><strong>Static bodies bypass the broad-phase grid</strong>Dynamic spheres from <code>add</code> still use the collision grid, so <code>cell_size</code> should exceed the largest sphere's diameter as before. Static boxes from <code>add_static_box</code> are checked directly against every dynamic sphere instead, since a single grid cell can't represent a large platform's true extent — so static geometry can be arbitrarily large regardless of <code>cell_size</code>. Two static bodies never collide with each other.</div>
+
+<!-- ==================== MODULE: BOX2D ==================== -->
+<h2 class="section" id="box2d">box2d <span class="pill">native module</span></h2>
+<p><code>import box2d</code> — wraps Odin's <code>vendor:box2d</code> bindings (Box2D v3), a full 2D rigid-body physics engine, as an alternative to the hand-rolled <a href="#physics-world"><code>physics_world</code></a>. Covers circle and box bodies (static, kinematic, or dynamic), forces/impulses/torque, and collision events. Bodies are plain integer ids handed out by the world, the same convention <code>physics_world</code> uses — not separate native objects. Not yet covered: joints, raycasting/shape queries, debug-draw, and capsule/polygon/chain shapes.</p>
+<h3>Creating a world</h3>
+<div class="sig"><span class="nm">box2d.world</span>(<em>gravity_vec2</em>) <span class="pill">→ box2d world</span></div>
+<p><code>gravity_vec2</code> is the constant acceleration applied to every dynamic body each <code>step()</code> — <code>vec2(0, 0)</code> for a top-down scene with no gravity, <code>vec2(0, -10)</code> for a side-view scene with gravity pulling down.</p>
+<h3>Basic usage</h3>
+<pre><code class="lox">import box2d
+from gfx import window
+import colour as col
+
+world = box2d.world(vec2(0, -10))
+ground = world.add_box(vec2(0, -5), vec2(10, 1), 0.0, 0, 1.0, 0.3, 0.1)   // static
+ball = world.add_circle(vec2(0, 5), 0.5, 2, 1.0, 0.3, 0.3)                // dynamic
+
+win = window(800, 600)
+win.init()
+while (!win.should_close()) {
+    world.step(1.0 / 60.0)
+    foreach (pair in world.collisions()) {
+        print "collided: " &amp; str(pair)
+    }
+    pos = world.get_position(ball)
+    win.begin()
+    win.clear(col.BLACK)
+    win.circle_fill(400 + pos.x * 25, 400 - pos.y * 25, 12, col.WHITE)
+    win.end()
+}</code></pre>
+<h3>Body types</h3>
+<p>Passed as a plain integer to <code>add_circle</code>/<code>add_box</code> — no named constants are exported by the module itself, define your own if you want names:</p>
+<table>
+<thead><tr><th>Value</th><th>Type</th><th>Behavior</th></tr></thead>
+<tbody>
+<tr><td><code>0</code></td><td>static</td><td>Never moves; other bodies collide against it</td></tr>
+<tr><td><code>1</code></td><td>kinematic</td><td>Moved only by <code>set_velocity</code>, unaffected by forces/gravity/collisions</td></tr>
+<tr><td><code>2</code></td><td>dynamic</td><td>Fully simulated — gravity, forces, impulses, collision response</td></tr>
+</tbody>
+</table>
+<h3>Methods</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>add_circle(pos_vec2, radius, body_type, density, friction, restitution)</code></td><td>Add a circle body; returns a stable integer id used by every other method</td></tr>
+<tr><td><code>add_box(pos_vec2, half_extents_vec2, angle, body_type, density, friction, restitution)</code></td><td>Add a box body, optionally rotated <code>angle</code> radians</td></tr>
+<tr><td><code>remove(id)</code></td><td>Remove a body from the simulation</td></tr>
+<tr><td><code>get_position(id)</code></td><td>Current position as a <code>vec2</code></td></tr>
+<tr><td><code>get_rotation(id)</code></td><td>Current rotation in radians</td></tr>
+<tr><td><code>get_velocity(id)</code></td><td>Current linear velocity as a <code>vec2</code></td></tr>
+<tr><td><code>get_angular_velocity(id)</code></td><td>Current angular velocity (radians/sec)</td></tr>
+<tr><td><code>set_velocity(id, vel_vec2)</code></td><td>Directly set linear velocity</td></tr>
+<tr><td><code>apply_force(id, force_vec2)</code></td><td>Apply a continuous force at the body's center (mass-dependent acceleration, like gravity/thrust)</td></tr>
+<tr><td><code>apply_impulse(id, impulse_vec2)</code></td><td>Apply an instantaneous impulse at the body's center (immediate velocity change, like an explosion or a hit)</td></tr>
+<tr><td><code>apply_torque(id, torque)</code></td><td>Apply a continuous torque (rotational force)</td></tr>
+<tr><td><code>set_gravity(gravity_vec2)</code> / <code>get_gravity()</code></td><td>Change or read the world's gravity vector after creation</td></tr>
+<tr><td><code>step(dt, substeps = 4)</code></td><td>Advance the simulation one step</td></tr>
+<tr><td><code>collisions()</code></td><td>List of tuples <code>(a_id, b_id)</code> for body pairs that <em>newly</em> started touching during the last <code>step()</code>; resting contacts are not repeated</td></tr>
+<tr><td><code>count()</code></td><td>Number of active bodies</td></tr>
+</tbody>
+</table>
+<div class="note"><strong>Bodies are ids, not objects</strong>Unlike <a href="#window"><code>window</code></a>/<a href="#texture"><code>texture</code></a>/etc., a box2d body is not a separate native object — <code>add_circle</code>/<code>add_box</code> return a plain integer that every other method takes as its first argument, the same convention <a href="#physics-world"><code>physics_world</code></a> uses. Only the <code>world</code> itself is a native object.</div>
 
 <!-- ==================== MODULE: SOUND ==================== -->
 <h2 class="section" id="sound">sound <span class="pill">native module</span></h2>

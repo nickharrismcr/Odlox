@@ -43,10 +43,11 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Raylib `window`** — 2D and 3D primitives, camera, textures, render textures, images, shaders (custom GLSL, uniform binding, shader/blend modes), keyboard input.
 - **Batch rendering** — `batch()` draws thousands of primitives per call; `batch_instanced()` draws 100k+ instanced textured cubes.
 - **`physics_world`** — native 3D rigid-body sphere/box simulation (gravity, boundary bounce, collisions).
+- **`box2d`** — wraps Odin's Box2D v3 bindings: 2D circle/box bodies (static/kinematic/dynamic), forces/impulses/torque, and collision events.
 - **Native fractal generators** — `lox_julia_array`/`lox_mandel_array` compute Julia and Mandelbrot sets directly into a `float_array`, parallelized across CPU cores, fast enough for real-time zoom/pan.
 - **File & directory I/O** via `os`; PNG output; RGB encode/decode.
 - **Regex** via `re` (`search`/`match`/`fullmatch`/`sub`/`subn`/`split`/`findall`/`compile`) and a minimal **`json`** module (`encode`/`decode`/`load`) built on it.
-- **Built-in modules** — `math`, `random`, `colour`, `string`, `itertools`, `functools`, `logging`, `particle_sys`, `sprite`, `plot_grey`, `plot_rgb`, `re`, `json`, `pickle`, `sys`, `os`, `inspect`, `gfx` (graphics constructors: `window`, `batch`, `texture`, `shader`, `camera`, …), `physics` (`physics_world`), `colour_utils` (native colour math backing `colour`). Import with `from gfx import *` or `import gfx`.
+- **Built-in modules** — `math`, `random`, `colour`, `string`, `itertools`, `functools`, `logging`, `particle_sys`, `sprite`, `plot_grey`, `plot_rgb`, `re`, `json`, `pickle`, `sys`, `os`, `inspect`, `gfx` (graphics constructors: `window`, `batch`, `texture`, `shader`, `camera`, …), `physics` (`physics_world`), `box2d` (`box2d.world`), `colour_utils` (native colour math backing `colour`). Import with `from gfx import *` or `import gfx`.
 
 **Concurrency**
 - **`process`** — spawns separate OS worker processes and communicates over `send()`/`recv()` (values pickled across the pipe); real fault isolation, at one-process-per-worker cost.

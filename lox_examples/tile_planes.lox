@@ -143,8 +143,12 @@ class Tiler {
             for (var i = 0; i < this.tiles_w; i = i + 1) {
                 var sx = ox + i * tw
                 var sy = oy + j * th
+                
+                    
                 this.tile.move(vec2(sx, sy))
                 this.tile.draw(win)
+            
+                
             }
         }
     }
@@ -165,7 +169,7 @@ func make_lines(n, width, height, alpha,margin) {
 
 func get_tilers()
 {
-    var margin = 20 // adjust as needed for inner square size
+    var margin = 100 // adjust as needed for inner square size
     tilers= [] 
     t=Tiler(1.0,vec2(4,4))
     t.add(Tile(ww, wh, make_lines(5, ww, wh, 255, margin), margin))
@@ -176,11 +180,14 @@ func get_tilers()
     t=Tiler(0.25,vec2(1,1))
     t.add(Tile(ww, wh, make_lines(5, ww, wh, 150, margin), margin))
     tilers.append(t)
+    t=Tiler(0.125,vec2(0.5,0.5))
+    t.add(Tile(ww, wh, make_lines(5, ww, wh, 100, margin), margin))
+    tilers.append(t)
     return tilers
 }
 
 func clear_tilers(tilers) {
-    margin = 20
+    margin = 100
     for (i = 0; i < len(tilers); i = i + 1) {
         t = tilers[i]
         t.tile.clear(vec4(0, 0, 0, 0)) // Use transparent clear, not black
@@ -214,8 +221,7 @@ while (!win.should_close()) {
     win.begin_blend_mode(win.BLEND_ALPHA)
     win.clear(col.BLACK)
      
-    for ( i = 2; i >= 0; i = i - 1) {
-         
+    for ( i = len(tilers)-1; i >= 0; i = i - 1) {
         tiler = tilers[i]
         tiler.update()
         tiler.draw(win)
