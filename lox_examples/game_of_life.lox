@@ -288,7 +288,7 @@ const GEN_COLOURS = [
     vec4(255, 255, 60, 255), // state 1: alive
     vec4(255, 140, 0, 255),  // state 2: dying
     vec4(200, 30, 0, 255),   // state 3: dying
-    vec4(70, 0, 40, 255),    // state 4: nearly gone
+    vec4(70, 0, 40, 255)   // state 4: nearly gone
 ]
 
 func gen_rule(state, n) {
@@ -395,7 +395,7 @@ func seeds_colour(state) {
 
 const BRAIN_COLOURS = [
     vec4(255, 255, 255, 255), // state 1: firing
-    vec4(40, 80, 255, 255),   // state 2: dying/refractory
+    vec4(40, 80, 255, 255)   // state 2: dying/refractory
 ]
 
 func brain_rule(state, n) {
@@ -465,6 +465,7 @@ func day_night_colour(state) {
 const REPLICATOR_COLOUR = vec4(50, 255, 180, 255)
 
 func replicator_rule(state, n) {
+    _ = state
     if (n == 1 or n == 3 or n == 5 or n == 7) {
         return 1.0
     }
@@ -721,7 +722,7 @@ var strategies = [
     Strategy("Replicator (B1357/S1357)", step_replicator, replicator_colour, randomise),
     Strategy("2x2 (B36/S125)", step_twobytwo, twobytwo_colour, randomise),
     Strategy("Immigration Game", step_immigration, immigration_colour, randomise_immigration),
-    Strategy("QuadLife", step_quadlife, quadlife_colour, randomise_quadlife),
+    Strategy("QuadLife", step_quadlife, quadlife_colour, randomise_quadlife)
 ]
 var strategy_index = 0
 

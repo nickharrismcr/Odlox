@@ -1,22 +1,32 @@
-package vm
+package natives
 
 import "../core"
-import rl "vendor:raylib"
-import rlgl "vendor:raylib/rlgl"
+import "../vm"
 import "core:c"
 import "core:math"
 import "core:strings"
+import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
-// gfx_window: the raylib-backed window/2D-drawing surface -- window
-// lifecycle, frame begin/end, input, 2D primitive drawing,
+// gfx_window: Window_Data -- the Lox-facing handle for raylib's
+// window/graphics context. raylib's own window/OpenGL-context state is
+// process-global (InitWindow/CloseWindow), so this struct is mostly a
+// lightweight marker plus the width/height a script asked for, and the
+// lazily-built shared unit-cube mesh/material `cube_mesh`/`cube_material`
+// need (raylib has no DrawCube overload that takes a rotation, so those
+// draw an arbitrarily rotated box via DrawMesh with a transform matrix
+// instead -- one shared unit cube serves every box regardless of size,
+// scaled at draw time).
+//
+// window lifecycle, frame begin/end, input, 2D primitive drawing,
 // texture/render_texture drawing, blend/shader modes, 3D drawing (see
-// begin_3d's own doc comment), draw_array, and batch/batch_instanced
-// (vm/gfx_batch.odin, vm/gfx_batch_instanced.odin).
+// begin_3d's own doc comment), draw_array, and win.KEY_*/BLEND_*/WRAP_*/
+// BATCH_* property constants (window_get_property, via the vtable's
+// get_property hook) all live here too.
 //
 // Colors cross the Lox boundary as vec4, each channel 0-255 -- matches
-// natives/colour_utils.odin's existing convention
-// (colour_utils_fade's clamp255/alpha-at-255 usage), not a 0-1
-// normalized float.
+// colour_utils.odin's existing convention (colour_utils_fade's
+// clamp255/alpha-at-255 usage), not a 0-1 normalized float.
 //
 // end() does *not* call rl.DrawFPS unconditionally -- that would be a
 // debug overlay side effect baked into every frame regardless of
@@ -24,41 +34,89 @@ import "core:strings"
 // toggles it (off by default), and get_fps() remains available too for
 // a script that wants to draw its own FPS text some other way entirely.
 //
-// No GC-triggered window teardown: Window_Object owns no GPU resource
-// of its own to free -- raylib's window/GL context is process-global,
-// torn down only by an explicit .close() call (idempotent via the
-// closed bool), never implicitly by garbage collection.
+// No GC-triggered window teardown: Window_Data owns no GPU resource of
+// its own to free -- raylib's window/GL context is process-global, torn
+// down only by an explicit .close() call (idempotent via the closed
+// bool), never implicitly by garbage collection. Its lazily-built
+// cube_mesh/cube_material are the same story -- never explicitly
+// unloaded, process exit tears down the GL context regardless.
 
-// vec4_to_rl_color/arg_color are package-visible (not file-private): both
-// gfx_window.odin (Window's own drawing methods) and gfx_texture.odin
-// (Render_Texture's mirrored drawing methods) need them.
-vec4_to_rl_color :: proc(v: ^core.Vec4_Object) -> rl.Color {
-	return rl.Color{
-		u8(clamp(v.x, 0, 255)),
-		u8(clamp(v.y, 0, 255)),
-		u8(clamp(v.z, 0, 255)),
-		u8(clamp(v.w, 0, 255)),
-	}
+Window_Data :: struct {
+	width:    int,
+	height:   int,
+	closed:   bool, // latched by .close() so a second call is a no-op, not a second CloseWindow()
+	show_fps: bool, // toggled by .show_fps(bool) -- see the "end" case
+
+	cube_mesh:       rl.Mesh,
+	cube_material:   rl.Material,
+	cube_mesh_ready: bool,
 }
 
-// arg_color validates and extracts the color argument every drawing
-// method below takes as its last parameter.
-arg_color :: proc(vm: ^VM, v: core.Value, method: string) -> (rl.Color, bool) {
-	if !core.is_vec4(v) {
-		runtime_error(vm, "%s() color argument must be a vec4.", method)
-		return {}, false
-	}
-	return vec4_to_rl_color(core.as_vec4(v)), true
+@(private = "file")
+window_vtable := core.Userdata_Vtable {
+	tag          = "window",
+	free         = window_data_free,
+	invoke       = window_invoke,
+	get_property = window_get_property,
 }
 
-invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg_count: int) -> bool {
+@(private = "file")
+window_data_free :: proc(data: rawptr) {
+	free(cast(^Window_Data)data)
+}
+
+@(private = "file")
+window_get_property :: proc(data: rawptr, name: string) -> (core.Value, bool) {
+	return window_constant(name)
+}
+
+@(private)
+gfx_window :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 2 {
+		vm.runtime_error(v, "window() expects 2 arguments (width, height).")
+		return core.NIL_VALUE
+	}
+	w_val, h_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1]
+	if !core.is_int(w_val) || !core.is_int(h_val) {
+		vm.runtime_error(v, "window() arguments must be integers.")
+		return core.NIL_VALUE
+	}
+	data := new(Window_Data)
+	data.width = core.as_int(w_val)
+	data.height = core.as_int(h_val)
+	o := core.make_userdata_object(&window_vtable, data)
+	vm.gc_track(v, &o.obj)
+	window_created = true
+	return core.make_object_value(&o.obj, true)
+}
+
+// window_cube_model lazily creates and caches a shared unit cube mesh +
+// default material -- see this file's own header comment for why.
+@(private = "file")
+window_cube_model :: proc(w: ^Window_Data) -> (rl.Mesh, rl.Material) {
+	if !w.cube_mesh_ready {
+		w.cube_mesh = rl.GenMeshCube(1, 1, 1)
+		if w.cube_mesh.vaoId == 0 {
+			rl.UploadMesh(&w.cube_mesh, false)
+		}
+		w.cube_material = rl.LoadMaterialDefault()
+		w.cube_mesh_ready = true
+	}
+	return w.cube_mesh, w.cube_material
+}
+
+@(private = "file")
+window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int) -> bool {
+	v := vm.native_vm(vm_ctx)
+	w := cast(^Window_Data)data
 	result: core.Value
 	switch name {
 
 	// --- lifecycle ---
 	case "init":
 		if arg_count != 0 {
-			runtime_error(vm, "init() takes no arguments.")
+			vm.runtime_error(v, "init() takes no arguments.")
 			return false
 		}
 		rl.SetTraceLogLevel(.NONE)
@@ -68,7 +126,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "close":
 		if arg_count != 0 {
-			runtime_error(vm, "close() takes no arguments.")
+			vm.runtime_error(v, "close() takes no arguments.")
 			return false
 		}
 		if !w.closed {
@@ -78,7 +136,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "should_close":
 		if arg_count != 0 {
-			runtime_error(vm, "should_close() takes no arguments.")
+			vm.runtime_error(v, "should_close() takes no arguments.")
 			return false
 		}
 		result = core.make_bool_value(bool(rl.WindowShouldClose()))
@@ -86,7 +144,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// --- frame ---
 	case "begin":
 		if arg_count != 0 {
-			runtime_error(vm, "begin() takes no arguments.")
+			vm.runtime_error(v, "begin() takes no arguments.")
 			return false
 		}
 		rl.BeginDrawing()
@@ -94,7 +152,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "end":
 		if arg_count != 0 {
-			runtime_error(vm, "end() takes no arguments.")
+			vm.runtime_error(v, "end() takes no arguments.")
 			return false
 		}
 		if w.show_fps {
@@ -104,12 +162,12 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "show_fps":
 		if arg_count != 1 {
-			runtime_error(vm, "show_fps() expects 1 argument (bool).")
+			vm.runtime_error(v, "show_fps() expects 1 argument (bool).")
 			return false
 		}
-		enabled_val := peek(vm, 0)
+		enabled_val := vm.peek(v, 0)
 		if enabled_val.type != .Bool {
-			runtime_error(vm, "show_fps() argument must be a bool.")
+			vm.runtime_error(v, "show_fps() argument must be a bool.")
 			return false
 		}
 		w.show_fps = enabled_val.data != 0
@@ -118,7 +176,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// --- info ---
 	case "toggle_fullscreen":
 		if arg_count != 0 {
-			runtime_error(vm, "toggle_fullscreen() takes no arguments.")
+			vm.runtime_error(v, "toggle_fullscreen() takes no arguments.")
 			return false
 		}
 		if !rl.IsWindowFullscreen() {
@@ -129,7 +187,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "get_screen_width":
 		if arg_count != 0 {
-			runtime_error(vm, "get_screen_width() takes no arguments.")
+			vm.runtime_error(v, "get_screen_width() takes no arguments.")
 			return false
 		}
 		// Returns int, not float -- a screen width has no fractional part,
@@ -138,25 +196,25 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.make_int_value(int(rl.GetScreenWidth()))
 	case "get_screen_height":
 		if arg_count != 0 {
-			runtime_error(vm, "get_screen_height() takes no arguments.")
+			vm.runtime_error(v, "get_screen_height() takes no arguments.")
 			return false
 		}
 		result = core.make_int_value(int(rl.GetScreenHeight()))
 	case "set_target_fps":
 		if arg_count != 1 {
-			runtime_error(vm, "set_target_fps() expects 1 argument (fps).")
+			vm.runtime_error(v, "set_target_fps() expects 1 argument (fps).")
 			return false
 		}
-		fps_val := peek(vm, 0)
+		fps_val := vm.peek(v, 0)
 		if !core.is_int(fps_val) {
-			runtime_error(vm, "set_target_fps() argument must be an integer.")
+			vm.runtime_error(v, "set_target_fps() argument must be an integer.")
 			return false
 		}
 		rl.SetTargetFPS(c.int(core.as_int(fps_val)))
 		result = core.NIL_VALUE
 	case "get_fps":
 		if arg_count != 0 {
-			runtime_error(vm, "get_fps() takes no arguments.")
+			vm.runtime_error(v, "get_fps() takes no arguments.")
 			return false
 		}
 		result = core.make_int_value(int(rl.GetFPS()))
@@ -164,23 +222,23 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// --- input ---
 	case "key_down":
 		if arg_count != 1 {
-			runtime_error(vm, "key_down() takes one win.KEY_XXX argument.")
+			vm.runtime_error(v, "key_down() takes one win.KEY_XXX argument.")
 			return false
 		}
-		key_val := peek(vm, 0)
+		key_val := vm.peek(v, 0)
 		if !core.is_int(key_val) {
-			runtime_error(vm, "key_down() argument must be an integer (a gfx.KEY_XXX constant).")
+			vm.runtime_error(v, "key_down() argument must be an integer (a gfx.KEY_XXX constant).")
 			return false
 		}
 		result = core.make_bool_value(bool(rl.IsKeyDown(rl.KeyboardKey(core.as_int(key_val)))))
 	case "key_pressed":
 		if arg_count != 1 {
-			runtime_error(vm, "key_pressed() takes one win.KEY_XXX argument.")
+			vm.runtime_error(v, "key_pressed() takes one win.KEY_XXX argument.")
 			return false
 		}
-		key_val := peek(vm, 0)
+		key_val := vm.peek(v, 0)
 		if !core.is_int(key_val) {
-			runtime_error(vm, "key_pressed() argument must be an integer (a gfx.KEY_XXX constant).")
+			vm.runtime_error(v, "key_pressed() argument must be an integer (a gfx.KEY_XXX constant).")
 			return false
 		}
 		result = core.make_bool_value(bool(rl.IsKeyPressed(rl.KeyboardKey(core.as_int(key_val)))))
@@ -188,10 +246,10 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// --- 2D drawing ---
 	case "clear":
 		if arg_count != 1 {
-			runtime_error(vm, "clear() expects 1 argument (color).")
+			vm.runtime_error(v, "clear() expects 1 argument (color).")
 			return false
 		}
-		col, ok := arg_color(vm, peek(vm, 0), "clear")
+		col, ok := arg_color(v, vm.peek(v, 0), "clear")
 		if !ok {
 			return false
 		}
@@ -199,15 +257,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "pixel":
 		if arg_count != 3 {
-			runtime_error(vm, "pixel() expects 3 arguments (x, y, color).")
+			vm.runtime_error(v, "pixel() expects 3 arguments (x, y, color).")
 			return false
 		}
-		x_val, y_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x_val, y_val, col_val := vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x_val) || !core.is_number(y_val) {
-			runtime_error(vm, "pixel() x/y arguments must be numbers.")
+			vm.runtime_error(v, "pixel() x/y arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "pixel")
+		col, ok := arg_color(v, col_val, "pixel")
 		if !ok {
 			return false
 		}
@@ -215,15 +273,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "line":
 		if arg_count != 5 {
-			runtime_error(vm, "line() expects 5 arguments (x1, y1, x2, y2, color).")
+			vm.runtime_error(v, "line() expects 5 arguments (x1, y1, x2, y2, color).")
 			return false
 		}
-		x1_val, y1_val, x2_val, y2_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x1_val, y1_val, x2_val, y2_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x1_val) || !core.is_number(y1_val) || !core.is_number(x2_val) || !core.is_number(y2_val) {
-			runtime_error(vm, "line() coordinate arguments must be numbers.")
+			vm.runtime_error(v, "line() coordinate arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "line")
+		col, ok := arg_color(v, col_val, "line")
 		if !ok {
 			return false
 		}
@@ -235,15 +293,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "line_ex":
 		if arg_count != 6 {
-			runtime_error(vm, "line_ex() expects 6 arguments (x1, y1, x2, y2, thickness, color).")
+			vm.runtime_error(v, "line_ex() expects 6 arguments (x1, y1, x2, y2, thickness, color).")
 			return false
 		}
-		x1_val, y1_val, x2_val, y2_val, thick_val, col_val := peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x1_val, y1_val, x2_val, y2_val, thick_val, col_val := vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x1_val) || !core.is_number(y1_val) || !core.is_number(x2_val) || !core.is_number(y2_val) || !core.is_number(thick_val) {
-			runtime_error(vm, "line_ex() coordinate/thickness arguments must be numbers.")
+			vm.runtime_error(v, "line_ex() coordinate/thickness arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "line_ex")
+		col, ok := arg_color(v, col_val, "line_ex")
 		if !ok {
 			return false
 		}
@@ -253,17 +311,17 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "triangle":
 		if arg_count != 7 {
-			runtime_error(vm, "triangle() expects 7 arguments (x1, y1, x2, y2, x3, y3, color).")
+			vm.runtime_error(v, "triangle() expects 7 arguments (x1, y1, x2, y2, x3, y3, color).")
 			return false
 		}
 		x1_val, y1_val, x2_val, y2_val, x3_val, y3_val, col_val :=
-			peek(vm, 6), peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+			vm.peek(v, 6), vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x1_val) || !core.is_number(y1_val) || !core.is_number(x2_val) ||
 		   !core.is_number(y2_val) || !core.is_number(x3_val) || !core.is_number(y3_val) {
-			runtime_error(vm, "triangle() coordinate arguments must be numbers.")
+			vm.runtime_error(v, "triangle() coordinate arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "triangle")
+		col, ok := arg_color(v, col_val, "triangle")
 		if !ok {
 			return false
 		}
@@ -274,15 +332,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "rectangle":
 		if arg_count != 5 {
-			runtime_error(vm, "rectangle() expects 5 arguments (x, y, width, height, color).")
+			vm.runtime_error(v, "rectangle() expects 5 arguments (x, y, width, height, color).")
 			return false
 		}
-		x_val, y_val, w_val, h_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x_val, y_val, w_val, h_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(w_val) || !core.is_number(h_val) {
-			runtime_error(vm, "rectangle() x/y/width/height arguments must be numbers.")
+			vm.runtime_error(v, "rectangle() x/y/width/height arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "rectangle")
+		col, ok := arg_color(v, col_val, "rectangle")
 		if !ok {
 			return false
 		}
@@ -294,15 +352,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "circle":
 		if arg_count != 4 {
-			runtime_error(vm, "circle() expects 4 arguments (x, y, radius, color).")
+			vm.runtime_error(v, "circle() expects 4 arguments (x, y, radius, color).")
 			return false
 		}
-		x_val, y_val, r_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x_val, y_val, r_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(r_val) {
-			runtime_error(vm, "circle() x/y/radius arguments must be numbers.")
+			vm.runtime_error(v, "circle() x/y/radius arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "circle")
+		col, ok := arg_color(v, col_val, "circle")
 		if !ok {
 			return false
 		}
@@ -310,15 +368,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "circle_fill":
 		if arg_count != 4 {
-			runtime_error(vm, "circle_fill() expects 4 arguments (x, y, radius, color).")
+			vm.runtime_error(v, "circle_fill() expects 4 arguments (x, y, radius, color).")
 			return false
 		}
-		x_val, y_val, r_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		x_val, y_val, r_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(r_val) {
-			runtime_error(vm, "circle_fill() x/y/radius arguments must be numbers.")
+			vm.runtime_error(v, "circle_fill() x/y/radius arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "circle_fill")
+		col, ok := arg_color(v, col_val, "circle_fill")
 		if !ok {
 			return false
 		}
@@ -326,19 +384,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "text":
 		if arg_count != 5 {
-			runtime_error(vm, "text() expects 5 arguments (text, x, y, size, color).")
+			vm.runtime_error(v, "text() expects 5 arguments (text, x, y, size, color).")
 			return false
 		}
-		text_val, x_val, y_val, size_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		text_val, x_val, y_val, size_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_string(text_val) {
-			runtime_error(vm, "text() first argument must be a string.")
+			vm.runtime_error(v, "text() first argument must be a string.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(size_val) {
-			runtime_error(vm, "text() x/y/size arguments must be numbers.")
+			vm.runtime_error(v, "text() x/y/size arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "text")
+		col, ok := arg_color(v, col_val, "text")
 		if !ok {
 			return false
 		}
@@ -350,79 +408,79 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// --- texture drawing ---
 	case "draw_texture":
 		if arg_count != 4 {
-			runtime_error(vm, "draw_texture() expects 4 arguments (texture, x, y, color).")
+			vm.runtime_error(v, "draw_texture() expects 4 arguments (texture, x, y, color).")
 			return false
 		}
-		tex_val, x_val, y_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if tex_val.type != .Obj || tex_val.obj_type != .Texture {
-			runtime_error(vm, "draw_texture() first argument must be a texture.")
+		tex_val, x_val, y_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_texture_value(tex_val) {
+			vm.runtime_error(v, "draw_texture() first argument must be a texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) {
-			runtime_error(vm, "draw_texture() x/y arguments must be numbers.")
+			vm.runtime_error(v, "draw_texture() x/y arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_texture")
+		col, ok := arg_color(v, col_val, "draw_texture")
 		if !ok {
 			return false
 		}
-		t := core.as_texture(tex_val)
-		rect := core.texture_frame_rect(t)
+		t := texture_data_of(tex_val)
+		rect := texture_frame_rect(t)
 		rl.DrawTextureRec(t.texture, rect, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
-		core.texture_animate(t)
+		texture_animate(t)
 		result = core.NIL_VALUE
 	case "draw_texture_flip":
 		// Like draw_texture, but mirrors the sprite horizontally when
 		// flip_x is true (a negative source width flips it in place).
 		if arg_count != 5 {
-			runtime_error(vm, "draw_texture_flip() expects 5 arguments (texture, x, y, color, flip_x).")
+			vm.runtime_error(v, "draw_texture_flip() expects 5 arguments (texture, x, y, color, flip_x).")
 			return false
 		}
-		tex_val, x_val, y_val, col_val, flip_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if tex_val.type != .Obj || tex_val.obj_type != .Texture {
-			runtime_error(vm, "draw_texture_flip() first argument must be a texture.")
+		tex_val, x_val, y_val, col_val, flip_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_texture_value(tex_val) {
+			vm.runtime_error(v, "draw_texture_flip() first argument must be a texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) {
-			runtime_error(vm, "draw_texture_flip() x/y arguments must be numbers.")
+			vm.runtime_error(v, "draw_texture_flip() x/y arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_texture_flip")
+		col, ok := arg_color(v, col_val, "draw_texture_flip")
 		if !ok {
 			return false
 		}
-		t := core.as_texture(tex_val)
-		rect := core.texture_frame_rect(t)
+		t := texture_data_of(tex_val)
+		rect := texture_frame_rect(t)
 		if flip_val.type == .Bool && flip_val.data != 0 {
 			rect.width = -rect.width
 		}
 		rl.DrawTextureRec(t.texture, rect, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
-		core.texture_animate(t)
+		texture_animate(t)
 		result = core.NIL_VALUE
 	case "draw_texture_scaled":
 		// Like draw_texture_flip, but scales the drawn size by `scale`
 		// (dest size = frame size * scale, anchored at x,y as the
 		// top-left corner of the scaled sprite).
 		if arg_count != 6 {
-			runtime_error(vm, "draw_texture_scaled() expects 6 arguments (texture, x, y, color, flip_x, scale).")
+			vm.runtime_error(v, "draw_texture_scaled() expects 6 arguments (texture, x, y, color, flip_x, scale).")
 			return false
 		}
 		tex_val, x_val, y_val, col_val, flip_val, scale_val :=
-			peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if tex_val.type != .Obj || tex_val.obj_type != .Texture {
-			runtime_error(vm, "draw_texture_scaled() first argument must be a texture.")
+			vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_texture_value(tex_val) {
+			vm.runtime_error(v, "draw_texture_scaled() first argument must be a texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(scale_val) {
-			runtime_error(vm, "draw_texture_scaled() x/y/scale arguments must be numbers.")
+			vm.runtime_error(v, "draw_texture_scaled() x/y/scale arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_texture_scaled")
+		col, ok := arg_color(v, col_val, "draw_texture_scaled")
 		if !ok {
 			return false
 		}
-		t := core.as_texture(tex_val)
-		rect := core.texture_frame_rect(t)
+		t := texture_data_of(tex_val)
+		rect := texture_frame_rect(t)
 		if flip_val.type == .Bool && flip_val.data != 0 {
 			rect.width = -rect.width
 		}
@@ -433,32 +491,32 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		scale := f32(core.as_float(scale_val))
 		dest_rect := rl.Rectangle{f32(core.as_float(x_val)), f32(core.as_float(y_val)), abs_width * scale, rect.height * scale}
 		rl.DrawTexturePro(t.texture, rect, dest_rect, rl.Vector2{0, 0}, 0, col)
-		core.texture_animate(t)
+		texture_animate(t)
 		result = core.NIL_VALUE
 	case "draw_texture_rect":
 		if arg_count != 8 {
-			runtime_error(vm, "draw_texture_rect() expects 8 arguments (texture, x, y, src_x, src_y, src_w, src_h, color).")
+			vm.runtime_error(v, "draw_texture_rect() expects 8 arguments (texture, x, y, src_x, src_y, src_w, src_h, color).")
 			return false
 		}
 		tex_val, x_val, y_val, sx_val, sy_val, sw_val, sh_val, col_val :=
-			peek(vm, 7), peek(vm, 6), peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if tex_val.type != .Obj || tex_val.obj_type != .Texture {
-			runtime_error(vm, "draw_texture_rect() first argument must be a texture.")
+			vm.peek(v, 7), vm.peek(v, 6), vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_texture_value(tex_val) {
+			vm.runtime_error(v, "draw_texture_rect() first argument must be a texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(sx_val) ||
 		   !core.is_number(sy_val) || !core.is_number(sw_val) || !core.is_number(sh_val) {
-			runtime_error(vm, "draw_texture_rect() coordinate arguments must be numbers.")
+			vm.runtime_error(v, "draw_texture_rect() coordinate arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_texture_rect")
+		col, ok := arg_color(v, col_val, "draw_texture_rect")
 		if !ok {
 			return false
 		}
-		t := core.as_texture(tex_val)
+		t := texture_data_of(tex_val)
 		rect := rl.Rectangle{f32(core.as_float(sx_val)), f32(core.as_float(sy_val)), f32(core.as_float(sw_val)), f32(core.as_float(sh_val))}
 		rl.DrawTextureRec(t.texture, rect, rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))}, col)
-		core.texture_animate(t)
+		texture_animate(t)
 		result = core.NIL_VALUE
 	case "draw_texture_pro":
 		// Unlike every other draw_texture* method here, the source can be
@@ -467,31 +525,31 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// BeginTextureMode wrapping (render_texture's own draw_texture_pro
 		// brackets the draw in one instead).
 		if arg_count != 13 {
-			runtime_error(
-				vm,
+			vm.runtime_error(
+				v,
 				"draw_texture_pro() expects 13 arguments (texture, src_x, src_y, src_w, src_h, dest_x, dest_y, dest_w, dest_h, origin_x, origin_y, rotation, color).",
 			)
 			return false
 		}
 		tex_val, src_x, src_y, src_w, src_h, dst_x, dst_y, dst_w, dst_h, org_x, org_y, rot_val, col_val :=
-			peek(vm, 12), peek(vm, 11), peek(vm, 10), peek(vm, 9), peek(vm, 8), peek(vm, 7), peek(vm, 6),
-			peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+			vm.peek(v, 12), vm.peek(v, 11), vm.peek(v, 10), vm.peek(v, 9), vm.peek(v, 8), vm.peek(v, 7), vm.peek(v, 6),
+			vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		texture: rl.Texture2D
-		if tex_val.type == .Obj && tex_val.obj_type == .Texture {
-			texture = core.as_texture(tex_val).texture
-		} else if tex_val.type == .Obj && tex_val.obj_type == .Render_Texture {
-			texture = core.as_render_texture(tex_val).render_texture.texture
+		if is_texture_value(tex_val) {
+			texture = texture_data_of(tex_val).texture
+		} else if is_render_texture_value(tex_val) {
+			texture = render_texture_data_of(tex_val).render_texture.texture
 		} else {
-			runtime_error(vm, "draw_texture_pro() first argument must be a texture or render_texture.")
+			vm.runtime_error(v, "draw_texture_pro() first argument must be a texture or render_texture.")
 			return false
 		}
 		if !core.is_number(src_x) || !core.is_number(src_y) || !core.is_number(src_w) || !core.is_number(src_h) ||
 		   !core.is_number(dst_x) || !core.is_number(dst_y) || !core.is_number(dst_w) || !core.is_number(dst_h) ||
 		   !core.is_number(org_x) || !core.is_number(org_y) || !core.is_number(rot_val) {
-			runtime_error(vm, "draw_texture_pro() coordinate/rotation arguments must be numbers.")
+			vm.runtime_error(v, "draw_texture_pro() coordinate/rotation arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_texture_pro")
+		col, ok := arg_color(v, col_val, "draw_texture_pro")
 		if !ok {
 			return false
 		}
@@ -510,15 +568,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// visually-wrong frame instead of crashing the script.
 	case "begin_blend_mode":
 		if arg_count != 1 {
-			runtime_error(vm, "begin_blend_mode() expects 1 argument (mode).")
+			vm.runtime_error(v, "begin_blend_mode() expects 1 argument (mode).")
 			return false
 		}
-		mode_val := peek(vm, 0)
+		mode_val := vm.peek(v, 0)
 		rl.BeginBlendMode(rl.BlendMode(core.as_int(mode_val)))
 		result = core.NIL_VALUE
 	case "end_blend_mode":
 		if arg_count != 0 {
-			runtime_error(vm, "end_blend_mode() takes no arguments.")
+			vm.runtime_error(v, "end_blend_mode() takes no arguments.")
 			return false
 		}
 		rl.EndBlendMode()
@@ -531,19 +589,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// renders with its own fixed shader regardless.
 	case "begin_shader_mode":
 		if arg_count != 1 {
-			runtime_error(vm, "begin_shader_mode() expects 1 argument (shader).")
+			vm.runtime_error(v, "begin_shader_mode() expects 1 argument (shader).")
 			return false
 		}
-		shader_val := peek(vm, 0)
-		if shader_val.type != .Obj || shader_val.obj_type != .Shader {
-			runtime_error(vm, "begin_shader_mode() argument must be a shader.")
+		shader_val := vm.peek(v, 0)
+		if !is_shader_value(shader_val) {
+			vm.runtime_error(v, "begin_shader_mode() argument must be a shader.")
 			return false
 		}
-		rl.BeginShaderMode(core.as_shader(shader_val).shader)
+		rl.BeginShaderMode(shader_data_of(shader_val).shader)
 		result = core.NIL_VALUE
 	case "end_shader_mode":
 		if arg_count != 0 {
-			runtime_error(vm, "end_shader_mode() takes no arguments.")
+			vm.runtime_error(v, "end_shader_mode() takes no arguments.")
 			return false
 		}
 		rl.EndShaderMode()
@@ -557,42 +615,42 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// state toggle, not something this file needs to duplicate its
 		// own drawing methods for.
 		if arg_count != 1 {
-			runtime_error(vm, "begin_texture_mode() expects 1 argument (render_texture).")
+			vm.runtime_error(v, "begin_texture_mode() expects 1 argument (render_texture).")
 			return false
 		}
-		rt_val := peek(vm, 0)
-		if rt_val.type != .Obj || rt_val.obj_type != .Render_Texture {
-			runtime_error(vm, "begin_texture_mode() argument must be a render_texture.")
+		rt_val := vm.peek(v, 0)
+		if !is_render_texture_value(rt_val) {
+			vm.runtime_error(v, "begin_texture_mode() argument must be a render_texture.")
 			return false
 		}
-		rl.BeginTextureMode(core.as_render_texture(rt_val).render_texture)
+		rl.BeginTextureMode(render_texture_data_of(rt_val).render_texture)
 		result = core.NIL_VALUE
 	case "end_texture_mode":
 		if arg_count != 0 {
-			runtime_error(vm, "end_texture_mode() takes no arguments.")
+			vm.runtime_error(v, "end_texture_mode() takes no arguments.")
 			return false
 		}
 		rl.EndTextureMode()
 		result = core.NIL_VALUE
 	case "draw_render_texture":
 		if arg_count != 4 {
-			runtime_error(vm, "draw_render_texture() expects 4 arguments (render_texture, x, y, color).")
+			vm.runtime_error(v, "draw_render_texture() expects 4 arguments (render_texture, x, y, color).")
 			return false
 		}
-		rt_val, x_val, y_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if rt_val.type != .Obj || rt_val.obj_type != .Render_Texture {
-			runtime_error(vm, "draw_render_texture() first argument must be a render_texture.")
+		rt_val, x_val, y_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_render_texture_value(rt_val) {
+			vm.runtime_error(v, "draw_render_texture() first argument must be a render_texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) {
-			runtime_error(vm, "draw_render_texture() x/y arguments must be numbers.")
+			vm.runtime_error(v, "draw_render_texture() x/y arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_render_texture")
+		col, ok := arg_color(v, col_val, "draw_render_texture")
 		if !ok {
 			return false
 		}
-		target := core.as_render_texture(rt_val).render_texture.texture
+		target := render_texture_data_of(rt_val).render_texture.texture
 		// Render textures are stored bottom-up in OpenGL -- a negative
 		// source height draws it right-side-up.
 		src := rl.Rectangle{0, 0, f32(target.width), -f32(target.height)}
@@ -604,23 +662,23 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// OpenGL storage (see draw_render_texture's own comment) is not
 		// compensated for here, so the result renders upside-down.
 		if arg_count != 6 {
-			runtime_error(vm, "draw_render_texture_ex() expects 6 arguments (render_texture, x, y, rotation, scale, color).")
+			vm.runtime_error(v, "draw_render_texture_ex() expects 6 arguments (render_texture, x, y, rotation, scale, color).")
 			return false
 		}
-		rt_val, x_val, y_val, rot_val, scale_val, col_val := peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-		if rt_val.type != .Obj || rt_val.obj_type != .Render_Texture {
-			runtime_error(vm, "draw_render_texture_ex() first argument must be a render_texture.")
+		rt_val, x_val, y_val, rot_val, scale_val, col_val := vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
+		if !is_render_texture_value(rt_val) {
+			vm.runtime_error(v, "draw_render_texture_ex() first argument must be a render_texture.")
 			return false
 		}
 		if !core.is_number(x_val) || !core.is_number(y_val) || !core.is_number(rot_val) || !core.is_number(scale_val) {
-			runtime_error(vm, "draw_render_texture_ex() x/y/rotation/scale arguments must be numbers.")
+			vm.runtime_error(v, "draw_render_texture_ex() x/y/rotation/scale arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "draw_render_texture_ex")
+		col, ok := arg_color(v, col_val, "draw_render_texture_ex")
 		if !ok {
 			return false
 		}
-		target := core.as_render_texture(rt_val).render_texture.texture
+		target := render_texture_data_of(rt_val).render_texture.texture
 		rl.DrawTextureEx(
 			target,
 			rl.Vector2{f32(core.as_float(x_val)), f32(core.as_float(y_val))},
@@ -638,12 +696,12 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// bulk upload. Slower than draw_array_fast for anything but small
 		// arrays.
 		if arg_count != 1 {
-			runtime_error(vm, "draw_array() expects 1 argument (float_array).")
+			vm.runtime_error(v, "draw_array() expects 1 argument (float_array).")
 			return false
 		}
-		arr_val := peek(vm, 0)
+		arr_val := vm.peek(v, 0)
 		if arr_val.type != .Obj || arr_val.obj_type != .Float_Array {
-			runtime_error(vm, "draw_array() argument must be a float_array.")
+			vm.runtime_error(v, "draw_array() argument must be a float_array.")
 			return false
 		}
 		arr := core.as_float_array(arr_val)
@@ -661,34 +719,34 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 	// this requires being active) ---
 	case "begin_3d":
 		if arg_count != 1 {
-			runtime_error(vm, "begin_3d() expects 1 argument (camera).")
+			vm.runtime_error(v, "begin_3d() expects 1 argument (camera).")
 			return false
 		}
-		cam_val := peek(vm, 0)
-		if cam_val.type != .Obj || cam_val.obj_type != .Camera {
-			runtime_error(vm, "begin_3d() argument must be a camera.")
+		cam_val := vm.peek(v, 0)
+		if !is_camera_value(cam_val) {
+			vm.runtime_error(v, "begin_3d() argument must be a camera.")
 			return false
 		}
-		rl.BeginMode3D(core.as_camera(cam_val).camera)
+		rl.BeginMode3D(camera_data_of(cam_val).camera)
 		result = core.NIL_VALUE
 	case "end_3d":
 		if arg_count != 0 {
-			runtime_error(vm, "end_3d() takes no arguments.")
+			vm.runtime_error(v, "end_3d() takes no arguments.")
 			return false
 		}
 		rl.EndMode3D()
 		result = core.NIL_VALUE
 	case "cube":
 		if arg_count != 3 {
-			runtime_error(vm, "cube() expects 3 arguments (position, size, color).")
+			vm.runtime_error(v, "cube() expects 3 arguments (position, size, color).")
 			return false
 		}
-		pos_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		pos_val, size_val, col_val := vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
-			runtime_error(vm, "cube() position/size arguments must be vec3.")
+			vm.runtime_error(v, "cube() position/size arguments must be vec3.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "cube")
+		col, ok := arg_color(v, col_val, "cube")
 		if !ok {
 			return false
 		}
@@ -697,15 +755,15 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "cube_wires":
 		if arg_count != 3 {
-			runtime_error(vm, "cube_wires() expects 3 arguments (position, size, color).")
+			vm.runtime_error(v, "cube_wires() expects 3 arguments (position, size, color).")
 			return false
 		}
-		pos_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		pos_val, size_val, col_val := vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
-			runtime_error(vm, "cube_wires() position/size arguments must be vec3.")
+			vm.runtime_error(v, "cube_wires() position/size arguments must be vec3.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "cube_wires")
+		col, ok := arg_color(v, col_val, "cube_wires")
 		if !ok {
 			return false
 		}
@@ -714,28 +772,27 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "cube_rotated":
 		// raylib has no DrawCube overload that takes a rotation -- draws
-		// the window's own shared unit-cube mesh (core/obj_window.odin's
-		// window_cube_model) via DrawMesh with a scale*rotate*translate
-		// transform instead.
+		// the window's own shared unit-cube mesh (window_cube_model) via
+		// DrawMesh with a scale*rotate*translate transform instead.
 		if arg_count != 5 {
-			runtime_error(vm, "cube_rotated() expects 5 arguments (position, size, axis, angle, color).")
+			vm.runtime_error(v, "cube_rotated() expects 5 arguments (position, size, axis, angle, color).")
 			return false
 		}
-		pos_val, size_val, axis_val, angle_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		pos_val, size_val, axis_val, angle_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) || !core.is_vec3(axis_val) {
-			runtime_error(vm, "cube_rotated() position/size/axis arguments must be vec3.")
+			vm.runtime_error(v, "cube_rotated() position/size/axis arguments must be vec3.")
 			return false
 		}
 		if !core.is_number(angle_val) {
-			runtime_error(vm, "cube_rotated() angle argument must be a number.")
+			vm.runtime_error(v, "cube_rotated() angle argument must be a number.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "cube_rotated")
+		col, ok := arg_color(v, col_val, "cube_rotated")
 		if !ok {
 			return false
 		}
 		pos, size, axis_v := core.as_vec3(pos_val), core.as_vec3(size_val), core.as_vec3(axis_val)
-		mesh, material := core.window_cube_model(w)
+		mesh, material := window_cube_model(w)
 		scale := rl.MatrixScale(f32(size.x), f32(size.y), f32(size.z))
 		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
 		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
@@ -762,19 +819,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// edges as lines instead (same transform composition as
 		// cube_rotated above).
 		if arg_count != 5 {
-			runtime_error(vm, "cube_wires_rotated() expects 5 arguments (position, size, axis, angle, color).")
+			vm.runtime_error(v, "cube_wires_rotated() expects 5 arguments (position, size, axis, angle, color).")
 			return false
 		}
-		pos_val, size_val, axis_val, angle_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		pos_val, size_val, axis_val, angle_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) || !core.is_vec3(axis_val) {
-			runtime_error(vm, "cube_wires_rotated() position/size/axis arguments must be vec3.")
+			vm.runtime_error(v, "cube_wires_rotated() position/size/axis arguments must be vec3.")
 			return false
 		}
 		if !core.is_number(angle_val) {
-			runtime_error(vm, "cube_wires_rotated() angle argument must be a number.")
+			vm.runtime_error(v, "cube_wires_rotated() angle argument must be a number.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "cube_wires_rotated")
+		col, ok := arg_color(v, col_val, "cube_wires_rotated")
 		if !ok {
 			return false
 		}
@@ -798,19 +855,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "sphere":
 		if arg_count != 3 {
-			runtime_error(vm, "sphere() expects 3 arguments (center, radius, color).")
+			vm.runtime_error(v, "sphere() expects 3 arguments (center, radius, color).")
 			return false
 		}
-		center_val, radius_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		center_val, radius_val, col_val := vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(center_val) {
-			runtime_error(vm, "sphere() center argument must be a vec3.")
+			vm.runtime_error(v, "sphere() center argument must be a vec3.")
 			return false
 		}
 		if !core.is_number(radius_val) {
-			runtime_error(vm, "sphere() radius argument must be a number.")
+			vm.runtime_error(v, "sphere() radius argument must be a number.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "sphere")
+		col, ok := arg_color(v, col_val, "sphere")
 		if !ok {
 			return false
 		}
@@ -819,19 +876,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "cylinder":
 		if arg_count != 5 {
-			runtime_error(vm, "cylinder() expects 5 arguments (position, radius_top, radius_bottom, height, color).")
+			vm.runtime_error(v, "cylinder() expects 5 arguments (position, radius_top, radius_bottom, height, color).")
 			return false
 		}
-		pos_val, rtop_val, rbot_val, height_val, col_val := peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		pos_val, rtop_val, rbot_val, height_val, col_val := vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(pos_val) {
-			runtime_error(vm, "cylinder() position argument must be a vec3.")
+			vm.runtime_error(v, "cylinder() position argument must be a vec3.")
 			return false
 		}
 		if !core.is_number(rtop_val) || !core.is_number(rbot_val) || !core.is_number(height_val) {
-			runtime_error(vm, "cylinder() radius/height arguments must be numbers.")
+			vm.runtime_error(v, "cylinder() radius/height arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "cylinder")
+		col, ok := arg_color(v, col_val, "cylinder")
 		if !ok {
 			return false
 		}
@@ -844,27 +901,27 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "grid":
 		if arg_count != 2 {
-			runtime_error(vm, "grid() expects 2 arguments (slices, spacing).")
+			vm.runtime_error(v, "grid() expects 2 arguments (slices, spacing).")
 			return false
 		}
-		slices_val, spacing_val := peek(vm, 1), peek(vm, 0)
+		slices_val, spacing_val := vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(slices_val) || !core.is_number(spacing_val) {
-			runtime_error(vm, "grid() arguments must be numbers.")
+			vm.runtime_error(v, "grid() arguments must be numbers.")
 			return false
 		}
 		rl.DrawGrid(c.int(core.as_int(slices_val)), f32(core.as_float(spacing_val)))
 		result = core.NIL_VALUE
 	case "plane":
 		if arg_count != 3 {
-			runtime_error(vm, "plane() expects 3 arguments (center, size, color).")
+			vm.runtime_error(v, "plane() expects 3 arguments (center, size, color).")
 			return false
 		}
-		center_val, size_val, col_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		center_val, size_val, col_val := vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(center_val) || !core.is_vec2(size_val) {
-			runtime_error(vm, "plane() center must be a vec3 and size a vec2.")
+			vm.runtime_error(v, "plane() center must be a vec3 and size a vec2.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "plane")
+		col, ok := arg_color(v, col_val, "plane")
 		if !ok {
 			return false
 		}
@@ -875,19 +932,19 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		// Drawn as a flattened cylinder (near-zero height) -- raylib has
 		// no dedicated 3D ellipse primitive.
 		if arg_count != 4 {
-			runtime_error(vm, "ellipse3() expects 4 arguments (center, radius_x, radius_z, color).")
+			vm.runtime_error(v, "ellipse3() expects 4 arguments (center, radius_x, radius_z, color).")
 			return false
 		}
-		center_val, rx_val, rz_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		center_val, rx_val, rz_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_vec3(center_val) {
-			runtime_error(vm, "ellipse3() center argument must be a vec3.")
+			vm.runtime_error(v, "ellipse3() center argument must be a vec3.")
 			return false
 		}
 		if !core.is_number(rx_val) || !core.is_number(rz_val) {
-			runtime_error(vm, "ellipse3() radius arguments must be numbers.")
+			vm.runtime_error(v, "ellipse3() radius arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "ellipse3")
+		col, ok := arg_color(v, col_val, "ellipse3")
 		if !ok {
 			return false
 		}
@@ -900,18 +957,18 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "triangle3":
 		if arg_count != 10 {
-			runtime_error(vm, "triangle3() expects 10 arguments (x1, y1, z1, x2, y2, z2, x3, y3, z3, color).")
+			vm.runtime_error(v, "triangle3() expects 10 arguments (x1, y1, z1, x2, y2, z2, x3, y3, z3, color).")
 			return false
 		}
 		x1, y1, z1, x2, y2, z2, x3, y3, z3, col_val :=
-			peek(vm, 9), peek(vm, 8), peek(vm, 7), peek(vm, 6), peek(vm, 5), peek(vm, 4), peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+			vm.peek(v, 9), vm.peek(v, 8), vm.peek(v, 7), vm.peek(v, 6), vm.peek(v, 5), vm.peek(v, 4), vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		if !core.is_number(x1) || !core.is_number(y1) || !core.is_number(z1) ||
 		   !core.is_number(x2) || !core.is_number(y2) || !core.is_number(z2) ||
 		   !core.is_number(x3) || !core.is_number(y3) || !core.is_number(z3) {
-			runtime_error(vm, "triangle3() coordinate arguments must be numbers.")
+			vm.runtime_error(v, "triangle3() coordinate arguments must be numbers.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "triangle3")
+		col, ok := arg_color(v, col_val, "triangle3")
 		if !ok {
 			return false
 		}
@@ -924,24 +981,24 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 	case "textured_cube":
 		if arg_count != 4 {
-			runtime_error(vm, "textured_cube() expects 4 arguments (texture, position, size, color).")
+			vm.runtime_error(v, "textured_cube() expects 4 arguments (texture, position, size, color).")
 			return false
 		}
-		tex_val, pos_val, size_val, col_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		tex_val, pos_val, size_val, col_val := vm.peek(v, 3), vm.peek(v, 2), vm.peek(v, 1), vm.peek(v, 0)
 		texture: rl.Texture2D
-		if tex_val.type == .Obj && tex_val.obj_type == .Texture {
-			texture = core.as_texture(tex_val).texture
-		} else if tex_val.type == .Obj && tex_val.obj_type == .Render_Texture {
-			texture = core.as_render_texture(tex_val).render_texture.texture
+		if is_texture_value(tex_val) {
+			texture = texture_data_of(tex_val).texture
+		} else if is_render_texture_value(tex_val) {
+			texture = render_texture_data_of(tex_val).render_texture.texture
 		} else {
-			runtime_error(vm, "textured_cube() first argument must be a texture or render_texture.")
+			vm.runtime_error(v, "textured_cube() first argument must be a texture or render_texture.")
 			return false
 		}
 		if !core.is_vec3(pos_val) || !core.is_vec3(size_val) {
-			runtime_error(vm, "textured_cube() position/size arguments must be vec3.")
+			vm.runtime_error(v, "textured_cube() position/size arguments must be vec3.")
 			return false
 		}
-		col, ok := arg_color(vm, col_val, "textured_cube")
+		col, ok := arg_color(v, col_val, "textured_cube")
 		if !ok {
 			return false
 		}
@@ -952,15 +1009,16 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 		result = core.NIL_VALUE
 
 	case:
-		runtime_error(vm, "Undefined Window method '%s'.", name)
+		vm.runtime_error(v, "Undefined Window method '%s'.", name)
 		return false
 	}
-	collapse_call(vm, arg_count, result)
+	vm.collapse_call(v, arg_count, result)
 	return true
 }
 
-// window_constant answers a `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` property
-// read (properties.odin's get_property .Window case). These are exposed
+// window_constant answers a `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*`/
+// `win.BATCH_*` property read, via window_vtable's get_property hook
+// (vm/properties.odin's get_property .Userdata case). These are exposed
 // directly on the window object rather than as module-level constants,
 // so scripts access them as `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not
 // `gfx.KEY_SPACE`. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
@@ -968,6 +1026,7 @@ invoke_builtin_window :: proc(vm: ^VM, w: ^core.Window_Object, name: string, arg
 // full BLEND_*/WRAP_*/BATCH_* coverage. Values are plain immutable ints,
 // identical across every Window instance, so this is a pure function of
 // the name rather than per-object state.
+@(private = "file")
 window_constant :: proc(name: string) -> (core.Value, bool) {
 	switch name {
 	case "BLEND_ADD": return core.make_int_value(int(rl.BlendMode.ADDITIVE), true), true
@@ -979,12 +1038,12 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "WRAP_CLAMP": return core.make_int_value(int(rl.TextureWrap.CLAMP), true), true
 	case "WRAP_MIRROR_REPEAT": return core.make_int_value(int(rl.TextureWrap.MIRROR_REPEAT), true), true
 	case "WRAP_MIRROR_CLAMP": return core.make_int_value(int(rl.TextureWrap.MIRROR_CLAMP), true), true
-	// Ordinal values match core.Batch_Primitive exactly (Cube=0, Sphere=1,
+	// Ordinal values match Batch_Primitive exactly (Cube=0, Sphere=1,
 	// Triangle3=2, Circle3=3).
-	case "BATCH_CUBE": return core.make_int_value(int(core.Batch_Primitive.Cube), true), true
-	case "BATCH_SPHERE": return core.make_int_value(int(core.Batch_Primitive.Sphere), true), true
-	case "BATCH_TRIANGLE3": return core.make_int_value(int(core.Batch_Primitive.Triangle3), true), true
-	case "BATCH_CIRCLE3": return core.make_int_value(int(core.Batch_Primitive.Circle3), true), true
+	case "BATCH_CUBE": return core.make_int_value(int(Batch_Primitive.Cube), true), true
+	case "BATCH_SPHERE": return core.make_int_value(int(Batch_Primitive.Sphere), true), true
+	case "BATCH_TRIANGLE3": return core.make_int_value(int(Batch_Primitive.Triangle3), true), true
+	case "BATCH_CIRCLE3": return core.make_int_value(int(Batch_Primitive.Circle3), true), true
 	}
 
 	key: rl.KeyboardKey

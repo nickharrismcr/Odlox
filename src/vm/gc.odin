@@ -1,9 +1,6 @@
 package vm
 
 import "../core"
-import "core:os"
-import "core:text/regex"
-import rl "vendor:raylib"
 
 // Mark-and-sweep collector -- design documented in
 // docs/ARCHITECTURE.md's Garbage collector section. Two refinements
@@ -285,8 +282,13 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 	case .List_Iterator:
 		it := cast(^core.List_Iterator_Object)obj
 		mark_object(vm, &it.data.obj)
-	// String, Native, File, Int_Iterator, String_Iterator, Vec2/3/4,
-	// Sound, Music: no Object-typed children to trace.
+	case .Userdata:
+		u := cast(^core.Userdata_Object)obj
+		if u.vtable.mark != nil {
+			u.vtable.mark(rawptr(vm), u.data)
+		}
+	// String, Native, File, Int_Iterator, String_Iterator, Vec2/3/4: no
+	// Object-typed children to trace.
 	}
 }
 
@@ -364,102 +366,10 @@ free_object :: proc(obj: ^core.Obj) {
 		f := cast(^core.Float_Array_Object)obj
 		delete(f.data)
 		free(f)
-	case .Regex_Pattern:
-		p := cast(^core.Regex_Pattern_Object)obj
-		delete(p.group_names)
-		regex.destroy_regex(p.regex)
-		free(p)
-	case .Regex_Match:
-		m := cast(^core.Regex_Match_Object)obj
-		delete(m.pos)
-		delete(m.groups)
-		free(m)
-	case .Process:
-		// Closes this end of both pipes -- the child process handle
-		// itself (if any) is released by process_wait/process_kill
-		// instead (Odin's own os.process_wait doc comment: "Use the
-		// process_wait() procedure (optionally prefaced with a
-		// process_kill()) to close and free the process handle"), which
-		// a script calling .wait()/.kill() already does; a Process
-		// object dropped without either leaves that OS-level handle
-		// resource unreleased (the child process itself is unaffected
-		// either way -- it runs and exits independently of whether its
-		// parent-side handle was ever explicitly closed).
-		p := cast(^core.Process_Object)obj
-		os.close(p.read_file)
-		os.close(p.write_file)
-		free(p)
-	case .Physics_World:
-		// No external (GPU/OS) resource -- just every internal
-		// [dynamic]/map allocation, which free(w) alone wouldn't reach
-		// (each is its own separate backing allocation, same reasoning
-		// as Regex_Pattern's group_names above).
-		w := cast(^core.Physics_World_Object)obj
-		delete(w.pos_x)
-		delete(w.pos_y)
-		delete(w.pos_z)
-		delete(w.vel_x)
-		delete(w.vel_y)
-		delete(w.vel_z)
-		delete(w.shapes)
-		delete(w.material_id)
-		delete(w.active)
-		delete(w.is_static)
-		delete(w.static_ids)
-		delete(w.materials)
-		for _, bucket in w.grid {
-			delete(bucket)
-		}
-		delete(w.grid)
-		delete(w.used_cells)
-		delete(w.collisions)
-		delete(w.contact_sets[0])
-		delete(w.contact_sets[1])
-		free(w)
-	case .Image:
-		// Frees the underlying rl.Image -- safe because Image's own
-		// Lox-facing surface (width/height) never touches pixel data
-		// again once a Texture has been built from it, so freeing it
-		// when unreachable changes no observable behavior. See
-		// core/obj_image.odin's header comment.
-		img := cast(^core.Image_Object)obj
-		rl.UnloadImage(img.image)
-		free(img)
-	case .Texture:
-		t := cast(^core.Texture_Object)obj
-		core.texture_unload(t) // no-op if already .unload()ed, see obj_texture.odin
-		delete(t.frame_rects)
-		free(t)
-	case .Render_Texture:
-		rt := cast(^core.Render_Texture_Object)obj
-		core.render_texture_unload(rt) // no-op if already .unload()ed
-		free(rt)
-	case .Shader:
-		s := cast(^core.Shader_Object)obj
-		core.shader_unload(s) // no-op if already .unload()ed, and for a never-loaded gfx.shader() -- rl.UnloadShader(Shader{}) is a safe no-op in raylib itself
-		free(s)
-	case .Batch:
-		bt := cast(^core.Batch_Object)obj
-		delete(bt.entries)
-		delete(bt.triangles)
-		delete(bt.circles)
-		free(bt)
-	case .Batch_Instanced:
-		// No GC-triggered GPU teardown here either -- the same
-		// convention already established for Window_Object's cube_mesh
-		// and Batch_Object's circle_mesh.
-		bi := cast(^core.Batch_Instanced_Object)obj
-		delete(bi.entries)
-		delete(bi.transforms)
-		free(bi)
-	case .Sound:
-		s := cast(^core.Sound_Object)obj
-		core.sound_unload(s) // no-op if already .unload()ed
-		free(s)
-	case .Music:
-		m := cast(^core.Music_Object)obj
-		core.music_unload(m) // no-op if already .unload()ed
-		free(m)
+	case .Userdata:
+		u := cast(^core.Userdata_Object)obj
+		u.vtable.free(u.data) // tears down + frees u.data itself
+		free(u)
 	case:
 		free(obj)
 	}
@@ -496,53 +406,13 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		// exactly the allocation-heavy case this object exists for.
 		f := cast(^core.Float_Array_Object)obj
 		return size_of(core.Float_Array_Object) + len(f.data) * size_of(f64)
-	case .Regex_Pattern:
-		return size_of(core.Regex_Pattern_Object)
-	case .Regex_Match:
-		return size_of(core.Regex_Match_Object)
-	case .Process:
-		return size_of(core.Process_Object)
-	case .Physics_World:
-		// Dominated by the SoA body slices, same reasoning as
-		// Float_Array above -- a few thousand bodies is a real amount of
-		// memory the growth heuristic should actually see.
-		w := cast(^core.Physics_World_Object)obj
-		return size_of(core.Physics_World_Object) + len(w.pos_x) * (6 * size_of(f64) + size_of(core.Shape) + size_of(int) + 2 * size_of(bool))
-	case .Image:
-		// Dominated by the CPU-side pixel buffer, same reasoning as
-		// Float_Array/Physics_World above.
-		img := cast(^core.Image_Object)obj
-		return size_of(core.Image_Object) + img.width * img.height * 4
-	case .Texture:
-		t := cast(^core.Texture_Object)obj
-		return size_of(core.Texture_Object) + len(t.frame_rects) * size_of(rl.Rectangle)
-	case .Render_Texture:
-		// Dominated by the optional array_texture (draw_array_fast) when
-		// present -- a fullscreen fractal, say -- same reasoning as
-		// Image/Texture above.
-		rt := cast(^core.Render_Texture_Object)obj
-		size := size_of(core.Render_Texture_Object)
-		if rt.array_texture_valid {
-			size += rt.array_texture_w * rt.array_texture_h * 4
+	case .Userdata:
+		u := cast(^core.Userdata_Object)obj
+		size := size_of(core.Userdata_Object)
+		if u.vtable.size != nil {
+			size += u.vtable.size(u.data)
 		}
 		return size
-	case .Shader:
-		return size_of(core.Shader_Object)
-	case .Batch:
-		bt := cast(^core.Batch_Object)obj
-		return size_of(core.Batch_Object) +
-			len(bt.entries) * size_of(core.Batch_Entry) +
-			len(bt.triangles) * size_of(core.Triangle_Batch_Entry) +
-			len(bt.circles) * size_of(core.Circle_Batch_Entry)
-	case .Batch_Instanced:
-		bi := cast(^core.Batch_Instanced_Object)obj
-		return size_of(core.Batch_Instanced_Object) +
-			len(bi.entries) * size_of(core.Batch_Instanced_Entry) +
-			len(bi.transforms) * size_of(rl.Matrix)
-	case .Sound:
-		return size_of(core.Sound_Object)
-	case .Music:
-		return size_of(core.Music_Object)
 	case:
 		return 32
 	}

@@ -35,23 +35,12 @@ Object_Type :: enum u8 {
 
 	Float_Array,
 
-	Regex_Pattern,
-	Regex_Match,
-
-	Process,
-
-	Physics_World,
-	Window,
-	Image,
-	Texture,
-	Render_Texture,
-	Shader,
-	Camera,
-	Batch,
-	Batch_Instanced,
-
-	Sound,
-	Music,
+	// Userdata: pluggable native-extension objects -- every native kind
+	// (Sound/Music/Process/Regex Pattern+Match/PhysicsWorld/Window/Image/
+	// Texture/Render_Texture/Shader/Camera/Batch/Batch_Instanced) is one
+	// of these now. See obj_userdata.odin's doc comment and
+	// natives/README.md.
+	Userdata,
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
@@ -120,51 +109,12 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	case .Float_Array:
 		f := cast(^Float_Array_Object)obj
 		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)
-	case .Regex_Pattern:
-		p := cast(^Regex_Pattern_Object)obj
-		return fmt.aprintf("<Pattern %q>", p.source, allocator = allocator)
-	case .Regex_Match:
-		m := cast(^Regex_Match_Object)obj
-		return fmt.aprintf("<Match span=%v>", m.pos[0], allocator = allocator)
-	case .Process:
-		return "<process>"
-	case .Physics_World:
-		pw := cast(^Physics_World_Object)obj
-		return fmt.aprintf("<PhysicsWorld [%d bodies]>", physics_world_count(pw), allocator = allocator)
-	case .Window:
-		return "<window>"
-	case .Image:
-		i := cast(^Image_Object)obj
-		return fmt.aprintf("<Image %dx%d>", i.width, i.height, allocator = allocator)
-	case .Texture:
-		t := cast(^Texture_Object)obj
-		return fmt.aprintf("<Texture %dx%d>", t.width, t.height, allocator = allocator)
-	case .Render_Texture:
-		rt := cast(^Render_Texture_Object)obj
-		return fmt.aprintf("<RenderTexture %dx%d>", rt.width, rt.height, allocator = allocator)
-	case .Shader:
-		s := cast(^Shader_Object)obj
-		return fmt.aprintf("<Shader ID:%d>", s.shader.id, allocator = allocator)
-	case .Camera:
-		return "<Camera3D>"
-	case .Batch:
-		b := cast(^Batch_Object)obj
-		type_name := "CUBE"
-		#partial switch b.batch_type {
-		case .Sphere: type_name = "SPHERE"
-		case .Triangle3: type_name = "TRIANGLE3"
-		case .Circle3: type_name = "CIRCLE3"
+	case .Userdata:
+		u := cast(^Userdata_Object)obj
+		if u.vtable.to_string != nil {
+			return u.vtable.to_string(u.data, allocator)
 		}
-		return fmt.aprintf("<Batch %s [%d entries]>", type_name, batch_count(b), allocator = allocator)
-	case .Batch_Instanced:
-		// Unlike every other native type here, this returns a plain,
-		// unembellished string rather than the "<Type ...>" bracket
-		// convention.
-		return "BatchInstancedObject"
-	case .Sound:
-		return "<sound>"
-	case .Music:
-		return "<music>"
+		return fmt.aprintf("<%s>", u.vtable.tag, allocator = allocator)
 	}
 	return "<unknown>"
 }

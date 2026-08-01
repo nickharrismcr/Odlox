@@ -155,13 +155,15 @@ type_name :: proc(v: core.Value) -> string {
 			return "module"
 		case .File:
 			return "file"
-		case .Float_Array, .Regex_Pattern, .Regex_Match, .Process, .Physics_World, .Window,
-		     .Image, .Texture, .Render_Texture, .Shader, .Camera, .Batch, .Batch_Instanced:
-			// These object kinds are all implemented as native objects
+		case .Float_Array, .Userdata:
+			// Float_Array plus every Userdata-backed kind (Sound/Music/
+			// Process/Regex Pattern+Match/PhysicsWorld/Window/Image/
+			// Texture/Render_Texture/Shader/Camera/Batch/Batch_Instanced --
+			// see natives/README.md) are all implemented as native objects
 			// under the hood, so type() reports them as "builtin" rather
 			// than a dedicated per-kind name -- consistent behavior across
-			// every native-backed object kind, not a claim that any of them
-			// literally is a bare native function.
+			// every native-backed object kind, not a claim that any of
+			// them literally is a bare native function.
 			return "builtin"
 		}
 	}
