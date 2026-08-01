@@ -34,6 +34,7 @@ do Y", that's this port's design decision.
 15. [Bytecode cache (.lxc)](#bytecode-cache-lxc)
 16. [Test strategy](#test-strategy)
 17. [Performance: what Odin allows that Go didn't](#performance-what-odin-allows-that-go-didnt)
+18. [Embedding odlox in a host application](#embedding-odlox-in-a-host-application)
 
 ---
 
@@ -1478,3 +1479,156 @@ has under `benchmarks/lox/*.lox`, portable unmodified) before spending
 effort on any specific item above. The table exists to explain *why* an
 option is available, not to prescribe doing all of them regardless of
 whether a profile says they matter.
+
+## Embedding odlox in a host application
+
+`src/main.odin` is a thin CLI wrapper (`package main`) around four
+library-shaped packages: `core`, `compiler`, `vm`, `natives` (see
+[Package layout](#package-layout)). Nothing else under `src/` declares
+`package main`, so those four packages are already independent Odin
+packages — embedding odlox in another Odin process needs no source
+changes, only a way to import them and a handful of setup calls.
+
+### Importing odlox from another Odin project
+
+Odin has no project-level package manager; cross-project imports go
+through the compiler's `-collection:name=path` flag, then
+`import "name:subpackage"`. A host project builds with
+`-collection:odlox=<path-to-odlox>/src` and then:
+
+```odin
+import "odlox:vm"
+import "odlox:core"
+```
+
+The import identifier defaults to each package's own declared name
+(`vm`, `core`) unless given an explicit alias, so this reads as
+`vm.new_vm(...)`/`core.env_get_var(...)` etc. below, same as within
+odlox's own source (and optionally `import "odlox:natives"` — see
+"Choosing what to link" below).
+
+### Minimal embedding sequence
+
+The setup `main.odin`'s own `run_file` performs is the whole embedding
+API surface today:
+
+```odin
+v := vm.new_vm("<embedded>")   // script is just a label for error messages/stack traces, not a required real path
+vm.define_builtins(v)          // core builtins: len/type/append/range/vec2.../sys/os -- pure core+compiler, no raylib
+status, result := vm.interpret(v, source)  // source is Lox text directly, no file I/O
+```
+
+- `vm.new_vm(script: string) -> ^VM` (`vm/vm.odin:145`).
+- `vm.define_builtins(vm: ^VM)` (`vm/builtins.odin:27`) is an explicit,
+  separate step from `new_vm` — a host can construct a VM and skip it
+  entirely if it wants an even more minimal core.
+- `vm.interpret(vm: ^VM, source: string) -> (Interpret_Result, string)`
+  (`vm/interpret.odin:11`) takes source text directly; there's no file
+  requirement anywhere in this path.
+- Errors surface as data, not Odin panics: `status == .Runtime_Error`
+  means `vm.error_msg` holds the message and `vm.print_stack_trace(vm)`
+  (backed by `vm.stack_trace`) gives the full traceback, mirroring how
+  `main.odin`'s own `run_file` reports a failure.
+
+### Choosing what to link
+
+`vm.define_builtins` alone is a complete scripting core with no raylib
+dependency — arithmetic, classes, exceptions, lists/dicts, `sys`/`os`,
+all work without importing `natives` at all.
+`natives.define_natives` (`natives/natives.odin:29`) additionally
+registers `gfx`/`sound`/`physics`/`re`/`pickle`/`process`/
+`colour_utils`/`inspect`, but `natives/gfx.odin` imports
+`vendor:raylib` — since `natives` is one Odin package, importing it at
+all links raylib into the host binary, regardless of which
+`register_*` proc actually gets called. There's no finer-grained split
+that isolates raylib from the rest of that package.
+
+A host that wants to expose its own native functions or objects to Lox
+should **not** add them inside odlox's `natives` package — it should
+write its own file following the `Userdata_Object` recipe documented in
+`natives/README.md` (a data struct, a `core.Userdata_Vtable` with
+`free`/`invoke` and optional `mark`/`to_string`/`size`, and
+`core.make_userdata_object` + `vm.gc_track` to construct one), importing
+only `odlox:vm`/`odlox:core`. That recipe is already package-agnostic;
+it doesn't require being inside odlox's own source tree.
+
+### Calling a Lox function from the host and getting a return value
+
+No high-level "call this Lox function by name and get a value back"
+wrapper exists yet, but the mechanism to build one already exists
+internally: `vm/foreach.odin:76-82`'s `call_closure_now`, used to invoke
+`__iter__`/`__next__` callbacks (`foreach.odin:44-48`) and native
+`toString` dispatch (`run.odin:268-280`). It works by pushing the
+callee and arguments, calling it, then re-entering the dispatch loop
+with `run(vm, .Current_Function)` (`vm/run.odin:77`) — a mode that runs
+until the specific frame just pushed returns (`run.odin:454`'s
+`vm.frame_count == start_frame - 1` check), handing back the return
+value directly.
+
+`call_closure_now` deliberately restricts itself to an
+already-resolved `Closure_Object` and the closure-only `call()`
+(`vm/call.odin:56`), which *always* pushes a new `Call_Frame`. A host
+calling an arbitrary global by name needs the more general
+`vm.call_value(vm, callee, arg_count) -> bool` (`call.odin:10`) instead,
+since the callee could be a Lox-defined function (`.Closure`) or a
+registered native/builtin (`.Native`) — and those two cases behave
+differently: `.Closure`/`.Class`/`.Bound_Method` callees push a frame
+via `call()` and need `run(.Current_Function)` to drive them; a plain
+`.Native` callee resolves synchronously inline (`call.odin:19-24`,
+calls the native function directly and collapses the result onto the
+stack immediately) with **no** frame pushed. Calling `run()`
+unconditionally after `call_value` would misinterpret whatever frame
+happens to be active for the native case, or crash outright if
+`vm.frame_count` is 0 (e.g. a host calling in before any script has
+run). The general pattern, checking whether a frame actually got
+pushed:
+
+```odin
+name_obj := core.intern_string(name)
+callee, ok := core.env_get_var(v.environment, name_obj)   // core/environment.odin:85
+if !ok { /* undefined global */ }
+
+start_frame := v.frame_count
+vm.push(v, callee)
+for a in args { vm.push(v, a) }
+if !vm.call_value(v, callee, len(args)) { /* error: v.error_msg set */ }
+
+result: core.Value
+if v.frame_count > start_frame {
+    // Closure/Class/Bound_Method: a frame was pushed, drive it to completion
+    _, result = vm.run(v, .Current_Function)
+} else {
+    // Native: already resolved synchronously, collapsed onto the stack
+    result = vm.pop(v)
+}
+```
+
+Marshaling the returned `core.Value` back to an Odin type is manual and
+per-type (`core.as_int`/`as_float`/`as_string`/`string_get`/... in
+`core/value.odin`/`core/obj_string.odin`) — there's no generic
+Value-to-Odin conversion function, the same convention every native
+function already follows on the way in (see `natives/README.md`).
+
+### Caveats
+
+- **Three process-wide, not per-VM, mutable globals**:
+  `core.intern_table` (string interning, `core/obj_string.odin`),
+  `vm.module_cache`/`vm.module_source_cache` (`vm/module.odin:28,39`,
+  whose own doc comment says they're "shared by every VM in the
+  process"), and `vm.bootstrap_cache`/`bootstrap_ready`
+  (`vm/exceptions.odin:79`). Multiple sequential VMs in one process
+  share these by design — harmless, and even relied on by module-import
+  sub-VMs — but VM instances aren't isolated sandboxes: interned
+  strings and module state persist for the life of the process, not the
+  life of a `^VM`. Nothing here is thread-safe (see
+  [No concurrency anywhere](#no-concurrency-anywhere)); one VM per OS
+  thread, sequential multi-VM use within a single thread is fine.
+- **Module resolution touches disk only if the embedded source actually
+  `import`s something.** `vm/module.odin`'s `read_module_source`
+  resolves via `$LOX_PATH/modules/<name>.lox` or a directory walk
+  relative to `vm.root_script`'s directory — there's no VM field to
+  override this, only the `LOX_PATH` env var. A host embedding synthetic
+  (non-file-backed) Lox source whose scripts `import math`/`random`/etc.
+  needs `LOX_PATH` set to odlox's `modules/` directory (or its own copy
+  of it); a synthetic `script` label passed to `new_vm` has no real
+  directory to walk.
