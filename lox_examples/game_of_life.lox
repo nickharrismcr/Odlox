@@ -22,7 +22,7 @@ from gfx import *
 import random
 import colour
 
-const CELL_SIZE = 10
+const CELL_SIZE = 4
 const RESET_TICKS = 200
 const NUM_LINES = 40  // straight lines (horizontal/vertical/diagonal) per reset
 const NUM_BOXES = 15  // rectangle outlines per reset
