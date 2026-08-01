@@ -1,0 +1,164 @@
+from gfx import *
+// GPU (GLSL fragment shader) Mandelbrot -- the escape-time iteration
+// itself runs per-pixel on the GPU inside mandel_shader_src below, rather
+// than on the CPU into a float_array. Orders of magnitude faster than the
+// CPU/native-array approach this replaced, since every pixel iterates in
+// parallel instead of across a handful of CPU-core worker threads.
+
+import sys;
+import colour;
+import math;
+
+// GLSL vertex shader for a fullscreen textured quad.
+var vertex_shader = "
+#version 330
+
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main()
+{
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+// GLSL fragment shader doing the actual Mandelbrot escape-time iteration
+// per pixel. gl_FragCoord.y is flipped ((resolution.y - gl_FragCoord.y))
+// so row 0 is the top of the screen. No cardioid/period-2-bulb or
+// periodicity early-outs (classification shortcuts a CPU version would
+// need to keep up) -- brute force is fast enough here because thousands
+// of pixels iterate in parallel.
+var mandel_shader_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform vec2 resolution;
+uniform float scale;
+uniform float xoffset;
+uniform float yoffset;
+uniform float max_iteration;
+uniform float time;
+
+void main() {
+    float half_w = resolution.x * 0.5;
+    float half_h = resolution.y * 0.5;
+    float max_dim = max(resolution.x, resolution.y);
+    float scale_over_max_dim = scale / max_dim;
+
+    float x0 = scale_over_max_dim * (gl_FragCoord.x - half_w) + xoffset;
+    float y0 = scale_over_max_dim * ((resolution.y - gl_FragCoord.y) - half_h) + yoffset;
+
+    float x = 0.0;
+    float y = 0.0;
+    float x2 = 0.0;
+    float y2 = 0.0;
+    int iteration = 0;
+    int max_iter = int(max_iteration);
+
+    for (int i = 0; i < max_iter; i++) {
+        if (x2 + y2 > 4.0) break;
+        y = 2.0 * x * y + y0;
+        x = x2 - y2 + x0;
+        x2 = x * x;
+        y2 = y * y;
+        iteration++;
+    }
+
+    vec3 color;
+    if (iteration >= max_iter) {
+        // Interior of the set -- flat black.
+        color = vec3(0.0);
+    } else {
+        // Smooth (renormalized) iteration count, turning the discrete
+        // escape-time count into a continuous value so neighboring pixels
+        // that escape one iteration apart get a continuous color instead
+        // of a speckly, integer-stepped one.
+        float log_zn = log(x2 + y2) / 2.0;
+        float nu = log(log_zn / log(2.0)) / log(2.0);
+        float smooth_iter = float(iteration) + 1.0 - nu;
+        // time cycles the palette continuously, independent of zoom,
+        // folded directly into the palette phase.
+        float t = smooth_iter * 0.025 + time;
+        color = 0.5 + 0.5 * cos(6.28318530718 * (t + vec3(0.0, 1.0 / 3.0, 2.0 / 3.0)));
+    }
+    finalColor = vec4(color, 1.0);
+}
+"
+
+// zoom (the starting scale) and zoom_speed are both optional CLI
+// parameters: `odlox.exe mandel_shader.lox 0.05 0.99` starts already
+// zoomed in and zooms in slower. args()[0] is always the script's own
+// path (see docs/language-reference.html's sys.args() entry); omit
+// either argument to fall back to the defaults below.
+var args = sys.args();
+var scale = 4.0;
+if (len(args) > 1) {
+    scale = float(args[1]);
+}
+var zoom_speed = 0.985;
+if (len(args) > 2) {
+    zoom_speed = float(args[2]);
+}
+
+var xOffset = -0.7269;
+var yOffset = 0.1889;
+var max_iterations = 500;
+
+var win = window(1, 1);
+win.init();
+win.toggle_fullscreen();
+var width = win.get_screen_width();
+var height = win.get_screen_height();
+
+var mandel_shader = shader();
+mandel_shader.load_from_memory(vertex_shader, mandel_shader_src);
+var resolution_loc = mandel_shader.get_location("resolution");
+var scale_loc = mandel_shader.get_location("scale");
+var xoffset_loc = mandel_shader.get_location("xoffset");
+var yoffset_loc = mandel_shader.get_location("yoffset");
+var max_iter_loc = mandel_shader.get_location("max_iteration");
+var time_loc = mandel_shader.get_location("time");
+
+mandel_shader.set_value_vec2(resolution_loc, vec2(width, height));
+mandel_shader.set_value_float(xoffset_loc, xOffset);
+mandel_shader.set_value_float(yoffset_loc, yOffset);
+mandel_shader.set_value_float(max_iter_loc, max_iterations);
+
+var t = 0.0;
+
+while (!win.should_close()) {
+    var current_fps = win.get_fps();
+
+    mandel_shader.set_value_float(scale_loc, scale);
+    t = t + 0.005;
+    mandel_shader.set_value_float(time_loc, t);
+
+    win.begin();
+    win.clear(colour.BLACK);
+    win.begin_shader_mode(mandel_shader);
+    // A single fullscreen rectangle is all the geometry the shader needs
+    // -- the Mandelbrot math above reads gl_FragCoord directly rather
+    // than a texture, so the rectangle's own color/texcoords don't matter.
+    win.rectangle(0, 0, width, height, vec4(255, 255, 255, 255));
+    win.end_shader_mode();
+    win.text(format("FPS: %d", current_fps), 10, 10, 20, vec4(255, 255, 255, 255));
+    win.text(format("Max Iteration: %d", max_iterations), 10, 40, 20, vec4(255, 255, 255, 255));
+    win.text(format("Scale: %g", math.round_places(scale, 10)), 10, 70, 16, vec4(200, 200, 200, 255));
+    win.text(format("Zoom Speed: %g", zoom_speed), 10, 100, 16, vec4(200, 200, 200, 255));
+    win.end();
+
+    scale = scale * zoom_speed;
+}
+
+mandel_shader.unload();
+win.close();

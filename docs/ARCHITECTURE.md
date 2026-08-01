@@ -565,9 +565,9 @@ before assuming it's this project's code again.
 Two native modules genuinely touch OS-level concurrency, each staying
 safe without any general threading model:
 
-- **`gfx.lox_julia_array`/`gfx.lox_mandel_array`** (`natives/gfx_julia.odin`,
-  `natives/gfx_mandel.odin`) spawn one OS thread per CPU core to fill a
-  `float_array`. This is safe with zero VM/GC interaction because the
+- **`gfx.lox_julia_array`** (`natives/gfx_julia.odin`) spawns one OS
+  thread per CPU core to fill a `float_array`. This is safe with zero
+  VM/GC interaction because the
   whole native call is one opcode from the VM's own perspective —
   `maybe_collect_garbage` only ever runs *between* opcodes (see
   [Garbage collector](#garbage-collector)), so no collection can

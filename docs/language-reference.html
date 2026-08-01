@@ -835,14 +835,12 @@ rgb = decode_rgba(c)           // (255, 128, 0)</code></pre>
 <p>These fill a <a href="#float-array">float_array</a> that you allocate, then render it with <a href="#window"><code>win.draw_array()</code></a> (or a render texture's <code>draw_array_fast()</code>) or save it with <code>draw_png()</code>.</p>
 <div class="sig"><span class="nm">draw_png</span>(<em>filename</em>, <em>float_array</em>, <em>rgb_encoded</em>) <span class="pill">→ nil</span></div>
 <p>Writes a <a href="#float-array">float_array</a> to a PNG file. Pass <code>rgb_encoded = true</code> when cells hold <a href="#mod-gfx"><code>encode_rgba</code></a>-packed colours, or <code>false</code> for a grayscale array (values 0–1).</p>
-<div class="sig"><span class="nm">lox_mandel_array</span>(<em>array</em>, <em>height</em>, <em>width</em>, <em>max_iter</em>, <em>xoff</em>, <em>yoff</em>, <em>zoom</em>) <span class="pill">→ nil</span></div>
-<p>Fills <code>array</code> in place with an RGB-encoded Mandelbrot set.</p>
 <div class="sig"><span class="nm">lox_julia_array</span>(<em>array</em>, <em>width</em>, <em>height</em>, <em>max_iter</em>, <em>cx</em>, <em>cy</em>, <em>scale</em>, <em>xoff</em>, <em>yoff</em>) <span class="pill">→ nil</span></div>
 <p>Fills <code>array</code> in place with an RGB-encoded Julia set.</p>
-<pre><code class="lox">from gfx import float_array, lox_mandel_array, draw_png
+<pre><code class="lox">from gfx import float_array, lox_julia_array, draw_png
 arr = float_array(800, 600)
-lox_mandel_array(arr, 600, 800, 100, 0.0, 0.0, 1.0)   // array, height, width, max_iter, xoff, yoff, zoom
-draw_png("mandelbrot.png", arr, true)                 // true: cells are RGB-encoded</code></pre>
+lox_julia_array(arr, 800, 600, 100, -0.7, 0.27015, 1.0, 0.0, 0.0)   // array, width, height, max_iter, cx, cy, scale, xoff, yoff
+draw_png("julia.png", arr, true)                                    // true: cells are RGB-encoded</code></pre>
 
 <!-- ==================== WINDOW ==================== -->
 <h2 class="section" id="window">window <span class="pill">gfx</span></h2>

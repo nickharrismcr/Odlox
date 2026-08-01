@@ -44,7 +44,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Batch rendering** — `batch()` draws thousands of primitives per call; `batch_instanced()` draws 100k+ instanced textured cubes.
 - **`physics_world`** — native 3D rigid-body sphere/box simulation (gravity, boundary bounce, collisions).
 - **`box2d`** — wraps Odin's Box2D v3 bindings: 2D circle/box bodies (static/kinematic/dynamic), forces/impulses/torque, and collision events.
-- **Native fractal generators** — `lox_julia_array`/`lox_mandel_array` compute Julia and Mandelbrot sets directly into a `float_array`, parallelized across CPU cores, fast enough for real-time zoom/pan.
+- **Native fractal generator** — `lox_julia_array` computes a Julia set directly into a `float_array`, parallelized across CPU cores, fast enough for real-time zoom/pan.
 - **File & directory I/O** via `os`; PNG output; RGB encode/decode.
 - **Regex** via `re` (`search`/`match`/`fullmatch`/`sub`/`subn`/`split`/`findall`/`compile`) and a minimal **`json`** module (`encode`/`decode`/`load`) built on it.
 - **Built-in modules** — `math`, `random`, `colour`, `string`, `itertools`, `functools`, `logging`, `particle_sys`, `sprite`, `plot_grey`, `plot_rgb`, `re`, `json`, `pickle`, `sys`, `os`, `inspect`, `gfx` (graphics constructors: `window`, `batch`, `texture`, `shader`, `camera`, …), `physics` (`physics_world`), `box2d` (`box2d.world`), `colour_utils` (native colour math backing `colour`). Import with `from gfx import *` or `import gfx`.
@@ -138,4 +138,4 @@ Optimisations in place:
 - **Monomorphic inline cache** on `Get_Property`/`Invoke` — a same-class repeat access at a call site skips the method-table lookup entirely after the first hit.
 - **Call frames stored inline** in the VM's own fixed-size array, not heap-allocated, avoiding per-call GC pressure.
 - **Frame context hoisted** out of the dispatch loop's hot path and refreshed only at opcodes that actually change the active frame.
-- **Native fast paths** — performance-critical operations (physics simulation, bulk float-array-to-texture upload, Julia/Mandelbrot fractal generation) are implemented natively rather than expressed as Lox loops; the fractal generators are additionally parallelized across CPU cores, one worker per core.
+- **Native fast paths** — performance-critical operations (physics simulation, bulk float-array-to-texture upload, Julia fractal generation) are implemented natively rather than expressed as Lox loops; the fractal generator is additionally parallelized across CPU cores, one worker per core.
