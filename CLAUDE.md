@@ -2,6 +2,21 @@
 
 Guidance for Claude Code when working in this repository (odlox: an Odin port of glox/jlox).
 
+## Doc/comment style: neutral and technical
+
+README.md, ARCHITECTURE.md, doc comments, commit messages: describe what the code does and why,
+in plain technical language. Avoid:
+- Value judgements about the work itself (e.g. calling a result "honest", "clean", "elegant",
+  "solid") -- state the fact the adjective was standing in for instead.
+- Assurances of honesty/trustworthiness ("to be fair", "honestly", "the real bottleneck is") --
+  the reader isn't questioning good faith; framing it that way implies they should.
+- Chatty asides, hedging, or first-person commentary on the writing itself.
+
+State the finding directly. "The object-heavy end of the suite is the honest bottleneck" ->
+"The object-heavy end of the suite is dominated by one cost." "Genuinely hard target to beat" ->
+"a difficult target to beat." The information content is identical; only the editorializing is
+removed.
+
 ## Linting `.lox` scripts with the jslox LSP
 
 There's no linter built into odlox itself (`--compile-only` only catches parse errors, not
