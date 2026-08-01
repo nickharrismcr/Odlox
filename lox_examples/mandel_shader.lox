@@ -4,6 +4,28 @@ from gfx import *
 // than on the CPU into a float_array. Orders of magnitude faster than the
 // CPU/native-array approach this replaced, since every pixel iterates in
 // parallel instead of across a handful of CPU-core worker threads.
+//
+// Deep-zoom precision: plain GLSL `float` is 32-bit (~7 decimal digits).
+// raylib's SetShaderValue has no double/dvec2 uniform type at all (see
+// ShaderUniformDataType in vendor:raylib), so a real GLSL `double`
+// uniform isn't uploadable through it regardless of GPU support. Instead,
+// xoffset/yoffset/scale are split into (hi, lo) float32 pairs on the Lox
+// side (split_double below) and reconstructed inside the shader using
+// Dekker's double-float (DF64) technique -- ds_add/ds_sub/ds_mul -- giving
+// ~48 effective mantissa bits (~14 decimal digits) using only ordinary
+// float32 arithmetic, portable to any GPU without a GLSL version bump or
+// fp64 hardware support.
+//
+// Always on, no plain-float fast path: when precision loss onsets depends
+// on xoffset/yoffset/resolution, not scale alone (float32's rounding
+// error scales with the magnitude of the offset the pixel coordinate gets
+// added to), so any single fixed scale threshold for switching is
+// fragile -- it either switches too late (a visible pixelated interval
+// right before the switch, as happened with an earlier scale-only
+// threshold here) or too early for a different view. Given the DF64 path
+// is already dramatically faster than the CPU-native version this
+// replaced, there's no need to economize -- running it unconditionally
+// removes the whole class of bug.
 
 import sys;
 import colour;
@@ -32,47 +54,118 @@ void main()
 "
 
 // GLSL fragment shader doing the actual Mandelbrot escape-time iteration
-// per pixel. gl_FragCoord.y is flipped ((resolution.y - gl_FragCoord.y))
-// so row 0 is the top of the screen. No cardioid/period-2-bulb or
-// periodicity early-outs (classification shortcuts a CPU version would
-// need to keep up) -- brute force is fast enough here because thousands
-// of pixels iterate in parallel.
+// per pixel in double-float (DF64) precision. gl_FragCoord.y is flipped
+// ((resolution.y - gl_FragCoord.y)) so row 0 is the top of the screen. No
+// cardioid/period-2-bulb or periodicity early-outs (classification
+// shortcuts a CPU version would need to keep up) -- brute force is fast
+// enough here because thousands of pixels iterate in parallel.
 var mandel_shader_src = "
 #version 330
+#extension GL_ARB_gpu_shader5 : enable
 in vec2 fragTexCoord;
 out vec4 finalColor;
 
 uniform vec2 resolution;
-uniform float scale;
-uniform float xoffset;
-uniform float yoffset;
+uniform vec2 scale;      // (hi, lo) double-float pair
+uniform vec2 xoffset;    // (hi, lo) double-float pair
+uniform vec2 yoffset;    // (hi, lo) double-float pair
 uniform float max_iteration;
 uniform float time;
+
+// ---- Double-float (Dekker/DF64) helpers -----------------------------------
+// A double-float value is a vec2(hi, lo) where hi+lo (in exact math)
+// approximates the true value to ~48 mantissa bits (~14 decimal digits)
+// versus plain float's 24 bits (~7 digits) -- Dekker (1971), 'A
+// floating-point technique for extending the available precision'. Only
+// add/sub/mul are needed for the Mandelbrot recurrence (no division).
+//
+// `precise` on every intermediate is load-bearing, not decoration: GLSL
+// does not guarantee IEEE-strict, non-reassociated evaluation by default,
+// and a compiler is free to fuse multiply-adds or reorder these
+// expressions for performance -- which silently destroys the exact-
+// cancellation these algorithms depend on (e.g. `e = t1 - a.x` relies on
+// t1 - a.x being computed exactly as written, not folded into something
+// else), collapsing the whole technique back to plain float32 accuracy
+// with no error or warning. `precise` (GL_ARB_gpu_shader5, available on
+// effectively all GL 3.3-capable desktop GPUs) forces the compiler to
+// preserve evaluation order/rounding for the marked variables.
+
+vec2 ds_split(float a) {
+    const float SPLIT = 4097.0; // 2^12 + 1 -- Veltkamp split of a float32
+                                 // into two 12-bit-safe halves so their
+                                 // product can be formed exactly.
+    precise float t = a * SPLIT;
+    precise float hi = t - (t - a);
+    precise float lo = a - hi;
+    return vec2(hi, lo);
+}
+
+vec2 ds_add(vec2 a, vec2 b) {
+    precise float t1 = a.x + b.x;
+    precise float e = t1 - a.x;
+    precise float t2 = ((b.x - e) + (a.x - (t1 - e))) + a.y + b.y;
+    precise float hi = t1 + t2;
+    precise float lo = t2 - (hi - t1);
+    return vec2(hi, lo);
+}
+
+vec2 ds_sub(vec2 a, vec2 b) {
+    precise float t1 = a.x - b.x;
+    precise float e = t1 - a.x;
+    precise float t2 = ((-b.x - e) + (a.x - (t1 - e))) + a.y - b.y;
+    precise float hi = t1 + t2;
+    precise float lo = t2 - (hi - t1);
+    return vec2(hi, lo);
+}
+
+vec2 ds_mul(vec2 a, vec2 b) {
+    vec2 as = ds_split(a.x);
+    vec2 bs = ds_split(b.x);
+
+    precise float c11 = a.x * b.x;
+    precise float c21 = as.y * bs.y - (((c11 - as.x * bs.x) - as.y * bs.x) - as.x * bs.y);
+
+    precise float c2 = a.x * b.y + a.y * b.x;
+
+    precise float t1 = c11 + c2;
+    precise float e = t1 - c11;
+    precise float t2 = a.y * b.y + ((c2 - e) + (c11 - (t1 - e))) + c21;
+
+    precise float hi = t1 + t2;
+    precise float lo = t2 - (hi - t1);
+    return vec2(hi, lo);
+}
 
 void main() {
     float half_w = resolution.x * 0.5;
     float half_h = resolution.y * 0.5;
     float max_dim = max(resolution.x, resolution.y);
-    float scale_over_max_dim = scale / max_dim;
 
-    float x0 = scale_over_max_dim * (gl_FragCoord.x - half_w) + xoffset;
-    float y0 = scale_over_max_dim * ((resolution.y - gl_FragCoord.y) - half_h) + yoffset;
-
-    float x = 0.0;
-    float y = 0.0;
-    float x2 = 0.0;
-    float y2 = 0.0;
-    int iteration = 0;
     int max_iter = int(max_iteration);
+    int iteration = 0;
+
+    vec2 scale_over_max_dim = ds_mul(scale, vec2(1.0 / max_dim, 0.0));
+    vec2 px = vec2(gl_FragCoord.x - half_w, 0.0);
+    vec2 py = vec2((resolution.y - gl_FragCoord.y) - half_h, 0.0);
+    vec2 x0 = ds_add(ds_mul(scale_over_max_dim, px), xoffset);
+    vec2 y0 = ds_add(ds_mul(scale_over_max_dim, py), yoffset);
+
+    vec2 x = vec2(0.0, 0.0);
+    vec2 y = vec2(0.0, 0.0);
+    vec2 x2 = vec2(0.0, 0.0);
+    vec2 y2 = vec2(0.0, 0.0);
 
     for (int i = 0; i < max_iter; i++) {
-        if (x2 + y2 > 4.0) break;
-        y = 2.0 * x * y + y0;
-        x = x2 - y2 + x0;
-        x2 = x * x;
-        y2 = y * y;
+        if (x2.x + y2.x > 4.0) break;
+        vec2 xy = ds_mul(x, y);
+        y = ds_add(ds_add(xy, xy), y0);
+        x = ds_add(ds_sub(x2, y2), x0);
+        x2 = ds_mul(x, x);
+        y2 = ds_mul(y, y);
         iteration++;
     }
+    float x2_hi = x2.x;
+    float y2_hi = y2.x;
 
     vec3 color;
     if (iteration >= max_iter) {
@@ -82,8 +175,10 @@ void main() {
         // Smooth (renormalized) iteration count, turning the discrete
         // escape-time count into a continuous value so neighboring pixels
         // that escape one iteration apart get a continuous color instead
-        // of a speckly, integer-stepped one.
-        float log_zn = log(x2 + y2) / 2.0;
+        // of a speckly, integer-stepped one. Only the hi component is
+        // used here -- this is a cosmetic anti-aliasing detail, not
+        // something the deep-zoom precision requirement applies to.
+        float log_zn = log(x2_hi + y2_hi) / 2.0;
         float nu = log(log_zn / log(2.0)) / log(2.0);
         float smooth_iter = float(iteration) + 1.0 - nu;
         // time cycles the palette continuously, independent of zoom,
@@ -94,6 +189,22 @@ void main() {
     finalColor = vec4(color, 1.0);
 }
 "
+
+// Splits an f64 Lox number into a (hi, lo) float32 pair: hi+lo (in exact
+// math) equals a, with hi alone exactly representable in float32 (its
+// mantissa only occupies the top 24 bits) and lo holding the remainder --
+// together giving ~48 bits of precision once both halves round-trip
+// through float32 on upload (set_value_vec2 casts to f32; see
+// gfx_shader.odin's set_value_vec2). Veltkamp's algorithm: splitter =
+// 2^29 + 1 isolates the top 24 bits of a 53-bit double's mantissa (53 -
+// 29 = 24).
+func split_double(a) {
+    var SPLITTER = 536870913.0;
+    var t = a * SPLITTER;
+    var hi = t - (t - a);
+    var lo = a - hi;
+    return vec2(hi, lo);
+}
 
 // zoom (the starting scale) and zoom_speed are both optional CLI
 // parameters: `odlox.exe mandel_shader.lox 0.05 0.99` starts already
@@ -122,6 +233,9 @@ var height = win.get_screen_height();
 
 var mandel_shader = shader();
 mandel_shader.load_from_memory(vertex_shader, mandel_shader_src);
+if (!mandel_shader.is_valid()) {
+    print("Failed to load Mandelbrot shader");
+}
 var resolution_loc = mandel_shader.get_location("resolution");
 var scale_loc = mandel_shader.get_location("scale");
 var xoffset_loc = mandel_shader.get_location("xoffset");
@@ -130,8 +244,10 @@ var max_iter_loc = mandel_shader.get_location("max_iteration");
 var time_loc = mandel_shader.get_location("time");
 
 mandel_shader.set_value_vec2(resolution_loc, vec2(width, height));
-mandel_shader.set_value_float(xoffset_loc, xOffset);
-mandel_shader.set_value_float(yoffset_loc, yOffset);
+// xOffset/yOffset are fixed for the whole run, so their double-float
+// split only needs computing once, up front.
+mandel_shader.set_value_vec2(xoffset_loc, split_double(xOffset));
+mandel_shader.set_value_vec2(yoffset_loc, split_double(yOffset));
 mandel_shader.set_value_float(max_iter_loc, max_iterations);
 
 var t = 0.0;
@@ -139,7 +255,9 @@ var t = 0.0;
 while (!win.should_close()) {
     var current_fps = win.get_fps();
 
-    mandel_shader.set_value_float(scale_loc, scale);
+    // scale changes every frame (continuous zoom), so it's re-split each
+    // frame; xoffset/yoffset stay fixed and were split once above.
+    mandel_shader.set_value_vec2(scale_loc, split_double(scale));
     t = t + 0.005;
     mandel_shader.set_value_float(time_loc, t);
 
