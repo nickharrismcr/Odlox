@@ -216,7 +216,7 @@ var scale = 4.0;
 if (len(args) > 1) {
     scale = float(args[1]);
 }
-var zoom_speed = 0.985;
+var zoom_speed = 0.99;
 if (len(args) > 2) {
     zoom_speed = float(args[2]);
 }
