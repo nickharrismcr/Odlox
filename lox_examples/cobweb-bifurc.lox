@@ -6,7 +6,7 @@ import colour
 fun logistic(r, x) {
     return r * x * (1 - x);
 }
-grey=vec4(50, 50, 50,0)
+grey=vec4(10, 10, 50,0)
 
 fun draw_cobweb_and_live_bifurcation(rr, x0, steps) {
     var win = window(1000, 1000);
