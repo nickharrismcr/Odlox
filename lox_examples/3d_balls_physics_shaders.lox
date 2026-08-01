@@ -67,13 +67,19 @@ const AIR_DAMPING = 0.9999       // Per-step velocity multiplier (air resistance
                                 // applied to horizontal velocity only; physics_world applies
                                 // it uniformly to all three axes each step.
 const SHAPES = 450            // Total number of balls to spawn in the simulation - 500 is max to get 60fps on my machine.
-const FORCE = 0.9             // Explosion force multiplier (affects blast radius impact)
+const FORCE = 0.5             // Explosion force multiplier (affects blast radius impact)
+const REFERENCE_BALL_RADIUS = 0.5  // Midpoint of the spawn loop's random.float(0.3, 0.7) radius
+                                    // range below. apply_explosion_force scales FORCE by
+                                    // this_ball_radius / REFERENCE_BALL_RADIUS, so an
+                                    // average-sized ball still feels the same force FORCE always
+                                    // meant, while bigger balls get proportionally more push and
+                                    // smaller ones less.
 const DISTANCE = 40.0          // Camera orbital distance from center
 const NORMAL=0
 const RAINBOW=1
 const PULSE=2
-const EXP_MIN=200                // Minimum frames before explosion
-const EXP_MAX=2000                // Maximum frames before explosion
+const EXP_MIN=500                // Minimum frames before explosion
+const EXP_MAX=3000                // Maximum frames before explosion
 
 // Static edge ramps -- see STATIC RAMPS setup below.
 const RAMP_ANGLE = 15.0                  // Tilt in degrees
@@ -174,8 +180,12 @@ class MovingObject {
         ny = dy / dist
         nz = dz / dist
 
-        // Calculate force strength based on distance (inverse relationship)
-        force_strength = explosion_force * (1.0 - (dist / explosion_radius))
+        // Calculate force strength based on distance (inverse relationship),
+        // scaled per-ball by size (radius) relative to REFERENCE_BALL_RADIUS --
+        // see that constant's own comment for why this keeps FORCE's overall
+        // feel unchanged for an average-sized ball.
+        size_factor = this.radius / REFERENCE_BALL_RADIUS
+        force_strength = explosion_force * size_factor * (1.0 - (dist / explosion_radius))
 
         // Apply the resulting impulse via physics_world
         world.add_impulse(this.id, vec3(nx * force_strength, ny * force_strength, nz * force_strength))
@@ -355,7 +365,8 @@ shadow_rt.circle_fill(32, 32, 30, vec4(255, 255, 255, 255))
 shadow_batch.set_circle_texture(shadow_rt.get_texture())
 
 // ===== SPAWN ALL BALLS AT ONCE =====
-foreach (spawn_i in range(SHAPES)) {
+foreach ( i in range(SHAPES)) {
+    _ = i
     pos = vec3(random.float(-GRID_SIZE, GRID_SIZE), random.float(10, 18), random.float(-GRID_SIZE, GRID_SIZE))
     vel = vec3(random.float(-0.15, 0.15), random.float(-0.05, 0.05), random.float(-0.15, 0.15))
     s = random.float(0.3,0.7)
@@ -498,7 +509,7 @@ while (!win.should_close()) {
         if (obj.is_exploded) continue
         if (obj.explosion_timer > 0 and obj.explosion_timer < 5) {
             // Pre-explosion visual warning: flash white and expand size
-            expanded_size = obj.size.x * 3.0
+            expanded_size = obj.size.x * 1.5  // 50% larger than normal
             normal_batch.add(obj.pos, vec3(expanded_size, expanded_size, expanded_size), col.WHITE)
             continue
         }

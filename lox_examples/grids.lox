@@ -106,7 +106,7 @@ class Grid {
         this.cy = y
         this.size = size
     }
-    draw(win,alpha=255,scale=1.0) {
+    draw(scale=1.0) {
         n = this.cells 
         sz=this.size*scale 
         a=this.angle
@@ -188,7 +188,7 @@ while (!win.should_close()) {
             lg=float(len(grids))  
             fi=float(i+1)
             scale = 1.0 - (float(i) / float(len(grids)))*0.7
-            grids[i].draw(win,255*((1-float(i)/len(grids))),scale)
+            grids[i].draw(scale)
 
         }
         
