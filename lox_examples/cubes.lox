@@ -1,7 +1,7 @@
 from gfx import *
-// Wireframe Cubes Demo
+// Cubes Demo
 //
-// 100 wireframe cubes of random size and hue, tumbling and drifting inside
+// 100 solid cubes of random size and hue, tumbling and drifting inside
 // a large cubic arena, bouncing off the walls like balls would. An
 // orbiting camera looks at the arena center, same style as
 // 3d_balls_physics_shaders.lox. Pure Lox, no physics_world -- only ~100
@@ -30,14 +30,90 @@ const MAX_SPEED = 0.15
 const MIN_SPIN = 0.5     // degrees/frame magnitude -- biased away from
 const MAX_SPIN = 3.0     // zero so every cube visibly tumbles
 
+// Standard raylib default-material vertex shader (mvp/matModel/matNormal
+// are auto-wired by name -- LoadShader recognizes them without needing
+// get_location calls, same as texture0/colDiffuse below).
+var lit_vertex_shader = "
+#version 330
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+uniform mat4 matModel;
+uniform mat4 matNormal;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+out vec3 fragPosition;
+out vec3 fragNormal;
+
+void main() {
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    fragPosition = vec3(matModel * vec4(vertexPosition, 1.0));
+    fragNormal = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+// Ambient + diffuse + Blinn-Phong specular, one point light. lightPos/
+// viewPos/ambientColor aren't part of raylib's auto-wired uniform set
+// (unlike mvp/matModel/matNormal/texture0/colDiffuse above), so cubes.lox
+// grabs their locations explicitly below and updates viewPos every frame.
+var lit_fragment_shader = "
+#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+in vec3 fragPosition;
+in vec3 fragNormal;
+
+uniform sampler2D texture0;
+uniform vec4 colDiffuse;
+uniform vec3 lightPos;
+uniform vec3 viewPos;
+uniform vec3 ambientColor;
+
+out vec4 finalColor;
+
+void main() {
+    vec3 norm = normalize(fragNormal);
+    vec3 lightDir = normalize(lightPos - fragPosition);
+    vec3 viewDir = normalize(viewPos - fragPosition);
+
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * vec3(1.0);
+
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(norm, halfwayDir), 0.0), 32.0);
+    vec3 specular = spec * vec3(0.5);
+
+    vec4 texelColor = texture(texture0, fragTexCoord);
+    vec3 lighting = ambientColor + diffuse + specular;
+    finalColor = vec4(lighting, 1.0) * texelColor * fragColor * colDiffuse;
+}
+"
+
+lit_shader = shader()
+lit_shader.load_from_memory(lit_vertex_shader, lit_fragment_shader)
+if (!lit_shader.is_valid()) {
+    print("Failed to load cube lighting shader")
+}
+light_pos_loc = lit_shader.get_location("lightPos")
+view_pos_loc = lit_shader.get_location("viewPos")
+ambient_loc = lit_shader.get_location("ambientColor")
+lit_shader.set_value_vec3(light_pos_loc, vec3(0, ARENA_SIZE * 1.5, 0))
+lit_shader.set_value_vec3(ambient_loc, vec3(0.15, 0.15, 0.15))
+
 cam = camera(vec3(DISTANCE, 10, 0), vec3(0, 0, 0), vec3(0, 1, 0))
 orbit_angle = 0.0
 
-// Represents one tumbling, bouncing wireframe cube. Wall collision treats
+// Represents one tumbling, bouncing cube. Wall collision treats
 // the cube as a bounding sphere (half_diag, its corner-to-center distance)
 // so a rotating corner never visibly pokes through a wall -- "bounce off
 // the walls the same way a ball would," taken literally.
-class WireCube {
+class Cube {
     init(pos, vel, size, axis, angular_speed, color) {
         this.pos = pos
         this.vel = vel
@@ -80,7 +156,7 @@ class WireCube {
     }
 
     draw() {
-        win.cube_wires_rotated(this.pos, this.size, this.axis, this.angle, this.color)
+        win.cube_rotated(this.pos, this.size, this.axis, this.angle, this.color)
     }
 }
 
@@ -97,7 +173,7 @@ foreach (i in range(CUBE_COUNT)) {
     spin = random.choice((-1, 1)) * random.float(MIN_SPIN, MAX_SPIN)
     color = col.hsv_to_rgb(random.float(0, 360), 1.0, 1.0)
 
-    cubes.append(WireCube(pos, vel, size, axis, spin, color))
+    cubes.append(Cube(pos, vel, size, axis, spin, color))
 }
 
 arena_color = vec4(80, 80, 80, 255)
@@ -108,6 +184,7 @@ while (!win.should_close()) {
     x = math.cos(orbit_angle) * DISTANCE
     z = math.sin(orbit_angle) * DISTANCE
     cam.set_position(vec3(x, 10, z))
+    lit_shader.set_value_vec3(view_pos_loc, vec3(x, 10, z))
 
     foreach (cube in cubes) {
         cube.update()
@@ -119,9 +196,11 @@ while (!win.should_close()) {
 
     win.cube_wires(vec3(0, 0, 0), vec3(ARENA_SIZE * 2, ARENA_SIZE * 2, ARENA_SIZE * 2), arena_color)
 
+    win.begin_shader_mode(lit_shader)
     foreach (cube in cubes) {
         cube.draw()
     }
+    win.end_shader_mode()
 
     win.end_3d()
     win.end()

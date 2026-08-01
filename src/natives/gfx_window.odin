@@ -50,6 +50,14 @@ Window_Data :: struct {
 	cube_mesh:       rl.Mesh,
 	cube_material:   rl.Material,
 	cube_mesh_ready: bool,
+
+	// begin_shader_mode/end_shader_mode's rl.BeginShaderMode only affects
+	// rlgl immediate-mode draws (cube/sphere/cylinder/...) -- DrawMesh
+	// (cube_rotated) binds material.shader directly instead and never
+	// sees that global state, so it's mirrored here to apply the same
+	// active shader to DrawMesh-based draws too.
+	active_shader:      rl.Shader,
+	shader_mode_active: bool,
 }
 
 @(private = "file")
@@ -597,13 +605,16 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			vm.runtime_error(v, "begin_shader_mode() argument must be a shader.")
 			return false
 		}
-		rl.BeginShaderMode(shader_data_of(shader_val).shader)
+		w.active_shader = shader_data_of(shader_val).shader
+		w.shader_mode_active = true
+		rl.BeginShaderMode(w.active_shader)
 		result = core.NIL_VALUE
 	case "end_shader_mode":
 		if arg_count != 0 {
 			vm.runtime_error(v, "end_shader_mode() takes no arguments.")
 			return false
 		}
+		w.shader_mode_active = false
 		rl.EndShaderMode()
 		result = core.NIL_VALUE
 
@@ -793,6 +804,12 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 		}
 		pos, size, axis_v := core.as_vec3(pos_val), core.as_vec3(size_val), core.as_vec3(axis_val)
 		mesh, material := window_cube_model(w)
+		if w.shader_mode_active {
+			// DrawMesh binds material.shader directly, not the global
+			// state rl.BeginShaderMode sets -- see Window_Data's own doc
+			// comment on shader_mode_active for why this is here.
+			material.shader = w.active_shader
+		}
 		scale := rl.MatrixScale(f32(size.x), f32(size.y), f32(size.z))
 		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
 		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)

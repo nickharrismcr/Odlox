@@ -39,19 +39,19 @@ class Line {
         // Clamp to inner square
         if (this.pos.x > this.width - this.margin) {
             this.pos.x = this.width - this.margin
-            this.dir = this.dir + math.PI
+            this.dir = this.dir + math.PI   
         }
         if (this.pos.x < this.margin) {
             this.pos.x = this.margin
-            this.dir = this.dir + math.PI
+            this.dir = this.dir + math.PI  
         }
         if (this.pos.y > this.height - this.margin) {
             this.pos.y = this.height - this.margin
-            this.dir = this.dir + math.PI
+            this.dir = this.dir + math.PI  
         }
         if (this.pos.y < this.margin) {
             this.pos.y = this.margin
-            this.dir = this.dir + math.PI
+            this.dir = this.dir + math.PI  
         }
         this.counter = this.counter + 1
         if (this.counter > this.change ) {
@@ -171,7 +171,7 @@ class Tiler {
 }
  
 
-SKIP_PROBABILITY = 0.4 // fraction of grid cells left empty per layer
+SKIP_PROBABILITY = 0.6 // fraction of grid cells left empty per layer
 
 // Deterministic sin/fract hash -> [0, 1): same (i, j, seed) always gives
 // the same result, unlike rn.* which advances a shared random stream.
@@ -186,7 +186,7 @@ func make_lines(n, width, height, alpha,margin) {
     for (var i = 0; i < n; i = i + 1) {
         var c = col.random_rgb()
         c.a = alpha
-        var angle = math.PI / 4
+        var angle = math.PI / 2
         lines.append(Line(vec2(0, 0), c, width, height, angle, margin))
     }
     return lines
@@ -194,34 +194,34 @@ func make_lines(n, width, height, alpha,margin) {
 
 func get_tilers()
 {
-    var margin = 10 // adjust as needed for inner square size
+    var margin =1  // adjust as needed for inner square size
     tilers= [] 
     t=Tiler(1.0,vec2(4,4))
-    t.add(Tile(ww, wh, make_lines(5, ww, wh, 255, margin), margin))
+    t.add(Tile(ww, wh, make_lines(15, ww, wh, 255, margin), margin))
     tilers.append(t) 
     t=Tiler(0.5,vec2(2,2))
-    t.add(Tile(ww, wh, make_lines(5, ww, wh, 200, margin), margin))
+    t.add(Tile(ww, wh, make_lines(15, ww, wh, 200, margin), margin))
     tilers.append(t)
     t=Tiler(0.25,vec2(1,1))
-    t.add(Tile(ww, wh, make_lines(5, ww, wh, 150, margin), margin))
+    t.add(Tile(ww, wh, make_lines(15, ww, wh, 150, margin), margin))
     tilers.append(t)
     t=Tiler(0.125,vec2(0.5,0.5))
-    t.add(Tile(ww, wh, make_lines(5, ww, wh, 100, margin), margin))
+    t.add(Tile(ww, wh, make_lines(15, ww, wh, 100, margin), margin))
     tilers.append(t)
     return tilers
 }
 
 func clear_tilers(tilers) {
-    margin = 10
+    margin = 1
     for (i = 0; i < len(tilers); i = i + 1) {
         t = tilers[i]
         t.tile.clear(vec4(0, 0, 0, 0)) // Use transparent clear, not black
-        t.tile.lines = make_lines(5, ww, wh, 255-(i*50), margin) // Reset lines
+        t.tile.lines = make_lines(15, ww, wh, 255-(i*50), margin) // Reset lines
     }
 }   
 
-ww=400
-wh=400
+ww=1000
+wh=1000
  
 frame_count=50
 
@@ -263,7 +263,7 @@ while (!win.should_close()) {
     win.end_blend_mode()
     win.end()
     counter2+=1
-    if ( counter2 > 600) {
+    if ( counter2 > 1600) {
        counter2 = 0
        counter = 0 
        clear_tilers(tilers)
