@@ -14,8 +14,8 @@ const STACK_SPACING = 10
 const MIN_STACK_HEIGHT = 3
 const MAX_STACK_HEIGHT = 30
 const BASE_CUBE_SIZE = 10
-const CAMERA_HEIGHT = 2.0
-const MAX_CAMERA_SPEED = 0.1  
+const CAMERA_HEIGHT = 35.0
+const MAX_CAMERA_SPEED = 0.3 
 const CAMERA_ACCELERATION = MAX_CAMERA_SPEED / 30.0  // Much gentler acceleration
 const ROTATION_SPEED = 0.01  // Much slower rotation for smoothness
 const MAX_COLOURS = 50
@@ -322,7 +322,7 @@ class Controller {
             this.targetGridPos = vec3(math.max(2, math.min(this.grid.size - 3, this.targetGridPos.x)), 0, math.max(2, math.min(this.grid.size - 3, this.targetGridPos.z)))
             
         } else {
-            steps=math.min(distance_to_edge - 2, random.integer(1, 8))
+            steps=math.min(distance_to_edge - 2, random.integer(8, 24))
             this.targetGridPos = this.gridPos ++ math.scale3(MOVEMENTS[ this.direction ], steps)
             
             // Clamp target position to valid street boundaries

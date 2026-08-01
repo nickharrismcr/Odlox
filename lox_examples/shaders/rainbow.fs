@@ -10,6 +10,25 @@ uniform float time;            // Time uniform for animation
 
 out vec4 finalColor;
 
+// Cheap single-pass box blur: (2*BLUR_RADIUS+1)^2 taps around fragTexCoord,
+// texel size derived from the render texture's own resolution so it stays
+// correct across window sizes without a resolution uniform from the Lox
+// side. Bump BLUR_RADIUS for a stronger blur (cost grows with the square
+// of the radius -- 1 is a 3x3/9-tap blur, 2 is 5x5/25-tap).
+const int BLUR_RADIUS = 1;
+
+vec4 blurredSample(sampler2D tex, vec2 uv) {
+    vec2 texelSize = 1.0 / vec2(textureSize(tex, 0));
+    vec4 sum = vec4(0.0);
+    for (int x = -BLUR_RADIUS; x <= BLUR_RADIUS; x++) {
+        for (int y = -BLUR_RADIUS; y <= BLUR_RADIUS; y++) {
+            sum += texture(tex, uv + vec2(x, y) * texelSize);
+        }
+    }
+    float taps = float((2 * BLUR_RADIUS + 1) * (2 * BLUR_RADIUS + 1));
+    return sum / taps;
+}
+
 // Convert RGB to HSV
 vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
@@ -30,8 +49,8 @@ vec3 hsv2rgb(vec3 c) {
 
 void main()
 {
-    // Sample the texture
-    vec4 texelColor = texture(texture0, fragTexCoord);
+    // Sample the texture (blurred)
+    vec4 texelColor = blurredSample(texture0, fragTexCoord);
     
     // Get base color from fragment and diffuse
     vec3 baseColor = fragColor.rgb * colDiffuse.rgb * texelColor.rgb;
