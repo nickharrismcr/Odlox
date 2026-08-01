@@ -465,6 +465,7 @@ func day_night_colour(state) {
 const REPLICATOR_COLOUR = vec4(50, 255, 180, 255)
 
 func replicator_rule(state, n) {
+    _ = state
     if (n == 1 or n == 3 or n == 5 or n == 7) {
         return 1.0
     }

@@ -31,7 +31,7 @@ fun draw_cobweb_and_live_bifurcation(rr, x0, steps) {
     var paused = false;
     var original_rr = rr;  // Store initial r value for restart
     var manual_step = 0.01;  // Step size for manual parameter adjustment
-    var last_rr = rr;  // Track last parameter value for manual stepping
+ 
     
     print("Interactive Controls:");
     print("  SPACE - Pause/Resume animation");
