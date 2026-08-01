@@ -25,36 +25,39 @@ than passing the whole codebase in one call.
 ### Known false-positive classes -- don't chase these as real bugs
 
 Running this linter across odlox's full `.lox` codebase (lox_examples/, modules/,
-tests/new_tests/lox/) turns up two categories of noise that are **not** real problems:
+tests/new_tests/lox/) turns up one remaining category of noise that is **not** a real problem:
 
-1. **`try { ... } finally { ... }` with no `except` clause reports `Expect 'except'.` /
-   `Expect expression.`** -- jslox's Parser predates odlox adding bare try/finally support (see
-   `tests/new_tests/lox/finally_bare.lox`'s own header comment: "previously a parse error...").
-   This is valid, tested odlox syntax; the linter is simply behind the language's current
-   grammar, not the script.
+**"Variable 'X' is declared but never used" is unreliable when X shadows an outer-scope
+variable of the same name.** Verified via a minimal repro:
+```
+win = 1
+class Foo {
+    draw(win) {
+        print win
+    }
+}
+```
+jslox's Resolver reports the `win` parameter as unused even though it's referenced in the
+body -- the reference resolves to the wrong declaration when a name is shadowed. Confirmed
+on a real case in `lox_examples/3d_shapes_mem_shader.lox` (`draw(win)`, `win` used inside).
+Treat every "declared but never used" warning as a *lead to check by hand*, not something to
+mechanically fix (e.g. by renaming) -- many of the rest are also legitimate intentional
+patterns (`except Exception as e { ... }` not touching `e`, a loop counter kept only for
+iteration), not bugs. (This shadowing bug is still open in jslox as of `lox-lsp-0.0.7` -- not
+yet fixed the way the bare-finally gap below was.)
 
-2. **"Variable 'X' is declared but never used" is unreliable when X shadows an outer-scope
-   variable of the same name.** Verified via a minimal repro:
-   ```
-   win = 1
-   class Foo {
-       draw(win) {
-           print win
-       }
-   }
-   ```
-   jslox's Resolver reports the `win` parameter as unused even though it's referenced in the
-   body -- the reference resolves to the wrong declaration when a name is shadowed. Confirmed
-   on a real case in `lox_examples/3d_shapes_mem_shader.lox` (`draw(win)`, `win` used inside).
-   Treat every "declared but never used" warning as a *lead to check by hand*, not something to
-   mechanically fix (e.g. by renaming) -- many of the rest are also legitimate intentional
-   patterns (`except Exception as e { ... }` not touching `e`, a loop counter kept only for
-   iteration), not bugs.
-
-Given both of these, a lint pass that reports zero *unexpected* errors (i.e. nothing outside the
-two classes above, and outside deliberately-invalid negative-test fixtures like
+Given this, a lint pass that reports zero *unexpected* errors (i.e. nothing outside the class
+above, and outside deliberately-invalid negative-test fixtures like
 `tests/new_tests/lox/break_outside_loop.lox`) means the codebase is clean -- there's nothing left
 to "fix."
+
+**Previously false-flagged, now fixed upstream in jslox (`lox-lsp-0.0.7`)**:
+`try { ... } finally { ... }` with no `except` clause used to report
+`Expect 'except'.` / `Expect expression.` -- jslox's Parser predated odlox adding bare
+try/finally support (see `tests/new_tests/lox/finally_bare.lox`'s own header comment:
+"previously a parse error..."). Fixed in jslox's `Parser.ts`/`Resolver.ts`/`Expr.ts` (`TryStmt`
+gained a `finallyBlock` field); if this reappears, the installed extension version has
+regressed or reverted, not the script.
 
 ## Lox syntax gotcha: trailing commas
 
