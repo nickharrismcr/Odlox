@@ -9,8 +9,8 @@ import particle_sys;
 
 MIN_PARTICLES=20
 MAX_PARTICLES=100
-MIN_DELAY=20
-MAX_DELAY=50
+MIN_DELAY=10
+MAX_DELAY=40
 
  
 // particle update function
