@@ -156,6 +156,12 @@ mandel_calc_block :: proc(b: ^Mandel_Block) {
 			x0 := b.scale_over_max_dim * (f64(col) - b.half_width) + b.xoffset
 
 			x, y := 0.0, 0.0
+			// x2/y2 track x*x/y*y across iterations -- both the escape
+			// check and the next iteration's real-part update need them,
+			// so computing each once per iteration (instead of twice, as
+			// a naive x*x-y*y+x0 / x*x+y*y<=4.0 pairing would) halves the
+			// multiplications in this loop.
+			x2, y2 := 0.0, 0.0
 			iteration := 0
 
 			if !b.is_deep_zoom && (mandel_in_main_cardioid(x0, y0) || mandel_in_period2_bulb(x0, y0)) {
@@ -168,10 +174,11 @@ mandel_calc_block :: proc(b: ^Mandel_Block) {
 				prev2_x, prev2_y: f64
 				periodicity_check_enabled := false
 
-				for (x * x + y * y <= 4.0) && (iteration < b.max_iteration) {
-					xtemp := x * x - y * y + x0
+				for (x2 + y2 <= 4.0) && (iteration < b.max_iteration) {
 					y = 2.0 * x * y + y0
-					x = xtemp
+					x = x2 - y2 + x0
+					x2 = x * x
+					y2 = y * y
 					iteration += 1
 
 					if iteration >= periodicity_threshold {
