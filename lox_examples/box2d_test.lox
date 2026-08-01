@@ -1,0 +1,52 @@
+import box2d
+
+// Headless smoke test / usage example for the box2d native module: drop a
+// dynamic circle onto a static ground box, step the simulation, and print
+// enough state to confirm gravity, collision resolution, and the
+// collisions() event API all work -- no window/GL context needed.
+
+const STATIC = 0
+const DYNAMIC = 2
+
+world = box2d.world(vec2(0.0, -10.0))
+
+// Ground: a wide, flat static box centered at y = -5.
+ground_id = world.add_box(vec2(0.0, -5.0), vec2(10.0, 1.0), 0.0, STATIC, 1.0, 0.3, 0.1)
+
+// A dynamic circle dropped from y = 5.
+ball_id = world.add_circle(vec2(0.0, 5.0), 0.5, DYNAMIC, 1.0, 0.3, 0.3)
+
+print "bodies: " & str(world.count())
+
+reported_collision = false
+for (i = 0; i < 180; i = i + 1) {
+    world.step(1.0 / 60.0)
+
+    pos = world.get_position(ball_id)
+    if (i % 30 == 0) {
+        print "step " & str(i) & " ball y = " & str(pos.y)
+    }
+
+    if (!reported_collision) {
+        hits = world.collisions()
+        if (len(hits) > 0) {
+            reported_collision = true
+            print "collision reported at step " & str(i) & ": " & str(hits)
+        }
+    }
+}
+
+final_pos = world.get_position(ball_id)
+print "final ball y = " & str(final_pos.y)
+
+// Ground top surface is at y = -5 + 1 = -4; ball radius 0.5, so it should
+// settle with its center resting close to y = -3.5, well above the ground
+// box's own center (-5) and nowhere near its start height (5).
+print "settled above ground centre: " & str(final_pos.y > -5.0)
+print "fell from start height: " & str(final_pos.y < 5.0)
+print "collision was reported: " & str(reported_collision)
+
+world.remove(ball_id)
+print "bodies after remove: " & str(world.count())
+
+print "box2d_test complete"

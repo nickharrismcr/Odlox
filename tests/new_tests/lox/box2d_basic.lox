@@ -1,0 +1,74 @@
+import box2d;
+
+const STATIC = 0;
+const DYNAMIC = 2;
+
+var w = box2d.world(vec2(0, -10));
+print type(w);
+
+var ground = w.add_box(vec2(0, -5), vec2(10, 1), 0, STATIC, 1.0, 0.3, 0.1);
+var ball = w.add_circle(vec2(0, 5), 0.5, DYNAMIC, 1.0, 0.3, 0.3);
+print w.count();
+
+// Deterministic: no gravity, no collision, one straight step.
+var w2 = box2d.world(vec2(0, 0));
+var straight = w2.add_circle(vec2(0, 0), 1.0, DYNAMIC, 1.0, 0.3, 0.3);
+w2.set_velocity(straight, vec2(2, 0));
+w2.step(1.0 / 60.0);
+var p = w2.get_position(straight);
+print p.x > 0.0 and p.x < 1.0;
+print p.y == 0.0;
+
+// Drop the ball onto the ground and confirm it settles + reports contact.
+var i = 0;
+var found_collision = false;
+while (i < 180) {
+  w.step(1.0 / 60.0);
+  var hits = w.collisions();
+  if (len(hits) > 0) {
+    found_collision = true;
+  }
+  i = i + 1;
+}
+print found_collision;
+var pos = w.get_position(ball);
+print pos.y > -4.0 and pos.y < -3.0;
+
+// Velocity/angular velocity/rotation readback and force/impulse/torque
+// application don't error.
+w.apply_force(ball, vec2(0, 1));
+w.apply_impulse(ball, vec2(0, 1));
+w.apply_torque(ball, 1.0);
+var vel = w.get_velocity(ball);
+print type(vel);
+var av = w.get_angular_velocity(ball);
+print type(av);
+var rot = w.get_rotation(ground);
+print rot;
+
+// Gravity get/set.
+w.set_gravity(vec2(0, -1));
+print w.get_gravity();
+
+// Remove/count.
+w.remove(ball);
+print w.count();
+
+// Error paths.
+try {
+  w.get_position(99999);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+try {
+  w.add_circle(vec2(0, 0), 1.0, 5, 1.0, 0.3, 0.3);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+try {
+  w.remove(ball);
+} except RunTimeError as e {
+  print "caught: " & e.msg;
+}
+
+print "done";

@@ -21,15 +21,17 @@ import "../vm"
 // type), and vm/builtins.odin's define_builtin for the wrapper that
 // casts it back on this package's behalf.
 
-// define_natives registers every native (raylib-backed) object/function
-// with v -- called from main.odin right after vm.define_builtins. Each
-// module it registers (colour_utils, gfx, physics, inspect, re, pickle,
-// process, sound) is implemented in its own sibling file; see that
-// file's own doc comment for what it covers.
+// define_natives registers every native object/function with v -- called
+// from main.odin right after vm.define_builtins. Most modules it registers
+// are raylib-backed (colour_utils, gfx, sound); physics and box2d are not
+// (physics is hand-rolled, box2d wraps vendor:box2d). Each module is
+// implemented in its own sibling file; see that file's own doc comment for
+// what it covers.
 define_natives :: proc(v: ^vm.VM) {
 	register_colour_utils(v)
 	register_gfx(v)
 	register_physics(v)
+	register_box2d(v)
 	register_inspect(v)
 	register_re(v)
 	register_pickle(v)
