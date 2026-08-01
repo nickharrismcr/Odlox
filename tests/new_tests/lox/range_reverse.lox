@@ -1,0 +1,32 @@
+// Regression test: range() with a negative step must count down, not
+// yield nothing. int_iterator_next used to check only `index >= end`,
+// which is correct for an ascending range but exhausts a descending one
+// on its very first check (e.g. range(10, 0, -1): 10 >= 0 is already
+// true).
+
+foreach (i in range(10, 0, -1)) {
+    print i;
+}
+
+foreach (i in range(10, 0, -2)) {
+    print i;
+}
+
+// Ascending ranges (the already-working case) must stay correct.
+foreach (i in range(0, 5)) {
+    print i;
+}
+
+foreach (i in range(0, 10, 2)) {
+    print i;
+}
+
+// Degenerate: ascending bounds with a negative step must yield nothing,
+// not loop forever or error.
+count = 0;
+foreach (i in range(0, 10, -1)) {
+    count = count + 1;
+}
+print count;
+
+print "done";

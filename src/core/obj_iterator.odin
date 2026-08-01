@@ -42,8 +42,19 @@ make_int_iterator_object :: proc(start, end, step: int) -> ^Int_Iterator_Object 
 }
 
 int_iterator_next :: proc(it: ^Int_Iterator_Object) -> Value {
-	if it.index >= it.end {
-		return NIL_VALUE
+	// A positive step counts up toward end (exhausted once index reaches
+	// or passes it); a negative step counts down toward end (exhausted
+	// once index reaches or drops below it). Without this split, a
+	// descending range like range(10, 0, -1) exhausts on the very first
+	// check (index=10 >= end=0 is already true) and yields nothing.
+	if it.step > 0 {
+		if it.index >= it.end {
+			return NIL_VALUE
+		}
+	} else {
+		if it.index <= it.end {
+			return NIL_VALUE
+		}
 	}
 	v := make_int_value(it.index, true)
 	it.index += it.step
