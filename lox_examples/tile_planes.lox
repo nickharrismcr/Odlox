@@ -109,6 +109,7 @@ class Tiler {
         this.scroll_angle = math.atan2(speed.y, speed.x)
         this.scroll_speed = math.sqrt(speed.x * speed.x + speed.y * speed.y)
         this.target_angle = this.scroll_angle
+        this.hash_seed = rn.float(0.0, 1000.0) // per-layer tile_hash seed
     }
     add(tile) {
         this.tile = tile
@@ -137,23 +138,47 @@ class Tiler {
     draw(win) {
         var tw = this.tile.width * this.scale
         var th = this.tile.height * this.scale
-        var ox = - (( (int(this.offset.x) % int(tw)) + int(tw) ) % int(tw) )
-        var oy = - (( (int(this.offset.y) % int(th)) + int(th) ) % int(th) )
+        var itw = int(tw)
+        var ith = int(th)
+        var ioffx = int(this.offset.x)
+        var ioffy = int(this.offset.y)
+        var mx = ((ioffx % itw) + itw) % itw
+        var my = ((ioffy % ith) + ith) % ith
+        var ox = -mx
+        var oy = -my
+        // Derived from the same mx/my as ox/oy above (not a separate
+        // floor(offset/tw)) so they can never disagree -- floor() and
+        // int()'s truncate-toward-zero only agree for offset >= 0, and
+        // offset goes negative once a Tiler's scroll direction reverses.
+        var base_i = int((ioffx - mx) / itw)
+        var base_j = int((ioffy - my) / ith)
         for (var j = 0; j < this.tiles_h; j = j + 1) {
             for (var i = 0; i < this.tiles_w; i = i + 1) {
+                if (tile_hash(i + base_i, j + base_j, this.hash_seed) < SKIP_PROBABILITY) {
+                    continue
+                }
                 var sx = ox + i * tw
                 var sy = oy + j * th
-                
-                    
+
+
                 this.tile.move(vec2(sx, sy))
                 this.tile.draw(win)
-            
-                
+
+
             }
         }
     }
 }
  
+
+SKIP_PROBABILITY = 0.4 // fraction of grid cells left empty per layer
+
+// Deterministic sin/fract hash -> [0, 1): same (i, j, seed) always gives
+// the same result, unlike rn.* which advances a shared random stream.
+func tile_hash(i, j, seed) {
+    var v = math.sin(float(i) * 12.9898 + float(j) * 78.233 + seed) * 43758.5453
+    return v - floor(v)
+}
 
 func make_lines(n, width, height, alpha,margin) {
     var lines = []
@@ -169,7 +194,7 @@ func make_lines(n, width, height, alpha,margin) {
 
 func get_tilers()
 {
-    var margin = 100 // adjust as needed for inner square size
+    var margin = 10 // adjust as needed for inner square size
     tilers= [] 
     t=Tiler(1.0,vec2(4,4))
     t.add(Tile(ww, wh, make_lines(5, ww, wh, 255, margin), margin))
@@ -187,7 +212,7 @@ func get_tilers()
 }
 
 func clear_tilers(tilers) {
-    margin = 100
+    margin = 10
     for (i = 0; i < len(tilers); i = i + 1) {
         t = tilers[i]
         t.tile.clear(vec4(0, 0, 0, 0)) // Use transparent clear, not black
