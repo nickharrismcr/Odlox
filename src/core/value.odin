@@ -154,30 +154,6 @@ as_dict :: proc(v: Value) -> ^Dict_Object {
 as_float_array :: proc(v: Value) -> ^Float_Array_Object {
 	return cast(^Float_Array_Object)v.obj
 }
-as_window :: proc(v: Value) -> ^Window_Object {
-	return cast(^Window_Object)v.obj
-}
-as_image :: proc(v: Value) -> ^Image_Object {
-	return cast(^Image_Object)v.obj
-}
-as_texture :: proc(v: Value) -> ^Texture_Object {
-	return cast(^Texture_Object)v.obj
-}
-as_render_texture :: proc(v: Value) -> ^Render_Texture_Object {
-	return cast(^Render_Texture_Object)v.obj
-}
-as_shader :: proc(v: Value) -> ^Shader_Object {
-	return cast(^Shader_Object)v.obj
-}
-as_camera :: proc(v: Value) -> ^Camera_Object {
-	return cast(^Camera_Object)v.obj
-}
-as_batch :: proc(v: Value) -> ^Batch_Object {
-	return cast(^Batch_Object)v.obj
-}
-as_batch_instanced :: proc(v: Value) -> ^Batch_Instanced_Object {
-	return cast(^Batch_Instanced_Object)v.obj
-}
 as_userdata :: proc(v: Value) -> ^Userdata_Object {
 	return cast(^Userdata_Object)v.obj
 }

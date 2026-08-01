@@ -35,20 +35,11 @@ Object_Type :: enum u8 {
 
 	Float_Array,
 
-	Window,
-	Image,
-	Texture,
-	Render_Texture,
-	Shader,
-	Camera,
-	Batch,
-	Batch_Instanced,
-
-	// Userdata: pluggable native-extension objects (Sound/Music/Process/
-	// Regex Pattern/Match/PhysicsWorld so far -- see obj_userdata.odin's
-	// doc comment and natives/README.md). Every other native kind
-	// (Image, Texture, ...) still gets its own tag above; migrating them
-	// is ongoing.
+	// Userdata: pluggable native-extension objects -- every native kind
+	// (Sound/Music/Process/Regex Pattern+Match/PhysicsWorld/Window/Image/
+	// Texture/Render_Texture/Shader/Camera/Batch/Batch_Instanced) is one
+	// of these now. See obj_userdata.odin's doc comment and
+	// natives/README.md.
 	Userdata,
 }
 
@@ -118,36 +109,6 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	case .Float_Array:
 		f := cast(^Float_Array_Object)obj
 		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)
-	case .Window:
-		return "<window>"
-	case .Image:
-		i := cast(^Image_Object)obj
-		return fmt.aprintf("<Image %dx%d>", i.width, i.height, allocator = allocator)
-	case .Texture:
-		t := cast(^Texture_Object)obj
-		return fmt.aprintf("<Texture %dx%d>", t.width, t.height, allocator = allocator)
-	case .Render_Texture:
-		rt := cast(^Render_Texture_Object)obj
-		return fmt.aprintf("<RenderTexture %dx%d>", rt.width, rt.height, allocator = allocator)
-	case .Shader:
-		s := cast(^Shader_Object)obj
-		return fmt.aprintf("<Shader ID:%d>", s.shader.id, allocator = allocator)
-	case .Camera:
-		return "<Camera3D>"
-	case .Batch:
-		b := cast(^Batch_Object)obj
-		type_name := "CUBE"
-		#partial switch b.batch_type {
-		case .Sphere: type_name = "SPHERE"
-		case .Triangle3: type_name = "TRIANGLE3"
-		case .Circle3: type_name = "CIRCLE3"
-		}
-		return fmt.aprintf("<Batch %s [%d entries]>", type_name, batch_count(b), allocator = allocator)
-	case .Batch_Instanced:
-		// Unlike every other native type here, this returns a plain,
-		// unembellished string rather than the "<Type ...>" bracket
-		// convention.
-		return "BatchInstancedObject"
 	case .Userdata:
 		u := cast(^Userdata_Object)obj
 		if u.vtable.to_string != nil {

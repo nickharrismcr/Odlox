@@ -45,6 +45,12 @@ Userdata_Vtable :: struct {
 
 	// invoke: dispatch a `.method(args)` call. Never nil.
 	invoke: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int) -> bool,
+
+	// get_property: resolve a bare `.NAME` property read (not a call) --
+	// e.g. Window's win.KEY_SPACE/win.BLEND_ALPHA/win.BATCH_CUBE
+	// constants. nil for every kind with no such properties (the common
+	// case -- everything so far except Window).
+	get_property: proc(data: rawptr, name: string) -> (Value, bool),
 }
 
 Userdata_Object :: struct {

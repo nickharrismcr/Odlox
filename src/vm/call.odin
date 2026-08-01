@@ -166,22 +166,6 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_string(vm, core.as_string(receiver), core.string_get(name), arg_count)
 	case .Float_Array:
 		return invoke_builtin_float_array(vm, core.as_float_array(receiver), core.string_get(name), arg_count)
-	case .Window:
-		return invoke_builtin_window(vm, core.as_window(receiver), core.string_get(name), arg_count)
-	case .Image:
-		return invoke_builtin_image(vm, core.as_image(receiver), core.string_get(name), arg_count)
-	case .Texture:
-		return invoke_builtin_texture(vm, core.as_texture(receiver), core.string_get(name), arg_count)
-	case .Render_Texture:
-		return invoke_builtin_render_texture(vm, core.as_render_texture(receiver), core.string_get(name), arg_count)
-	case .Shader:
-		return invoke_builtin_shader(vm, core.as_shader(receiver), core.string_get(name), arg_count)
-	case .Camera:
-		return invoke_builtin_camera(vm, core.as_camera(receiver), core.string_get(name), arg_count)
-	case .Batch:
-		return invoke_builtin_batch(vm, core.as_batch(receiver), core.string_get(name), arg_count)
-	case .Batch_Instanced:
-		return invoke_builtin_batch_instanced(vm, core.as_batch_instanced(receiver), core.string_get(name), arg_count)
 	case .Userdata:
 		u := core.as_userdata(receiver)
 		return u.vtable.invoke(rawptr(vm), u.data, core.string_get(name), arg_count)

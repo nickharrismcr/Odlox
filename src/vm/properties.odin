@@ -69,16 +69,21 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 			}
 			runtime_error(vm, "Undefined module property '%s'.", core.string_get(name))
 			return false
-		case .Window:
-			// `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*` are registered
-			// directly on the window object, not as module-level
-			// constants -- see gfx_window.odin's window_constant.
-			if v, ok := window_constant(core.string_get(name)); ok {
-				pop(vm)
-				push(vm, v)
-				return true
+		case .Userdata:
+			// `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*`/`win.BATCH_*` are
+			// registered directly on the window object via its vtable's
+			// get_property, not as module-level constants -- see
+			// natives/gfx_window.odin's window_constant. nil for every
+			// other Userdata kind (no bare-property reads defined).
+			u := core.as_userdata(receiver)
+			if u.vtable.get_property != nil {
+				if v, ok := u.vtable.get_property(u.data, core.string_get(name)); ok {
+					pop(vm)
+					push(vm, v)
+					return true
+				}
 			}
-			runtime_error(vm, "Undefined window property '%s'.", core.string_get(name))
+			runtime_error(vm, "Undefined property '%s'.", core.string_get(name))
 			return false
 		}
 	}

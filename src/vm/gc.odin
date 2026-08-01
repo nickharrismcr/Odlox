@@ -1,7 +1,6 @@
 package vm
 
 import "../core"
-import rl "vendor:raylib"
 
 // Mark-and-sweep collector -- design documented in
 // docs/ARCHITECTURE.md's Garbage collector section. Two refinements
@@ -367,42 +366,6 @@ free_object :: proc(obj: ^core.Obj) {
 		f := cast(^core.Float_Array_Object)obj
 		delete(f.data)
 		free(f)
-	case .Image:
-		// Frees the underlying rl.Image -- safe because Image's own
-		// Lox-facing surface (width/height) never touches pixel data
-		// again once a Texture has been built from it, so freeing it
-		// when unreachable changes no observable behavior. See
-		// core/obj_image.odin's header comment.
-		img := cast(^core.Image_Object)obj
-		rl.UnloadImage(img.image)
-		free(img)
-	case .Texture:
-		t := cast(^core.Texture_Object)obj
-		core.texture_unload(t) // no-op if already .unload()ed, see obj_texture.odin
-		delete(t.frame_rects)
-		free(t)
-	case .Render_Texture:
-		rt := cast(^core.Render_Texture_Object)obj
-		core.render_texture_unload(rt) // no-op if already .unload()ed
-		free(rt)
-	case .Shader:
-		s := cast(^core.Shader_Object)obj
-		core.shader_unload(s) // no-op if already .unload()ed, and for a never-loaded gfx.shader() -- rl.UnloadShader(Shader{}) is a safe no-op in raylib itself
-		free(s)
-	case .Batch:
-		bt := cast(^core.Batch_Object)obj
-		delete(bt.entries)
-		delete(bt.triangles)
-		delete(bt.circles)
-		free(bt)
-	case .Batch_Instanced:
-		// No GC-triggered GPU teardown here either -- the same
-		// convention already established for Window_Object's cube_mesh
-		// and Batch_Object's circle_mesh.
-		bi := cast(^core.Batch_Instanced_Object)obj
-		delete(bi.entries)
-		delete(bi.transforms)
-		free(bi)
 	case .Userdata:
 		u := cast(^core.Userdata_Object)obj
 		u.vtable.free(u.data) // tears down + frees u.data itself
@@ -443,37 +406,6 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		// exactly the allocation-heavy case this object exists for.
 		f := cast(^core.Float_Array_Object)obj
 		return size_of(core.Float_Array_Object) + len(f.data) * size_of(f64)
-	case .Image:
-		// Dominated by the CPU-side pixel buffer, same reasoning as
-		// Float_Array above.
-		img := cast(^core.Image_Object)obj
-		return size_of(core.Image_Object) + img.width * img.height * 4
-	case .Texture:
-		t := cast(^core.Texture_Object)obj
-		return size_of(core.Texture_Object) + len(t.frame_rects) * size_of(rl.Rectangle)
-	case .Render_Texture:
-		// Dominated by the optional array_texture (draw_array_fast) when
-		// present -- a fullscreen fractal, say -- same reasoning as
-		// Image/Texture above.
-		rt := cast(^core.Render_Texture_Object)obj
-		size := size_of(core.Render_Texture_Object)
-		if rt.array_texture_valid {
-			size += rt.array_texture_w * rt.array_texture_h * 4
-		}
-		return size
-	case .Shader:
-		return size_of(core.Shader_Object)
-	case .Batch:
-		bt := cast(^core.Batch_Object)obj
-		return size_of(core.Batch_Object) +
-			len(bt.entries) * size_of(core.Batch_Entry) +
-			len(bt.triangles) * size_of(core.Triangle_Batch_Entry) +
-			len(bt.circles) * size_of(core.Circle_Batch_Entry)
-	case .Batch_Instanced:
-		bi := cast(^core.Batch_Instanced_Object)obj
-		return size_of(core.Batch_Instanced_Object) +
-			len(bi.entries) * size_of(core.Batch_Instanced_Entry) +
-			len(bi.transforms) * size_of(rl.Matrix)
 	case .Userdata:
 		u := cast(^core.Userdata_Object)obj
 		size := size_of(core.Userdata_Object)
