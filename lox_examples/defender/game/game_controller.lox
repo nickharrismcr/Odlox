@@ -58,6 +58,8 @@ const INTRO_PRESENTS_SRC_X = 304
 const INTRO_PRESENTS_SRC_Y = 259
 const INTRO_PRESENTS_SRC_W = 361
 const INTRO_PRESENTS_SRC_H = 406
+const INTRO_CONTROLS_TEXT = "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE BACKSPACE=BOMB - PRESS SPACE TO PLAY"
+const INTRO_CONTROLS_MARGIN = 40  // horizontal breathing room so the line never touches the screen edges
 
 class GameController {
     init(cfg, entities, ship, ship_img, smartbomb_img) {
@@ -165,7 +167,11 @@ class GameController {
         }
 
         if (this.intro_timer > INTRO_TEXT_AT) {
-            draw_centered(win, font, "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE BACKSPACE=BOMB - PRESS SPACE TO PLAY", width/2, height - 100, colour.BLUE)
+            // Shrinks the line to fit within width - INTRO_CONTROLS_MARGIN if
+            // it would otherwise overflow at native size (1.0); never scales
+            // up past native size on a wide screen.
+            controls_scale = math.min(1.0, (width - INTRO_CONTROLS_MARGIN) / font.width(INTRO_CONTROLS_TEXT))
+            draw_centered(win, font, INTRO_CONTROLS_TEXT, width/2, height - 100, colour.BLUE, controls_scale)
         }
     }
 
@@ -201,8 +207,8 @@ class GameController {
     }
 }
 
-func draw_centered(win, font, s, cx, y, col) {
-    font.draw(win, s, cx - font.width(s) / 2, y, col)
+func draw_centered(win, font, s, cx, y, col, scale = 1.0) {
+    font.draw(win, s, cx - font.width(s, scale) / 2, y, col, scale)
 }
 
 func enter_intro(g) {

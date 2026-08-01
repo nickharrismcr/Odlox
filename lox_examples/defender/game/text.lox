@@ -27,19 +27,29 @@ class Font {
         this.chars = this.index.keys()
     }
 
-    width(s) {
-        return len(s) * ADVANCE
+    // scale defaults to 1.0 (the atlas's native ADVANCE-per-character pitch);
+    // pass a smaller value to shrink a line that would otherwise overflow the
+    // screen (see game_controller.lox's draw_intro, which scales the controls
+    // line down to fit the play area width).
+    width(s, scale = 1.0) {
+        return len(s) * ADVANCE * scale
     }
 
-    // Draw s at screen (x, y), tinted col. Characters outside the atlas (a space,
-    // say) draw nothing but still advance the pen.
-    draw(win, s, x, y, col) {
+    // Draw s at screen (x, y), tinted col, at the given scale (1.0 = native
+    // size). Characters outside the atlas (a space, say) draw nothing but
+    // still advance the pen. Uses draw_texture_pro (not the fixed-size
+    // draw_texture_rect every other atlas draw in this file used) since only
+    // draw_texture_pro supports a dest size that differs from the source.
+    draw(win, s, x, y, col, scale = 1.0) {
         cx = x
+        ink_w = INK_W * scale
+        ink_h = INK_H * scale
+        advance = ADVANCE * scale
         foreach (var c in s) {
             if (c in this.chars) {
-                win.draw_texture_rect(this.tex, cx, y, this.index[c] * PITCH, 0, INK_W, INK_H, col)
+                win.draw_texture_pro(this.tex, this.index[c] * PITCH, 0, INK_W, INK_H, cx, y, ink_w, ink_h, 0, 0, 0, col)
             }
-            cx = cx + ADVANCE
+            cx = cx + advance
         }
     }
 }
