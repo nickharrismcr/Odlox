@@ -4,23 +4,39 @@ package core
 import "core:mem"
 import "core:strings"
 
-// String_Object: the one Object kind that's always permanent (see the
-// intern table below) and always accessed through a canonical pointer.
+// String_Object: at or under STRING_INTERN_MAX_LEN bytes, always permanent
+// (see the intern table below) and always accessed through a canonical
+// pointer -- collectible is false, and .chars is never freed. Interning
+// maps a string's content straight to the canonical `^String_Object` -- so
+// a Value naming a short string already just *is* a pointer to the one
+// true object for that content, and there is no separate id to keep in
+// sync (see value.odin's objects_equal doc comment). This also gives every
+// name-keyed map in the object model (Class.methods/statics,
+// Instance.fields, Dict.items, Environment.vars) a natural key type:
+// `^String_Object` directly, with no separate intern-to-an-id step --
+// those maps require the canonical pointer regardless of length, so any
+// call site building a map key from a Value that might be long calls
+// intern_string itself (see vm/collections.odin's dict_key doc comment).
 //
-// Interning maps a string's content straight to the canonical
-// `^String_Object` -- so a Value naming a string already just *is* a
-// pointer to the one true object for that content, and there is no
-// separate id to keep in sync (see value.odin's values_equal: two
-// strings are equal iff `s1.chars == s2.chars`, and that's true iff
-// they're the same object, because interning guarantees it). This also
-// gives every other name-keyed map in the object model
-// (Class.methods/statics, Instance.fields, Dict.items, Environment.vars)
-// a natural key type: `^String_Object` directly, with no separate
-// intern-to-an-id step.
+// Over STRING_INTERN_MAX_LEN bytes, collectible is true instead: an
+// ordinary GC'd object (own allocation, not deduplicated, not in
+// intern_table), swept by vm/gc.odin like any other heap value once
+// unreachable -- interning bulk/unbounded runtime data (a socket read, a
+// file read) forever was a real memory leak; see
+// docs/plans/string-interning-split.md for the full writeup, including
+// the two map-key/identifier correctness follow-ons this required.
+// Equality (`==`) needs no special case either way: Odin's native
+// `string` `==` (see make_string_value's two branches) is a full content
+// comparison, not a pointer compare.
 String_Object :: struct {
-	using obj: Obj,
-	chars:     string, // canonical, owned, immutable bytes
+	using obj:   Obj,
+	chars:       string, // canonical if !collectible, owned either way
+	collectible: bool,   // false (the zero value) = permanent/interned, matching every pre-existing String_Object
 }
+
+// STRING_INTERN_MAX_LEN matches Lua's own short/long string split
+// (LUAI_MAXSHORTLEN defaults to 40 bytes there too). See make_string_value.
+STRING_INTERN_MAX_LEN :: 40
 
 @(private = "file")
 intern_table: map[string]^String_Object
@@ -58,7 +74,42 @@ intern_string :: proc(s: string) -> ^String_Object {
 	return obj
 }
 
+// make_string_value interns s (permanent, deduplicated) when it's at or
+// under STRING_INTERN_MAX_LEN bytes -- unchanged behavior for every
+// existing caller, since identifiers/literals/ordinary computed strings
+// are almost always short. Over that length, it builds an ordinary
+// collectible String_Object instead: not registered in intern_table, own
+// clone of s so the caller's source buffer can be freed/reused
+// immediately after this returns. Not yet gc_track'd -- this proc runs
+// from core/compiler, below vm in the package graph, with no ^VM in
+// scope (same reason intern_string never could either); a caller with a
+// ^VM that wants a long result to actually be collected should call
+// vm.make_tracked_string_value instead (vm/gc.odin) -- see that proc's
+// own doc comment.
 make_string_value :: proc(s: string, immutable := false) -> Value {
+	if len(s) <= STRING_INTERN_MAX_LEN {
+		return make_object_value(&intern_string(s).obj, immutable)
+	}
+	obj := new(String_Object)
+	obj.obj.type = .String
+	obj.chars = strings.clone(s)
+	obj.collectible = true
+	return make_object_value(&obj.obj, immutable)
+}
+
+// make_interned_string_value always interns s (permanent, deduplicated,
+// canonical pointer) regardless of length, bypassing STRING_INTERN_MAX_LEN
+// entirely -- for compiler-emitted identifiers (property/method/super/
+// class/module/global names, in compiler/expr.odin and compiler/stmt.odin)
+// and anywhere else a string is used as a map key rather than as string
+// data a script manipulates. Class.methods/statics, Instance.fields, and
+// Dict.items (via vm/collections.odin's dict_key/vm/call.odin's dict
+// get/remove) all require the canonical pointer no matter how long the
+// name is -- a >40-byte property name compiled through plain
+// make_string_value in two different chunks would silently get two
+// different, non-interned objects instead of sharing one, breaking
+// property/method dispatch for that name.
+make_interned_string_value :: proc(s: string, immutable := false) -> Value {
 	return make_object_value(&intern_string(s).obj, immutable)
 }
 

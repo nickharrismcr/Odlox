@@ -311,7 +311,7 @@ x, y, z = (10, 20, 30)</code></pre>
 <tr><td><code>"float"</code></td><td>64-bit floating point</td><td><code>3.14</code>, <code>2.0</code></td></tr>
 <tr><td><code>"bool"</code></td><td>Boolean</td><td><code>true</code>, <code>false</code></td></tr>
 <tr><td><code>"nil"</code></td><td>Absence of a value</td><td><code>nil</code></td></tr>
-<tr><td><code>"string"</code></td><td>Interned immutable string</td><td><code>"hello"</code></td></tr>
+<tr><td><code>"string"</code></td><td>Immutable string</td><td><code>"hello"</code></td></tr>
 <tr><td><code>"list"</code></td><td>Mutable ordered sequence</td><td><code>[1, 2, 3]</code></td></tr>
 <tr><td><code>"tuple"</code></td><td>Immutable ordered sequence</td><td><code>(1, 2, 3)</code></td></tr>
 <tr><td><code>"dict"</code></td><td>Hash map</td><td><code>{"k": "v"}</code></td></tr>
@@ -632,7 +632,7 @@ print float(3)  // 3.0</code></pre>
 
 <!-- ==================== STRINGS ==================== -->
 <h2 class="section" id="strings">Strings</h2>
-<p>Strings are immutable and interned (the VM works with integer string IDs internally for fast lookup). They support concatenation, repetition, slicing, membership and iteration.</p>
+<p>Strings are immutable. Short strings (40 bytes or under — identifiers, small literals/values) are interned to one canonical object internally, so equality and dict/property/global lookups are a pointer compare, not a byte-by-byte one; longer strings are ordinary garbage-collected values with the same behavior otherwise. They support concatenation, repetition, slicing, membership and iteration.</p>
 <pre><code class="lox">s = "hello"
 print len(s)          // 5
 print s & " world"    // concatenation
@@ -2044,7 +2044,7 @@ print counter   // always exactly 20</code></pre>
 <li>Prefer <a href="#control-flow"><code>foreach (i in range(n))</code></a> over manual counter loops — <code>range</code> is a native iterator.</li>
 <li>Use <a href="#batch"><code>batch</code></a> / <a href="#batch-instanced"><code>batch_instanced</code></a> for large numbers of similar primitives instead of per-object draw calls.</li>
 <li>Move hot per-object simulation into native types where available (e.g. <a href="#physics-world"><code>physics_world</code></a>) rather than per-object Lox method dispatch.</li>
-<li>Strings are interned; equality and method/global lookup use integer IDs.</li>
+<li>Short strings (40 bytes or under — identifiers, small values) are interned to a canonical pointer, so equality and method/property/global lookup are pointer compares; longer strings are ordinary garbage-collected values, not interned.</li>
 </ul>
 <p>Interpreter-level optimisations include a 16-byte <code>Value</code> struct, slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>Add_Ii</code>/<code>Add_Ff</code>/<code>Incr_Const_I</code>/<code>Incr_Const_F</code>), a monomorphic inline cache on property/method access, inline call frames, and a hoisted dispatch-loop frame context.</p>
 

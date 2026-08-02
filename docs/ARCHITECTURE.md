@@ -365,10 +365,17 @@ glox interns every string through a global `map[string]int` (name → id;
 works because both sides happen to carry the same cached id.
 
 odlox's intern table maps `string → ^String_Object` instead of `string →
-int`. Every `Value` that denotes a string holds `payload.obj` pointing at
-that *one* canonical `String_Object` — so two equal strings are, by
-construction, the same pointer. `ValuesEqual` for two `Object_Type.String`
-values is just `a.payload.obj == b.payload.obj`; there's no separate id
+int`. Every `Value` that denotes a string *at or under
+`core.STRING_INTERN_MAX_LEN` bytes* holds `payload.obj` pointing at that
+*one* canonical `String_Object` — so two equal short strings are, by
+construction, the same pointer (longer strings are ordinary
+garbage-collected objects instead, not deduplicated — see
+[String interning: later split by length](#string-interning-later-split-by-length-not-permanent-for-every-string)
+below). `ValuesEqual`/`objects_equal` for two `Object_Type.String` values
+is a content comparison (`s1.chars == s2.chars`, Odin's native `string`
+`==`) rather than a bare pointer compare — behaviorally equivalent to
+`a.payload.obj == b.payload.obj` back when every string really was
+interned, but also correct now that some aren't; there's no separate id
 field to keep in sync (see [Value representation](#value-representation)
 for why `InternedId` was dropped from `Value` entirely), and no fallback
 path is needed the way glox's generic-object equality falls back to
@@ -490,26 +497,49 @@ and `String_Object` by `core.intern_string`, called from both the compiler
 and the VM — neither has a `^VM` in scope, for the same package-graph
 reason `core.Native_Object`'s `Builtin_Fn` needed a `rawptr` boundary in
 Phase 2 (`core` sits below both `compiler` and `vm`; see
-[Package layout](#package-layout)). Both remain structurally permanent —
-still fully traced (a closure stashed in a class static, or a string held
-only by an interned-but-unlinked pointer, stays correctly reachable), just
-never freed. Not a change of plan so much as discovering that "no VM in
-scope" is a real constraint two of the four kinds run into and two don't.
+[Package layout](#package-layout)). `Function_Object` remains fully
+structurally permanent — still fully traced (a closure stashed in a class
+static stays correctly reachable), just never freed; that's proportionate
+to how many distinct functions a program actually compiles, a bounded set.
+`String_Object` originally landed the same way, for the same reason — but
+see the next section for why that stopped being true for *all* strings.
 
-### String weak-table sweeping: deferred, not implemented
+### String interning: later split by length, not permanent for every string
 
-The follow-on idea from the original plan — treat the intern table as a
-*weak* set, removing an entry once its `String_Object` goes unmarked for a
-cycle (clox's and odinLox's actual answer, `tableRemoveWhite`) — needs
-`String_Object` to be a normal sweepable object first, which the section
-above explains it structurally can't be without moving where interning
-happens (likely into the `vm` package itself, sacrificing "the compiler
-can intern constants with no VM in scope at all"). Not attempted this
-phase; interned strings are permanent for now, matching glox's actual
-behavior (though arrived at for a different reason) rather than the
-originally-planned improvement. Worth revisiting if a long-running
-REPL/script session's intern-table growth ever actually matters in
-practice — there's no evidence yet that it does.
+At the time this GC design landed (Phase 4), `String_Object` was made
+structurally permanent for the reason above, matching glox's own behavior
+(though arrived at differently — glox leans on Go's GC as a backstop for
+its own permanently-registered strings; odlox has no such backstop, it's
+just genuinely never freed). The follow-on idea noted at the time — treat
+the intern table as a *weak* set, removing an entry once its
+`String_Object` goes unmarked for a cycle (clox's/odinLox's actual answer,
+`tableRemoveWhite`) — was left unimplemented, since it needs
+`String_Object` to be a normal sweepable object first, which (per the
+section above) it structurally can't be without moving where interning
+happens.
+
+**This did eventually matter in practice**, once native code started
+interning bulk external data rather than just compiler-emitted identifiers
+— `socket.recv()`/`try_recv()` turned every distinct payload a script read
+into a permanent `intern_table` entry, an unbounded leak for a
+long-running script reading a lot of unique data. The actual fix wasn't
+the weak-table idea above (still blocked on the same "no VM in scope"
+constraint) but a length split instead, closer to Lua's own short/long
+string design: `core.STRING_INTERN_MAX_LEN` (40 bytes, matching Lua's
+`LUAI_MAXSHORTLEN` default) — strings at or under that length still
+intern exactly as described above (permanent, deduplicated, canonical
+pointer); longer strings get an ordinary `collectible` `String_Object`
+instead, swept like any other heap value once unreachable. Two
+correctness follow-ons this required — `Dict`'s `map[^String_Object]Value`
+genuinely depends on pointer identity (fixed at its 3 call sites that
+didn't already re-intern), and compiler-emitted *identifiers*
+(property/method/class/module/global names) turned out not to be
+guaranteed short either, so those now always intern via a dedicated
+`core.make_interned_string_value`, bypassing the length check entirely —
+are covered in full in
+[`docs/plans/string-interning-split.md`](plans/string-interning-split.md),
+along with what was audited to confirm `Class.methods/statics`/
+`Instance.fields`/`Environment.vars` needed no equivalent change.
 
 ### GCFreer equivalent
 

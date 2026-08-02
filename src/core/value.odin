@@ -255,12 +255,17 @@ values_equal :: proc(a, b: Value, types_must_match: bool) -> bool {
 }
 
 // objects_equal implements object-kind equality for two Values already
-// confirmed to share an Object_Type. Strings get the canonical-pointer
-// fast path (interning guarantees equal content <=> equal pointer, see
-// obj_string.odin); lists/dicts get real recursive structural equality;
-// every other kind (functions, closures, classes, instances, modules,
-// natives, files, iterators, bound methods) is reference/identity
-// equality, matching Lox's normal "same object" semantics for those.
+// confirmed to share an Object_Type. Strings compare by content
+// (`s1.chars == s2.chars` is Odin's native string equality -- a real
+// byte comparison, not a pointer compare): for interned (short, see
+// obj_string.odin's STRING_INTERN_MAX_LEN) strings this is equivalent to
+// a pointer compare since interning guarantees equal content <=> equal
+// pointer, but it's also correct on its own for two collectible (long)
+// strings that happen to share content without sharing an allocation.
+// Lists/dicts get real recursive structural equality; every other kind
+// (functions, closures, classes, instances, modules, natives, files,
+// iterators, bound methods) is reference/identity equality, matching
+// Lox's normal "same object" semantics for those.
 @(private = "file")
 objects_equal :: proc(a, b: ^Obj) -> bool {
 	if a == b {
@@ -270,7 +275,7 @@ objects_equal :: proc(a, b: ^Obj) -> bool {
 	case .String:
 		s1 := cast(^String_Object)a
 		s2 := cast(^String_Object)b
-		return s1.chars == s2.chars // canonical: equal content already means equal pointer
+		return s1.chars == s2.chars
 	case .List:
 		l1 := cast(^List_Object)a
 		l2 := cast(^List_Object)b

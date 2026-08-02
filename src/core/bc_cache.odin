@@ -279,14 +279,27 @@ bc_dec_value :: proc(d: ^Bc_Decoder) -> (v: Value, ok: bool) {
 		r.data = n
 		return r, true
 	case .String:
-		// make_string_value interns (and clones internally on first
-		// sight) -- s itself is a slice into d.data and never retained
-		// past this call, so no explicit clone is needed here.
+		// make_interned_string_value (not make_string_value): a chunk's
+		// constant pool holds both literal string values AND identifier
+		// names (property/method/class/module names -- compiled via
+		// make_interned_string_value too, see compiler/expr.odin,stmt.odin),
+		// indistinguishable once serialized down to a generic .String
+		// constant tag. Always interning on cache-load keeps identifier
+		// constants correct (map-keyed lookups need the canonical pointer
+		// regardless of length); the cost is a long string *literal*
+		// staying permanently interned when loaded from a bytecode cache,
+		// same as every string did before STRING_INTERN_MAX_LEN existed,
+		// rather than getting the length-split treatment a fresh compile
+		// of the same source would give it -- acceptable since a literal's
+		// content is bounded by source size, not external runtime data
+		// (the actual leak source the split exists for). s itself is a
+		// slice into d.data and never retained past this call, so no
+		// explicit clone is needed here.
 		s, sok := bc_dec_string(d)
 		if !sok {
 			return NIL_VALUE, false
 		}
-		return make_string_value(s), true
+		return make_interned_string_value(s), true
 	case .Function:
 		fn, fok := bc_dec_function(d)
 		if !fok {

@@ -990,7 +990,7 @@ try_except_statement :: proc(p: ^Parser) {
 		saw_except = true
 		advance(p)
 		consume(p, .Identifier, "Expect exception type name.")
-		type_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
+		type_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
 		emit_op(p, .Except)
 		emit_byte(p, type_const)
 		// Except's own 2-byte skip offset makes Op_Except self-describing,
@@ -1068,7 +1068,7 @@ class_declaration :: proc(p: ^Parser) {
 	consume(p, .Identifier, "Expect class name.")
 	name_tok := p.previous
 	class_name := lexeme(name_tok)
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(class_name))
+	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(class_name))
 
 	is_local := p.current_compiler.scope_depth > 0
 	slot := 0
@@ -1152,7 +1152,7 @@ method :: proc(p: ^Parser) {
 
 	consume(p, .Identifier, "Expect method or field name.")
 	name := lexeme(p.previous)
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(name))
+	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(name))
 
 	if !check(p, .Left_Paren) {
 		if !is_static {
@@ -1186,14 +1186,14 @@ method :: proc(p: ^Parser) {
 import_statement :: proc(p: ^Parser) {
 	for {
 		consume(p, .Identifier, "Expect module name.")
-		module_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
+		module_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
 		alias := lexeme(p.previous)
 		alias_const := module_const
 
 		if match(p, .As) {
 			consume(p, .Identifier, "Expect alias after 'as'.")
 			alias = lexeme(p.previous)
-			alias_const = core.chunk_add_constant(current_chunk(p), core.make_string_value(alias))
+			alias_const = core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(alias))
 		}
 
 		emit_op_byte(p, .Import, module_const)
@@ -1215,7 +1215,7 @@ import_statement :: proc(p: ^Parser) {
 
 from_import_statement :: proc(p: ^Parser) {
 	consume(p, .Identifier, "Expect module name.")
-	module_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
+	module_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
 	consume(p, .Import, "Expect 'import' after module name.")
 
 	if match(p, .Star) {
@@ -1242,7 +1242,7 @@ from_import_statement :: proc(p: ^Parser) {
 	for {
 		consume(p, .Identifier, "Expect imported name.")
 		name := lexeme(p.previous)
-		append(&name_consts, core.chunk_add_constant(current_chunk(p), core.make_string_value(name)))
+		append(&name_consts, core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(name)))
 		global_slot(p, name)
 		mark_global_declared(p, name)
 		if !match(p, .Comma) {

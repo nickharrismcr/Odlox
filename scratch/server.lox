@@ -1,0 +1,100 @@
+// File-serving demo server. Listens on a TCP socket; on a "GET" request,
+// picks a random .odin source file from the project and sends it back
+// (framed as two length-prefixed messages: filename, then content).
+// Started by client.lox via process.start() -- see that script.
+
+import socket
+import os
+import sys
+import random
+
+PORT = 45900
+
+func list_source_files(dir) {
+    files = []
+    entries = os.listdir(dir)
+    foreach (entry in entries) {
+        path = os.join(dir, entry)
+        if os.isdir(path) {
+            files = files & list_source_files(path)
+        } else if len(entry) > 5 and entry[len(entry) - 5:] == ".odin" {
+            append(files, path)
+        }
+    }
+    return files
+}
+
+func pad_left(s, width) {
+    while len(s) < width {
+        s = "0" & s
+    }
+    return s
+}
+
+// Wire format: a 10-byte zero-padded decimal length header, then exactly
+// that many bytes of payload. Two of these back to back (filename, then
+// content) make up one response -- sock.recv(n) only ever reads *up to*
+// n bytes, so both ends frame every message this way rather than relying
+// on a single recv() to return a whole message.
+func send_message(sock, payload) {
+    sock.send(pad_left(str(len(payload)), 10))
+    sock.send(payload)
+}
+
+func recv_exact(sock, n) {
+    buf = ""
+    remaining = n
+    while remaining > 0 {
+        chunk = sock.recv(remaining)
+        if chunk == "" {
+            break // peer closed mid-message
+        }
+        buf = buf & chunk
+        remaining = remaining - len(chunk)
+    }
+    return buf
+}
+
+func recv_message(sock) {
+    header = recv_exact(sock, 10)
+    if len(header) < 10 {
+        return nil // connection closed before a full header arrived
+    }
+    return recv_exact(sock, int(header))
+}
+
+// Bind and start listening before doing anything else (in particular,
+// before indexing the source tree below) so a client racing to connect
+// right after starting this process sees the socket up as soon as
+// possible.
+srv = socket.listen("127.0.0.1", PORT)
+print "server: listening on " & srv.local_endpoint()
+
+here = os.dirname(sys.args()[0])
+src_dir = os.join(here, "..", "src")
+files = list_source_files(src_dir)
+print "server: indexed " & str(len(files)) & " source files under " & src_dir
+
+c = srv.accept()
+print "server: client connected from " & c.peer_endpoint()
+
+while true {
+    req = recv_message(c)
+    if req == nil or req == "" {
+        print "server: client disconnected"
+        break
+    }
+    if req == "GET" {
+        path = random.choice(files)
+        content = os.read_all(path)
+        print "server: sending " & os.basename(path) & " (" & str(len(content)) & " bytes)"
+        send_message(c, os.basename(path))
+        send_message(c, content)
+    } else {
+        print "server: unknown request '" & req & "'"
+    }
+}
+
+c.close()
+srv.close()
+print "server: exiting"

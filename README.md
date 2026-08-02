@@ -32,7 +32,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Lists** — slicing, slice assignment, `&` concatenation, `in` membership, `append`/`remove`.
 - **Tuples** — immutable sequences.
 - **Dictionaries** — `get(k, default)`, `keys()`, `remove()`, `in` key membership.
-- **Strings** — `${expr}` interpolation, `format()`, `&` concat, `*` repeat, slicing, `in`, `replace`, `join`; all interned.
+- **Strings** — `${expr}` interpolation, `format()`, `&` concat, `*` repeat, slicing, `in`, `replace`, `join`; short strings (≤40 bytes — identifiers, small literals/values) are interned to a canonical object, longer ones are ordinary garbage-collected values.
 - **Native vectors** `vec2` / `vec3` / `vec4` — a dedicated value tag gives `+`, `.add()` (in-place addition), and `.set()` (in-place replacement) a fast dispatch path distinct from generic object method calls.
 - **`float_array`** — fast native 2D float grid, with bulk RGB-encode/decode helpers for image and data work.
 
@@ -133,7 +133,7 @@ A ratio below 1.00× means odlox is faster. Across the suite: 1.58× arithmetic 
 Optimisations in place:
 - **16-byte `Value` struct** — a tagged union where the payload (an object pointer or a raw `int`/`float`/`bool` bit pattern) shares one 8-byte slot with no unsafe code required, plus a 1-byte type tag and a cached object-subtype tag for O(1) dispatch on the concrete kind of any heap value.
 - **Slot-indexed globals** — globals are stored in a slice indexed by a compiler-assigned integer slot rather than looked up by name at runtime; `Get_Global`/`Set_Global` are a direct slice index, not a hash-map lookup.
-- **String interning** with pointer-identity equality for fast method, property, and global lookup.
+- **String interning** (strings ≤40 bytes — identifiers, small values) with pointer-identity equality for fast method, property, and global lookup; longer strings are ordinary garbage-collected values instead of growing the intern table forever.
 - **Peephole superinstructions** — `Get_Local, Get_Local, Add` collapses to a single `Add_Nn` superinstruction, runtime-specialized to `Add_Ii`/`Add_Ff` on first execution (a minimal inline cache that patches the opcode byte in place); a matching optimisation handles `local = local + constant` via `Incr_Const_I`/`Incr_Const_F`.
 - **Monomorphic inline cache** on `Get_Property`/`Invoke` — a same-class repeat access at a call site skips the method-table lookup entirely after the first hit.
 - **Call frames stored inline** in the VM's own fixed-size array, not heap-allocated, avoiding per-call GC pressure.

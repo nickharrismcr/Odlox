@@ -268,7 +268,7 @@ super_ :: proc(p: ^Parser, can_assign: bool) {
 
 	consume(p, .Dot, "Expect '.' after 'super'.")
 	consume(p, .Identifier, "Expect superclass method name.")
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
+	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
 
 	push_named(p, "this")
 	if match(p, .Left_Paren) {
@@ -337,7 +337,7 @@ emit_property_cache :: proc(p: ^Parser) {
 // separate Get_Property+Call -- the VM's fast path for the common case).
 dot :: proc(p: ^Parser, can_assign: bool) {
 	consume(p, .Identifier, "Expect property name after '.'.")
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_string_value(lexeme(p.previous)))
+	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
 
 	if can_assign && match(p, .Equal) {
 		expression(p)

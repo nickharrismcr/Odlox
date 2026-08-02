@@ -492,6 +492,11 @@ invoke_builtin_float_array :: proc(vm: ^VM, f: ^core.Float_Array_Object, name: s
 }
 
 @(private = "file")
+// get/remove re-intern key_val's content rather than using its
+// ^String_Object pointer as-is: a dict key must always be the canonical
+// interned pointer regardless of length (see core/obj_dict.odin's doc
+// comment and obj_string.odin's STRING_INTERN_MAX_LEN) -- intern_string
+// is a cheap no-op map lookup when it already is one.
 invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_count: int) -> bool {
 	result: core.Value
 	switch name {
@@ -505,7 +510,7 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 			runtime_error(vm, "Key argument to get must be a string.")
 			return false
 		}
-		if v, ok := core.dict_get(d, core.as_string(key_val)); ok {
+		if v, ok := core.dict_get(d, core.intern_string(core.string_get(core.as_string(key_val)))); ok {
 			result = v
 		} else if arg_count == 2 {
 			result = peek(vm, 0)
@@ -526,7 +531,7 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 			runtime_error(vm, "Argument to remove must be a string key.")
 			return false
 		}
-		v, _ := core.dict_remove(d, core.as_string(key_val))
+		v, _ := core.dict_remove(d, core.intern_string(core.string_get(core.as_string(key_val))))
 		result = v
 	case:
 		runtime_error(vm, "Undefined dict method '%s'.", name)

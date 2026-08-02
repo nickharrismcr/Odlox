@@ -1,0 +1,33 @@
+// Regression test: a dict key built from a string over
+// core.STRING_INTERN_MAX_LEN (40 bytes) is no longer automatically
+// interned -- two independently-built strings with identical content are
+// now distinct objects. Dict lookup, `in`, `.get()`, and `.remove()` must
+// still find/agree on such a key by content, not by the two objects
+// happening to share a pointer. See docs/plans for the writeup; without
+// vm/collections.odin's dict_key and vm/call.odin's get/remove fixes,
+// this would silently fail (key not found) instead of raising an error.
+
+part_a = "this is a fairly long dictionary key "
+part_b = "that exceeds forty bytes for sure"
+long_key1 = part_a & part_b
+print len(long_key1) > 40
+
+part_c = "this is a fairly long dictionary key "
+part_d = "that exceeds forty bytes for sure"
+long_key2 = part_c & part_d
+
+d = {}
+d[long_key1] = 42
+print d[long_key2]
+print long_key2 in d
+print d.get(long_key2)
+print d.get("not a key", "default")
+
+removed = d.remove(long_key2)
+print removed
+print long_key2 in d
+
+d2 = {long_key1: "literal-init value"}
+print d2[long_key2]
+
+print "done"

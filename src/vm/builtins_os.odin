@@ -126,7 +126,11 @@ read_all_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.
 		return core.NIL_VALUE
 	}
 	defer delete(data)
-	return core.make_string_value(string(data))
+	// make_tracked_string_value, not plain core.make_string_value: a
+	// whole file's contents is exactly the unbounded-external-data shape
+	// that should actually be collectible once long, not just skip
+	// interning -- see obj_string.odin's STRING_INTERN_MAX_LEN.
+	return make_tracked_string_value(vm, string(data))
 }
 
 @(private = "file")

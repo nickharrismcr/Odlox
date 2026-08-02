@@ -216,11 +216,11 @@ socket_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			vm.runtime_error(v, "recv() argument must be a positive number.")
 			return false
 		}
-		str, rok := socket_recv_impl(v, s, n)
+		str_val, rok := socket_recv_impl(v, s, n)
 		if !rok {
 			return false
 		}
-		result = core.make_string_value(str)
+		result = str_val
 	case "try_recv":
 		if arg_count != 1 {
 			vm.runtime_error(v, "try_recv() takes 1 argument (max bytes).")
@@ -236,12 +236,12 @@ socket_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			vm.runtime_error(v, "try_recv() argument must be a positive number.")
 			return false
 		}
-		had_data, str, rok := socket_try_recv_impl(v, s, n)
+		had_data, str_val, rok := socket_try_recv_impl(v, s, n)
 		if !rok {
 			return false
 		}
 		items: [dynamic]core.Value
-		append(&items, core.make_bool_value(had_data), core.make_string_value(str))
+		append(&items, core.make_bool_value(had_data), str_val)
 		t := core.make_list_object(items, true)
 		vm.gc_track(v, &t.obj)
 		result = core.make_object_value(&t.obj, true)
@@ -285,16 +285,29 @@ socket_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 	return true
 }
 
+// socket_recv_impl returns an already-safe core.Value (not a raw Odin
+// string): vm.make_tracked_string_value copies the bytes into their own
+// allocation (interned if short, an ordinary gc_track'd object if long --
+// see obj_string.odin's STRING_INTERN_MAX_LEN), so that copy must happen
+// before buf is freed below -- string(buf[:nread]) is a zero-copy view
+// into buf, and returning that view as a bare string and deleting buf on
+// the way out left the caller holding a dangling pointer once buf's
+// memory was reused (silently correct for small recvs, corrupted for
+// larger ones). Using the tracked (not plain core.make_string_value)
+// path specifically here, rather than everywhere make_string_value is
+// called, because recv() is exactly the unbounded-external-data source
+// that motivated giving long strings a collectible representation at
+// all -- see docs/plans/string-interning-split.md for the writeup.
 @(private = "file")
-socket_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (result: string, ok: bool) {
+socket_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (result: core.Value, ok: bool) {
 	buf := make([]u8, n)
 	defer delete(buf)
 	nread, rerr := net.recv_tcp(s.sock, buf)
 	if rerr != nil {
 		vm.runtime_error_named(v, "SocketError", "recv() failed: %v", rerr)
-		return "", false
+		return core.NIL_VALUE, false
 	}
-	return string(buf[:nread]), true
+	return vm.make_tracked_string_value(v, string(buf[:nread])), true
 }
 
 // socket_try_recv_impl: non-blocking recv. Toggles the socket
@@ -302,21 +315,24 @@ socket_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (result: string,
 // afterward, so accept()/recv()'s own blocking behavior (the default) is
 // unaffected between calls -- a script may freely mix recv() and
 // try_recv() on the same Socket.
+// Returns an already-safe core.Value -- see socket_recv_impl's own doc
+// comment for why that copy has to happen before buf is freed, and for
+// using the tracked (collectible-if-long) path specifically here.
 @(private = "file")
-socket_try_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (had_data: bool, result: string, ok: bool) {
+socket_try_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (had_data: bool, result: core.Value, ok: bool) {
 	net.set_blocking(s.sock, false)
 	defer net.set_blocking(s.sock, true)
 	buf := make([]u8, n)
 	defer delete(buf)
 	nread, rerr := net.recv_tcp(s.sock, buf)
 	if rerr == .Would_Block {
-		return false, "", true
+		return false, core.make_string_value(""), true
 	}
 	if rerr != nil {
 		vm.runtime_error_named(v, "SocketError", "try_recv() failed: %v", rerr)
-		return false, "", false
+		return false, core.NIL_VALUE, false
 	}
-	return true, string(buf[:nread]), true
+	return true, vm.make_tracked_string_value(v, string(buf[:nread])), true
 }
 
 @(private = "file")

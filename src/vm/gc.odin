@@ -89,15 +89,22 @@ alloc_vec4 :: proc(vm: ^VM, x, y, z, w: f64) -> ^core.Vec4_Object {
 // v -- used for a value tree built with no VM in scope to register
 // objects with as they were allocated (core.pickle_decode, which can run
 // from a background pipe-reader for the "process" module with no VM
-// existing yet at all; see that proc's own doc comment). Strings are
-// never tracked at all (structurally permanent -- see this file's header
-// comment), so this only ever recurses into List/Dict/Instance/Vec2/3/4.
+// existing yet at all; see that proc's own doc comment). Most strings are
+// never tracked at all (permanent/interned -- see obj_string.odin's
+// STRING_INTERN_MAX_LEN), but a decoded string over that length is an
+// ordinary collectible object like any other and needs the same
+// gc_track call every other case here gets.
 gc_adopt :: proc(vm: ^VM, v: core.Value) {
 	#partial switch v.type {
 	case .Vec2, .Vec3, .Vec4:
 		gc_track(vm, v.obj)
 	case .Obj:
 		#partial switch v.obj_type {
+		case .String:
+			s := core.as_string(v)
+			if s.collectible {
+				gc_track(vm, &s.obj)
+			}
 		case .List:
 			l := core.as_list(v)
 			gc_track(vm, &l.obj)
@@ -118,6 +125,22 @@ gc_adopt :: proc(vm: ^VM, v: core.Value) {
 			}
 		}
 	}
+}
+
+// make_tracked_string_value is core.make_string_value plus gc_track when
+// the result turned out collectible (over core.STRING_INTERN_MAX_LEN) --
+// for vm/natives call sites that have a ^VM in scope and want a long
+// result to actually be freed once unreachable, rather than just skip
+// interning (core.make_string_value alone, called from anywhere without
+// a ^VM, still returns a correct Value -- it just can't register it for
+// collection itself).
+make_tracked_string_value :: proc(vm: ^VM, s: string, immutable := false) -> core.Value {
+	val := core.make_string_value(s, immutable)
+	str_obj := core.as_string(val)
+	if str_obj.collectible {
+		gc_track(vm, &str_obj.obj)
+	}
+	return val
 }
 
 // maybe_collect_garbage runs a full cycle if the allocation threshold
@@ -362,6 +385,14 @@ free_object :: proc(obj: ^core.Obj) {
 		inst := cast(^core.Instance_Object)obj
 		delete(inst.fields)
 		free(inst)
+	case .String:
+		// Only ever reached for a collectible (>STRING_INTERN_MAX_LEN)
+		// string -- an interned one is never gc_track'd, so sweep()
+		// never walks it in the first place (see this file's header
+		// comment).
+		s := cast(^core.String_Object)obj
+		delete(s.chars)
+		free(s)
 	case .Float_Array:
 		f := cast(^core.Float_Array_Object)obj
 		delete(f.data)
@@ -391,6 +422,11 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		return size_of(core.List_Object)
 	case .Dict:
 		return size_of(core.Dict_Object)
+	case .String:
+		// As with Float_Array below, the backing bytes (not the struct
+		// header) dominate a long string's real footprint.
+		s := cast(^core.String_Object)obj
+		return size_of(core.String_Object) + len(s.chars)
 	case .Bound_Method:
 		return size_of(core.Bound_Method_Object)
 	case .Class:

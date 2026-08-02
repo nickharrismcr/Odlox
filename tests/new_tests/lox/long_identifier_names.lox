@@ -1,0 +1,25 @@
+// Regression test: a property/method name over core.STRING_INTERN_MAX_LEN
+// (40 bytes) must still be the canonical interned pointer everywhere it's
+// compiled -- the compiler routes identifier names through
+// core.make_interned_string_value (always interns, bypassing the length
+// split used for ordinary string literals/values), not plain
+// core.make_string_value. Without that, two separately-compiled methods
+// referencing the same long property name would get two different,
+// non-interned objects, and Instance.fields (pointer-keyed) would silently
+// fail to correlate a set in one method with a get in another.
+
+class Widget {
+    set_this_is_a_deliberately_long_property_name_over_forty_chars(v) {
+        this.this_is_a_deliberately_long_property_name_over_forty_chars = v
+    }
+    get_this_is_a_deliberately_long_property_name_over_forty_chars() {
+        return this.this_is_a_deliberately_long_property_name_over_forty_chars
+    }
+}
+
+w = Widget()
+w.set_this_is_a_deliberately_long_property_name_over_forty_chars(42)
+print w.get_this_is_a_deliberately_long_property_name_over_forty_chars()
+print w.this_is_a_deliberately_long_property_name_over_forty_chars
+
+print "done"

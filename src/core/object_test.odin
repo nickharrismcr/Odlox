@@ -16,6 +16,45 @@ test_intern_string_distinguishes_different_content :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// String_Object length split (STRING_INTERN_MAX_LEN) -- see
+// docs/plans/string-interning-split.md for why long strings stopped
+// being interned.
+
+@(test)
+test_make_string_value_interns_short_strings :: proc(t: ^testing.T) {
+	short := "short string"
+	testing.expect(t, len(short) <= STRING_INTERN_MAX_LEN)
+
+	a := make_string_value(short)
+	b := make_string_value(short)
+	testing.expect_value(t, a.obj, b.obj) // same canonical pointer
+	testing.expect(t, !as_string(a).collectible)
+}
+
+@(test)
+test_make_string_value_does_not_intern_long_strings :: proc(t: ^testing.T) {
+	long := "this string is deliberately longer than forty bytes to force the collectible path"
+	testing.expect(t, len(long) > STRING_INTERN_MAX_LEN)
+
+	a := make_string_value(long)
+	b := make_string_value(long)
+	testing.expect(t, as_string(a).collectible)
+	testing.expect(t, as_string(b).collectible)
+	// Equal content, but NOT deduplicated -- two distinct allocations,
+	// unlike the interned (short) case above.
+	testing.expect(t, a.obj != b.obj)
+}
+
+@(test)
+test_long_strings_compare_equal_by_content_not_pointer :: proc(t: ^testing.T) {
+	long := "this string is deliberately longer than forty bytes to force the collectible path"
+	a := make_string_value(long)
+	b := make_string_value(long)
+	testing.expect(t, a.obj != b.obj) // different objects...
+	testing.expect(t, values_equal(a, b, true)) // ...but still `==` equal
+}
+
+// -----------------------------------------------------------------------
 // List_Object
 
 @(test)
