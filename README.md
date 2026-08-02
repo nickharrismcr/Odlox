@@ -55,6 +55,13 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 
 ---
 
+## Requirements
+
+- The [Odin](https://odin-lang.org) compiler, installed and on `PATH`. Building the latest version from source is recommended.
+- Python 3 — optional, only needed to run the test suite (see Testing below).
+
+---
+
 ## Build
 
 ```bash
