@@ -55,6 +55,13 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 
 ---
 
+## Requirements
+
+- **[Odin](https://odin-lang.org/docs/install/)** — the compiler. `bin/build.sh`/`bin/benchmarks.sh` look for `odin` on `PATH` first, falling back to `$HOME/AppData/Local/Programs/Odin/odin.exe` (the default Windows install location, i.e. `C:\Users\<you>\AppData\Local\Programs\Odin\odin.exe`) if not found. This project is developed against a from-source build (`odin version` reports a `dev-YYYY-MM` string, not a numbered release) — if something doesn't compile, building Odin from source ([odin-lang/Odin](https://github.com/odin-lang/Odin)) rather than reaching for an older dated release is the first thing to check.
+- **Python 3 + [pytest](https://pytest.org/)** — only needed to run `tests/new_tests/`, the project's actual correctness gate (see Testing below); not required to build or run odlox itself.
+
+---
+
 ## Build
 
 ```bash
