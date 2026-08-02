@@ -84,6 +84,8 @@ bin/odlox.exe --repl
 . ./setenv          # bash
 ```
 
+Run `bin/showcase.sh` (after `. ./setenv`, from the repo root) to build a release binary and run through the graphics demos in `lox_examples/` one after another — press `Esc` to close the current demo and move on to the next.
+
 ---
 
 ## Testing
