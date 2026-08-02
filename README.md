@@ -49,8 +49,9 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Built-in modules** — `math`, `random`, `colour`, `string`, `itertools`, `functools`, `logging`, `particle_sys`, `sprite`, `plot_grey`, `plot_rgb`, `re`, `json`, `pickle`, `sys`, `os`, `inspect`, `gfx` (graphics constructors: `window`, `batch`, `texture`, `shader`, `camera`, …), `physics` (`physics_world`), `box2d` (`box2d.world`), `colour_utils` (native colour math backing `colour`). Import with `from gfx import *` or `import gfx`.
 
 **Concurrency**
-- **`process`** — spawns separate OS worker processes and communicates over `send()`/`recv()` (values pickled across the pipe); real fault isolation, at one-process-per-worker cost.
+- **`process`** — spawns separate OS worker processes and communicates over `send()`/`recv()` (values pickled across the pipe); real fault isolation, at one-process-per-worker cost. `process.start()` launches a pipeless companion process instead, for one that does its own I/O (e.g. over a `socket`).
 - **`pool`** — `ProcessPool`, a fixed-size worker pool with a `map(tasks)` convenience API built on `process`.
+- **`socket`** — raw TCP sockets (`connect`/`listen`/`accept`/`send`/`recv`, plus non-blocking `try_accept`/`try_recv`) for IPC with any process, not just another odlox instance; a lower-level alternative to `process`'s pickled-value pipe.
 
 ---
 

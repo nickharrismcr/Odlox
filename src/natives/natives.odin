@@ -36,5 +36,6 @@ define_natives :: proc(v: ^vm.VM) {
 	register_re(v)
 	register_pickle(v)
 	register_process(v)
+	register_socket(v)
 	register_sound(v)
 }

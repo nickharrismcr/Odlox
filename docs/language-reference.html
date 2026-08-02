@@ -197,6 +197,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#mod-re">re</a>
       <a href="#mod-pickle">pickle</a>
       <a href="#mod-process">process</a>
+      <a href="#mod-socket">socket</a>
       <a href="#mod-pool">pool</a>
       <a href="#mod-thread">thread</a>
       <a href="#mod-sync">sync</a>
@@ -597,7 +598,8 @@ try {
 <tr><td><code>RunTimeError</code></td><td>A runtime fault (bad argument, invalid operation, index error…)</td></tr>
 <tr><td><code>EOFError</code></td><td><a href="#mod-os"><code>os.readln()</code></a> reaches end of file</td></tr>
 <tr><td><code>PickleError</code></td><td><a href="#mod-pickle"><code>pickle.dumps()</code></a> is given a value it can't serialise (e.g. a function, a class itself, or a cyclic structure), or <a href="#mod-pickle"><code>pickle.loads()</code></a> is given malformed data or an encoded instance whose class can't be resolved</td></tr>
-<tr><td><code>ProcessError</code></td><td><a href="#mod-process"><code>process.spawn()</code></a> fails to start a process, or a <a href="#mod-process">Process</a>'s <code>send()</code>/<code>recv()</code> hits a closed or broken pipe</td></tr>
+<tr><td><code>ProcessError</code></td><td><a href="#mod-process"><code>process.spawn()</code></a>/<code>process.start()</code> fails to start a process, or a <a href="#mod-process">Process</a>'s <code>send()</code>/<code>recv()</code> hits a closed or broken pipe</td></tr>
+<tr><td><code>SocketError</code></td><td><a href="#mod-socket"><code>socket.connect()</code></a>/<code>socket.listen()</code> fails, or a <a href="#mod-socket">Socket</a>'s <code>send()</code>/<code>recv()</code>/<code>accept()</code> hits a genuine error (not the "no data/connection yet" case <code>try_recv()</code>/<code>try_accept()</code> report without raising)</td></tr>
 <tr><td><code>ThreadError</code></td><td><a href="#mod-thread"><code>thread.spawn()</code></a> is given a non-function or is called from the REPL, <code>thread.channel()</code> is called outside a spawned thread, a <a href="#mod-thread">Thread</a>/<a href="#mod-thread">ThreadChannel</a>'s <code>send()</code>/<code>recv()</code> hits a finished or cancelled thread, or the thread ended abnormally (an uncaught exception or a Go-level panic)</td></tr>
 <tr><td><code>SyncError</code></td><td><a href="#mod-sync"><code>Mutex.release()</code></a> is called without a matching <code>acquire()</code>, or an uncaught exception escapes a <code>Mutex.locked()</code> closure</td></tr>
 </tbody>
@@ -1775,6 +1777,7 @@ print p2.x   // 3</code></pre>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
 <tr><td><code>process.spawn(script_path, ...)</code></td><td>Launch another odlox process running <code>script_path</code>, connected by a pipe on its stdin/stdout. Extra string arguments become the child's own <code>sys.args()</code>; they must not start with <code>-</code> (no <code>--</code> escape hatch in argument parsing). Returns a <a href="#mod-process-obj">Process</a>.</td></tr>
+<tr><td><code>process.start(script_path, ...)</code></td><td>Like <code>process.spawn()</code>, but with no pipe attached at all -- for a companion process that does its own I/O (e.g. a <a href="#mod-socket">socket</a> server) rather than talking back over a pipe. The child inherits this process's own stdin/stdout/stderr. The returned <a href="#mod-process-obj">Process</a> only supports <code>wait()</code>/<code>kill()</code>/<code>pid()</code> -- <code>send()</code>/<code>recv()</code>/<code>try_recv()</code> raise, since there's no pipe.</td></tr>
 <tr><td><code>process.parent()</code></td><td>Returns a <a href="#mod-process-obj">Process</a> wired to this process's own stdin/stdout -- the far end of the pipe held by whatever spawned it. Used inside a worker script to talk back to its spawner.</td></tr>
 <tr><td><code>process.wait_any(processes)</code></td><td>Blocks until any of the given Process objects has a message ready. Returns the tuple <code>(index, value)</code>, or <code>nil</code> once every process in the list has finished. This is the fan-in primitive for collecting results from several workers without polling each in turn. A process that finished cleanly (closed its pipe normally) is dropped from consideration rather than aborting the wait for the others; a genuine I/O error still raises <code>ProcessError</code> immediately.</td></tr>
 </tbody>
@@ -1783,12 +1786,12 @@ print p2.x   // 3</code></pre>
 <table>
 <thead><tr><th>Method</th><th>Description</th></tr></thead>
 <tbody>
-<tr><td><code>send(value)</code></td><td>Pickle <code>value</code> and write it to the pipe</td></tr>
-<tr><td><code>recv()</code></td><td>Block until a value arrives and return it. Raises <a href="#exceptions"><code>ProcessError</code></a> if the peer closed its end.</td></tr>
-<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code> -- the same shape as Go's own <code>v, ok := &lt;-channel</code>.</td></tr>
-<tr><td><code>wait()</code></td><td>Block until the child exits; returns its exit code. Only on a <code>spawn()</code>-side Process.</td></tr>
-<tr><td><code>kill()</code></td><td>Forcibly terminate the child. Only on a <code>spawn()</code>-side Process.</td></tr>
-<tr><td><code>pid()</code></td><td>The child's OS process ID. Only on a <code>spawn()</code>-side Process.</td></tr>
+<tr><td><code>send(value)</code></td><td>Pickle <code>value</code> and write it to the pipe. Only on a Process with a pipe attached (<code>spawn()</code>/<code>parent()</code>-side, not <code>start()</code>-side).</td></tr>
+<tr><td><code>recv()</code></td><td>Block until a value arrives and return it. Raises <a href="#exceptions"><code>ProcessError</code></a> if the peer closed its end. Only on a Process with a pipe attached.</td></tr>
+<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code> -- the same shape as Go's own <code>v, ok := &lt;-channel</code>. Only on a Process with a pipe attached.</td></tr>
+<tr><td><code>wait()</code></td><td>Block until the child exits; returns its exit code. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
+<tr><td><code>kill()</code></td><td>Forcibly terminate the child. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
+<tr><td><code>pid()</code></td><td>The child's OS process ID. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
 </tbody>
 </table>
 <pre><code class="lox">// parent.lox
@@ -1804,6 +1807,46 @@ p = process.parent()
 x = p.recv()
 p.send(x * 2)</code></pre>
 <div class="note"><strong>Worker pool</strong>There's no shared-memory <code>Queue</code> the way Python's <code>multiprocessing.Queue</code> needs one, but <code>spawn</code>/<code>send</code>/<code>wait_any</code> are enough to drain a shared task queue across several workers -- the <a href="#mod-pool"><code>pool</code></a> module below does exactly that, so most scripts don't need to hand-roll it. See <a href="md/PROCESS_MODULE.md">PROCESS_MODULE.md</a> for the pattern <code>pool</code> is built on.</div>
+
+<!-- ==================== MODULE: SOCKET ==================== -->
+<h2 class="section" id="mod-socket">socket <span class="pill">module</span></h2>
+<p><code>import socket</code> — raw TCP sockets, for IPC with any process (not just another odlox instance), as a lower-level alternative to <a href="#mod-process"><code>process</code></a>'s pickled-value pipe: <code>send()</code>/<code>recv()</code> move plain bytes as strings, with no serialisation format imposed. TCP only -- there's no Unix-domain-socket support underneath, so local IPC here means a real TCP connection over loopback (<code>"127.0.0.1"</code>) rather than a filesystem-path socket. As with <code>process</code>, there's no threading model anywhere in odlox, so <code>accept()</code>/<code>recv()</code> block by default, exactly like <code>Process.recv()</code> does, and <code>try_accept()</code>/<code>try_recv()</code> are the non-blocking variants a polling loop uses instead.</p>
+<table>
+<thead><tr><th>Function</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>socket.connect(host, port)</code></td><td>Open a TCP connection to <code>host:port</code> (hostnames are resolved, like an ordinary TCP client). Returns a <a href="#mod-socket-obj">Socket</a>. Raises <a href="#exceptions"><code>SocketError</code></a> on failure.</td></tr>
+<tr><td><code>socket.listen(host, port, backlog=1000)</code></td><td>Bind and start listening on <code>host:port</code> (<code>host</code> must be an IP literal, e.g. <code>"127.0.0.1"</code> or <code>"0.0.0.0"</code> -- no DNS resolution). Returns a listening <a href="#mod-socket-obj">Socket</a>. Raises <code>SocketError</code> on failure.</td></tr>
+</tbody>
+</table>
+<h3 id="mod-socket-obj">Socket objects</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>accept()</code></td><td>Block until a client connects and return the new connection as a Socket. Only on a listening Socket.</td></tr>
+<tr><td><code>try_accept()</code></td><td>Non-blocking <code>accept()</code>. Returns <code>(false, nil)</code> if no connection is waiting, else <code>(true, socket)</code>. Only on a listening Socket.</td></tr>
+<tr><td><code>send(str)</code></td><td>Write <code>str</code>'s bytes to the connection. Returns the number of bytes written.</td></tr>
+<tr><td><code>recv(n)</code></td><td>Block until data arrives and return up to <code>n</code> bytes as a string. Returns <code>""</code> on a graceful close by the peer (not an error) -- distinct from <code>SocketError</code>, which means a genuine failure.</td></tr>
+<tr><td><code>try_recv(n)</code></td><td>Non-blocking <code>recv(n)</code>. Returns <code>(false, "")</code> if nothing is waiting, else <code>(true, str)</code>.</td></tr>
+<tr><td><code>close()</code></td><td>Close the socket. Idempotent.</td></tr>
+<tr><td><code>local_endpoint()</code></td><td>This socket's own local address, as <code>"host:port"</code>.</td></tr>
+<tr><td><code>peer_endpoint()</code></td><td>The address of the socket on the other end of the connection, as <code>"host:port"</code>.</td></tr>
+</tbody>
+</table>
+<pre><code class="lox">// server.lox
+import socket
+srv = socket.listen("127.0.0.1", 9000)
+c = srv.accept()
+print c.recv(64)      // whatever the client sent
+c.send("ack")
+c.close()
+
+// client.lox
+import socket
+c = socket.connect("127.0.0.1", 9000)
+c.send("hello")
+print c.recv(64)      // "ack"
+c.close()</code></pre>
+<div class="note"><strong>Starting a socket server as a companion process</strong>Pair this with <a href="#mod-process"><code>process.start()</code></a> -- it launches a script (e.g. one that calls <code>socket.listen()</code> and serves) with no pipe attached, so the two processes talk over the socket connection instead.</div>
 
 <!-- ==================== MODULE: POOL ==================== -->
 <h2 class="section" id="mod-pool">pool <span class="pill">module</span></h2>

@@ -61,6 +61,12 @@ class ProcessError < Exception {
 		this.msg = msg
 		this.name = "ProcessError"
 	}
+}
+class SocketError < Exception {
+	init(msg) {
+		this.msg = msg
+		this.name = "SocketError"
+	}
 }`
 
 // bootstrap_cache holds the harvested exception classes after the first

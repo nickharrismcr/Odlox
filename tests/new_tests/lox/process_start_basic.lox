@@ -1,0 +1,34 @@
+import process;
+import os;
+import sys;
+
+here = os.dirname(sys.args()[0]);
+worker_path = os.join(here, "process_start_worker.lox");
+long_path = os.join(here, "process_start_long.lox");
+
+p = process.start(worker_path);
+print p.wait();
+
+// send()/recv()/try_recv() are not available on a process.start()-launched
+// process -- it has no pipe attached, unlike process.spawn().
+try {
+    p.send(1);
+} except RunTimeError as e {
+    print "caught send";
+}
+try {
+    p.recv();
+} except RunTimeError as e {
+    print "caught recv";
+}
+try {
+    p.try_recv();
+} except RunTimeError as e {
+    print "caught try_recv";
+}
+
+p2 = process.start(long_path);
+p2.kill();
+print "killed";
+
+print "done";

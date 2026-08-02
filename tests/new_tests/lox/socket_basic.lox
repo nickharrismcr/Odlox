@@ -1,0 +1,48 @@
+import socket
+
+// try_accept() reports "no connection yet" before anyone has connected
+srv = socket.listen("127.0.0.1", 34779)
+had, conn = srv.try_accept()
+print had
+
+// connect() + accept() -- the connection is already queued in the OS
+// backlog by the time accept() is called, so it returns immediately
+c = socket.connect("127.0.0.1", 34779)
+s = srv.accept()
+
+print "127.0.0.1" in c.local_endpoint()
+print "127.0.0.1" in s.peer_endpoint()
+
+// try_recv() reports "no data yet" before anything has been sent
+had2, data2 = s.try_recv(64)
+print had2
+
+// send()/recv() round trip
+c.send("hello")
+print s.recv(64)
+
+// try_recv() sees data sent just before it, on the same connection
+c.send("world")
+had3, data3 = s.try_recv(64)
+print had3
+print data3
+
+// the other direction
+s.send("echo:hello")
+print c.recv(64)
+
+// a graceful close is a "" read, not an error
+c.close()
+print s.recv(64)
+
+s.close()
+srv.close()
+
+// connecting to a closed port raises SocketError, not a crash
+try {
+    socket.connect("127.0.0.1", 34780)
+} except SocketError as e {
+    print "caught connect error"
+}
+
+print "done"

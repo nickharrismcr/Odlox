@@ -34,6 +34,10 @@ FRAME_LEN_SIZE :: 4
 // below). Doubles as both "the process I spawned" (child != nil, exposes
 // wait/kill/pid) and "the channel back to whoever spawned me" (child ==
 // nil, constructed wrapping this process's own stdin/stdout).
+// read_file/write_file are nil for a process.start()-launched process --
+// it has no pipe attached at all (see process_start below), as opposed
+// to process_parent's variant, which has both, just wired to this
+// process's own stdin/stdout instead of a pipe to a child.
 Process_Data :: struct {
 	read_file:  ^os.File,
 	write_file: ^os.File,
@@ -51,8 +55,12 @@ process_vtable := core.Userdata_Vtable {
 @(private = "file")
 process_data_free :: proc(data: rawptr) {
 	p := cast(^Process_Data)data
-	os.close(p.read_file)
-	os.close(p.write_file)
+	if p.read_file != nil {
+		os.close(p.read_file)
+	}
+	if p.write_file != nil {
+		os.close(p.write_file)
+	}
 	free(p)
 }
 
@@ -276,8 +284,47 @@ process_wait_any_impl :: proc(v: ^vm.VM, processes: []^Process_Data) -> (index: 
 register_process :: proc(v: ^vm.VM) {
 	vm.make_builtin_module(v, "process")
 	vm.define_builtin(v, "process", "spawn", process_spawn)
+	vm.define_builtin(v, "process", "start", process_start)
 	vm.define_builtin(v, "process", "parent", process_parent)
 	vm.define_builtin(v, "process", "wait_any", process_wait_any_fn)
+}
+
+// process_build_command reads a script-path-plus-extra-args argument
+// list off the VM stack, shared by process_spawn and process_start: the
+// child's argv is [odlox executable, script_path, ...extra], and extra
+// arguments must be plain strings not starting with '-' (no `--` escape
+// hatch in argument parsing). caller_name is only used in error text
+// ("spawn"/"start").
+@(private = "file")
+process_build_command :: proc(v: ^vm.VM, argc: int, arg_stack_ptr: int, caller_name: string) -> (command: [dynamic]string, ok: bool) {
+	if argc < 1 {
+		vm.runtime_error(v, "%s() expects at least 1 argument (script path).", caller_name)
+		return nil, false
+	}
+	script_val := v.stack[arg_stack_ptr]
+	if !core.is_string(script_val) {
+		vm.runtime_error(v, "%s() first argument must be a string (script path).", caller_name)
+		return nil, false
+	}
+	script_path := core.string_get(core.as_string(script_val))
+
+	append(&command, os.args[0], script_path)
+	for i in 1 ..< argc {
+		arg_val := v.stack[arg_stack_ptr + i]
+		if !core.is_string(arg_val) {
+			vm.runtime_error(v, "%s() extra arguments must be strings.", caller_name)
+			delete(command)
+			return nil, false
+		}
+		s := core.string_get(core.as_string(arg_val))
+		if strings.has_prefix(s, "-") {
+			vm.runtime_error(v, "%s() extra arguments must not start with '-'.", caller_name)
+			delete(command)
+			return nil, false
+		}
+		append(&command, s)
+	}
+	return command, true
 }
 
 // process_spawn launches another odlox process running script_path,
@@ -288,31 +335,9 @@ register_process :: proc(v: ^vm.VM) {
 @(private = "file")
 process_spawn :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)
-	if argc < 1 {
-		vm.runtime_error(v, "spawn() expects at least 1 argument (script path).")
+	command, cok := process_build_command(v, argc, arg_stack_ptr, "spawn")
+	if !cok {
 		return core.NIL_VALUE
-	}
-	script_val := v.stack[arg_stack_ptr]
-	if !core.is_string(script_val) {
-		vm.runtime_error(v, "spawn() first argument must be a string (script path).")
-		return core.NIL_VALUE
-	}
-	script_path := core.string_get(core.as_string(script_val))
-
-	command: [dynamic]string
-	append(&command, os.args[0], script_path)
-	for i in 1 ..< argc {
-		arg_val := v.stack[arg_stack_ptr + i]
-		if !core.is_string(arg_val) {
-			vm.runtime_error(v, "spawn() extra arguments must be strings.")
-			return core.NIL_VALUE
-		}
-		s := core.string_get(core.as_string(arg_val))
-		if strings.has_prefix(s, "-") {
-			vm.runtime_error(v, "spawn() extra arguments must not start with '-'.")
-			return core.NIL_VALUE
-		}
-		append(&command, s)
 	}
 	defer delete(command)
 
@@ -348,6 +373,42 @@ process_spawn :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Val
 	data := new(Process_Data)
 	data.read_file = parent_stdout_read
 	data.write_file = parent_stdin_write
+	data.child = child
+	o := core.make_userdata_object(&process_vtable, data)
+	vm.gc_track(v, &o.obj)
+	return core.make_object_value(&o.obj)
+}
+
+// process_start launches another odlox process running script_path with
+// no pipe attached at all -- for a companion process that does its own
+// I/O (e.g. socket.listen()'d and serving) rather than talking back over
+// process.spawn()'s pickled-value pipe. The child inherits this
+// process's own stdin/stdout/stderr, so its own print()/errors are still
+// visible (useful when running a server process under a REPL/terminal).
+// Only wait()/kill()/pid() are meaningful on the returned Process --
+// send()/recv()/try_recv() raise, since read_file/write_file are left
+// nil (see process_invoke below and Process_Data's own doc comment).
+@(private = "file")
+process_start :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	command, cok := process_build_command(v, argc, arg_stack_ptr, "start")
+	if !cok {
+		return core.NIL_VALUE
+	}
+	defer delete(command)
+
+	child, serr := os.process_start({
+		command = command[:],
+		stdin   = os.stdin,
+		stdout  = os.stdout,
+		stderr  = os.stderr,
+	})
+	if serr != nil {
+		vm.runtime_error_named(v, "ProcessError", "failed to start process: %v", serr)
+		return core.NIL_VALUE
+	}
+
+	data := new(Process_Data)
 	data.child = child
 	o := core.make_userdata_object(&process_vtable, data)
 	vm.gc_track(v, &o.obj)
@@ -433,6 +494,10 @@ process_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: in
 			vm.runtime_error(v, "send() takes 1 argument.")
 			return false
 		}
+		if p.write_file == nil {
+			vm.runtime_error(v, "send() is not available on a process started with process.start() (no pipe attached).")
+			return false
+		}
 		if !process_send(v, p, vm.peek(v, 0)) {
 			return false
 		}
@@ -440,6 +505,10 @@ process_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: in
 	case "recv":
 		if arg_count != 0 {
 			vm.runtime_error(v, "recv() takes no arguments.")
+			return false
+		}
+		if p.read_file == nil {
+			vm.runtime_error(v, "recv() is not available on a process started with process.start() (no pipe attached).")
 			return false
 		}
 		val, rok := process_recv(v, p)
@@ -450,6 +519,10 @@ process_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: in
 	case "try_recv":
 		if arg_count != 0 {
 			vm.runtime_error(v, "try_recv() takes no arguments.")
+			return false
+		}
+		if p.read_file == nil {
+			vm.runtime_error(v, "try_recv() is not available on a process started with process.start() (no pipe attached).")
 			return false
 		}
 		had_data, val, rok := process_try_recv_impl(v, p)
