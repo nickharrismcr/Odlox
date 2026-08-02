@@ -199,8 +199,6 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#mod-process">process</a>
       <a href="#mod-socket">socket</a>
       <a href="#mod-pool">pool</a>
-      <a href="#mod-thread">thread</a>
-      <a href="#mod-sync">sync</a>
       <a href="#mod-sys">sys</a>
       <a href="#mod-inspect">inspect</a>
       <div class="group">Reference</div>
@@ -600,8 +598,6 @@ try {
 <tr><td><code>PickleError</code></td><td><a href="#mod-pickle"><code>pickle.dumps()</code></a> is given a value it can't serialise (e.g. a function, a class itself, or a cyclic structure), or <a href="#mod-pickle"><code>pickle.loads()</code></a> is given malformed data or an encoded instance whose class can't be resolved</td></tr>
 <tr><td><code>ProcessError</code></td><td><a href="#mod-process"><code>process.spawn()</code></a>/<code>process.start()</code> fails to start a process, or a <a href="#mod-process">Process</a>'s <code>send()</code>/<code>recv()</code> hits a closed or broken pipe</td></tr>
 <tr><td><code>SocketError</code></td><td><a href="#mod-socket"><code>socket.connect()</code></a>/<code>socket.listen()</code> fails, or a <a href="#mod-socket">Socket</a>'s <code>send()</code>/<code>recv()</code>/<code>accept()</code> hits a genuine error (not the "no data/connection yet" case <code>try_recv()</code>/<code>try_accept()</code> report without raising)</td></tr>
-<tr><td><code>ThreadError</code></td><td><a href="#mod-thread"><code>thread.spawn()</code></a> is given a non-function or is called from the REPL, <code>thread.channel()</code> is called outside a spawned thread, a <a href="#mod-thread">Thread</a>/<a href="#mod-thread">ThreadChannel</a>'s <code>send()</code>/<code>recv()</code> hits a finished or cancelled thread, or the thread ended abnormally (an uncaught exception or a Go-level panic)</td></tr>
-<tr><td><code>SyncError</code></td><td><a href="#mod-sync"><code>Mutex.release()</code></a> is called without a matching <code>acquire()</code>, or an uncaught exception escapes a <code>Mutex.locked()</code> closure</td></tr>
 </tbody>
 </table>
 
@@ -659,11 +655,11 @@ print "xx".replace("x", "y")      // "yy"</code></pre>
 <h3>Related built-in functions</h3>
 <ul>
 <li><a href="#builtins"><code>replace(s, old, new)</code></a> — free-function form of <code>.replace</code>.</li>
-<li><a href="#builtins"><code>format(fmt, args...)</code></a> — printf-style formatting (wraps Go <code>fmt.Sprintf</code>).</li>
+<li><a href="#builtins"><code>format(fmt, args...)</code></a> — printf-style formatting (wraps Odin's <code>core:fmt.aprintf</code>).</li>
 <li><a href="#builtins"><code>str(value)</code></a> — convert any value to its string form.</li>
 <li><a href="#mod-string"><code>string.split(s, delim)</code></a> — split into a list of substrings.</li>
 </ul>
-<div class="note"><strong>format()</strong><code>format</code> uses Go format verbs: <code>%s</code> (string), <code>%d</code> (integer), <code>%f</code> (float), <code>%v</code> (any). Example: <code>format("%s = %d", name, count)</code>. For most cases <a href="#strings">string interpolation</a> (<code>"${name} = ${count}"</code>) is more concise; reach for <code>format</code> when you need precise numeric formatting (width, precision).</div>
+<div class="note"><strong>format()</strong><code>format</code> uses Odin's <code>core:fmt</code> format verbs: <code>%s</code> (string), <code>%d</code> (integer), <code>%f</code> (float), <code>%v</code> (any). Example: <code>format("%s = %d", name, count)</code>. For most cases <a href="#strings">string interpolation</a> (<code>"${name} = ${count}"</code>) is more concise; reach for <code>format</code> when you need precise numeric formatting (width, precision).</div>
 
 <!-- ==================== LISTS ==================== -->
 <h2 class="section" id="lists">Lists</h2>
@@ -794,7 +790,7 @@ pos.set(10, 20)     // pos becomes vec2(10, 20) -- same object, no allocation</c
 <div class="sig"><span class="nm">replace</span>(<em>string</em>, <em>old</em>, <em>new</em>) <span class="pill">→ string</span></div>
 <p>Replaces occurrences of <code>old</code> with <code>new</code>.</p>
 <div class="sig"><span class="nm">format</span>(<em>fmt</em>, <em>args…</em>) <span class="pill">→ string</span></div>
-<p>Printf-style formatting via Go's <code>fmt.Sprintf</code>. Supports <code>%s %d %f %v</code> and other Go verbs.</p>
+<p>Printf-style formatting via Odin's <code>core:fmt.aprintf</code>. Supports <code>%s %d %f %v</code> and other <code>core:fmt</code> verbs.</p>
 
 <h3>Math (low-level)</h3>
 <p>These underscore-prefixed primitives are the native maths intrinsics; normally you use the friendlier wrappers in the <a href="#mod-math">math module</a> instead.</p>
@@ -1684,7 +1680,7 @@ try {
 
 <!-- ==================== MODULE: RE ==================== -->
 <h2 class="section" id="mod-re">re <span class="pill">module</span></h2>
-<p><code>import re</code> — regular expressions, wrapping Go's <code>regexp</code> package (RE2 syntax). RE2 does not support backreferences or lookaround; replacement strings use Go's <code>$1</code> / <code>${name}</code> syntax, not Python's <code>\1</code>.</p>
+<p><code>import re</code> — regular expressions, wrapping Odin's <code>core:text/regex</code> engine. Not Perl/PCRE compatible: no backreferences, no lookaround/lookbehind. Named groups (<code>(?P&lt;name&gt;...)</code>) aren't natively supported by the engine either — <code>re</code> adds its own preprocessing for those; replacement strings use <code>$1</code> / <code>${name}</code> syntax, not Python's <code>\1</code>.</p>
 <table>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
@@ -1788,7 +1784,7 @@ print p2.x   // 3</code></pre>
 <tbody>
 <tr><td><code>send(value)</code></td><td>Pickle <code>value</code> and write it to the pipe. Only on a Process with a pipe attached (<code>spawn()</code>/<code>parent()</code>-side, not <code>start()</code>-side).</td></tr>
 <tr><td><code>recv()</code></td><td>Block until a value arrives and return it. Raises <a href="#exceptions"><code>ProcessError</code></a> if the peer closed its end. Only on a Process with a pipe attached.</td></tr>
-<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code> -- the same shape as Go's own <code>v, ok := &lt;-channel</code>. Only on a Process with a pipe attached.</td></tr>
+<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code> -- a "value, ok" pair, the same shape <code>socket</code>'s <code>try_recv()</code>/<code>try_accept()</code> use. Only on a Process with a pipe attached.</td></tr>
 <tr><td><code>wait()</code></td><td>Block until the child exits; returns its exit code. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
 <tr><td><code>kill()</code></td><td>Forcibly terminate the child. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
 <tr><td><code>pid()</code></td><td>The child's OS process ID. Only on a <code>spawn()</code>/<code>start()</code>-side Process.</td></tr>
@@ -1850,14 +1846,13 @@ c.close()</code></pre>
 
 <!-- ==================== MODULE: POOL ==================== -->
 <h2 class="section" id="mod-pool">pool <span class="pill">module</span></h2>
-<p><code>import pool</code> — fixed-size worker pools, similar to Python's <code>multiprocessing.Pool</code>: <code>ProcessPool</code> over <a href="#mod-process">process</a>'s <code>spawn</code>/<code>send</code>/<code>recv</code>/<code>wait_any</code>, <code>ThreadPool</code> over the equivalent <a href="#mod-thread">thread</a> primitives. Both spawn their workers up front and keep them alive across calls; <code>.map()</code> hands tasks out to whichever worker is free and returns results in task order, regardless of which worker finishes first.</p>
+<p><code>import pool</code> — fixed-size worker pools, similar to Python's <code>multiprocessing.Pool</code>: <code>ProcessPool</code> over <a href="#mod-process">process</a>'s <code>spawn</code>/<code>send</code>/<code>recv</code>/<code>wait_any</code>. Spawns its workers up front and keeps them alive across calls; <code>.map()</code> hands tasks out to whichever worker is free and returns results in task order, regardless of which worker finishes first.</p>
 <table>
 <thead><tr><th>Function / class</th><th>Description</th></tr></thead>
 <tbody>
 <tr><td><code>pool.ProcessPool(worker_path, n_workers)</code></td><td>Class: spawns <code>n_workers</code> copies of the <code>.lox</code> script <code>worker_path</code> immediately. Each worker loops "<code>recv()</code> a task, do work, <code>send()</code> a result". Workers stay alive, idle between calls, until <code>close()</code> kills them.</td></tr>
-<tr><td><code>pool.ThreadPool(task_fn, n_workers)</code></td><td>Class: spawns <code>n_workers</code> threads immediately, each looping "<code>recv()</code> a task via its own channel, call <code>task_fn(task)</code>, <code>send()</code> the result back". <code>task_fn</code> is a plain function, not a script -- no process boundary needs crossing to hand it a closure. Workers stay alive, idle between calls, until <code>close()</code> cancels them.</td></tr>
-<tr><td><code>.map(tasks)</code></td><td>Runs every item in <code>tasks</code> across the pool; blocks until all are done. Returns results in the same order as <code>tasks</code>. Safe to call more than once on the same pool -- workers are reused, not respawned, between calls. Identical contract on both classes.</td></tr>
-<tr><td><code>.close()</code></td><td><code>ProcessPool</code>: kills and reaps every worker. <code>ThreadPool</code>: cancels and reaps every thread. Idempotent either way. <code>map()</code> raises <code>PoolError</code> if called afterward.</td></tr>
+<tr><td><code>.map(tasks)</code></td><td>Runs every item in <code>tasks</code> across the pool; blocks until all are done. Returns results in the same order as <code>tasks</code>. Safe to call more than once on the same pool -- workers are reused, not respawned, between calls.</td></tr>
+<tr><td><code>.close()</code></td><td>Kills and reaps every worker. Idempotent. <code>map()</code> raises <code>PoolError</code> if called afterward.</td></tr>
 </tbody>
 </table>
 <pre><code class="lox">import pool
@@ -1866,90 +1861,8 @@ p = pool.ProcessPool("worker.lox", 4)
 results = p.map([1, 2, 3, 4, 5])   // more tasks than workers is fine
 print results                      // in task order, however workers finished
 results2 = p.map([10, 20])         // same pool, same workers, reused
-p.close()
-
-p2 = pool.ThreadPool(func(x) { return x * x }, 4)   // in-memory function, not a script
-print p2.map([1, 2, 3, 4, 5])
-p2.close()</code></pre>
-<div class="note"><strong>Limitation</strong>If a worker crashes mid-task, <code>map()</code> can't distinguish that from every worker in the pool having exited -- <code>wait_any()</code> doesn't tell the two apart on either backend -- so it raises <code>PoolError</code> either way rather than retrying or reporting which task was lost.</div>
-
-<!-- ==================== MODULE: THREAD ==================== -->
-<h2 class="section" id="mod-thread">thread <span class="pill">module</span></h2>
-<p><code>import thread</code> — runs a closure on a new VM instance within the <em>same</em> OS process. Unlike <a href="#mod-process"><code>process</code></a>, which needs a <code>.lox</code> script path per worker because there's no way to serialise a closure across a process boundary, <code>thread.spawn()</code> takes an in-memory function directly, since no process boundary is crossed.</p>
-<table>
-<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
-<tbody>
-<tr><td><code>thread.spawn(closure, ...args)</code></td><td>Deep-copies <code>closure</code>'s captured upvalues and <code>args</code>, then runs the copy on a new goroutine-backed VM. Returns a <a href="#mod-thread-obj">Thread</a>. Raises <code>ThreadError</code> if <code>closure</code> isn't a function, or if called from the REPL (unsupported).</td></tr>
-<tr><td><code>thread.channel()</code></td><td>Called from inside a spawned function: returns a <a href="#mod-thread-chan-obj">ThreadChannel</a> wired to this thread's own communication channels, the <code>thread</code>-module analogue of <code>process.parent()</code>. Raises <code>ThreadError</code> if called outside a spawned thread.</td></tr>
-<tr><td><code>thread.wait_any(threads)</code></td><td>Blocks until any of the given <a href="#mod-thread-obj">Thread</a> objects has a message ready. Returns <code>(index, value)</code>, or <code>nil</code> once every thread in the list has finished -- the <code>thread</code>-module analogue of <code>process.wait_any()</code>. A thread that finished cleanly (its function returned, or it was cancelled) is dropped from consideration rather than treated as an error; one that ended abnormally and was <em>not</em> cancelled still raises <code>ThreadError</code>.</td></tr>
-</tbody>
-</table>
-<h3 id="mod-thread-obj">Thread objects</h3>
-<table>
-<thead><tr><th>Method</th><th>Description</th></tr></thead>
-<tbody>
-<tr><td><code>send(value)</code></td><td>Hands <code>value</code> to the thread directly -- no serialisation, both sides share one address space. Raises <code>ThreadError</code> if the thread has already finished.</td></tr>
-<tr><td><code>recv()</code></td><td>Blocks until the thread sends a value via <code>channel().send()</code>. Raises <code>ThreadError</code> if the thread finished (no more messages) or ended abnormally -- only the original exception's message text carries across, never its class. A cancelled thread finishing is not treated as abnormal.</td></tr>
-<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>. Returns <code>(false, nil)</code> if nothing is waiting, else <code>(true, value)</code>.</td></tr>
-<tr><td><code>wait()</code></td><td>Blocks until the thread's function returns, and returns whatever it returned -- unlike <code>process</code>'s <code>wait()</code> (an OS exit code only), a thread's real return value survives since there's no process boundary to lose it across. Raises <code>ThreadError</code> if the thread ended abnormally; a cancelled thread's <code>wait()</code> returns <code>nil</code> instead.</td></tr>
-<tr><td><code>cancel()</code></td><td>Cooperative cancellation only, <strong>not</strong> a real kill: unblocks a thread parked in <code>channel().send()</code>/<code>recv()</code> (both raise <code>ThreadError</code> inside the thread's own function), but can't interrupt a thread stuck in a loop that never touches its channel. From the parent's side, though, a successfully cancelled thread looks like a clean finish, not a fault -- mirroring <code>process.kill()</code> producing a clean EOF for <code>process.wait_any()</code> rather than a <code>ProcessError</code>.</td></tr>
-</tbody>
-</table>
-<h3 id="mod-thread-chan-obj">ThreadChannel objects</h3>
-<table>
-<thead><tr><th>Method</th><th>Description</th></tr></thead>
-<tbody>
-<tr><td><code>send(value)</code></td><td>Sends <code>value</code> back to the parent. Raises <code>ThreadError</code> if the parent has called <code>cancel()</code>.</td></tr>
-<tr><td><code>recv()</code></td><td>Blocks until the parent sends a value via <code>t.send()</code>. Raises <code>ThreadError</code> if the parent called <code>cancel()</code> or is gone.</td></tr>
-<tr><td><code>try_recv()</code></td><td>Non-blocking <code>recv()</code>, same tri-state shape.</td></tr>
-</tbody>
-</table>
-<pre><code class="lox">import thread
-
-t = thread.spawn(func() {
-    c = thread.channel()
-    x = c.recv()
-    c.send(x * 2)
-    return "done"
-})
-
-t.send(21)
-print t.recv()   // 42
-print t.wait()   // "done"</code></pre>
-<div class="note"><strong>Limitation</strong>Only a spawned closure's own captured (upvalue) locals are isolated (deep-copied) -- top-level <code>var</code>s, class statics, and module attributes are shared across every thread, not copied. Use <a href="#mod-sync"><code>sync.Mutex</code></a> when more than one thread needs to touch one of those safely. See <a href="md/THREAD_MODULE.md">THREAD_MODULE.md</a> for the full set of limitations.</div>
-
-<!-- ==================== MODULE: SYNC ==================== -->
-<h2 class="section" id="mod-sync">sync <span class="pill">module</span></h2>
-<p><code>import sync</code> — <code>Mutex</code>, the one tool <a href="#mod-thread"><code>thread</code></a> gives you for the gap it deliberately leaves open: globals/class statics/module attributes are shared across threads, not isolated, so <code>Mutex</code> is what makes touching one of those safe from more than one thread at a time.</p>
-<table>
-<thead><tr><th>Function / class</th><th>Description</th></tr></thead>
-<tbody>
-<tr><td><code>sync.Mutex()</code></td><td>Class: constructs a new, unlocked mutex. A <code>Mutex</code> captured by a <code>thread.spawn()</code>-ed closure's upvalue is shared, not cloned, across the new thread and the caller -- a lock only means something if every thread contends for the same one.</td></tr>
-<tr><td><code>.acquire()</code></td><td>Blocks until the lock is free, then takes it. Pair with <code>release()</code> in a <code>finally</code> block to guarantee release on every path -- or prefer <code>locked()</code>, which does this for you, unless the lock needs to span more than one statement.</td></tr>
-<tr><td><code>.release()</code></td><td>Releases the lock. Raises <code>SyncError</code> if called without a matching <code>acquire()</code>.</td></tr>
-<tr><td><code>.locked(closure)</code></td><td>Acquires the lock, calls <code>closure</code> with no arguments, and guarantees release when it returns -- normally or by raising -- without needing a manual release-on-every-path. Returns whatever <code>closure</code> returned. An uncaught exception inside <code>closure</code> surfaces as <code>SyncError</code>, not its original class -- catch it inside <code>closure</code> with your own <code>try</code>/<code>except</code> if the original type matters.</td></tr>
-</tbody>
-</table>
-<pre><code class="lox">import thread
-import sync
-
-counter = 0
-lock = sync.Mutex()
-
-func incrementer() {
-    lock.locked(func() {
-        counter = counter + 1
-    })
-}
-
-threads = []
-foreach (i in range(20)) {
-    threads.append(thread.spawn(incrementer))
-}
-foreach (t in threads) { t.wait() }
-
-print counter   // always exactly 20</code></pre>
-<div class="note"><strong>Limitation</strong>v1 ships a single <code>Mutex</code> only -- no <code>RWMutex</code>, semaphore, or <code>WaitGroup</code>-equivalent yet.</div>
+p.close()</code></pre>
+<div class="note"><strong>Limitation</strong>If a worker crashes mid-task, <code>map()</code> can't distinguish that from every worker in the pool having exited -- <code>wait_any()</code> doesn't tell the two apart -- so it raises <code>PoolError</code> either way rather than retrying or reporting which task was lost.</div>
 
 <!-- ==================== MODULE: SYS ==================== -->
 <h2 class="section" id="mod-sys">sys <span class="pill">module</span></h2>
