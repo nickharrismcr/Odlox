@@ -560,23 +560,11 @@ not a correctness bug in the interpreter's actual logic, but it is
 worked around silently; re-evaluate after any Odin compiler update
 before assuming it's this project's code again.
 
-### Two narrow, deliberate exceptions to "no concurrency"
+### A narrow, deliberate exception to "no concurrency"
 
-Two native modules genuinely touch OS-level concurrency, each staying
-safe without any general threading model:
+One native module genuinely touches OS-level concurrency, staying safe
+without any general threading model:
 
-- **`gfx.lox_julia_array`** (`natives/gfx_julia.odin`) spawns one OS
-  thread per CPU core to fill a `float_array`. This is safe with zero
-  VM/GC interaction because the
-  whole native call is one opcode from the VM's own perspective —
-  `maybe_collect_garbage` only ever runs *between* opcodes (see
-  [Garbage collector](#garbage-collector)), so no collection can
-  interleave with the threads' work — and each worker thread only writes
-  to a disjoint slice of pre-allocated backing storage, never allocates,
-  and never makes a Lox-visible call. The pattern generalizes to any
-  future native that wants to parallelize: keep it to one opcode's worth
-  of work, pre-allocate everything up front, partition output into
-  disjoint slices, and never touch the VM/GC from a worker thread.
 - **`process`** (`vm/process.odin`) has no blocking multi-handle wait to
   reach for (there is no threading primitive anywhere in this
   interpreter), so `recv`/`try_recv` poll the pipe via Windows'

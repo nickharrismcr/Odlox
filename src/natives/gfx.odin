@@ -33,7 +33,6 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "camera", gfx_camera)
 	vm.define_builtin(v, "gfx", "batch", gfx_batch)
 	vm.define_builtin(v, "gfx", "batch_instanced", gfx_batch_instanced)
-	vm.define_builtin(v, "gfx", "lox_julia_array", gfx_lox_julia_array)
 }
 
 // window_created tracks whether a window exists: gfx.texture() requires

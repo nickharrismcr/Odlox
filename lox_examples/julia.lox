@@ -1,16 +1,17 @@
 from gfx import *
-
-// dynamic julia set with hue translation
-
+// GPU (GLSL fragment shader) Julia set -- the escape-time iteration runs
+// per-pixel on the GPU rather than on the CPU into a float_array, same
+// technique as mandel_shader.lox's Mandelbrot. c=(cx,cy) orbits a circle
+// over time (unchanged); scale stays fixed the whole run, so unlike
+// Mandelbrot there's no deep-zoom precision concern here -- plain float
+// uniforms are enough, no double-float (DF64) arithmetic needed.
 
 import math
-import colour
 
-// GLSL vertex shader for 2D textured quad
+// GLSL vertex shader for a fullscreen textured quad.
 var vertex_shader = "
 #version 330
 
-// Vertex shader for pulse effect
 in vec3 vertexPosition;
 in vec2 vertexTexCoord;
 in vec3 vertexNormal;
@@ -20,26 +21,33 @@ uniform mat4 mvp;
 
 out vec2 fragTexCoord;
 out vec4 fragColor;
-out vec3 fragPosition;
 
 void main()
 {
     fragTexCoord = vertexTexCoord;
     fragColor = vertexColor;
-    fragPosition = vertexPosition;
     gl_Position = mvp * vec4(vertexPosition, 1.0);
 }
 "
 
-// GLSL fragment shader for hue translation
-var julia_hue_shader = "
-#version 330 core
+// GLSL fragment shader doing the actual Julia set escape-time iteration
+// per pixel, plus the same hue-rotation the old render-texture + separate
+// post-process shader did -- folded directly in here instead, since
+// there's no longer an intermediate texture to post-process.
+var julia_shader_src = "
+#version 330
 in vec2 fragTexCoord;
 out vec4 finalColor;
-uniform sampler2D texture0;
+
+uniform vec2 resolution;
+uniform float scale;
+uniform float xoffset;
+uniform float yoffset;
+uniform float cx;
+uniform float cy;
+uniform float max_iteration;
 uniform float hue_shift;
 
-// Convert RGB to HSV
 vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
     vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
@@ -49,47 +57,107 @@ vec3 rgb2hsv(vec3 c) {
     return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
 }
 
-// Convert HSV to RGB
 vec3 hsv2rgb(vec3 c) {
-    vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0,4.0,2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
     return c.z * mix(vec3(1.0), rgb, c.y);
 }
 
+// Same six-band electric-blue -> cyan -> green -> yellow -> red ->
+// magenta -> white gradient the old CPU version used, evaluated per-pixel
+// here instead of via a precomputed lookup table.
+vec3 julia_palette(float t) {
+    vec3 c;
+    if (t < 0.16) {
+        float r = t / 0.16;
+        c = vec3(r * 50.0, 100.0 + r * 155.0, 255.0);
+    } else if (t < 0.32) {
+        float r = (t - 0.16) / 0.16;
+        c = vec3(50.0 * (1.0 - r), 255.0, 255.0 * (1.0 - r));
+    } else if (t < 0.48) {
+        float r = (t - 0.32) / 0.16;
+        c = vec3(r * 255.0, 255.0, 0.0);
+    } else if (t < 0.64) {
+        float r = (t - 0.48) / 0.16;
+        c = vec3(255.0, 255.0 * (1.0 - r), 0.0);
+    } else if (t < 0.80) {
+        float r = (t - 0.64) / 0.16;
+        c = vec3(255.0, 0.0, r * 255.0);
+    } else {
+        float r = (t - 0.80) / 0.20;
+        c = vec3(255.0, r * 255.0, 255.0);
+    }
+    return clamp(c, 0.0, 255.0) / 255.0;
+}
+
 void main() {
-    vec4 color = texture(texture0, fragTexCoord);
-    vec3 hsv = rgb2hsv(color.rgb);
+    float half_w = resolution.x * 0.5;
+    float half_h = resolution.y * 0.5;
+    float max_dim = max(resolution.x, resolution.y);
+    float scale_over_max_dim = scale / max_dim;
+
+    float x0 = scale_over_max_dim * (gl_FragCoord.x - half_w) + xoffset;
+    float y0 = scale_over_max_dim * ((resolution.y - gl_FragCoord.y) - half_h) + yoffset;
+
+    float zx = x0;
+    float zy = y0;
+    int max_iter = int(max_iteration);
+    int iteration = 0;
+    for (int i = 0; i < max_iter; i++) {
+        if (zx * zx + zy * zy > 4.0) break;
+        float xtemp = zx * zx - zy * zy + cx;
+        zy = 2.0 * zx * zy + cy;
+        zx = xtemp;
+        iteration++;
+    }
+
+    vec3 color;
+    if (iteration >= max_iter) {
+        // Interior of the set -- flat black, same as the CPU version.
+        color = vec3(0.0);
+    } else {
+        color = julia_palette(float(iteration) / max_iteration);
+    }
+
+    vec3 hsv = rgb2hsv(color);
     hsv.x = mod(hsv.x + hue_shift, 1.0);
-    finalColor = vec4(hsv2rgb(hsv), color.a);
+    finalColor = vec4(hsv2rgb(hsv), 1.0);
 }
 "
 
- 
-var SCALE = 1.0 
 const ZOOM = 4
 const MAX_ITER = 100
 
-win = window(1,1)
+win = window(1, 1)
 win.init()
 win.toggle_fullscreen()
-WIDTH = int(win.get_screen_width())
-HEIGHT = int(win.get_screen_height())
-
-// set draw position based on window size
-xpos = (win.get_screen_width() - WIDTH * SCALE) / 2
-ypos = (win.get_screen_height() - HEIGHT * SCALE) / 2
+WIDTH = win.get_screen_width()
+HEIGHT = win.get_screen_height()
 
 win.set_target_fps(60)
-rt = render_texture(WIDTH, HEIGHT)
-// hue shift shader setup
-hue_shader = shader()
-hue_shader.load_from_memory(vertex_shader, julia_hue_shader)
-hue_shift = hue_shader.get_location("hue_shift")
-hue_shader.set_value_float(hue_shift, 0.0)
 
-// Create a float array for the calc to use
-arr = float_array(WIDTH, HEIGHT)
-R = float(WIDTH/HEIGHT)
+julia_shader = shader()
+julia_shader.load_from_memory(vertex_shader, julia_shader_src)
+if (!julia_shader.is_valid()) {
+    print("Failed to load Julia shader")
+}
+resolution_loc = julia_shader.get_location("resolution")
+scale_loc = julia_shader.get_location("scale")
+xoffset_loc = julia_shader.get_location("xoffset")
+yoffset_loc = julia_shader.get_location("yoffset")
+cx_loc = julia_shader.get_location("cx")
+cy_loc = julia_shader.get_location("cy")
+max_iter_loc = julia_shader.get_location("max_iteration")
+hue_shift_loc = julia_shader.get_location("hue_shift")
+
+R = float(WIDTH) / float(HEIGHT)
 scale = R * ZOOM
+
+julia_shader.set_value_vec2(resolution_loc, vec2(WIDTH, HEIGHT))
+julia_shader.set_value_float(scale_loc, scale)
+julia_shader.set_value_float(xoffset_loc, 0.0)
+julia_shader.set_value_float(yoffset_loc, 0.0)
+julia_shader.set_value_float(max_iter_loc, MAX_ITER)
+
 var speed = 0.01
 var radius = 0.7885
 var t = 0.0
@@ -99,21 +167,17 @@ while (!win.should_close()) {
     cx = radius * math.cos(t)
     cy = radius * math.sin(t)
     t = t + dspeed
-    // native lox function to calculate the Julia set
-    lox_julia_array(arr, WIDTH, HEIGHT, MAX_ITER, cx, cy, scale, 0.0, 0.0)
-    rt.clear(vec4(0, 0, 0, 255))
-    rt.draw_array_fast(arr) // Use optimized array drawing
- 
-    hue_shader.set_value_float(hue_shift, 0.5 + 0.5 * math.sin(t*0.5))
-    win.begin()
-  
-    win.begin_shader_mode(hue_shader)
-    win.clear(vec4(10, 10, 30, 255))
 
-    win.draw_render_texture_ex(rt, xpos, ypos, 0, SCALE, vec4(255,255,255,255))
-    win.text(format("Julia Set c = %g + %gi", math.round_places(cx, 2), math.round_places(cy, 2)), 100, 10, 20, vec4(255,255,255,255))
+    julia_shader.set_value_float(cx_loc, cx)
+    julia_shader.set_value_float(cy_loc, cy)
+    julia_shader.set_value_float(hue_shift_loc, 0.5 + 0.5 * math.sin(t * 0.5))
+
+    win.begin()
+    win.clear(vec4(10, 10, 30, 255))
+    win.begin_shader_mode(julia_shader)
+    win.rectangle(0, 0, WIDTH, HEIGHT, vec4(255, 255, 255, 255))
     win.end_shader_mode()
+    win.text(format("Julia Set c = %g + %gi", math.round_places(cx, 2), math.round_places(cy, 2)), 100, 10, 20, vec4(255, 255, 255, 255))
     win.end()
 }
 win.close()
-
