@@ -129,10 +129,39 @@ resolve_error :: proc(rs: ^Resolver, tok: Token, message: string) {
 // -----------------------------------------------------------------------
 // Entry point
 
-resolve_program :: proc(stmts: []Stmt) -> (globals: Global_Table, had_error: bool) {
+// Repl_Seed carries a REPL session's slot-assignment bookkeeping into a
+// fresh resolve_program call -- implementation phase 7's equivalent of
+// Compile_Repl seeding Parser.globals/globals_declared/global_count
+// before the old single pass runs, moved here since global resolution
+// now happens in the Resolver, not the Parser. The caller (v2_compile.
+// odin's Compile_Repl_V2) is responsible for copying these out of its own
+// persistent state first, same as today's copy_string_int_map/
+// copy_string_bool_map -- resolve_program takes ownership of exactly
+// what's passed in.
+Repl_Seed :: struct {
+	globals:          map[string]int,
+	globals_declared: map[string]bool,
+	global_count:     int,
+}
+
+resolve_program :: proc(stmts: []Stmt, seed: ^Repl_Seed = nil) -> (globals: Global_Table, had_error: bool) {
 	rs := new(Resolver)
-	rs.globals = make(map[string]int)
-	rs.globals_declared = make(map[string]bool)
+	if seed != nil {
+		rs.globals = seed.globals
+		rs.globals_declared = seed.globals_declared
+		rs.global_count = seed.global_count
+		// Rebuild names_by_slot in slot order from the seeded map -- map
+		// iteration order isn't slot order, same reasoning as today's
+		// rebuild_names_by_slot.
+		names := make([dynamic]string, rs.global_count)
+		for name, slot in rs.globals {
+			names[slot] = name
+		}
+		rs.global_names_by_slot = names
+	} else {
+		rs.globals = make(map[string]int)
+		rs.globals_declared = make(map[string]bool)
+	}
 
 	root := new(Resolve_Scope)
 	root.fn_type = .Script

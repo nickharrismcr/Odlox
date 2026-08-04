@@ -584,3 +584,46 @@ test_emit_peephole_fuses_local_increment :: proc(t: ^testing.T) {
 	testing.expect(t, contains_op(fn_chunk, .Add_Nn))
 	testing.expect(t, !contains_op(fn_chunk, .Add_Numeric))
 }
+
+// -----------------------------------------------------------------------
+// REPL global-slot continuity (implementation phase 7) -- same two
+// regression tests compile_test.odin has for the old pipeline, run
+// against Compile_Repl_V2/Repl_State_V2 instead.
+
+@(test)
+test_emit_repl_second_line_reuses_first_lines_global_slot :: proc(t: ^testing.T) {
+	env := core.make_environment("repl")
+	st := make_repl_state_v2(env)
+
+	_, ok1 := Compile_Repl_V2("var x = 1\n", &st)
+	testing.expect(t, ok1)
+	slot_after_line1 := st.globals["x"]
+
+	fn2, ok2 := Compile_Repl_V2("x = x + 1\n", &st)
+	testing.expect(t, ok2)
+	testing.expect_value(t, st.globals["x"], slot_after_line1)
+
+	// Line 2 should read/write the *same* slot as line 1's declaration,
+	// not treat `x` as a fresh, differently-numbered global.
+	found := false
+	for d in decode(fn2.chunk) {
+		if d.op == .Get_Global && int(d.operands[0]) == slot_after_line1 {
+			found = true
+		}
+	}
+	testing.expect(t, found)
+}
+
+@(test)
+test_emit_repl_failed_line_does_not_corrupt_state :: proc(t: ^testing.T) {
+	env := core.make_environment("repl")
+	st := make_repl_state_v2(env)
+
+	_, ok1 := Compile_Repl_V2("var x = 1\n", &st)
+	testing.expect(t, ok1)
+	count_before := st.global_count
+
+	_, ok2 := Compile_Repl_V2("var 1 = 2\n", &st) // syntax error
+	testing.expect(t, !ok2)
+	testing.expect_value(t, st.global_count, count_before)
+}
