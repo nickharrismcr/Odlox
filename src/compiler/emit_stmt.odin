@@ -349,13 +349,16 @@ emit_foreach :: proc(em: ^Emitter, v: ^Stmt_Foreach) {
 // break / continue / return
 //
 // pop_exits here is what pop_locals_above emitted inline today -- see
-// Stmt_Break/Stmt_Continue's own doc comment in ast.odin. No try-crossing
-// check: implementation phase 6 adds that.
+// Stmt_Break/Stmt_Continue's own doc comment in ast.odin. crosses_tries
+// (implementation phase 6) runs *after* pop_exits, matching
+// break_statement/continue_statement's own pop_locals_above-then-
+// emit_crossing_jump order.
 
 @(private = "file")
 emit_break :: proc(em: ^Emitter, v: ^Stmt_Break) {
 	line := v.token.line
 	emit_local_exits(em, v.pop_exits, line)
+	emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, -1, line)
 	loop := em.current.loop
 	append(&loop.breaks, emit_jump_em(em, .Jump, line))
 }
@@ -364,6 +367,7 @@ emit_break :: proc(em: ^Emitter, v: ^Stmt_Break) {
 emit_continue :: proc(em: ^Emitter, v: ^Stmt_Continue) {
 	line := v.token.line
 	emit_local_exits(em, v.pop_exits, line)
+	emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, -1, line)
 	loop := em.current.loop
 	if loop.is_foreach {
 		append(&loop.continues, emit_jump_em(em, .Jump, line))
@@ -372,6 +376,14 @@ emit_continue :: proc(em: ^Emitter, v: ^Stmt_Continue) {
 	}
 }
 
+// emit_return_stmt: for a crossing return, the value expression's own
+// emission already leaves it sitting at retval_slot's stack position (see
+// resolve_return's doc comment -- no store instruction needed for the
+// anchor itself). emit_try_crossings reloads it after each crossed try's
+// finally *actually replays* (only then does anything else land on the
+// stack above it); Op_Return itself trusts whatever's on top by then,
+// same as finalize_break_or_continue's own unconditional `emit_op(Return)`
+// today -- it never does its own separate reload.
 @(private = "file")
 emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 	line := v.token.line
@@ -382,23 +394,62 @@ emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 	} else {
 		emit_op_em(em, .Nil, line)
 	}
+
+	if len(v.crosses_tries) > 0 {
+		emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, v.retval_slot, line)
+	}
 	emit_op_em(em, .Return, line)
+}
+
+// emit_try_crossings emits Op_End_Try (unconditional, purely for its
+// handler-popping side effect -- the 0,0 operand is a no-op offset, not a
+// real jump, same as cross_tries's own emission) for each try in
+// crosses_tries, plus that try's finally re-emitted inline if it has one.
+// No jump-to-a-deferred-site indirection needed, unlike today's
+// trampoline: the whole tree is already available, so every crossed try's
+// cleanup can just run right here, in order. retval_slot < 0 for break/
+// continue (no value to reload); for a crossing return, each crossed
+// try's finally replay is followed by reloading it, same as
+// compile_pending_trampolines's own `if try_ctx.has_finally { ...; if
+// site.retval_slot >= 0 { Get_Local } }` -- nested inside has_finally,
+// since without a finally replay disturbing anything, the value is
+// already sitting on top and re-reading it would push a spurious dup.
+@(private = "file")
+emit_try_crossings :: proc(em: ^Emitter, crosses_tries: []^Stmt_Try, local_count_at_crossing: int, retval_slot: int, line: int) {
+	for try_node in crosses_tries {
+		emit_op_em(em, .End_Try, line)
+		emit_byte_em(em, 0, line)
+		emit_byte_em(em, 0, line)
+		if try_node.has_finally {
+			emit_finally_copy(em, try_node, local_count_at_crossing)
+			if retval_slot >= 0 {
+				emit_op_byte_em(em, .Get_Local, u8(retval_slot), line)
+			}
+		}
+	}
 }
 
 // -----------------------------------------------------------------------
 // try / except / finally
 //
-// finally_body is emitted twice, from the *same* Resolver pass's
-// finally_local_exits/declared_slot fields both times -- correct for
-// exactly the case this phase covers (no crossing return/break/continue):
-// both copies sit at the same relative stack height (right after
-// Op_Finally's always-matching handler opens, and at the shared normal-
-// completion landing point once the try body/every except clause has
-// already closed its own scope), so reading the same fixed slot numbers
-// twice reproduces what the original's reparse-via-snapshot/restore does
-// for this case. Implementation phase 6 is what makes finally_body's
-// resolution replay-relative for a *crossing* site landing at a different
-// stack height.
+// emit_finally_copy re-resolves finally_body immediately before emitting
+// it (resolve_finally_for_crossing, implementation phase 6) rather than
+// trusting any previously-computed slot numbers on its nodes -- including
+// for emit_try's own two "normal" copies below, not just a crossing site.
+// This has to be true even for the normal copies: a crossing return/
+// break/continue *inside* this same try's body or an except clause is
+// emitted chronologically before emit_try reaches its own finally copies,
+// and would otherwise have already overwritten finally_body's shared AST
+// nodes with crossing-specific slot numbers by the time we get here.
+
+@(private = "file")
+emit_finally_copy :: proc(em: ^Emitter, v: ^Stmt_Try, local_count: int) {
+	line := v.token.line
+	exits, had_error := resolve_finally_for_crossing(v, local_count)
+	em.had_error = em.had_error || had_error
+	emit_stmt_list(em, v.finally_body)
+	emit_local_exits(em, exits, line)
+}
 
 @(private = "file")
 emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
@@ -438,8 +489,7 @@ emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 		// Always-matching handler copy: re-raises whatever wasn't
 		// otherwise handled once it finishes.
 		emit_op_em(em, .Finally, line)
-		emit_stmt_list(em, v.finally_body)
-		emit_local_exits(em, v.finally_local_exits, line)
+		emit_finally_copy(em, v, v.finally_ctx.entry_local_count)
 		emit_op_em(em, .Raise, line)
 	}
 
@@ -449,8 +499,7 @@ emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 		patch_jump_em(em, j, line)
 	}
 	if v.has_finally {
-		emit_stmt_list(em, v.finally_body)
-		emit_local_exits(em, v.finally_local_exits, line)
+		emit_finally_copy(em, v, v.finally_ctx.entry_local_count)
 	}
 }
 

@@ -463,6 +463,115 @@ test_emit_try_without_except_or_finally_is_error :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// try/finally *crossing* (implementation phase 6) -- return/break/
+// continue whose target is outside an enclosing try. No equivalent
+// existed in compile_test.odin (the old pipeline's trampoline design
+// makes this hard to reach deliberately); these lock in the "N+1 finally
+// copies for N crossing sites" behavior the plan doc's own try/finally
+// section predicts.
+
+@(test)
+test_emit_return_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
+	c := compile_v2_ok(t, `
+func f() {
+	try {
+		return 1
+	} finally {
+		print "cleanup"
+	}
+}
+`)
+	fn_chunk := inner_function_chunk(t, c)
+	// 2 structural copies (after Op_Finally, at the landing point) + 1 for
+	// the crossing return -- landing point is emitted unconditionally even
+	// though this body's only statement always returns.
+	testing.expect_value(t, count_op(fn_chunk, .Print), 3)
+	// 1 structural (post-body) + 1 from the crossing itself.
+	testing.expect_value(t, count_op(fn_chunk, .End_Try), 2)
+	testing.expect(t, contains_op(fn_chunk, .Get_Local)) // retval_slot reload after the finally replay
+}
+
+@(test)
+test_emit_return_crossing_try_without_finally_only_end_try :: proc(t: ^testing.T) {
+	c := compile_v2_ok(t, `
+func f() {
+	try {
+		return 1
+	} except Exception as e {
+		print e
+	}
+}
+`)
+	fn_chunk := inner_function_chunk(t, c)
+	testing.expect_value(t, count_op(fn_chunk, .Print), 1) // just the except clause's own print e
+	testing.expect_value(t, count_op(fn_chunk, .End_Try), 2) // 1 structural + 1 crossing, no finally to replay
+}
+
+@(test)
+test_emit_break_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
+	c := compile_v2_ok(t, `
+func f() {
+	while (true) {
+		try {
+			break
+		} finally {
+			print "cleanup"
+		}
+	}
+}
+`)
+	fn_chunk := inner_function_chunk(t, c)
+	testing.expect_value(t, count_op(fn_chunk, .Print), 3)
+	testing.expect_value(t, count_op(fn_chunk, .End_Try), 2)
+	// The break's own terminal jump, patched to the loop exit -- confirms
+	// emit_try_crossings doesn't consume/replace it.
+	testing.expect(t, contains_op(fn_chunk, .Jump))
+}
+
+@(test)
+test_emit_continue_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
+	c := compile_v2_ok(t, `
+func f() {
+	while (true) {
+		try {
+			continue
+		} finally {
+			print "cleanup"
+		}
+	}
+}
+`)
+	fn_chunk := inner_function_chunk(t, c)
+	testing.expect_value(t, count_op(fn_chunk, .Print), 3)
+	testing.expect_value(t, count_op(fn_chunk, .End_Try), 2)
+	// The while loop's own back-edge, plus continue's own back-edge.
+	testing.expect_value(t, count_op(fn_chunk, .Loop), 2)
+}
+
+@(test)
+test_emit_return_crossing_nested_trys_replays_both_finallys :: proc(t: ^testing.T) {
+	c := compile_v2_ok(t, `
+func f() {
+	try {
+		try {
+			return 1
+		} finally {
+			print "inner"
+		}
+	} finally {
+		print "outer"
+	}
+}
+`)
+	fn_chunk := inner_function_chunk(t, c)
+	// Each finally gets 2 structural copies + 1 crossing copy = 3 prints
+	// each, 6 total; each try contributes 1 structural End_Try + 1
+	// crossing End_Try = 4 total.
+	testing.expect_value(t, count_op(fn_chunk, .Print), 6)
+	testing.expect_value(t, count_op(fn_chunk, .End_Try), 4)
+}
+
+// -----------------------------------------------------------------------
 // Peephole optimizer -- runs on the finished Chunk regardless of how it
 // was generated, so this doubles as a check that Emit still produces the
 // exact Get_Local/Get_Local/Add_Numeric/Set_Local/Pop shape the optimizer

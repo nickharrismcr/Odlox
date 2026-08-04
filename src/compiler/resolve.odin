@@ -48,6 +48,42 @@ Resolve_Loop :: struct {
 	previous:    ^Resolve_Loop,
 }
 
+// Resolve_Try tracks one enclosing try -- just enough for a return/break/
+// continue to determine which trys it crosses (implementation phase 6):
+// scope_depth_at_entry (same meaning as Try_Finally.scope_depth_at_entry
+// today, used to filter which trys a break/continue crosses vs. one that
+// merely wraps the loop from outside) and the AST node itself, so Emit
+// can read has_finally/finally_ctx directly. Stays on Resolve_Scope.tries
+// throughout body+every except clause+finally resolution, matching how
+// long Compiler.tries stays set today -- see resolve_try's own comment.
+Resolve_Try :: struct {
+	node:                 ^Stmt_Try,
+	scope_depth_at_entry: int,
+	previous:             ^Resolve_Try,
+}
+
+// Finally_Resolve_Ctx captures the ambient context that was active when
+// a Stmt_Try's finally_body was first resolved -- everything Emit needs
+// to correctly re-resolve it fresh at a later emission site (both the
+// two "normal" copies and any crossing site; implementation phase 6):
+// enclosing_scope (for upvalue climbs to reach an outer function's
+// locals), outer_tries (deliberately *excludes* this try itself -- a
+// return/break/continue written directly inside this finally_body must
+// not try to cross this same try again, matching how
+// compile_pending_trampolines temporarily swaps Compiler.tries to
+// try_ctx.previous during a replay today), current_class (for this/
+// super), and entry_scope_depth/entry_local_count (the try statement's
+// own starting point, used for the two ordinary non-crossing copies).
+Finally_Resolve_Ctx :: struct {
+	resolver:          ^Resolver,
+	enclosing_scope:   ^Resolve_Scope,
+	outer_tries:       ^Resolve_Try,
+	current_class:     ^Class_Compiler,
+	fn_type:           Function_Type,
+	entry_scope_depth: int,
+	entry_local_count: int,
+}
+
 Resolve_Scope :: struct {
 	enclosing:     ^Resolve_Scope,
 	fn_type:       Function_Type,
@@ -55,6 +91,7 @@ Resolve_Scope :: struct {
 	local_count:   int,
 	scope_depth:   int,
 	loop:          ^Resolve_Loop, // nil outside any loop *in this function scope*
+	tries:         ^Resolve_Try, // nil outside any try *in this function scope*
 	upvalues:      [256]Upvalue,
 	upvalue_count: int,
 }
@@ -413,12 +450,20 @@ resolve_stmt :: proc(rs: ^Resolver, s: Stmt) {
 			resolve_error(rs, v.token, "Cannot use break outside loop.")
 		} else {
 			v.pop_exits = locals_above_rs(rs, rs.scope.loop.scope_depth)
+			v.crosses_tries = collect_crossed_tries_rs(rs, rs.scope.loop.scope_depth)
+			if len(v.crosses_tries) > 0 {
+				v.local_count_at_crossing = local_count_at_depth_rs(rs, rs.scope.loop.scope_depth)
+			}
 		}
 	case ^Stmt_Continue:
 		if rs.scope.loop == nil {
 			resolve_error(rs, v.token, "Cannot use continue outside loop.")
 		} else {
 			v.pop_exits = locals_above_rs(rs, rs.scope.loop.scope_depth)
+			v.crosses_tries = collect_crossed_tries_rs(rs, rs.scope.loop.scope_depth)
+			if len(v.crosses_tries) > 0 {
+				v.local_count_at_crossing = local_count_at_depth_rs(rs, rs.scope.loop.scope_depth)
+			}
 		}
 	case ^Stmt_Return:
 		resolve_return(rs, v)
@@ -603,9 +648,17 @@ resolve_foreach :: proc(rs: ^Resolver, v: ^Stmt_Foreach) {
 // -----------------------------------------------------------------------
 // return
 //
-// The try-crossing __retval anchoring return_statement does today is
-// implementation phase 6's concern -- this only runs the two validity
-// checks that don't need try-context at all.
+// crosses_tries collects *every* currently-open try unconditionally (see
+// collect_tries_rs) -- a return always crosses all the way to the
+// function boundary, unlike break/continue's loop-scoped filter.
+// retval_slot is anchored *after* the value expression resolves, at
+// whatever local_count is current then, matching return_statement's own
+// add_local-after-expression order exactly: the value's own emission
+// naturally leaves it sitting at that exact stack position (see
+// emit_return_stmt), so no store instruction is needed for the anchor
+// itself. local_count_at_crossing is read *after* the anchor local is
+// added, so it already includes retval_slot -- also matching today's
+// Trampoline_Site.local_count_at_crossing.
 
 @(private = "file")
 resolve_return :: proc(rs: ^Resolver, v: ^Stmt_Return) {
@@ -618,17 +671,49 @@ resolve_return :: proc(rs: ^Resolver, v: ^Stmt_Return) {
 		}
 		resolve_expr(rs, v.value)
 	}
+
+	v.crosses_tries = collect_tries_rs(rs)
+	if len(v.crosses_tries) > 0 {
+		v.retval_slot = add_local_rs(rs, synthetic_token(.Identifier, "__retval", v.token.line))
+		mark_initialised_rs(rs)
+		v.local_count_at_crossing = rs.scope.local_count
+	}
 }
 
 // -----------------------------------------------------------------------
 // try / except / finally
 //
-// Ordinary nested-scope resolution only -- see this file's header comment
-// and Stmt_Try's own doc comment in ast.odin for what implementation
-// phase 6 adds on top of this.
+// resolve_try pushes a Resolve_Try onto rs.scope.tries *before* resolving
+// the body and only pops it back after finally too -- deliberately
+// mirroring how long Compiler.tries stays set today (from before
+// try_except_statement's own try-body parse through its finally parse,
+// only reset to try_ctx.previous right at the very end). This means a
+// return/break/continue inside an except clause or even inside this same
+// try's own finally_body sees this try in its own crossing chain too,
+// same as today -- Finally_Resolve_Ctx.outer_tries (not this rs.scope.
+// tries snapshot) is what a *replay* of finally_body uses instead, to
+// avoid a return inside finally_body trying to cross its own try again.
 
 @(private = "file")
 resolve_try :: proc(rs: ^Resolver, v: ^Stmt_Try) {
+	try_ctx := new(Resolve_Try)
+	try_ctx.node = v
+	try_ctx.scope_depth_at_entry = rs.scope.scope_depth
+	try_ctx.previous = rs.scope.tries
+
+	if v.has_finally {
+		v.finally_ctx = new(Finally_Resolve_Ctx)
+		v.finally_ctx.resolver = rs
+		v.finally_ctx.enclosing_scope = rs.scope
+		v.finally_ctx.outer_tries = rs.scope.tries // deliberately *before* try_ctx is pushed
+		v.finally_ctx.current_class = rs.current_class
+		v.finally_ctx.fn_type = rs.scope.fn_type
+		v.finally_ctx.entry_scope_depth = rs.scope.scope_depth
+		v.finally_ctx.entry_local_count = rs.scope.local_count
+	}
+
+	rs.scope.tries = try_ctx
+
 	begin_scope_rs(rs)
 	resolve_stmt_list(rs, v.body)
 	v.body_local_exits = end_scope_rs(rs)
@@ -644,10 +729,92 @@ resolve_try :: proc(rs: ^Resolver, v: ^Stmt_Try) {
 	}
 
 	if v.has_finally {
+		// This main-pass walk exists for validity-checking finally_body
+		// once (undeclared names, duplicate locals, etc.) -- its
+		// declared_slot/local_exits output is never read by Emit
+		// directly (see Stmt_Try.finally_local_exits's own doc comment);
+		// every actual emission re-resolves via resolve_finally_for_crossing.
 		begin_scope_rs(rs)
 		resolve_stmt_list(rs, v.finally_body)
 		v.finally_local_exits = end_scope_rs(rs)
 	}
+
+	rs.scope.tries = try_ctx.previous
+}
+
+// collect_tries_rs collects every currently-open try in this function
+// scope, innermost first -- what a return crosses unconditionally (all
+// the way to the function boundary, same as return_statement's own
+// unfiltered chain collection today).
+@(private = "file")
+collect_tries_rs :: proc(rs: ^Resolver) -> []^Stmt_Try {
+	chain: [dynamic]^Stmt_Try
+	for t := rs.scope.tries; t != nil; t = t.previous {
+		append(&chain, t.node)
+	}
+	return chain[:]
+}
+
+// collect_crossed_tries_rs is break/continue's version: only trys entered
+// at or after target_scope_depth (i.e. nested *inside* the loop) count as
+// crossed -- a try that merely wraps the loop from outside isn't, same
+// filter cross_tries applies today.
+@(private = "file")
+collect_crossed_tries_rs :: proc(rs: ^Resolver, target_scope_depth: int) -> []^Stmt_Try {
+	chain: [dynamic]^Stmt_Try
+	for t := rs.scope.tries; t != nil && t.scope_depth_at_entry >= target_scope_depth; t = t.previous {
+		append(&chain, t.node)
+	}
+	return chain[:]
+}
+
+// local_count_at_depth_rs mirrors local_count_at_depth: how many locals
+// remain once everything above boundary_scope_depth is popped -- i.e. the
+// local count *as if* pop_locals_above/locals_above_rs had already run,
+// which is exactly the baseline a break/continue's own try-crossing
+// (after its pop_exits already emitted) needs.
+@(private = "file")
+local_count_at_depth_rs :: proc(rs: ^Resolver, boundary_scope_depth: int) -> int {
+	sc := rs.scope
+	n := sc.local_count
+	for n > 0 && sc.locals[n - 1].depth > boundary_scope_depth {
+		n -= 1
+	}
+	return n
+}
+
+// resolve_finally_for_crossing re-resolves try_node's finally_body fresh,
+// seeded with local_count_at_crossing locals already "live" but the
+// try's own fixed entry scope depth -- callable more than once against
+// the same subtree (implementation phase 6), for the two ordinary
+// non-crossing copies (pass finally_ctx.entry_local_count) or any
+// crossing site (pass that site's own local_count_at_crossing). Shares
+// the original Resolver's global table (map/dynamic-array headers are
+// reference-semantic in Odin, so this sees and can safely re-affirm
+// already-assigned global slots) and enclosing scope chain (for upvalue
+// climbs), but starts tries at outer_tries, not this try itself -- see
+// Finally_Resolve_Ctx's own doc comment.
+resolve_finally_for_crossing :: proc(try_node: ^Stmt_Try, local_count_at_crossing: int) -> (exits: []Local_Exit, had_error: bool) {
+	ctx := try_node.finally_ctx
+
+	scope := new(Resolve_Scope)
+	scope.enclosing = ctx.enclosing_scope
+	scope.fn_type = ctx.fn_type
+	scope.scope_depth = ctx.entry_scope_depth
+	scope.local_count = local_count_at_crossing
+	scope.tries = ctx.outer_tries
+
+	temp_rs := new(Resolver)
+	temp_rs^ = ctx.resolver^ // shares globals/globals_declared/global_names_by_slot (reference-semantic)
+	temp_rs.scope = scope
+	temp_rs.current_class = ctx.current_class
+	temp_rs.had_error = false
+
+	begin_scope_rs(temp_rs)
+	resolve_stmt_list(temp_rs, try_node.finally_body)
+	exits = end_scope_rs(temp_rs)
+	had_error = temp_rs.had_error
+	return
 }
 
 // -----------------------------------------------------------------------

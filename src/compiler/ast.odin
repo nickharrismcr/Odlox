@@ -402,20 +402,34 @@ Stmt_Foreach :: struct {
 // each of those blocks' own Stmt_Block.local_exits cleanup -- so the
 // locals living between here and the loop boundary need their own
 // Pop/Close_Upvalue emitted right at the jump site instead.
+// crosses_tries/local_count_at_crossing on Break/Continue/Return (below)
+// are implementation phase 6's addition: every enclosing Stmt_Try between
+// here and the target (the loop being broken out of, for Break/Continue;
+// the function boundary, for Return), innermost first. Each crossed try
+// needs an Op_End_Try (unconditional) plus, if it has a finally, that
+// finally re-emitted right here -- see Stmt_Try's own doc comment on why
+// that emission has to be freshly resolved per crossing site rather than
+// reusing a fixed slot assignment.
 Stmt_Break :: struct {
-	using base: Node_Base,
-	pop_exits:  []Local_Exit, // filled in by the Resolver
+	using base:             Node_Base,
+	pop_exits:              []Local_Exit, // filled in by the Resolver
+	crosses_tries:          []^Stmt_Try, // filled in by the Resolver
+	local_count_at_crossing: int, // filled in by the Resolver; meaningful only if crosses_tries is non-empty
 }
 
 Stmt_Continue :: struct {
-	using base: Node_Base,
-	pop_exits:  []Local_Exit, // filled in by the Resolver
+	using base:             Node_Base,
+	pop_exits:              []Local_Exit, // filled in by the Resolver
+	crosses_tries:          []^Stmt_Try, // filled in by the Resolver
+	local_count_at_crossing: int, // filled in by the Resolver; meaningful only if crosses_tries is non-empty
 }
 
 Stmt_Return :: struct {
-	using base:  Node_Base,
-	value:       Expr, // nil = bare `return`
-	retval_slot: int, // filled in by the Resolver; meaningful only when this return crosses a `finally`
+	using base:              Node_Base,
+	value:                   Expr, // nil = bare `return`
+	crosses_tries:           []^Stmt_Try, // filled in by the Resolver -- every enclosing try, innermost first
+	retval_slot:             int, // filled in by the Resolver; meaningful only if crosses_tries is non-empty. Anchors the return value in a synthetic local before crossing so a crossed try's finally re-emission can't steal this slot number.
+	local_count_at_crossing: int, // filled in by the Resolver; meaningful only if crosses_tries is non-empty. Includes retval_slot itself.
 }
 
 Stmt_Function_Decl :: struct {
@@ -482,13 +496,14 @@ Except_Clause :: struct {
 // supersedes finally_local_exits for crossing sites; this field remains
 // exactly what the Emitter uses for the single normal-completion copy.
 Stmt_Try :: struct {
-	using base:           Node_Base,
-	body:                 []Stmt,
-	excepts:              []Except_Clause,
-	has_finally:          bool,
-	finally_body:         []Stmt, // meaningful only if has_finally
-	body_local_exits:     []Local_Exit, // filled in by the Resolver
-	finally_local_exits:  []Local_Exit, // filled in by the Resolver; meaningful only if has_finally
+	using base:          Node_Base,
+	body:                []Stmt,
+	excepts:             []Except_Clause,
+	has_finally:         bool,
+	finally_body:        []Stmt, // meaningful only if has_finally
+	body_local_exits:    []Local_Exit, // filled in by the Resolver
+	finally_local_exits: []Local_Exit, // filled in by the Resolver's single main-pass walk; meaningful only for validity-checking finally_body once -- Emit never reads this directly (see finally_ctx)
+	finally_ctx:         ^Finally_Resolve_Ctx, // filled in by the Resolver; meaningful only if has_finally. Opaque outside resolve.odin/emit_stmt.odin -- lets Emit re-resolve finally_body's local slots fresh at each emission site (implementation phase 6; see resolve.odin's Finally_Resolve_Ctx doc comment for why).
 }
 
 Import_Item :: struct {
