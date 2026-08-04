@@ -332,7 +332,8 @@ Stmt_Implicit_Assign :: struct {
 	name:          Token,
 	value:         Expr,
 	resolved:      Var_Ref, // filled in by the Resolver
-	declared_slot: int, // meaningful only if the Resolver decides this mention declares a new binding
+	declared_slot: int, // meaningful only if declares_new
+	declares_new:  bool, // filled in by the Resolver -- true for the "first mention" local/global-declaring branches, false for a plain reassignment. Emit needs this: a new local leaves its value on the stack with no Set/Pop (same as Stmt_Var_Decl), a new global uses Define_Global, but an existing binding of any kind emits Set_*+Pop -- three different shapes that `resolved` alone can't distinguish (an existing local and a newly-declared local both resolve to kind == .Local).
 }
 
 Destructure_Target :: struct {
@@ -395,12 +396,20 @@ Stmt_Foreach :: struct {
 	local_exits: []Local_Exit, // filled in by the Resolver; covers var_name and the hidden __iter local, in that order
 }
 
+// pop_exits on Break/Continue is what pop_locals_above emits today: a
+// break/continue jumps directly out of every block it's nested in up to
+// (not including) the target loop's own control-variable scope, bypassing
+// each of those blocks' own Stmt_Block.local_exits cleanup -- so the
+// locals living between here and the loop boundary need their own
+// Pop/Close_Upvalue emitted right at the jump site instead.
 Stmt_Break :: struct {
 	using base: Node_Base,
+	pop_exits:  []Local_Exit, // filled in by the Resolver
 }
 
 Stmt_Continue :: struct {
 	using base: Node_Base,
+	pop_exits:  []Local_Exit, // filled in by the Resolver
 }
 
 Stmt_Return :: struct {

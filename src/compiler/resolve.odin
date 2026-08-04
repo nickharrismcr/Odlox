@@ -34,13 +34,27 @@ import "core:fmt"
 // `debug_info_idx` is never touched here -- it only means something once
 // a real Chunk exists (Emit's job).
 
+// Resolve_Loop tracks one enclosing loop -- just scope_depth (the depth
+// the loop's own control-variable scope lives at, same meaning as
+// compiler_state.odin's Loop.scope_depth), since that's all the Resolver
+// needs: break/continue validity (loop != nil) and, via locals_above_rs,
+// which locals a break/continue jumping out to this depth needs to pop
+// itself (see Stmt_Break/Stmt_Continue's own doc comment in ast.odin).
+// Bytecode-offset bookkeeping (start/breaks/continues/is_foreach) is
+// Emit's own concern, re-derived fresh during emission -- those don't
+// exist yet at resolve time.
+Resolve_Loop :: struct {
+	scope_depth: int,
+	previous:    ^Resolve_Loop,
+}
+
 Resolve_Scope :: struct {
 	enclosing:     ^Resolve_Scope,
 	fn_type:       Function_Type,
 	locals:        [256]Local,
 	local_count:   int,
 	scope_depth:   int,
-	loop_depth:    int, // >0 while resolving a while/for/foreach body in *this* function scope -- break/continue validity
+	loop:          ^Resolve_Loop, // nil outside any loop *in this function scope*
 	upvalues:      [256]Upvalue,
 	upvalue_count: int,
 }
@@ -125,6 +139,36 @@ end_scope_rs :: proc(rs: ^Resolver) -> []Local_Exit {
 		sc.local_count -= 1
 	}
 	return exits[:]
+}
+
+// locals_above_rs is end_scope_rs's read-only counterpart: a snapshot of
+// which locals currently sit above target_depth, without actually closing
+// the scope (local_count/scope_depth are untouched) -- used for a break/
+// continue's own pop_exits, since the scope those locals belong to still
+// gets closed normally later by whatever Stmt_Block owns it; the jump
+// just needs to pop them itself first, matching pop_locals_above.
+@(private = "file")
+locals_above_rs :: proc(rs: ^Resolver, target_depth: int) -> []Local_Exit {
+	sc := rs.scope
+	exits: [dynamic]Local_Exit
+	for i := sc.local_count - 1; i >= 0 && sc.locals[i].depth > target_depth; i -= 1 {
+		append(&exits, Local_Exit{slot = i, is_captured = sc.locals[i].is_captured})
+	}
+	return exits[:]
+}
+
+@(private = "file")
+push_resolve_loop :: proc(rs: ^Resolver) -> ^Resolve_Loop {
+	l := new(Resolve_Loop)
+	l.previous = rs.scope.loop
+	l.scope_depth = rs.scope.scope_depth
+	rs.scope.loop = l
+	return l
+}
+
+@(private = "file")
+pop_resolve_loop :: proc(rs: ^Resolver) {
+	rs.scope.loop = rs.scope.loop.previous
 }
 
 // -----------------------------------------------------------------------
@@ -357,20 +401,24 @@ resolve_stmt :: proc(rs: ^Resolver, s: Stmt) {
 		resolve_stmt(rs, v.else_branch)
 	case ^Stmt_While:
 		resolve_expr(rs, v.condition)
-		rs.scope.loop_depth += 1
+		push_resolve_loop(rs)
 		resolve_stmt(rs, v.body)
-		rs.scope.loop_depth -= 1
+		pop_resolve_loop(rs)
 	case ^Stmt_For:
 		resolve_for(rs, v)
 	case ^Stmt_Foreach:
 		resolve_foreach(rs, v)
 	case ^Stmt_Break:
-		if rs.scope.loop_depth == 0 {
+		if rs.scope.loop == nil {
 			resolve_error(rs, v.token, "Cannot use break outside loop.")
+		} else {
+			v.pop_exits = locals_above_rs(rs, rs.scope.loop.scope_depth)
 		}
 	case ^Stmt_Continue:
-		if rs.scope.loop_depth == 0 {
+		if rs.scope.loop == nil {
 			resolve_error(rs, v.token, "Cannot use continue outside loop.")
+		} else {
+			v.pop_exits = locals_above_rs(rs, rs.scope.loop.scope_depth)
 		}
 	case ^Stmt_Return:
 		resolve_return(rs, v)
@@ -452,12 +500,14 @@ resolve_implicit_assign :: proc(rs: ^Resolver, v: ^Stmt_Implicit_Assign) {
 		resolve_expr(rs, v.value)
 		mark_initialised_rs(rs)
 		v.resolved = Var_Ref{kind = .Local, slot = v.declared_slot}
+		v.declares_new = true
 	} else {
 		slot := global_slot_rs(rs, name)
 		mark_global_declared_rs(rs, name)
 		resolve_expr(rs, v.value)
 		v.declared_slot = slot
 		v.resolved = Var_Ref{kind = .Global, slot = slot}
+		v.declares_new = true
 	}
 }
 
@@ -519,9 +569,9 @@ resolve_for :: proc(rs: ^Resolver, v: ^Stmt_For) {
 	resolve_expr(rs, v.condition)
 	resolve_expr(rs, v.increment)
 
-	rs.scope.loop_depth += 1
+	push_resolve_loop(rs)
 	resolve_stmt(rs, v.body) // body is always a Stmt_Block (see for_statement_ast), opens/closes its own nested scope
-	rs.scope.loop_depth -= 1
+	pop_resolve_loop(rs)
 
 	v.init_local_exits = end_scope_rs(rs)
 }
@@ -543,9 +593,9 @@ resolve_foreach :: proc(rs: ^Resolver, v: ^Stmt_Foreach) {
 	v.iter_slot = add_local_rs(rs, synthetic_token(.Identifier, "__iter", v.var_name.line))
 	mark_initialised_rs(rs)
 
-	rs.scope.loop_depth += 1
+	push_resolve_loop(rs)
 	resolve_stmt(rs, v.body)
-	rs.scope.loop_depth -= 1
+	pop_resolve_loop(rs)
 
 	v.local_exits = end_scope_rs(rs)
 }
