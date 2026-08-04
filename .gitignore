@@ -11,3 +11,7 @@ __loxcache__/
 # test_type.py's fixture (lox/type.lox) opens this relative to cwd --
 # same artifact the reference implementation's own .gitignore excludes for the same reason.
 tests/new_tests/tmp
+# Local copy of the jslox LSP (docs/plans -- see conversation history for
+# why it lives here): its own git history/node_modules aren't tracked as
+# part of this repo.
+jslox/
