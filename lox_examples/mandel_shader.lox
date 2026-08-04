@@ -223,11 +223,14 @@ if (len(args) > 2) {
 
 var xOffset = -0.7269;
 var yOffset = 0.1889;
-var max_iterations = 500;
+var max_iterations = 1500;
+var iterations = 500
+var iterations_per_frame = 0.5
 
 var win = window(1, 1);
 win.init();
 win.toggle_fullscreen();
+win.set_target_fps(0);
 var width = win.get_screen_width();
 var height = win.get_screen_height();
 
@@ -248,7 +251,7 @@ mandel_shader.set_value_vec2(resolution_loc, vec2(width, height));
 // split only needs computing once, up front.
 mandel_shader.set_value_vec2(xoffset_loc, split_double(xOffset));
 mandel_shader.set_value_vec2(yoffset_loc, split_double(yOffset));
-mandel_shader.set_value_float(max_iter_loc, max_iterations);
+mandel_shader.set_value_float(max_iter_loc, iterations);
 
 var t = 0.0;
 
@@ -260,6 +263,8 @@ while (!win.should_close()) {
     mandel_shader.set_value_vec2(scale_loc, split_double(scale));
     t = t + 0.005;
     mandel_shader.set_value_float(time_loc, t);
+    iterations = (iterations < max_iterations) ? iterations + iterations_per_frame : iterations;
+    mandel_shader.set_value_float(max_iter_loc, iterations);
 
     win.begin();
     win.clear(colour.BLACK);
@@ -270,7 +275,7 @@ while (!win.should_close()) {
     win.rectangle(0, 0, width, height, vec4(255, 255, 255, 255));
     win.end_shader_mode();
     win.text(format("FPS: %d", current_fps), 10, 10, 20, vec4(255, 255, 255, 255));
-    win.text(format("Max Iteration: %d", max_iterations), 10, 40, 20, vec4(255, 255, 255, 255));
+    win.text(format("Iterations: %.1f", iterations), 10, 40, 20, vec4(255, 255, 255, 255));
     win.text(format("Scale: %g", math.round_places(scale, 10)), 10, 70, 16, vec4(200, 200, 200, 255));
     win.text(format("Zoom Speed: %g", zoom_speed), 10, 100, 16, vec4(200, 200, 200, 255));
     win.end();
