@@ -132,6 +132,25 @@ Var_Ref :: struct {
 	is_const: bool,
 }
 
+// Local_Exit is what the Emitter (implementation phase 5) needs at the
+// point a scope closes: which local slots go out of scope here, in
+// declaration order, and for each one whether any nested closure captured
+// it as an upvalue (Close_Upvalue) or not (plain Pop) -- mirroring
+// end_scope's own Pop/Close_Upvalue decision today. Centralized on each
+// scope-owning node (Stmt_Block, Stmt_Foreach, Except_Clause, Stmt_For's
+// own init-variable scope, Stmt_Try's body/finally scopes) rather than a
+// captured-flag scattered across every different declaration-site node
+// type, since "is_captured" can only be known once the whole scope has
+// been resolved (a closure capturing an earlier local may appear later in
+// the same scope) -- the Resolver fills this in as each scope closes.
+// Function-body scopes (Function_Decl.body) don't need this: nothing ever
+// emits an explicit end-of-scope Pop/Close_Upvalue for a function's own
+// params/`this` today, since Op_Return already discards the whole frame.
+Local_Exit :: struct {
+	slot:        int,
+	is_captured: bool,
+}
+
 Expr_Variable :: struct {
 	using base: Node_Base,
 	name:       Token,
@@ -297,9 +316,10 @@ Stmt_Breakpoint :: struct {
 Stmt_Var_Decl :: struct {
 	using base:    Node_Base,
 	name:          Token,
-	init:          Expr, // nil if no initializer (the Resolver rejects this when is_const)
+	init:          Expr, // nil if no initializer (the parser requires one when is_const)
 	is_const:      bool,
 	declared_slot: int, // filled in by the Resolver
+	is_local:      bool, // filled in by the Resolver; local vs. global determines which opcode family Emit uses
 }
 
 // Stmt_Implicit_Assign is a bare `x = expr` at statement level for a name
@@ -318,6 +338,7 @@ Stmt_Implicit_Assign :: struct {
 Destructure_Target :: struct {
 	name:          Token,
 	declared_slot: int, // filled in by the Resolver
+	is_local:      bool, // filled in by the Resolver
 }
 
 Stmt_Destructure :: struct {
@@ -327,8 +348,9 @@ Stmt_Destructure :: struct {
 }
 
 Stmt_Block :: struct {
-	using base: Node_Base,
-	stmts:      []Stmt,
+	using base:   Node_Base,
+	stmts:        []Stmt,
+	local_exits:  []Local_Exit, // filled in by the Resolver, in declaration order
 }
 
 Stmt_If :: struct {
@@ -355,20 +377,22 @@ For_Init :: union {
 }
 
 Stmt_For :: struct {
-	using base: Node_Base,
-	init:       For_Init,
-	condition:  Expr, // nil = always true
-	increment:  Expr, // nil = none
-	body:       Stmt,
+	using base:       Node_Base,
+	init:             For_Init,
+	condition:        Expr, // nil = always true
+	increment:        Expr, // nil = none
+	body:             Stmt,
+	init_local_exits: []Local_Exit, // filled in by the Resolver; the init-variable's own outer scope (body is its own Stmt_Block with its own local_exits)
 }
 
 Stmt_Foreach :: struct {
-	using base: Node_Base,
-	var_name:   Token,
-	var_slot:   int, // filled in by the Resolver; hidden loop-variable local
-	iterable:   Expr,
-	iter_slot:  int, // filled in by the Resolver; hidden `__iter` local
-	body:       Stmt,
+	using base:  Node_Base,
+	var_name:    Token,
+	var_slot:    int, // filled in by the Resolver; hidden loop-variable local
+	iterable:    Expr,
+	iter_slot:   int, // filled in by the Resolver; hidden `__iter` local
+	body:        Stmt,
+	local_exits: []Local_Exit, // filled in by the Resolver; covers var_name and the hidden __iter local, in that order
 }
 
 Stmt_Break :: struct {
@@ -389,6 +413,7 @@ Stmt_Function_Decl :: struct {
 	using base:    Node_Base,
 	decl:          ^Function_Decl,
 	declared_slot: int, // filled in by the Resolver; meaningful only for a local declaration
+	is_local:      bool, // filled in by the Resolver
 }
 
 Class_Var_Member :: struct {
@@ -411,12 +436,16 @@ Class_Member :: union {
 }
 
 Stmt_Class_Decl :: struct {
-	using base:     Node_Base,
-	name:           Token,
-	has_superclass: bool,
-	superclass:     Token, // meaningful only if has_superclass
-	members:        []Class_Member,
-	declared_slot:  int, // filled in by the Resolver; meaningful only for a local declaration
+	using base:        Node_Base,
+	name:              Token,
+	has_superclass:    bool,
+	superclass:        Token, // meaningful only if has_superclass
+	superclass_ref:    Var_Ref, // filled in by the Resolver; meaningful only if has_superclass -- the superclass *name's* resolution (may be local/upvalue/global)
+	members:           []Class_Member,
+	declared_slot:     int, // filled in by the Resolver; meaningful only for a local declaration
+	is_local:          bool, // filled in by the Resolver
+	super_slot:        int, // filled in by the Resolver; meaningful only if has_superclass -- the synthetic `super` local wrapping the whole member list
+	super_is_captured: bool, // filled in by the Resolver; meaningful only if has_superclass
 }
 
 Except_Clause :: struct {
@@ -425,6 +454,7 @@ Except_Clause :: struct {
 	binding:      Token, // meaningful only if has_binding
 	binding_slot: int, // filled in by the Resolver
 	body:         []Stmt,
+	local_exits:  []Local_Exit, // filled in by the Resolver; covers the binding (if any) and any locals declared in body
 }
 
 // Stmt_Try carries has_finally/finally_body up front, unlike today's
@@ -433,12 +463,23 @@ Except_Clause :: struct {
 // through a trampoline. See docs/plans/compiler-ast-split.md's
 // "try/finally" section for how finally_body's own local slots stay
 // replay-relative even though everything else here is resolved once.
+//
+// body_local_exits/finally_local_exits are filled in by the ordinary
+// single-pass Resolver walk (implementation phase 4/5) and reflect one
+// normal-completion pass over each. Crossing return/break/continue
+// (implementation phase 6) needs finally_body re-resolved per crossing
+// site instead, since its own locals' slot numbers are replay-relative --
+// see the plan doc's own section on this. That phase-6 mechanism
+// supersedes finally_local_exits for crossing sites; this field remains
+// exactly what the Emitter uses for the single normal-completion copy.
 Stmt_Try :: struct {
-	using base:   Node_Base,
-	body:         []Stmt,
-	excepts:      []Except_Clause,
-	has_finally:  bool,
-	finally_body: []Stmt, // meaningful only if has_finally
+	using base:           Node_Base,
+	body:                 []Stmt,
+	excepts:              []Except_Clause,
+	has_finally:          bool,
+	finally_body:         []Stmt, // meaningful only if has_finally
+	body_local_exits:     []Local_Exit, // filled in by the Resolver
+	finally_local_exits:  []Local_Exit, // filled in by the Resolver; meaningful only if has_finally
 }
 
 Import_Item :: struct {
