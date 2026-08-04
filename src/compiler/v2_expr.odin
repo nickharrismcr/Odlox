@@ -368,6 +368,15 @@ dict_literal_ast :: proc(p: ^Parser, can_assign: bool) -> Expr {
 	return new_clone(Expr_Dict{base = Node_Base{token = tok}, entries = entries[:]})
 }
 
-// lambda_ast (`func(params) { body }` as an expression) is implemented in
-// implementation phase 3, alongside statement-level function parsing --
-// see v2_rules.odin's note on `.Func`.
+// -----------------------------------------------------------------------
+// Lambdas
+
+// lambda_ast compiles `func(params) { body }` used as an expression --
+// declared functions (v2_stmt.odin's function_declaration_ast) and class
+// methods (v2_stmt.odin's method_ast) share the same parse_function_decl_ast
+// (v2_functions.odin); only what surrounds the call differs.
+lambda_ast :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous // 'func' token
+	decl := parse_function_decl_ast(p, .Function, synthetic_token(.Identifier, "<lambda>", tok.line))
+	return new_clone(Expr_Lambda{base = Node_Base{token = tok}, decl = decl})
+}

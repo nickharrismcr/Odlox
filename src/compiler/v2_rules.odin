@@ -2,11 +2,6 @@ package compiler
 
 // AST-building counterpart to rules.odin's get_rule -- see v2_parser.odin's
 // header comment for why this exists as a parallel file during migration.
-//
-// `.Func` is deliberately left unmapped for now (falls through to the
-// nil/nil/.None default below): a lambda's body needs statement-level AST
-// parsing (declaration_ast/statement_ast), which lands in implementation
-// phase 3, not phase 2. lambda_ast and this case both arrive together.
 get_rule_ast :: proc(type: Token_Type) -> Parse_Rule_Ast {
 	#partial switch type {
 	case .Left_Paren:
@@ -72,6 +67,8 @@ get_rule_ast :: proc(type: Token_Type) -> Parse_Rule_Ast {
 		return {this_ast, nil, .None}
 	case .Super:
 		return {super_ast, nil, .None}
+	case .Func:
+		return {lambda_ast, nil, .None}
 	}
 	return {nil, nil, .None}
 }
