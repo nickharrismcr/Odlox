@@ -3,37 +3,48 @@ package compiler
 import "../core"
 import "core:fmt"
 
-// Implementation phase 5 of docs/plans/compiler-ast-split.md: the
-// Emitter's shared primitives and function/chunk lifecycle -- the AST-
-// walking counterpart to compiler_state.odin's emission half (the
-// scope/local/upvalue/global half moved to resolve.odin in phase 4).
-// emit_expr.odin/emit_stmt.odin hold the per-node-kind walk.
+// The Emitter's shared primitives and function/chunk lifecycle: walks the
+// AST the parser (parser.odin/rules.odin/expr.odin/stmt.odin) built and
+// the Resolver (resolve.odin) annotated, turning it into core.Chunk
+// bytecode. emit_expr.odin/emit_stmt.odin hold the per-node-kind walk.
+// See docs/plans/compiler-ast-split.md for the full design.
 //
 // Everything here reads slot numbers/resolutions the Resolver already
 // computed (Var_Ref.kind/slot, declared_slot, Local_Exit, etc. -- all on
-// the AST already) rather than re-deriving them, per the plan doc's own
-// framing: "the Emitter reads pre-computed slot info during its bytecode
-// walk, plus does the jump/patch backpatching."
-//
-// Scope explicitly excludes try/finally *crossing* -- a return/break/
-// continue whose target is outside an enclosing try. emit_stmt.odin's
-// break/continue/return procs emit the ordinary (no crossing) terminal
-// instruction directly; implementation phase 6 adds the ancestor-try walk
-// on top without disturbing this.
+// the AST already) rather than re-deriving them. break/continue/return
+// crossing an enclosing try (emit_stmt.odin's emit_try_crossings) walks
+// the ancestor Stmt_Try chain the Resolver already collected and emits
+// each crossed try's cleanup/finally directly, in order -- no jump-to-a-
+// deferred-site indirection the way a single-pass compiler needs.
 
 // -----------------------------------------------------------------------
 // Types
 
+// Loop tracks one enclosing loop's patch lists during emission --
+// bytecode-offset bookkeeping (start/breaks/continues) that doesn't exist
+// until Emit actually runs, so unlike Local/Upvalue/Class_Compiler (all
+// resolve.odin's, since the Resolver needs them too) this lives here
+// instead. is_foreach: continue forward-jumps to Op_Next rather than
+// back-jumping to start.
+Loop :: struct {
+	start:      int,
+	breaks:     [dynamic]int,
+	is_foreach: bool,
+	continues:  [dynamic]int,
+	previous:   ^Loop,
+}
+
 // Emit_Func is one per function currently being emitted, chained to its
-// lexically enclosing one via `enclosing` -- same nested-compiler shape
-// Compiler used, just without the scope/local/upvalue bookkeeping (that
-// already happened in the Resolver; this only needs the *results*).
+// lexically enclosing one via `enclosing` -- mirrors the Resolver's own
+// per-function nesting (Resolve_Scope), just without the scope/local/
+// upvalue bookkeeping (that already happened in the Resolver; this only
+// needs the *results*).
 Emit_Func :: struct {
 	enclosing:   ^Emit_Func,
 	function:    ^core.Function_Object,
 	environment: ^core.Environment,
 	fn_type:     Function_Type,
-	loop:        ^Loop, // current loop context (compiler_state.odin's shape, reused), for break/continue jump-patching
+	loop:        ^Loop, // current loop context, for break/continue jump-patching
 	local_debug: map[int]int, // local slot -> index into chunk.local_vars, for end_ip patching (best-effort debug info; no test depends on its exact contents)
 }
 
@@ -78,7 +89,7 @@ emit_program :: proc(
 // -----------------------------------------------------------------------
 // Function/chunk lifecycle
 
-current_chunk_em :: proc(em: ^Emitter) -> ^core.Chunk {
+current_chunk :: proc(em: ^Emitter) -> ^core.Chunk {
 	return em.current.function.chunk
 }
 
@@ -112,7 +123,7 @@ begin_function_emit :: proc(em: ^Emitter, fn_type: Function_Type, name: string) 
 // output) instead of live Parser fields.
 @(private = "file")
 end_function_emit :: proc(em: ^Emitter, line: int) -> ^Emit_Func {
-	emit_return_em(em, line)
+	emit_return(em, line)
 	finished := em.current
 	fn := finished.function
 
@@ -130,7 +141,7 @@ end_function_emit :: proc(em: ^Emitter, line: int) -> ^Emit_Func {
 	}
 
 	if !em.skip_peephole {
-		peephole_optimise_em(fn.chunk)
+		peephole_optimise(fn.chunk)
 	}
 
 	em.current = finished.enclosing
@@ -163,11 +174,11 @@ emit_function_decl :: proc(em: ^Emitter, decl: ^Function_Decl, name: string) {
 			// omitted optional param with a Value.Undefined sentinel
 			// before the body starts), matching compile_function_body.
 			slot := u8(param.declared_slot)
-			jump := emit_jump_if_defined_em(em, slot, line)
+			jump := emit_jump_if_defined(em, slot, line)
 			emit_expr(em, param.default)
-			emit_op_byte_em(em, .Set_Local, slot, line)
-			emit_op_em(em, .Pop, line)
-			patch_jump_em(em, jump, line)
+			emit_op_byte(em, .Set_Local, slot, line)
+			emit_op(em, .Pop, line)
+			patch_jump(em, jump, line)
 		} else {
 			min_arity += 1
 		}
@@ -176,25 +187,32 @@ emit_function_decl :: proc(em: ^Emitter, decl: ^Function_Decl, name: string) {
 
 	emit_stmt_list(em, decl.body)
 
-	// Pops back to the enclosing Emit_Func -- current_chunk_em(em) below
+	// Pops back to the enclosing Emit_Func -- current_chunk(em) below
 	// now refers to the *caller's* chunk, matching how compile_function
 	// emits Op_Code.Closure in the enclosing context after end_compiler.
 	finished := end_function_emit(em, line)
-	const_idx := core.chunk_add_constant(current_chunk_em(em), core.make_object_value(&finished.function.obj))
-	emit_op_byte_em(em, .Closure, const_idx, line)
+	// The Resolver only ever tracked upvalue count on its own Resolve_Scope
+	// (a resolve-time-only struct) -- the real Function_Object's own
+	// upvalue_count is what the VM's Op_Closure handler and the
+	// disassembler both size the closure/skip the trailing descriptor
+	// bytes by, so it has to be set explicitly here from decl.upvalues,
+	// the Resolver's actual output.
+	finished.function.upvalue_count = len(decl.upvalues)
+	const_idx := core.chunk_add_constant(current_chunk(em), core.make_object_value(&finished.function.obj))
+	emit_op_byte(em, .Closure, const_idx, line)
 	for uv in decl.upvalues {
-		emit_byte_em(em, 1 if uv.is_local else 0, line)
-		emit_byte_em(em, uv.index, line)
+		emit_byte(em, 1 if uv.is_local else 0, line)
+		emit_byte(em, uv.index, line)
 	}
 }
 
 @(private = "file")
-emit_jump_if_defined_em :: proc(em: ^Emitter, slot: u8, line: int) -> int {
-	emit_op_em(em, .Jump_If_Defined, line)
-	emit_byte_em(em, slot, line)
-	emit_byte_em(em, 0xff, line)
-	emit_byte_em(em, 0xff, line)
-	return len(current_chunk_em(em).code) - 2
+emit_jump_if_defined :: proc(em: ^Emitter, slot: u8, line: int) -> int {
+	emit_op(em, .Jump_If_Defined, line)
+	emit_byte(em, slot, line)
+	emit_byte(em, 0xff, line)
+	emit_byte(em, 0xff, line)
+	return len(current_chunk(em).code) - 2
 }
 
 // -----------------------------------------------------------------------
@@ -203,13 +221,13 @@ emit_jump_if_defined_em :: proc(em: ^Emitter, slot: u8, line: int) -> int {
 // none of them asserted on by compile_test.odin's own suite.
 
 open_local_debug :: proc(em: ^Emitter, name: string, slot: int) {
-	chunk := current_chunk_em(em)
+	chunk := current_chunk(em)
 	append(&chunk.local_vars, core.Local_Var_Info{name = name, start_ip = len(chunk.code), end_ip = -1, slot = slot})
 	em.current.local_debug[slot] = len(chunk.local_vars) - 1
 }
 
 close_local_debug :: proc(em: ^Emitter, slot: int) {
-	chunk := current_chunk_em(em)
+	chunk := current_chunk(em)
 	if idx, ok := em.current.local_debug[slot]; ok {
 		chunk.local_vars[idx].end_ip = len(chunk.code)
 		delete_key(&em.current.local_debug, slot)
@@ -221,42 +239,42 @@ close_local_debug :: proc(em: ^Emitter, slot: int) {
 // taking an explicit line (from the triggering AST node's own token)
 // instead of reading a live Parser's p.previous.line.
 
-emit_byte_em :: proc(em: ^Emitter, b: u8, line: int) {
-	core.chunk_write_byte(current_chunk_em(em), b, line)
+emit_byte :: proc(em: ^Emitter, b: u8, line: int) {
+	core.chunk_write_byte(current_chunk(em), b, line)
 }
 
-emit_op_em :: proc(em: ^Emitter, op: core.Op_Code, line: int) {
-	core.chunk_write_op(current_chunk_em(em), op, line)
+emit_op :: proc(em: ^Emitter, op: core.Op_Code, line: int) {
+	core.chunk_write_op(current_chunk(em), op, line)
 }
 
-emit_op_byte_em :: proc(em: ^Emitter, op: core.Op_Code, b: u8, line: int) {
-	emit_op_em(em, op, line)
-	emit_byte_em(em, b, line)
+emit_op_byte :: proc(em: ^Emitter, op: core.Op_Code, b: u8, line: int) {
+	emit_op(em, op, line)
+	emit_byte(em, b, line)
 }
 
-emit_constant_em :: proc(em: ^Emitter, v: core.Value, line: int) {
-	emit_op_byte_em(em, .Constant, core.chunk_add_constant(current_chunk_em(em), v), line)
+emit_constant :: proc(em: ^Emitter, v: core.Value, line: int) {
+	emit_op_byte(em, .Constant, core.chunk_add_constant(current_chunk(em), v), line)
 }
 
 @(private = "file")
-emit_return_em :: proc(em: ^Emitter, line: int) {
+emit_return :: proc(em: ^Emitter, line: int) {
 	if em.current.fn_type == .Initializer {
-		emit_op_byte_em(em, .Get_Local, 0, line) // implicit `return this`
+		emit_op_byte(em, .Get_Local, 0, line) // implicit `return this`
 	} else {
-		emit_op_em(em, .Nil, line)
+		emit_op(em, .Nil, line)
 	}
-	emit_op_em(em, .Return, line)
+	emit_op(em, .Return, line)
 }
 
-emit_jump_em :: proc(em: ^Emitter, op: core.Op_Code, line: int) -> int {
-	emit_op_em(em, op, line)
-	emit_byte_em(em, 0xff, line)
-	emit_byte_em(em, 0xff, line)
-	return len(current_chunk_em(em).code) - 2
+emit_jump :: proc(em: ^Emitter, op: core.Op_Code, line: int) -> int {
+	emit_op(em, op, line)
+	emit_byte(em, 0xff, line)
+	emit_byte(em, 0xff, line)
+	return len(current_chunk(em).code) - 2
 }
 
-patch_jump_em :: proc(em: ^Emitter, offset: int, line: int) {
-	chunk := current_chunk_em(em)
+patch_jump :: proc(em: ^Emitter, offset: int, line: int) {
+	chunk := current_chunk(em)
 	jump := len(chunk.code) - offset - 2
 	if jump > 0xffff {
 		emit_error(em, line, "Too much code to jump over.")
@@ -265,27 +283,27 @@ patch_jump_em :: proc(em: ^Emitter, offset: int, line: int) {
 	chunk.code[offset + 1] = u8(jump & 0xff)
 }
 
-emit_loop_em :: proc(em: ^Emitter, loop_start: int, line: int) {
-	emit_op_em(em, .Loop, line)
-	offset := len(current_chunk_em(em).code) - loop_start + 2
+emit_loop :: proc(em: ^Emitter, loop_start: int, line: int) {
+	emit_op(em, .Loop, line)
+	offset := len(current_chunk(em).code) - loop_start + 2
 	if offset > 0xffff {
 		emit_error(em, line, "Loop body too large.")
 	}
-	emit_byte_em(em, u8((offset >> 8) & 0xff), line)
-	emit_byte_em(em, u8(offset & 0xff), line)
+	emit_byte(em, u8((offset >> 8) & 0xff), line)
+	emit_byte(em, u8(offset & 0xff), line)
 }
 
-// emit_property_cache_em allocates a fresh monomorphic-inline-cache slot
+// emit_property_cache allocates a fresh monomorphic-inline-cache slot
 // and emits it as the trailing operand byte of a Get_Property/Invoke
 // instruction -- see core/chunk.odin's Property_Cache doc comment. Guards
 // the 255-slots-per-chunk limit the u8 index implies, matching
 // emit_property_cache exactly.
-emit_property_cache_em :: proc(em: ^Emitter, line: int) {
-	chunk := current_chunk_em(em)
+emit_property_cache :: proc(em: ^Emitter, line: int) {
+	chunk := current_chunk(em)
 	if len(chunk.property_caches) == 255 {
 		emit_error(em, line, "Too many property accesses/method calls in one function.")
 	}
-	emit_byte_em(em, core.chunk_add_property_cache(chunk), line)
+	emit_byte(em, core.chunk_add_property_cache(chunk), line)
 }
 
 // -----------------------------------------------------------------------
@@ -338,14 +356,28 @@ compound_op_code :: proc(t: Token_Type) -> core.Op_Code {
 	return .Noop
 }
 
+// DebugSkipPeephole is a package-level toggle (intended for a future
+// `-n`/`--no-peephole` CLI flag) for disabling the peephole optimizer.
+// Read only when constructing an Emitter (see emit_program/Compile_Repl
+// in compile.odin), which copies it into that Emitter's own skip_peephole
+// field -- end_function_emit reads *that*, not this global directly, so
+// one compile's behavior is a stable snapshot rather than shared mutable
+// state another concurrent compile could flip mid-run.
+DebugSkipPeephole := false
+
 // -----------------------------------------------------------------------
-// Compile-time peephole optimizer -- byte-for-byte copy of
-// compiler_state.odin's peephole_optimise/fuse (private to that file, so
-// this file can't call them directly during the migration). Deleted here
-// at cutover, when the original goes away.
+// Compile-time peephole optimizer -- rewrites two fixed-shape 8-byte
+// instruction sequences in place, padding with Noop so already-computed
+// jump offsets elsewhere in the chunk stay valid (nothing shifts). This
+// is stage one of a two-stage design: the VM further specializes
+// Add_Nn/Incr_Const_N into their _Ii/_Ff type-specific children at
+// runtime, on first execution (a minimal inline cache) -- see
+// docs/ARCHITECTURE.md's Chunk section. Runs on the finished Chunk
+// regardless of how it was generated, so it's unaffected by the parse/
+// resolve/emit split.
 
 @(private = "file")
-peephole_optimise_em :: proc(c: ^core.Chunk) {
+peephole_optimise :: proc(c: ^core.Chunk) {
 	code := c.code
 	i := 0
 	for i + 7 < len(code) {
@@ -357,12 +389,12 @@ peephole_optimise_em :: proc(c: ^core.Chunk) {
 			code[i + 4] == u8(core.Op_Code.Add_Numeric)
 
 		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Get_Local) {
-			fuse_em(code, i, .Add_Nn, code[i + 1], code[i + 3])
+			fuse(code, i, .Add_Nn, code[i + 1], code[i + 3])
 			i += 8
 			continue
 		}
 		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Constant) {
-			fuse_em(code, i, .Incr_Const_N, code[i + 1], code[i + 3])
+			fuse(code, i, .Incr_Const_N, code[i + 1], code[i + 3])
 			i += 8
 			continue
 		}
@@ -371,7 +403,7 @@ peephole_optimise_em :: proc(c: ^core.Chunk) {
 }
 
 @(private = "file")
-fuse_em :: proc(code: [dynamic]u8, i: int, op: core.Op_Code, a, b: u8) {
+fuse :: proc(code: [dynamic]u8, i: int, op: core.Op_Code, a, b: u8) {
 	code[i] = u8(op)
 	code[i + 1] = a
 	code[i + 2] = b

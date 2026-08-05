@@ -5,14 +5,14 @@ import "../core"
 // AST-walking counterparts to stmt.odin's declaration/statement/control-
 // flow functions -- see emit.odin's header comment.
 //
-// Scope explicitly excludes try/finally *crossing*: break/continue/return
-// here emit their ordinary terminal instruction (plus whatever
-// pop_exits/Local_Exit cleanup the Resolver already computed for jumping
-// past enclosing blocks) without checking for an enclosing try at all.
-// Implementation phase 6 adds that check on top. Try/except/finally
-// itself IS handled here for the "no crossing" shape -- see emit_try's
-// own doc comment for why reusing one Resolver pass's finally_local_exits
-// for both emission copies is correct for exactly that case.
+// break/continue emit whatever pop_exits/Local_Exit cleanup the Resolver
+// computed for jumping past enclosing blocks, then (emit_try_crossings)
+// End_Try/finally re-emission for every enclosing try being crossed, then
+// their real terminal jump. try/except/finally's own emission
+// (emit_try/emit_finally_copy) always re-resolves finally_body fresh
+// immediately before emitting it, never trusting a previously-computed
+// slot assignment -- see emit_finally_copy's own doc comment for why that
+// has to be true even for emit_try's two "normal" (non-crossing) copies.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
@@ -30,18 +30,18 @@ emit_stmt :: proc(em: ^Emitter, s: Stmt) {
 	switch v in s {
 	case ^Stmt_Expression:
 		emit_expr(em, v.expr)
-		emit_op_em(em, .Pop, v.token.line)
+		emit_op(em, .Pop, v.token.line)
 	case ^Stmt_Print:
 		emit_expr(em, v.expr)
 		// Op_Str first: also the toString() dispatch point, not just
 		// generic string conversion -- matches print_statement exactly.
-		emit_op_em(em, .Str, v.token.line)
-		emit_op_em(em, .Print, v.token.line)
+		emit_op(em, .Str, v.token.line)
+		emit_op(em, .Print, v.token.line)
 	case ^Stmt_Raise:
 		emit_expr(em, v.expr)
-		emit_op_em(em, .Raise, v.token.line)
+		emit_op(em, .Raise, v.token.line)
 	case ^Stmt_Breakpoint:
-		emit_op_em(em, .Breakpoint, v.token.line)
+		emit_op(em, .Breakpoint, v.token.line)
 	case ^Stmt_Var_Decl:
 		emit_var_decl(em, v)
 	case ^Stmt_Implicit_Assign:
@@ -86,9 +86,9 @@ emit_stmt :: proc(em: ^Emitter, s: Stmt) {
 emit_local_exits :: proc(em: ^Emitter, exits: []Local_Exit, line: int) {
 	for ex in exits {
 		if ex.is_captured {
-			emit_op_em(em, .Close_Upvalue, line)
+			emit_op(em, .Close_Upvalue, line)
 		} else {
-			emit_op_em(em, .Pop, line)
+			emit_op(em, .Pop, line)
 		}
 		close_local_debug(em, ex.slot)
 	}
@@ -103,13 +103,13 @@ emit_var_decl :: proc(em: ^Emitter, v: ^Stmt_Var_Decl) {
 	if v.init != nil {
 		emit_expr(em, v.init)
 	} else {
-		emit_op_em(em, .Nil, line)
+		emit_op(em, .Nil, line)
 	}
 	if v.is_local {
 		open_local_debug(em, lexeme(v.name), v.declared_slot)
 	} else {
 		op := core.Op_Code.Define_Global_Const if v.is_const else core.Op_Code.Define_Global
-		emit_op_byte_em(em, op, u8(v.declared_slot), line)
+		emit_op_byte(em, op, u8(v.declared_slot), line)
 	}
 }
 
@@ -128,7 +128,7 @@ emit_implicit_assign :: proc(em: ^Emitter, v: ^Stmt_Implicit_Assign) {
 	if v.declares_new {
 		emit_expr(em, v.value)
 		if kind == .Global {
-			emit_op_byte_em(em, .Define_Global, slot, line)
+			emit_op_byte(em, .Define_Global, slot, line)
 		} else {
 			open_local_debug(em, lexeme(v.name), v.declared_slot)
 		}
@@ -136,8 +136,8 @@ emit_implicit_assign :: proc(em: ^Emitter, v: ^Stmt_Implicit_Assign) {
 	}
 
 	emit_expr(em, v.value)
-	emit_op_byte_em(em, set_op_for_ref(kind), slot, line)
-	emit_op_em(em, .Pop, line)
+	emit_op_byte(em, set_op_for_ref(kind), slot, line)
+	emit_op(em, .Pop, line)
 }
 
 // emit_destructure: Op_Unpack already pushed the values in declaration
@@ -149,7 +149,7 @@ emit_implicit_assign :: proc(em: ^Emitter, v: ^Stmt_Implicit_Assign) {
 emit_destructure :: proc(em: ^Emitter, v: ^Stmt_Destructure) {
 	line := v.token.line
 	emit_expr(em, v.value)
-	emit_op_byte_em(em, .Unpack, u8(len(v.targets)), line)
+	emit_op_byte(em, .Unpack, u8(len(v.targets)), line)
 
 	if len(v.targets) == 0 {
 		return
@@ -160,7 +160,7 @@ emit_destructure :: proc(em: ^Emitter, v: ^Stmt_Destructure) {
 		}
 	} else {
 		for i := len(v.targets) - 1; i >= 0; i -= 1 {
-			emit_op_byte_em(em, .Define_Global, u8(v.targets[i].declared_slot), line)
+			emit_op_byte(em, .Define_Global, u8(v.targets[i].declared_slot), line)
 		}
 	}
 }
@@ -175,7 +175,7 @@ emit_function_declaration_stmt :: proc(em: ^Emitter, v: ^Stmt_Function_Decl) {
 	if v.is_local {
 		open_local_debug(em, lexeme(v.decl.name), v.declared_slot)
 	} else {
-		emit_op_byte_em(em, .Define_Global, u8(v.declared_slot), line)
+		emit_op_byte(em, .Define_Global, u8(v.declared_slot), line)
 	}
 }
 
@@ -186,19 +186,19 @@ emit_function_declaration_stmt :: proc(em: ^Emitter, v: ^Stmt_Function_Decl) {
 emit_if :: proc(em: ^Emitter, v: ^Stmt_If) {
 	line := v.token.line
 	emit_expr(em, v.condition)
-	then_jump := emit_jump_em(em, .Jump_If_False, line)
-	emit_op_em(em, .Pop, line)
+	then_jump := emit_jump(em, .Jump_If_False, line)
+	emit_op(em, .Pop, line)
 	emit_stmt(em, v.then_branch)
-	else_jump := emit_jump_em(em, .Jump, line)
+	else_jump := emit_jump(em, .Jump, line)
 
-	patch_jump_em(em, then_jump, line)
-	emit_op_em(em, .Pop, line)
+	patch_jump(em, then_jump, line)
+	emit_op(em, .Pop, line)
 	emit_stmt(em, v.else_branch)
-	patch_jump_em(em, else_jump, line)
+	patch_jump(em, else_jump, line)
 }
 
 @(private = "file")
-push_loop_em :: proc(em: ^Emitter) -> ^Loop {
+push_loop :: proc(em: ^Emitter) -> ^Loop {
 	loop := new(Loop)
 	loop.previous = em.current.loop
 	em.current.loop = loop
@@ -206,28 +206,28 @@ push_loop_em :: proc(em: ^Emitter) -> ^Loop {
 }
 
 @(private = "file")
-pop_loop_em :: proc(em: ^Emitter) {
+pop_loop :: proc(em: ^Emitter) {
 	em.current.loop = em.current.loop.previous
 }
 
 @(private = "file")
 emit_while :: proc(em: ^Emitter, v: ^Stmt_While) {
 	line := v.token.line
-	loop := push_loop_em(em)
-	loop.start = len(current_chunk_em(em).code)
+	loop := push_loop(em)
+	loop.start = len(current_chunk(em).code)
 
 	emit_expr(em, v.condition)
-	exit_jump := emit_jump_em(em, .Jump_If_False, line)
-	emit_op_em(em, .Pop, line)
+	exit_jump := emit_jump(em, .Jump_If_False, line)
+	emit_op(em, .Pop, line)
 	emit_stmt(em, v.body)
-	emit_loop_em(em, loop.start, line)
+	emit_loop(em, loop.start, line)
 
-	patch_jump_em(em, exit_jump, line)
-	emit_op_em(em, .Pop, line)
+	patch_jump(em, exit_jump, line)
+	emit_op(em, .Pop, line)
 	for b in loop.breaks {
-		patch_jump_em(em, b, line)
+		patch_jump(em, b, line)
 	}
-	pop_loop_em(em)
+	pop_loop(em)
 }
 
 // emit_for compiles the classic C-shaped `for init; cond; incr { body }`.
@@ -248,41 +248,41 @@ emit_for :: proc(em: ^Emitter, v: ^Stmt_For) {
 			emit_implicit_assign(em, init)
 		case ^Stmt_Expression:
 			emit_expr(em, init.expr)
-			emit_op_em(em, .Pop, init.token.line)
+			emit_op(em, .Pop, init.token.line)
 		}
 	}
 
-	loop := push_loop_em(em)
-	loop.start = len(current_chunk_em(em).code)
+	loop := push_loop(em)
+	loop.start = len(current_chunk(em).code)
 
 	exit_jump := -1
 	if v.condition != nil {
 		emit_expr(em, v.condition)
-		exit_jump = emit_jump_em(em, .Jump_If_False, line)
-		emit_op_em(em, .Pop, line)
+		exit_jump = emit_jump(em, .Jump_If_False, line)
+		emit_op(em, .Pop, line)
 	}
 
 	if v.increment != nil {
-		body_jump := emit_jump_em(em, .Jump, line)
-		increment_start := len(current_chunk_em(em).code)
+		body_jump := emit_jump(em, .Jump, line)
+		increment_start := len(current_chunk(em).code)
 		emit_expr(em, v.increment)
-		emit_op_em(em, .Pop, line)
-		emit_loop_em(em, loop.start, line)
+		emit_op(em, .Pop, line)
+		emit_loop(em, loop.start, line)
 		loop.start = increment_start
-		patch_jump_em(em, body_jump, line)
+		patch_jump(em, body_jump, line)
 	}
 
 	emit_stmt(em, v.body)
-	emit_loop_em(em, loop.start, line)
+	emit_loop(em, loop.start, line)
 
 	if exit_jump != -1 {
-		patch_jump_em(em, exit_jump, line)
-		emit_op_em(em, .Pop, line)
+		patch_jump(em, exit_jump, line)
+		emit_op(em, .Pop, line)
 	}
 	for b in loop.breaks {
-		patch_jump_em(em, b, line)
+		patch_jump(em, b, line)
 	}
-	pop_loop_em(em)
+	pop_loop(em)
 
 	emit_local_exits(em, v.init_local_exits, line) // closes the init-variable's own outer scope
 }
@@ -299,48 +299,48 @@ emit_foreach :: proc(em: ^Emitter, v: ^Stmt_Foreach) {
 	// write into it -- it has no initializer expression of its own, so
 	// without this explicit Nil push its slot would silently alias
 	// whatever the iterable expression pushes instead.
-	emit_op_em(em, .Nil, line)
+	emit_op(em, .Nil, line)
 	open_local_debug(em, lexeme(v.var_name), v.var_slot)
 
 	emit_expr(em, v.iterable) // becomes __iter's initial value
 	open_local_debug(em, "__iter", v.iter_slot)
 
-	loop := push_loop_em(em)
+	loop := push_loop(em)
 	loop.is_foreach = true
 
-	emit_op_em(em, .Foreach, line)
-	emit_byte_em(em, u8(v.var_slot), line)
-	emit_byte_em(em, u8(v.iter_slot), line)
-	end_jump := len(current_chunk_em(em).code)
-	emit_byte_em(em, 0xff, line)
-	emit_byte_em(em, 0xff, line)
+	emit_op(em, .Foreach, line)
+	emit_byte(em, u8(v.var_slot), line)
+	emit_byte(em, u8(v.iter_slot), line)
+	end_jump := len(current_chunk(em).code)
+	emit_byte(em, 0xff, line)
+	emit_byte(em, 0xff, line)
 
-	loop.start = len(current_chunk_em(em).code)
+	loop.start = len(current_chunk(em).code)
 	emit_stmt(em, v.body)
 
 	for c in loop.continues {
-		patch_jump_em(em, c, line)
+		patch_jump(em, c, line)
 	}
 
 	// Op_Next operands: 2-byte back-jump, then var_slot and iter_slot --
-	// "+4" rather than emit_loop_em's own "+2" since Op_Next has two more
+	// "+4" rather than emit_loop's own "+2" since Op_Next has two more
 	// trailing operand bytes still part of this same instruction's width.
-	emit_op_em(em, .Next, line)
-	back_offset := len(current_chunk_em(em).code) - loop.start + 4
+	emit_op(em, .Next, line)
+	back_offset := len(current_chunk(em).code) - loop.start + 4
 	if back_offset > 0xffff {
 		emit_error(em, line, "Loop body too large.")
 	}
-	emit_byte_em(em, u8((back_offset >> 8) & 0xff), line)
-	emit_byte_em(em, u8(back_offset & 0xff), line)
-	emit_byte_em(em, u8(v.var_slot), line)
-	emit_byte_em(em, u8(v.iter_slot), line)
+	emit_byte(em, u8((back_offset >> 8) & 0xff), line)
+	emit_byte(em, u8(back_offset & 0xff), line)
+	emit_byte(em, u8(v.var_slot), line)
+	emit_byte(em, u8(v.iter_slot), line)
 
-	emit_op_em(em, .End_Foreach, line)
-	patch_jump_em(em, end_jump, line)
+	emit_op(em, .End_Foreach, line)
+	patch_jump(em, end_jump, line)
 	for b in loop.breaks {
-		patch_jump_em(em, b, line)
+		patch_jump(em, b, line)
 	}
-	pop_loop_em(em)
+	pop_loop(em)
 
 	emit_local_exits(em, v.local_exits, line) // closes __iter and the loop variable's scope
 }
@@ -360,7 +360,7 @@ emit_break :: proc(em: ^Emitter, v: ^Stmt_Break) {
 	emit_local_exits(em, v.pop_exits, line)
 	emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, -1, line)
 	loop := em.current.loop
-	append(&loop.breaks, emit_jump_em(em, .Jump, line))
+	append(&loop.breaks, emit_jump(em, .Jump, line))
 }
 
 @(private = "file")
@@ -370,9 +370,9 @@ emit_continue :: proc(em: ^Emitter, v: ^Stmt_Continue) {
 	emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, -1, line)
 	loop := em.current.loop
 	if loop.is_foreach {
-		append(&loop.continues, emit_jump_em(em, .Jump, line))
+		append(&loop.continues, emit_jump(em, .Jump, line))
 	} else {
-		emit_loop_em(em, loop.start, line)
+		emit_loop(em, loop.start, line)
 	}
 }
 
@@ -390,15 +390,15 @@ emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 	if v.value != nil {
 		emit_expr(em, v.value)
 	} else if em.current.fn_type == .Initializer {
-		emit_op_byte_em(em, .Get_Local, 0, line) // implicit `return this`
+		emit_op_byte(em, .Get_Local, 0, line) // implicit `return this`
 	} else {
-		emit_op_em(em, .Nil, line)
+		emit_op(em, .Nil, line)
 	}
 
 	if len(v.crosses_tries) > 0 {
 		emit_try_crossings(em, v.crosses_tries, v.local_count_at_crossing, v.retval_slot, line)
 	}
-	emit_op_em(em, .Return, line)
+	emit_op(em, .Return, line)
 }
 
 // emit_try_crossings emits Op_End_Try (unconditional, purely for its
@@ -417,13 +417,13 @@ emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 @(private = "file")
 emit_try_crossings :: proc(em: ^Emitter, crosses_tries: []^Stmt_Try, local_count_at_crossing: int, retval_slot: int, line: int) {
 	for try_node in crosses_tries {
-		emit_op_em(em, .End_Try, line)
-		emit_byte_em(em, 0, line)
-		emit_byte_em(em, 0, line)
+		emit_op(em, .End_Try, line)
+		emit_byte(em, 0, line)
+		emit_byte(em, 0, line)
 		if try_node.has_finally {
 			emit_finally_copy(em, try_node, local_count_at_crossing)
 			if retval_slot >= 0 {
-				emit_op_byte_em(em, .Get_Local, u8(retval_slot), line)
+				emit_op_byte(em, .Get_Local, u8(retval_slot), line)
 			}
 		}
 	}
@@ -454,25 +454,25 @@ emit_finally_copy :: proc(em: ^Emitter, v: ^Stmt_Try, local_count: int) {
 @(private = "file")
 emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 	line := v.token.line
-	try_jump := emit_jump_em(em, .Try, line)
+	try_jump := emit_jump(em, .Try, line)
 
 	emit_stmt_list(em, v.body)
 	emit_local_exits(em, v.body_local_exits, line)
 
-	normal_end_jump := emit_jump_em(em, .End_Try, line)
-	patch_jump_em(em, try_jump, line) // Op_Try's operand -> the first clause, patched once
+	normal_end_jump := emit_jump(em, .End_Try, line)
+	patch_jump(em, try_jump, line) // Op_Try's operand -> the first clause, patched once
 
 	clause_exit_jumps: [dynamic]int
 	for ex in v.excepts {
 		ex_line := ex.type_name.line
-		type_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(ex.type_name)))
-		emit_op_em(em, .Except, ex_line)
-		emit_byte_em(em, type_const, ex_line)
+		type_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(ex.type_name)))
+		emit_op(em, .Except, ex_line)
+		emit_byte(em, type_const, ex_line)
 		// Except's own 2-byte skip offset makes it self-describing -- see
 		// core/chunk.odin's Op_Code doc comment.
-		skip_jump := len(current_chunk_em(em).code)
-		emit_byte_em(em, 0xff, ex_line)
-		emit_byte_em(em, 0xff, ex_line)
+		skip_jump := len(current_chunk(em).code)
+		emit_byte(em, 0xff, ex_line)
+		emit_byte(em, 0xff, ex_line)
 
 		if ex.has_binding {
 			open_local_debug(em, lexeme(ex.binding), ex.binding_slot)
@@ -480,23 +480,23 @@ emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 		emit_stmt_list(em, ex.body)
 		emit_local_exits(em, ex.local_exits, ex_line)
 
-		append(&clause_exit_jumps, emit_jump_em(em, .Jump, ex_line))
-		emit_op_em(em, .End_Except, ex_line)
-		patch_jump_em(em, skip_jump, ex_line)
+		append(&clause_exit_jumps, emit_jump(em, .Jump, ex_line))
+		emit_op(em, .End_Except, ex_line)
+		patch_jump(em, skip_jump, ex_line)
 	}
 
 	if v.has_finally {
 		// Always-matching handler copy: re-raises whatever wasn't
 		// otherwise handled once it finishes.
-		emit_op_em(em, .Finally, line)
+		emit_op(em, .Finally, line)
 		emit_finally_copy(em, v, v.finally_ctx.entry_local_count)
-		emit_op_em(em, .Raise, line)
+		emit_op(em, .Raise, line)
 	}
 
 	// Shared normal-completion landing point.
-	patch_jump_em(em, normal_end_jump, line)
+	patch_jump(em, normal_end_jump, line)
 	for j in clause_exit_jumps {
-		patch_jump_em(em, j, line)
+		patch_jump(em, j, line)
 	}
 	if v.has_finally {
 		emit_finally_copy(em, v, v.finally_ctx.entry_local_count)
@@ -509,19 +509,19 @@ emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 @(private = "file")
 emit_class_decl :: proc(em: ^Emitter, v: ^Stmt_Class_Decl) {
 	line := v.token.line
-	name_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(v.name)))
-	emit_op_byte_em(em, .Class, name_const, line)
+	name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(v.name)))
+	emit_op_byte(em, .Class, name_const, line)
 
 	if v.is_local {
 		open_local_debug(em, lexeme(v.name), v.declared_slot)
 	} else {
-		emit_op_byte_em(em, .Define_Global, u8(v.declared_slot), line)
+		emit_op_byte(em, .Define_Global, u8(v.declared_slot), line)
 	}
 
 	if v.has_superclass {
-		emit_op_byte_em(em, get_op_for_ref(v.superclass_ref.kind), u8(v.superclass_ref.slot), line)
+		emit_op_byte(em, get_op_for_ref(v.superclass_ref.kind), u8(v.superclass_ref.slot), line)
 		emit_class_self_ref(em, v, line)
-		emit_op_em(em, .Inherit, line)
+		emit_op(em, .Inherit, line)
 		open_local_debug(em, "super", v.super_slot)
 	}
 
@@ -536,7 +536,7 @@ emit_class_decl :: proc(em: ^Emitter, v: ^Stmt_Class_Decl) {
 		}
 	}
 
-	emit_op_em(em, .Pop, line) // drop the class reference
+	emit_op(em, .Pop, line) // drop the class reference
 
 	if v.has_superclass {
 		exit := Local_Exit{slot = v.super_slot, is_captured = v.super_is_captured}
@@ -552,25 +552,25 @@ emit_class_decl :: proc(em: ^Emitter, v: ^Stmt_Class_Decl) {
 @(private = "file")
 emit_class_self_ref :: proc(em: ^Emitter, v: ^Stmt_Class_Decl, line: int) {
 	op := core.Op_Code.Get_Local if v.is_local else core.Op_Code.Get_Global
-	emit_op_byte_em(em, op, u8(v.declared_slot), line)
+	emit_op_byte(em, op, u8(v.declared_slot), line)
 }
 
 @(private = "file")
 emit_method :: proc(em: ^Emitter, m: ^Method, line: int) {
-	name_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(m.name)))
+	name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(m.name)))
 	emit_function_decl(em, m.decl, lexeme(m.name))
-	emit_op_byte_em(em, .Static_Method if m.is_static else .Method, name_const, line)
+	emit_op_byte(em, .Static_Method if m.is_static else .Method, name_const, line)
 }
 
 @(private = "file")
 emit_class_var_member :: proc(em: ^Emitter, m: ^Class_Var_Member, line: int) {
-	name_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(m.name)))
+	name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(m.name)))
 	if m.init != nil {
 		emit_expr(em, m.init)
 	} else {
-		emit_op_em(em, .Nil, line)
+		emit_op(em, .Nil, line)
 	}
-	emit_op_byte_em(em, .Class_Var, name_const, line)
+	emit_op_byte(em, .Class_Var, name_const, line)
 }
 
 // -----------------------------------------------------------------------
@@ -580,13 +580,13 @@ emit_class_var_member :: proc(em: ^Emitter, m: ^Class_Var_Member, line: int) {
 emit_import :: proc(em: ^Emitter, v: ^Stmt_Import) {
 	line := v.token.line
 	for item in v.items {
-		module_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(item.module)))
+		module_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(item.module)))
 		alias_const := module_const
 		if item.has_alias {
-			alias_const = core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(item.alias)))
+			alias_const = core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(item.alias)))
 		}
-		emit_op_byte_em(em, .Import, module_const, line)
-		emit_byte_em(em, alias_const, line)
+		emit_op_byte(em, .Import, module_const, line)
+		emit_byte(em, alias_const, line)
 		// Op_Import defines the alias's global itself at runtime; the
 		// compiler only needed the slot to exist (already assigned by
 		// the Resolver), matching import_statement's own comment.
@@ -596,21 +596,21 @@ emit_import :: proc(em: ^Emitter, v: ^Stmt_Import) {
 @(private = "file")
 emit_from_import :: proc(em: ^Emitter, v: ^Stmt_From_Import) {
 	line := v.token.line
-	module_const := core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(v.module)))
+	module_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(v.module)))
 
 	if v.wildcard {
-		emit_op_byte_em(em, .Import_From, module_const, line)
-		emit_byte_em(em, 0, line) // 0 = import everything the module exports
+		emit_op_byte(em, .Import_From, module_const, line)
+		emit_byte(em, 0, line) // 0 = import everything the module exports
 		return
 	}
 
 	name_consts: [dynamic]u8
 	for n in v.names {
-		append(&name_consts, core.chunk_add_constant(current_chunk_em(em), core.make_interned_string_value(lexeme(n.name))))
+		append(&name_consts, core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(n.name))))
 	}
-	emit_op_byte_em(em, .Import_From, module_const, line)
-	emit_byte_em(em, u8(len(name_consts)), line)
+	emit_op_byte(em, .Import_From, module_const, line)
+	emit_byte(em, u8(len(name_consts)), line)
 	for c in name_consts {
-		emit_byte_em(em, c, line)
+		emit_byte(em, c, line)
 	}
 }

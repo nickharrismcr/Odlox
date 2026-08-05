@@ -15,7 +15,7 @@ get_rule :: proc(type: Token_Type) -> Parse_Rule {
 		// Prefix: grouping `(expr)` or a tuple `(a, b, ...)` (grouping
 		// itself decides which, based on a trailing comma). Infix: a
 		// call on whatever expression precedes it.
-		return {grouping, call, .Call}
+		return {parenthesized, call, .Call}
 	case .Left_Bracket:
 		return {list_literal, subscript, .Call}
 	case .Left_Brace:

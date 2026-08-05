@@ -3,16 +3,13 @@ package compiler
 import "../core"
 
 // AST node types built by the parser (parser.odin/rules.odin/expr.odin/
-// stmt.odin), annotated in place by the Resolver (resolve.odin, not yet
-// written), and walked by the Emitter (emit.odin/emit_expr.odin/
-// emit_stmt.odin, not yet written) to produce bytecode. See
-// docs/plans/compiler-ast-split.md for the full design and the reasoning
-// behind each collapsing/reuse decision below.
+// stmt.odin), annotated in place by the Resolver (resolve.odin), and
+// walked by the Emitter (emit.odin/emit_expr.odin/emit_stmt.odin) to
+// produce bytecode. See docs/plans/compiler-ast-split.md for the full
+// design and the reasoning behind each collapsing/reuse decision below.
 //
-// `Function_Type` and `Upvalue` are declared in compiler_state.odin and
-// reused here unchanged rather than redeclared -- both migrate to
-// resolve.odin at cutover, at which point this comment (and
-// compiler_state.odin) goes away.
+// `Function_Type` and `Upvalue` are declared in resolve.odin and reused
+// here unchanged rather than redeclared.
 //
 // Expr/Stmt are unions of *pointer* variants (^Expr_Literal, ^Stmt_If,
 // ...), so a node reference is typed plain `Expr`/`Stmt`, never `^Expr`/

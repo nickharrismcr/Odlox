@@ -1,36 +1,38 @@
 package compiler
 
-import "../core"
-import "core:fmt"
-
-// Declarations, statements, and control flow. See functions.odin for
-// function/method body compilation (shared with expr.odin's lambda) and
-// compiler_state.odin for the scope/local/loop/try bookkeeping this file
-// drives.
+// Declarations, statements, and control flow. Each function builds and
+// returns an AST node -- see docs/plans/compiler-ast-split.md.
 //
-// break/continue/return crossing an enclosing `try` correctly *unwind
-// exception handlers* (cross_tries, below -- so frame.handlers never
-// holds a stale entry for a try no longer lexically in scope) AND
-// replay that try's `finally` block on the way out, via a deferred-
-// trampoline design (see docs/ARCHITECTURE.md's Exceptions section):
-// `finally` is parsed *last*, so a return/break/continue written inside
-// the try body can't yet know whether cleanup code needs to run first --
-// it defers into Try_Finally.pending (a Trampoline_Site) instead of
-// emitting its terminal instruction immediately, and
-// try_except_statement resolves every pending site (compile_pending_
-// trampolines) once it learns whether a finally exists.
+// Scope tracking, loop/try context stacks, and every validity check that
+// needs more than a token comparison (break/continue outside a loop,
+// return outside a function or with a value in an initializer, const
+// reassignment) are deliberately NOT done here -- they're the Resolver's
+// job (resolve.odin). Self-inheritance is checked right here in
+// class_declaration, since it's pure lexeme comparison with no scope
+// context needed.
+//
+// try/except/finally carries its whole body/excepts/finally_body up front
+// as one Stmt_Try node (see ast.odin's own doc comment on it) -- there is
+// no trampoline mechanism here the way a single-pass compiler needs;
+// resolve.odin/emit_stmt.odin handle a return/break/continue that crosses
+// a try directly, by walking the already-complete tree.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
 
-block :: proc(p: ^Parser) {
+block :: proc(p: ^Parser) -> []Stmt {
+	stmts: [dynamic]Stmt
 	for !check(p, .Right_Brace) && !check(p, .Eof) {
-		declaration(p)
+		s := declaration(p)
+		if s != nil {
+			append(&stmts, s)
+		}
 	}
 	consume(p, .Right_Brace, "Expect '}' after block.")
+	return stmts[:]
 }
 
-declaration :: proc(p: ^Parser) {
+declaration :: proc(p: ^Parser) -> Stmt {
 	p.stmt_depth += 1
 	defer p.stmt_depth -= 1
 	if p.stmt_depth > MAX_STMT_DEPTH {
@@ -38,266 +40,177 @@ declaration :: proc(p: ^Parser) {
 		for p.current.type != .Eof {
 			advance(p)
 		}
-		return
+		return nil
 	}
 
+	result: Stmt
 	#partial switch p.current.type {
 	case .Var:
 		advance(p)
-		var_declaration(p)
+		result = var_declaration(p)
 	case .Const:
 		advance(p)
-		const_declaration(p)
+		result = const_declaration(p)
 	case .Func:
 		advance(p)
-		function_declaration(p)
+		result = function_declaration(p)
 	case .Class:
 		advance(p)
-		class_declaration(p)
+		result = class_declaration(p)
 	case .Import:
 		advance(p)
-		import_statement(p)
+		result = import_statement(p)
 	case .From:
 		advance(p)
-		from_import_statement(p)
+		result = from_import_statement(p)
 	case:
-		statement(p)
+		result = statement(p)
 	}
 
 	if p.panic_mode {
 		synchronize(p)
 	}
+	return result
 }
 
-statement :: proc(p: ^Parser) {
+statement :: proc(p: ^Parser) -> Stmt {
 	#partial switch p.current.type {
 	case .Print:
 		advance(p)
-		print_statement(p)
+		return print_statement(p)
 	case .If:
 		advance(p)
-		if_statement(p)
+		return if_statement(p)
 	case .While:
 		advance(p)
-		while_statement(p)
+		return while_statement(p)
 	case .For:
 		advance(p)
-		for_statement(p)
+		return for_statement(p)
 	case .Foreach:
 		advance(p)
-		foreach_statement(p)
+		return foreach_statement(p)
 	case .Return:
 		advance(p)
-		return_statement(p)
+		return return_statement(p)
 	case .Break:
 		advance(p)
-		break_statement(p)
+		return break_statement(p)
 	case .Continue:
 		advance(p)
-		continue_statement(p)
+		return continue_statement(p)
 	case .Try:
 		advance(p)
-		try_except_statement(p)
+		return try_except_statement(p)
 	case .Raise:
 		advance(p)
-		raise_statement(p)
+		return raise_statement(p)
 	case .Breakpoint:
+		tok := p.current
 		advance(p)
-		emit_op(p, .Breakpoint)
 		consume_eol(p, "Expect newline after 'breakpoint'.")
+		return new_clone(Stmt_Breakpoint{base = Node_Base{token = tok}})
 	case .Left_Brace:
+		tok := p.current
 		advance(p)
-		begin_scope(p)
-		block(p)
-		end_scope(p)
+		stmts := block(p)
+		return new_clone(Stmt_Block{base = Node_Base{token = tok}, stmts = stmts})
 	case .Semicolon, .Eol:
 		advance(p) // empty statement
+		return nil
 	case .Identifier:
 		if check_next(p, .Equal) {
 			advance(p)
-			implicit_assignment_statement(p)
+			return implicit_assignment_statement(p)
 		} else if check_next(p, .Comma) && looks_like_destructuring(p) {
 			advance(p)
-			destructuring_assignment_statement(p)
-		} else {
-			expression_statement(p)
+			return destructuring_assignment_statement(p)
 		}
+		return expression_statement(p)
 	case:
-		expression_statement(p)
+		return expression_statement(p)
 	}
 }
 
-expression_statement :: proc(p: ^Parser) {
-	expression(p)
+expression_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.current
+	e := expression(p)
 	consume_eol(p, "Expect newline after expression.")
-	emit_op(p, .Pop)
+	return new_clone(Stmt_Expression{base = Node_Base{token = tok}, expr = e})
 }
 
-print_statement :: proc(p: ^Parser) {
-	expression(p)
+print_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	e := expression(p)
 	consume_eol(p, "Expect newline after value.")
-	// Op_Str first: not just for the generic string conversion
-	// (display_string's job in run.odin's Op_Print handler already
-	// covers that on its own) but because Op_Str is also the toString()
-	// dispatch point (see run.odin's Op_Str case) -- so `print instance`
-	// shows a class's own toString() result, not just the generic
-	// "<instance ClassName>" form.
-	emit_op(p, .Str)
-	emit_op(p, .Print)
+	return new_clone(Stmt_Print{base = Node_Base{token = tok}, expr = e})
 }
 
-raise_statement :: proc(p: ^Parser) {
-	expression(p)
+raise_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	e := expression(p)
 	consume_eol(p, "Expect newline after 'raise' expression.")
-	emit_op(p, .Raise)
+	return new_clone(Stmt_Raise{base = Node_Base{token = tok}, expr = e})
 }
 
 // -----------------------------------------------------------------------
 // var / const / implicit / destructuring declarations
 
-var_declaration :: proc(p: ^Parser) {
+// parse_var_decl is shared by var_declaration/const_declaration
+// (which already share finish_declare today) and for_statement's own
+// `var`-led init clause.
+@(private = "file")
+parse_var_decl :: proc(p: ^Parser, is_const: bool) -> ^Stmt_Var_Decl {
 	consume(p, .Identifier, "Expect variable name.")
 	name_tok := p.previous
-	if match(p, .Equal) {
-		expression(p)
-	} else {
-		emit_op(p, .Nil)
+	init: Expr
+	if is_const {
+		consume(p, .Equal, "Const variable must have an initializer.")
+		init = expression(p)
+	} else if match(p, .Equal) {
+		init = expression(p)
 	}
-	finish_declare(p, name_tok, false)
+	return new_clone(Stmt_Var_Decl{base = Node_Base{token = name_tok}, name = name_tok, init = init, is_const = is_const})
+}
+
+var_declaration :: proc(p: ^Parser) -> Stmt {
+	decl := parse_var_decl(p, false)
 	consume_eol(p, "Expect newline after variable declaration.")
+	return decl
 }
 
-const_declaration :: proc(p: ^Parser) {
-	consume(p, .Identifier, "Expect variable name.")
-	name_tok := p.previous
-	consume(p, .Equal, "Const variable must have an initializer.")
-	expression(p)
-	finish_declare(p, name_tok, true)
+const_declaration :: proc(p: ^Parser) -> Stmt {
+	decl := parse_var_decl(p, true)
 	consume_eol(p, "Expect newline after const declaration.")
+	return decl
 }
 
-// finish_declare handles the local-vs-global split every declaration
-// form shares: a local needs no explicit store (the value the
-// initializer left on the stack top *is* the local, by stack-position
-// construction -- see add_local); a global needs an explicit Define
-// opcode to both create the slot's value and mark it "defined" (so
-// Op_Code.Get_Global can distinguish "never assigned" from "assigned nil").
-@(private = "file")
-finish_declare :: proc(p: ^Parser, name_tok: Token, is_const: bool) {
-	c := p.current_compiler
-	if c.scope_depth > 0 {
-		add_local(p, name_tok)
-		mark_initialised(p)
-		if is_const {
-			mark_local_const(p)
-		}
-		return
-	}
-	name := lexeme(name_tok)
-	slot := global_slot(p, name)
-	mark_global_declared(p, name)
-	emit_op_byte(p, .Define_Global_Const if is_const else .Define_Global, u8(slot))
-}
-
-// implicit_assignment_statement handles bare `x = expr` at statement
-// level for a name that isn't already a known local: it creates the
-// binding (a new local inside a function, a new-or-existing global at
-// top level) rather than erroring "undefined variable" the way a plain
-// expression-statement assignment would. p.previous is the identifier,
-// already consumed by statement()'s dispatch.
-@(private = "file")
-implicit_assignment_statement :: proc(p: ^Parser) {
-	implicit_assignment_core(p)
+implicit_assignment_statement :: proc(p: ^Parser) -> Stmt {
+	s := implicit_assignment_core(p)
 	consume_eol(p, "Expect newline after assignment.")
+	return s
 }
 
-// implicit_assignment_core is implicit_assignment_statement's body minus
-// the trailing terminator, shared with for_statement's own bare
-// (non-`var`) init clause -- `for (i = 0; ...)` needs this exact same
-// "first mention creates a binding rather than emitting a Set_Global
-// against a slot nothing ever Defined" semantics, but ends in `;` rather
-// than an Eol/newline, so it can't call implicit_assignment_statement
-// directly. Routing a bare init-clause assignment through plain
-// expression(p) instead would go through expr.odin's named_variable --
-// a Set_Global with no preceding Define_Global, since global_slot alone
-// doesn't mark a slot defined -- and fail at runtime with "Undefined
-// variable 'i'." on the very first iteration.
+// implicit_assignment_core is implicit_assignment_statement's body
+// minus the trailing terminator, shared with for_statement's own bare
+// (non-`var`) init clause -- see ast.odin's Stmt_Implicit_Assign doc
+// comment. Unlike the original implicit_assignment_core, this does none of
+// the local/upvalue/global disambiguation itself -- that's exactly the
+// resolution work the Resolver exists to do, once, uniformly, over the
+// whole tree, instead of inline during parsing.
 @(private = "file")
-implicit_assignment_core :: proc(p: ^Parser) {
+implicit_assignment_core :: proc(p: ^Parser) -> ^Stmt_Implicit_Assign {
 	name_tok := p.previous
-	name := lexeme(name_tok)
-	c := p.current_compiler
-	existing_local := resolve_local(p, c, name_tok)
-	// Checked *before* consuming '=' or compiling the RHS: an
-	// already-declared global named `total`, reassigned from inside a
-	// nested scope (`for ... { total = total + 1 }`), must resolve as
-	// an ordinary Set_Global -- not fall into the "not a local here, so
-	// declare a new local" branch below, which would spawn a local that
-	// *shadows* the global starting mid-statement, and whose own RHS
-	// (`total + 1`) would then see that fresh, not-yet-initialised
-	// local instead of the outer global it was actually meant to read.
-	already_global := is_global_declared(p, name)
-	// Same reasoning again, one tier further out: a name captured from
-	// an *enclosing* function (`n = n + 1` inside a closure returned by
-	// make_counter()) is an upvalue, not a local of *this* function --
-	// resolve_local alone can't see it (only resolve_upvalue walks the
-	// enclosing-compiler chain). Checked only when existing_local
-	// missed, since resolve_upvalue would otherwise needlessly capture
-	// a same-named outer variable that a local of this scope already
-	// shadows.
-	existing_upvalue := -1
-	if existing_local == -1 {
-		existing_upvalue = resolve_upvalue(p, c, name_tok)
-	}
-
 	consume(p, .Equal, "Expect '=' in assignment.")
-
-	if existing_local != -1 {
-		// Set_Local (like every Set_* opcode -- see expr.odin's
-		// named_variable) leaves the assigned value on the stack, so
-		// assignment can chain as an expression (`x = y = 1`). Used
-		// here as a full statement, so that value needs discarding --
-		// unlike the "new local"/global-define branches below, whose
-		// value *becomes* the freshly-created binding itself and is
-		// never a leftover to pop.
-		// const check: expr.odin's named_variable (the Pratt-parser path
-		// for `x = 1` used as a sub-expression) already rejects const
-		// locals, but bare `x = 1` as a full statement is dispatched here
-		// instead (see statement()'s .Identifier case), so this branch
-		// needs its own is_const check to reject `const a = 5` followed
-		// by a statement-level `a = 6`.
-		if c.locals[existing_local].is_const {
-			error(p, fmt.tprintf("Cannot assign to const '%s'.", name))
-		}
-		expression(p)
-		emit_op_byte(p, .Set_Local, u8(existing_local))
-		emit_op(p, .Pop)
-	} else if existing_upvalue != -1 {
-		expression(p)
-		emit_op_byte(p, .Set_Upvalue, u8(existing_upvalue))
-		emit_op(p, .Pop) // Set_Upvalue leaves a value too, same reasoning as Set_Local above
-	} else if already_global {
-		slot := global_slot(p, name)
-		expression(p)
-		emit_op_byte(p, .Set_Global, u8(slot))
-		emit_op(p, .Pop) // Set_Global leaves a value too, same reasoning as Set_Local above
-	} else if c.scope_depth > 0 {
-		add_local(p, name_tok)
-		expression(p)
-		mark_initialised(p)
-	} else {
-		slot := global_slot(p, name)
-		mark_global_declared(p, name)
-		expression(p)
-		emit_op_byte(p, .Define_Global, u8(slot))
-	}
+	value := expression(p)
+	return new_clone(Stmt_Implicit_Assign{base = Node_Base{token = name_tok}, name = name_tok, value = value})
 }
 
 // looks_like_destructuring probes ahead (using snapshot/restore, see
-// parser.odin) for `identifier (, identifier)* =` before committing to
-// parsing this statement as a destructuring assignment -- otherwise
-// falls through to an ordinary expression statement, so a name merely
-// followed by a comma in some other context isn't misread.
+// parser.odin -- unaffected by this refactor, since it's pure token-
+// position bookkeeping with no emission involved) for
+// `identifier (, identifier)* =` before committing to parsing this
+// statement as a destructuring assignment.
 @(private = "file")
 looks_like_destructuring :: proc(p: ^Parser) -> bool {
 	snap := snapshot_pos(p)
@@ -317,709 +230,231 @@ looks_like_destructuring :: proc(p: ^Parser) -> bool {
 	return check(p, .Equal)
 }
 
-destructuring_assignment_statement :: proc(p: ^Parser) {
-	names: [dynamic]Token
-	append(&names, p.previous) // first identifier, already consumed
+destructuring_assignment_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous // first identifier, already consumed
+	targets: [dynamic]Destructure_Target
+	append(&targets, Destructure_Target{name = tok})
 	for match(p, .Comma) {
 		consume(p, .Identifier, "Expect variable name.")
-		append(&names, p.previous)
+		append(&targets, Destructure_Target{name = p.previous})
 	}
 	consume(p, .Equal, "Expect '=' after destructuring targets.")
 
-	// The right-hand side is a comma-separated expression list too --
-	// `a, b = 1, 2` unpacks the literal pair, not just `1` followed by a
-	// syntax error at the comma. A single expression (`a, b = f()`) is
-	// unaffected: rhs_count stays 1, and Op_Unpack operates directly on
-	// whatever that one expression evaluates to.
-	expression(p)
-	rhs_count := 1
+	// The right-hand side is a comma-separated expression list too -- see
+	// destructuring_assignment_statement's own comment. More than one
+	// value wraps into a tuple; a single expression is used directly.
+	values: [dynamic]Expr
+	append(&values, expression(p))
 	for match(p, .Comma) {
-		expression(p)
-		rhs_count += 1
+		append(&values, expression(p))
 	}
-	if rhs_count > 1 {
-		if rhs_count > 255 {
-			error(p, "Too many values on the right-hand side of a destructuring assignment.")
-		}
-		emit_op_byte(p, .Create_Tuple, u8(rhs_count))
+	if len(values) > 255 {
+		error(p, "Too many values on the right-hand side of a destructuring assignment.")
 	}
-
-	if len(names) > 255 {
+	if len(targets) > 255 {
 		error(p, "Too many destructuring targets.")
 	}
-	emit_op_byte(p, .Unpack, u8(len(names)))
-
-	c := p.current_compiler
-	if c.scope_depth > 0 {
-		// Op_Unpack already pushed the values in order -- for fresh
-		// locals that's already their correct slot layout, same
-		// reasoning as any other local declaration.
-		for name in names {
-			add_local(p, name)
-			mark_initialised(p)
-		}
-	} else {
-		slots := make([dynamic]int, 0, len(names))
-		for name in names {
-			n := lexeme(name)
-			append(&slots, global_slot(p, n))
-			mark_global_declared(p, n)
-		}
-		// Define_Global pops exactly one value each, so the pops must
-		// run in the reverse of push order to match what Op_Unpack left
-		// on the stack.
-		for i := len(slots) - 1; i >= 0; i -= 1 {
-			emit_op_byte(p, .Define_Global, u8(slots[i]))
-		}
-	}
 	consume_eol(p, "Expect newline after destructuring assignment.")
+
+	value: Expr = values[0]
+	if len(values) > 1 {
+		value = new_clone(Expr_Tuple{base = Node_Base{token = tok}, elements = values[:]})
+	}
+	return new_clone(Stmt_Destructure{base = Node_Base{token = tok}, targets = targets[:], value = value})
 }
 
 // -----------------------------------------------------------------------
 // Functions
 
-function_declaration :: proc(p: ^Parser) {
+function_declaration :: proc(p: ^Parser) -> Stmt {
 	consume(p, .Identifier, "Expect function name.")
 	name_tok := p.previous
-	name := lexeme(name_tok)
-	is_local := p.current_compiler.scope_depth > 0
-
-	slot := 0
-	if is_local {
-		// Declared (and marked initialised) *before* the body compiles,
-		// so the function can call itself by name for recursion.
-		declare_variable(p)
-		mark_initialised(p)
-	} else {
-		slot = global_slot(p, name)
-		mark_global_declared(p, name)
-	}
-
-	init_function_compiler(p, .Function, name)
-	compile_function(p) // pops back to this (enclosing) compiler; emits Op_Code.Closure here
-
-	if !is_local {
-		emit_op_byte(p, .Define_Global, u8(slot))
-	}
+	decl := parse_function_decl(p, .Function, name_tok)
+	return new_clone(Stmt_Function_Decl{base = Node_Base{token = name_tok}, decl = decl})
 }
 
 // -----------------------------------------------------------------------
 // Control flow
 
-if_statement :: proc(p: ^Parser) {
-	parse_condition(p)
-
-	then_jump := emit_jump(p, .Jump_If_False)
-	emit_op(p, .Pop)
-	// statement(p), not a hardcoded block: a braced `{ ... }` body goes
-	// through statement()'s own .Left_Brace case
-	// (begin_scope/block/end_scope), but this also accepts a bare
-	// unbraced single statement (`if (cond) break`/`if (n < 2) return n`).
-	// See parse_condition's own doc comment for why the parens
-	// themselves are optional.
-	//
-	// The match(p, .Eol) immediately before each statement(p) call below
-	// is load-bearing, not cosmetic: statement()'s own dispatch has a
-	// `case .Semicolon, .Eol: advance(p)` "empty statement" case, so
-	// without skipping a stray Eol here first, `if (cond)\n{ body }`
-	// would have that Eol consumed AS the entire then/else body (a
-	// silent no-op), leaving `{ body }` to be parsed afterward as a
-	// completely separate, unconditional statement -- the block would
-	// run regardless of cond, with no compile error. Same reasoning
-	// applies to while/foreach's body below.
-	match(p, .Eol)
-	statement(p)
-
-	else_jump := emit_jump(p, .Jump)
-	patch_jump(p, then_jump)
-	emit_op(p, .Pop)
-
-	// `else if` falls out for free: statement()'s own dispatch has a
-	// .If case that calls back into if_statement, so no special-casing
-	// is needed here the way the old brace-only version needed one.
-	if match(p, .Else) {
-		match(p, .Eol)
-		statement(p)
-	}
-	patch_jump(p, else_jump)
-}
-
 // parse_condition compiles a control-flow header's condition
-// expression, tolerating an optional wrapping `(...)`: both `if cond`
-// and `if (cond)` are accepted, so the parenthesized C-family style and
-// the bare style can coexist across a codebase.
+// expression, tolerating an optional wrapping `(...)` -- see
+// parse_condition's own doc comment.
 @(private = "file")
-parse_condition :: proc(p: ^Parser) {
+parse_condition :: proc(p: ^Parser) -> Expr {
 	has_paren := match(p, .Left_Paren)
-	expression(p)
+	e := expression(p)
 	if has_paren {
 		consume(p, .Right_Paren, "Expect ')' after condition.")
 	}
+	return e
 }
 
-while_statement :: proc(p: ^Parser) {
-	loop := push_loop(p)
-	loop.start = len(current_chunk(p).code)
+if_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	condition := parse_condition(p)
+	match(p, .Eol) // see if_statement's own doc comment on this Eol hazard
+	then_branch := statement(p)
 
-	parse_condition(p)
-
-	exit_jump := emit_jump(p, .Jump_If_False)
-	emit_op(p, .Pop)
-	match(p, .Eol) // see if_statement's doc comment: same Eol-before-body hazard
-	statement(p)
-	emit_loop(p, loop.start)
-
-	patch_jump(p, exit_jump)
-	emit_op(p, .Pop)
-	for b in loop.breaks {
-		patch_jump(p, b)
+	else_branch: Stmt
+	if match(p, .Else) {
+		match(p, .Eol)
+		else_branch = statement(p)
 	}
+	return new_clone(Stmt_If{base = Node_Base{token = tok}, condition = condition, then_branch = then_branch, else_branch = else_branch})
+}
 
-	pop_loop(p)
+while_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	condition := parse_condition(p)
+	match(p, .Eol)
+	body := statement(p)
+	return new_clone(Stmt_While{base = Node_Base{token = tok}, condition = condition, body = body})
 }
 
 // for_statement compiles the classic C-shaped `for init; cond; incr {
-// body }`. The increment clause is compiled out of line and jumped over
-// on the first pass, then run *after* the body via its own back-edge,
-// with the loop's own back-edge retargeted to land on the increment
-// instead of the condition -- the standard trick that turns "run
-// increment before re-checking condition" into code that reads in
-// natural source order without a special third jump kind.
-//
-// has_paren tracks whether `(` was seen so the matching `)` can be
-// required/consumed at the right spot -- optional, not mandatory (see
-// parse_condition's doc comment). Unlike if/while/foreach, the body
-// here is always a braced block, never a bare unbraced statement:
-// without mandatory parens there would be no unambiguous way to tell
-// where an omittable increment clause ends and an unbraced body begins.
-for_statement :: proc(p: ^Parser) {
-	begin_scope(p) // owns the init-variable's scope, if any
-
-	loop := push_loop(p)
-
+// body }` -- see for_statement's own doc comment on the increment-after-
+// body trick, which is purely an Emit-time concern now (nothing here
+// needs to know about back-edges/jumps). Unlike if/while/foreach, the
+// body is always braced (see for_statement's own comment on why).
+for_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	has_paren := match(p, .Left_Paren)
 
+	init: For_Init
 	if match(p, .Semicolon) {
 		// no initializer
 	} else if match(p, .Var) {
-		consume(p, .Identifier, "Expect variable name.")
-		name_tok := p.previous
-		if match(p, .Equal) {
-			expression(p)
-		} else {
-			emit_op(p, .Nil)
-		}
-		finish_declare(p, name_tok, false)
+		var_decl := parse_var_decl(p, false)
 		consume(p, .Semicolon, "Expect ';' after loop initializer.")
+		init = var_decl
 	} else if check(p, .Identifier) && check_next(p, .Equal) {
-		// Bare `i = 0` (no `var`) as the init clause -- same
-		// first-mention-creates-a-binding handling statement()'s own
-		// .Identifier dispatch case gives this at ordinary statement
-		// level (implicit_assignment_core's own doc comment has the
-		// full story on why plain expression(p) below isn't enough).
 		advance(p)
-		implicit_assignment_core(p)
+		assign := implicit_assignment_core(p)
 		consume(p, .Semicolon, "Expect ';' after loop initializer.")
+		init = assign
 	} else {
-		expression(p)
-		emit_op(p, .Pop)
+		expr_tok := p.current
+		e := expression(p)
 		consume(p, .Semicolon, "Expect ';' after loop initializer.")
+		init = new_clone(Stmt_Expression{base = Node_Base{token = expr_tok}, expr = e})
 	}
 
-	loop.start = len(current_chunk(p).code)
-	exit_jump := -1
+	condition: Expr
 	if !check(p, .Semicolon) {
-		expression(p)
-		exit_jump = emit_jump(p, .Jump_If_False)
-		emit_op(p, .Pop)
+		condition = expression(p)
 	}
 	consume(p, .Semicolon, "Expect ';' after loop condition.")
 
-	// The increment clause is present unless the next token closes the
-	// header: `)` if parens were opened, `{` (the body) otherwise.
 	has_increment := !check(p, .Right_Paren) if has_paren else !check(p, .Left_Brace)
+	increment: Expr
 	if has_increment {
-		body_jump := emit_jump(p, .Jump)
-		increment_start := len(current_chunk(p).code)
-		expression(p)
-		emit_op(p, .Pop)
-		emit_loop(p, loop.start)
-		loop.start = increment_start
-		patch_jump(p, body_jump)
+		increment = expression(p)
 	}
 
 	if has_paren {
 		consume(p, .Right_Paren, "Expect ')' after for clauses.")
 	}
-	// `for (...)\n{` -- same Eol-before-brace tolerance as if/while/foreach
-	// and every clause boundary in try/except/finally.
 	match(p, .Eol)
 	consume(p, .Left_Brace, "Expect '{' before for body.")
-	begin_scope(p)
-	block(p)
-	end_scope(p)
-	emit_loop(p, loop.start)
+	body_tok := p.previous
+	body_stmts := block(p)
+	body := new_clone(Stmt_Block{base = Node_Base{token = body_tok}, stmts = body_stmts})
 
-	if exit_jump != -1 {
-		patch_jump(p, exit_jump)
-		emit_op(p, .Pop)
-	}
-	for b in loop.breaks {
-		patch_jump(p, b)
-	}
-
-	pop_loop(p)
-	end_scope(p)
+	return new_clone(
+		Stmt_For{base = Node_Base{token = tok}, init = init, condition = condition, increment = increment, body = body},
+	)
 }
 
-// foreach_statement: `foreach [(]  [var]  x in iterable  [)]  body`. The
-// parens and the `var` keyword are both optional (see parse_condition's
-// doc comment on if_statement); body goes through statement(p) so both
-// a `{ block }` and a bare single statement work. Reserves two hidden
-// locals -- the visible loop variable and `__iter`, which holds the
-// iterable/iterator across iterations -- then emits the Foreach/Next/
-// End_Foreach trio. See core/chunk.odin's Op_Code doc comment and the
-// operand-layout notes inline below; this bytecode's exact encoding is
-// an internal contract between the compiler (here) and the VM's own
-// foreach handler, which must agree on it.
-foreach_statement :: proc(p: ^Parser) {
-	begin_scope(p)
+// foreach_statement: `foreach [(]  [var]  x in iterable  [)]  body`.
+// var_slot/iter_slot (the hidden loop-variable/`__iter` locals the
+// original reserves at parse time) are filled in by the Resolver instead.
+foreach_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	has_paren := match(p, .Left_Paren)
 	match(p, .Var) // `foreach (var x in y)` -- the `var` keyword is optional
 	consume(p, .Identifier, "Expect loop variable name.")
-	// A local's compile-time slot must correspond to an actual runtime
-	// stack push (see add_local/finish_declare elsewhere) -- but the
-	// loop variable has no initializer expression of its own (Op_Foreach/
-	// Op_Next fill it in directly, every iteration). Without this
-	// explicit Nil push, its slot would silently alias whatever
-	// `expression(p)` (the iterable, below) pushes instead, and __iter's
-	// own slot would end up one past the end of anything actually
-	// written -- reading uninitialised stack garbage at runtime.
-	emit_op(p, .Nil)
-	add_local(p, p.previous)
-	mark_initialised(p)
-	var_slot := u8(p.current_compiler.local_count - 1)
+	var_name := p.previous
 
 	consume(p, .In, "Expect 'in' after foreach variable.")
-	expression(p) // the iterable -- becomes __iter's initial value
-
-	add_local(p, synthetic_token(.Identifier, "__iter", p.previous.line))
-	mark_initialised(p)
-	iter_slot := u8(p.current_compiler.local_count - 1)
+	iterable := expression(p)
 
 	if has_paren {
 		consume(p, .Right_Paren, "Expect ')' after iterable.")
 	}
-
-	loop := push_loop(p)
-	loop.is_foreach = true
-
-	// Op_Foreach operands: 1-byte var_slot, 1-byte iter_slot, 2-byte
-	// forward jump (taken once the iterable is exhausted -- patched
-	// below, once End_Foreach's position is known).
-	emit_op(p, .Foreach)
-	emit_byte(p, var_slot)
-	emit_byte(p, iter_slot)
-	end_jump := len(current_chunk(p).code)
-	emit_byte(p, 0xff)
-	emit_byte(p, 0xff)
-
-	loop.start = len(current_chunk(p).code)
 	match(p, .Eol) // see if_statement's doc comment: same Eol-before-body hazard
-	statement(p)
+	body := statement(p)
 
-	for c in loop.continues {
-		patch_jump(p, c)
-	}
-
-	// Op_Next operands: 2-byte back-jump (to loop.start, taken when
-	// another value is available), then var_slot and iter_slot -- the
-	// VM needs both here, not just iter_slot, since Op_Next is what
-	// actually stores each newly-yielded value into the loop variable
-	// on every iteration after the first (Op_Foreach only handles the
-	// very first one). Computed the same way emit_loop computes its own
-	// back-jump, but "+4" rather than "+2" since Op_Next has two more
-	// trailing operand bytes (var_slot, iter_slot) after the jump pair
-	// that are still part of this same instruction's total width.
-	emit_op(p, .Next)
-	back_offset := len(current_chunk(p).code) - loop.start + 4
-	if back_offset > 0xffff {
-		error(p, "Loop body too large.")
-	}
-	emit_byte(p, u8((back_offset >> 8) & 0xff))
-	emit_byte(p, u8(back_offset & 0xff))
-	emit_byte(p, var_slot)
-	emit_byte(p, iter_slot)
-
-	emit_op(p, .End_Foreach)
-	patch_jump(p, end_jump)
-	for b in loop.breaks {
-		patch_jump(p, b)
-	}
-
-	pop_loop(p)
-	end_scope(p) // closes __iter and the loop variable's scope
-}
-
-@(private = "file")
-push_loop :: proc(p: ^Parser) -> ^Loop {
-	loop := new(Loop)
-	loop.previous = p.current_compiler.loop
-	loop.scope_depth = p.current_compiler.scope_depth
-	p.current_compiler.loop = loop
-	return loop
-}
-
-@(private = "file")
-pop_loop :: proc(p: ^Parser) {
-	p.current_compiler.loop = p.current_compiler.loop.previous
+	return new_clone(
+		Stmt_Foreach{base = Node_Base{token = tok}, var_name = var_name, iterable = iterable, body = body},
+	)
 }
 
 // -----------------------------------------------------------------------
 // break / continue / return
+//
+// The "outside a loop"/"outside a function"/"value from an initializer"
+// checks break_statement/continue_statement/return_statement do inline
+// today move to the Resolver -- these only build nodes.
 
-break_statement :: proc(p: ^Parser) {
-	loop := p.current_compiler.loop
-	if loop == nil {
-		error(p, "Cannot use break outside loop.")
-		return
-	}
-	pop_locals_above(p, loop.scope_depth)
-	emit_crossing_jump(p, loop.scope_depth, .Break, loop)
+break_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	consume_eol(p, "Expect newline after 'break'.")
+	return new_clone(Stmt_Break{base = Node_Base{token = tok}})
 }
 
-continue_statement :: proc(p: ^Parser) {
-	loop := p.current_compiler.loop
-	if loop == nil {
-		error(p, "Cannot use continue outside loop.")
-		return
-	}
-	pop_locals_above(p, loop.scope_depth)
-	// A foreach's "increment" is Op_Next itself, which sits *after* the
-	// body -- so continue forward-jumps to just before it, rather than
-	// back-jumping to the top the way a while/for loop's continue does.
-	// (emit_crossing_jump's Continue finalize checks loop.is_foreach
-	// itself, once it actually emits the jump/loop instruction.)
-	emit_crossing_jump(p, loop.scope_depth, .Continue, loop)
+continue_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	consume_eol(p, "Expect newline after 'continue'.")
+	return new_clone(Stmt_Continue{base = Node_Base{token = tok}})
 }
 
-return_statement :: proc(p: ^Parser) {
-	if p.current_compiler.type == .Script {
-		error(p, "Can't return from top-level code.")
-	}
-
-	// Right_Brace included alongside Eol/Eof/Semicolon -- a bare `return`
-	// as a one-line block's last statement (`func g() { return }`, no `;`
-	// separating it from the `}`) has nothing after it but the block's
-	// own closing brace, which consume_eol below already treats as an
-	// implied terminator; this check needs to agree with it, or `}`
-	// would fall into the "has a value" branch and be parsed (and fail)
-	// as the start of an expression.
-	if check(p, .Eol) || check(p, .Eof) || check(p, .Semicolon) || check(p, .Right_Brace) {
-		if p.current_compiler.type == .Initializer {
-			emit_op_byte(p, .Get_Local, 0) // implicit `return this`
-		} else {
-			emit_op(p, .Nil)
-		}
-	} else {
-		if p.current_compiler.type == .Initializer {
-			error(p, "Can't return a value from an initializer.")
-		}
-		expression(p)
+return_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	// Right_Brace included alongside Eol/Eof/Semicolon -- see
+	// return_statement's own comment on the one-line-block case.
+	value: Expr
+	if !(check(p, .Eol) || check(p, .Eof) || check(p, .Semicolon) || check(p, .Right_Brace)) {
+		value = expression(p)
 	}
 	consume_eol(p, "Expect newline after return value.")
-
-	// Collect every enclosing try, innermost first -- a return crosses
-	// all of them unconditionally, up to the function boundary (unlike
-	// break/continue, which only cross as far as the target loop). No
-	// Op_End_Try needed here the way break/continue's cross_tries emits
-	// one per crossing: Op_Return already tears down the whole frame
-	// (see run.odin), which discards frame.handlers wholesale -- popping
-	// them one at a time first would be redundant, not incorrect.
-	chain: [dynamic]^Try_Finally
-	for t := p.current_compiler.tries; t != nil; t = t.previous {
-		append(&chain, t)
-	}
-	if len(chain) == 0 {
-		emit_op(p, .Return)
-		return
-	}
-
-	// Anchor the return value in a synthetic local before any enclosing
-	// (not-yet-parsed) finally block can declare locals of its own that
-	// might otherwise reuse this slot number.
-	add_local(p, synthetic_token(.Identifier, "__retval", p.previous.line))
-	retval_slot := p.current_compiler.local_count - 1
-	mark_initialised(p)
-
-	site := Trampoline_Site {
-		jump_offset             = emit_jump(p, .Jump),
-		remaining               = chain[1:],
-		local_count_at_crossing = p.current_compiler.local_count,
-		retval_slot             = retval_slot,
-		kind                    = .Return,
-	}
-	append(&chain[0].pending, site)
-}
-
-@(private = "file")
-pop_locals_above :: proc(p: ^Parser, target_depth: int) {
-	c := p.current_compiler
-	for i := c.local_count - 1; i >= 0 && c.locals[i].depth > target_depth; i -= 1 {
-		if c.locals[i].is_captured {
-			emit_op(p, .Close_Upvalue)
-		} else {
-			emit_op(p, .Pop)
-		}
-	}
-}
-
-// cross_tries pops (Op_End_Try, a no-op-offset variant used purely for
-// its handler-popping side effect) every try context entered at or
-// after target_scope_depth, so frame.handlers never holds a stale entry
-// for a try no longer lexically in scope -- and returns all of them,
-// innermost first, so the caller (emit_crossing_jump) can defer a
-// finally replay through each one, in order.
-//
-// Deliberately not filtered by has_finally: for a try the break/continue
-// is directly inside (not yet closed), has_finally isn't known yet --
-// `finally` is the last thing try_except_statement parses, so its own
-// still-being-compiled body can't know whether one follows.
-// compile_pending_trampolines resolves this correctly once each try
-// actually closes and has_finally becomes known.
-@(private = "file")
-cross_tries :: proc(p: ^Parser, target_scope_depth: int) -> [dynamic]^Try_Finally {
-	crossed: [dynamic]^Try_Finally
-	for t := p.current_compiler.tries; t != nil && t.scope_depth_at_entry >= target_scope_depth; t = t.previous {
-		emit_op(p, .End_Try)
-		emit_byte(p, 0)
-		emit_byte(p, 0)
-		append(&crossed, t)
-	}
-	return crossed
-}
-
-// local_count_at_depth returns how many of the current function's locals
-// have depth <= boundary_scope_depth -- i.e. the local count (and so the
-// runtime stack height relative to the frame's own slots) that remains
-// once every local declared inside a loop body has been popped, mirroring
-// the depth check break/continue's own pop_locals_above already uses.
-@(private = "file")
-local_count_at_depth :: proc(p: ^Parser, boundary_scope_depth: int) -> int {
-	c := p.current_compiler
-	n := c.local_count
-	for n > 0 && c.locals[n - 1].depth > boundary_scope_depth {
-		n -= 1
-	}
-	return n
-}
-
-// emit_crossing_jump emits whatever jump takes a break/continue across
-// any try/finally blocks it crosses on the way out to loop_scope_depth:
-// if none have a finally clause (in fact none are even open at all --
-// the common case), the real terminal jump/loop-back-edge is emitted
-// immediately; otherwise a deferred trampoline site is queued on the
-// innermost crossed try so its finally runs first, chaining outward
-// through the rest before the real break/continue jump finally emits.
-@(private = "file")
-emit_crossing_jump :: proc(p: ^Parser, loop_scope_depth: int, kind: Trampoline_Kind, loop: ^Loop) {
-	crossed := cross_tries(p, loop_scope_depth)
-	if len(crossed) == 0 {
-		finalize_break_or_continue(p, kind, loop)
-		return
-	}
-	site := Trampoline_Site {
-		jump_offset             = emit_jump(p, .Jump),
-		remaining               = crossed[1:],
-		local_count_at_crossing = local_count_at_depth(p, loop_scope_depth),
-		retval_slot             = -1,
-		kind                    = kind,
-		loop                    = loop,
-	}
-	append(&crossed[0].pending, site)
-}
-
-// finalize_break_or_continue emits the real terminal instruction for a
-// Break/Continue Trampoline_Kind -- shared between emit_crossing_jump's
-// no-crossing fast path and compile_pending_trampolines' end-of-chain
-// case, so both stay in sync with continue's foreach-vs-loop distinction.
-@(private = "file")
-finalize_break_or_continue :: proc(p: ^Parser, kind: Trampoline_Kind, loop: ^Loop) {
-	switch kind {
-	case .Break:
-		append(&loop.breaks, emit_jump(p, .Jump))
-	case .Continue:
-		if loop.is_foreach {
-			append(&loop.continues, emit_jump(p, .Jump))
-		} else {
-			emit_loop(p, loop.start)
-		}
-	case .Return:
-		emit_op(p, .Return) // reached only via compile_pending_trampolines; return's own site carries no loop
-	}
-}
-
-// compile_trampolines_after_normal_path compiles try_ctx's pending
-// break/continue/return trampolines (see compile_pending_trampolines),
-// placed immediately after the normal-completion path in the bytecode
-// stream. That adjacency means normal completion would otherwise fall
-// straight through into them, so -- when there's anything to skip --
-// this wraps them in an unconditional jump the normal path takes to
-// land just past all of them, at the true end of the whole
-// try/except/finally statement.
-@(private = "file")
-compile_trampolines_after_normal_path :: proc(p: ^Parser, try_ctx: ^Try_Finally) {
-	if len(try_ctx.pending) == 0 {
-		return
-	}
-	skip := emit_jump(p, .Jump)
-	compile_pending_trampolines(p, try_ctx)
-	patch_jump(p, skip)
-}
-
-// compile_pending_trampolines resolves every break/continue/return that
-// deferred into try_ctx while its body was being compiled (see
-// Try_Finally/Trampoline_Site), chaining onward into any further outer
-// try/finally the same jump also needs to cross.
-//
-// Runs unconditionally, whether or not try_ctx ended up with a finally
-// clause -- return/break/continue must defer into the innermost
-// enclosing try *before* that try has parsed far enough to know whether
-// a `finally` follows its except clauses (single-pass parser, `finally`
-// is the last thing consumed), so every enclosing try collects deferred
-// sites regardless. If try_ctx has no finally, there's nothing to
-// replay -- the jump just passes straight through to the next hop (or
-// the real terminal instruction) with no bytecode of its own.
-@(private = "file")
-compile_pending_trampolines :: proc(p: ^Parser, try_ctx: ^Try_Finally) {
-	for site in try_ctx.pending {
-		patch_jump(p, site.jump_offset)
-
-		if try_ctx.has_finally {
-			c := p.current_compiler
-			saved_count := c.local_count
-			saved_depth := c.scope_depth
-
-			// Reserve slots up to local_count_at_crossing so this
-			// replay's own locals can't alias whatever's still live
-			// higher on the real runtime stack (e.g. a pending return's
-			// anchored __retval) -- see Trampoline_Site's doc comment.
-			for i := c.local_count; i < site.local_count_at_crossing; i += 1 {
-				c.locals[i] = Local{depth = c.scope_depth}
-			}
-			c.local_count = site.local_count_at_crossing
-
-			saved_tries := c.tries
-			c.tries = try_ctx.previous // control flow inside finally sees only outer trys
-
-			restore_pos(p, try_ctx.finally_snapshot)
-			begin_scope(p)
-			block(p)
-			end_scope(p)
-
-			c.tries = saved_tries
-			c.local_count = saved_count
-			c.scope_depth = saved_depth
-
-			if site.retval_slot >= 0 {
-				emit_op_byte(p, .Get_Local, u8(site.retval_slot))
-			}
-		}
-
-		if len(site.remaining) > 0 {
-			next := site.remaining[0]
-			new_site := Trampoline_Site {
-				jump_offset             = emit_jump(p, .Jump),
-				remaining               = site.remaining[1:],
-				local_count_at_crossing = site.local_count_at_crossing,
-				retval_slot             = site.retval_slot,
-				kind                    = site.kind,
-				loop                    = site.loop,
-			}
-			append(&next.pending, new_site)
-		} else {
-			finalize_break_or_continue(p, site.kind, site.loop)
-		}
-	}
+	return new_clone(Stmt_Return{base = Node_Base{token = tok}, value = value})
 }
 
 // -----------------------------------------------------------------------
 // try / except / finally
 //
-// Bytecode shape and invariants: End_Except must be immediately
-// followed by the next clause's Except/Finally, and Try's operand is
-// patched exactly once, to the first clause (see docs/ARCHITECTURE.md's
-// Exceptions section for the full picture). `finally`'s source is
-// compiled twice via snapshot/restore (see parser.odin) -- once right
-// after Op_Finally (the always-matching handler, followed by Op_Raise
-// to propagate whatever wasn't otherwise handled) and once at the
-// shared normal-completion landing point every non-exceptional exit
-// (End_Try, each clause's own fallthrough) jumps to.
+// Stmt_Try carries body/excepts/has_finally/finally_body up front as one
+// node -- see this file's header comment and ast.odin's Stmt_Try doc
+// comment for why that eliminates the original's entire trampoline
+// mechanism rather than just relocating it.
 
-try_except_statement :: proc(p: ^Parser) {
-	try_ctx := new(Try_Finally)
-	try_ctx.scope_depth_at_entry = p.current_compiler.scope_depth
-	try_ctx.previous = p.current_compiler.tries
-	p.current_compiler.tries = try_ctx
-
-	try_jump := emit_jump(p, .Try)
-
+try_except_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	match(p, .Eol) // `try\n{` -- same tolerance as every other brace in this construct
 	consume(p, .Left_Brace, "Expect '{' after 'try'.")
-	begin_scope(p)
-	block(p)
-	end_scope(p)
+	body := block(p)
 
-	normal_end_jump := emit_jump(p, .End_Try)
-	patch_jump(p, try_jump) // Op_Try's operand -> the first clause, patched once
-
-	clause_exit_jumps: [dynamic]int
-	saw_except := false
-
-	// block() leaves the parser positioned right after the try body's
-	// `}`, and an Eol commonly sits between that `}` and the following
-	// `except`/`finally` keyword (the scanner keeps it -- Right_Brace
-	// isn't in keep_eol's suppress set). Skipped consistently at every
-	// point a clause boundary is checked, not just the first: between
-	// the try body and the first except clause, between successive
-	// except clauses, and before the finally check.
 	match(p, .Eol)
+	excepts: [dynamic]Except_Clause
+	saw_except := false
 	for check(p, .Except) {
 		saw_except = true
 		advance(p)
 		consume(p, .Identifier, "Expect exception type name.")
-		type_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
-		emit_op(p, .Except)
-		emit_byte(p, type_const)
-		// Except's own 2-byte skip offset makes Op_Except self-describing,
-		// so the VM never has to scan bytecode looking for the next
-		// clause boundary (which would be fragile once a clause body can
-		// itself contain a nested try) -- see vm/exceptions.odin's header
-		// comment. Patched below, after the clause body, exactly like
-		// any other jump.
-		skip_jump := len(current_chunk(p).code)
-		emit_byte(p, 0xff)
-		emit_byte(p, 0xff)
+		type_name := p.previous
 
-		begin_scope(p)
+		has_binding := false
+		binding: Token
 		if match(p, .As) {
 			consume(p, .Identifier, "Expect exception binding name.")
-			add_local(p, p.previous)
-			mark_initialised(p)
+			has_binding = true
+			binding = p.previous
 		}
-		// Same Eol-tolerance-before-brace need as functions.odin's
-		// compile_function_body: `except Exception as e\n{` must parse
-		// the same as the same-line form.
 		match(p, .Eol)
 		consume(p, .Left_Brace, "Expect '{' after except clause.")
-		block(p)
-		end_scope(p)
+		clause_body := block(p)
 
-		append(&clause_exit_jumps, emit_jump(p, .Jump))
-		emit_op(p, .End_Except)
-		patch_jump(p, skip_jump)
+		append(&excepts, Except_Clause{type_name = type_name, has_binding = has_binding, binding = binding, body = clause_body})
 		match(p, .Eol)
 	}
 
@@ -1028,234 +463,145 @@ try_except_statement :: proc(p: ^Parser) {
 	}
 
 	has_finally := match(p, .Finally)
-	try_ctx.has_finally = has_finally
-
+	finally_body: []Stmt
 	if has_finally {
 		match(p, .Eol) // `finally\n{` -- same tolerance as except's own clause body above
 		consume(p, .Left_Brace, "Expect '{' after 'finally'.")
-		try_ctx.finally_snapshot = snapshot_pos(p)
-
-		emit_op(p, .Finally)
-		begin_scope(p)
-		block(p)
-		end_scope(p)
-		emit_op(p, .Raise) // nothing else handled it -- propagate
+		finally_body = block(p)
 	}
 
-	// Shared normal-completion landing point <A>.
-	patch_jump(p, normal_end_jump)
-	for j in clause_exit_jumps {
-		patch_jump(p, j)
-	}
-	if has_finally {
-		restore_pos(p, try_ctx.finally_snapshot)
-		begin_scope(p)
-		block(p)
-		end_scope(p)
-		// This replay re-parses the exact same token range the first
-		// copy did, so it naturally advances back to the same closing
-		// `}` and beyond -- no further position fixup needed.
-	}
-
-	p.current_compiler.tries = try_ctx.previous
-	compile_trampolines_after_normal_path(p, try_ctx)
+	return new_clone(
+		Stmt_Try{base = Node_Base{token = tok}, body = body, excepts = excepts[:], has_finally = has_finally, finally_body = finally_body},
+	)
 }
 
 // -----------------------------------------------------------------------
 // Classes
 
-class_declaration :: proc(p: ^Parser) {
+class_declaration :: proc(p: ^Parser) -> Stmt {
 	consume(p, .Identifier, "Expect class name.")
 	name_tok := p.previous
 	class_name := lexeme(name_tok)
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(class_name))
 
-	is_local := p.current_compiler.scope_depth > 0
-	slot := 0
-	if is_local {
-		declare_variable(p)
-		mark_initialised(p)
-	} else {
-		slot = global_slot(p, class_name)
-		mark_global_declared(p, class_name)
-	}
-
-	emit_op_byte(p, .Class, name_const)
-	if !is_local {
-		emit_op_byte(p, .Define_Global, u8(slot))
-	}
-
-	class_ctx := new(Class_Compiler)
-	class_ctx.enclosing = p.current_class
-	p.current_class = class_ctx
-
+	has_superclass := false
+	superclass: Token
 	if match(p, .Less) {
 		consume(p, .Identifier, "Expect superclass name.")
 		if lexeme(p.previous) == class_name {
 			error(p, "A class can't inherit from itself.")
 		}
-		named_variable(p, p.previous, false)
-
-		begin_scope(p)
-		add_local(p, synthetic_token(.Identifier, "super", p.previous.line))
-		mark_initialised(p)
-
-		named_variable(p, name_tok, false)
-		emit_op(p, .Inherit)
-		class_ctx.has_superclass = true
+		has_superclass = true
+		superclass = p.previous
 	}
 
-	named_variable(p, name_tok, false) // class ref that Method/Static_Method/Class_Var attach to
 	consume(p, .Left_Brace, "Expect '{' before class body.")
+	members: [dynamic]Class_Member
 	for !check(p, .Right_Brace) && !check(p, .Eof) {
-		// Unlike top-level declaration()/statement(), which both fold
-		// this into their own dispatch, method() has no branch for a
-		// bare separator -- and there legitimately is an Eol between
-		// two methods (the one right after the first method's own `}`
-		// is real: Right_Brace isn't in keep_eol's suppress-after set,
-		// and the next real token is an identifier, not a closer, so
-		// it isn't suppressed by the look-ahead rule either). Skipping
-		// it here, rather than teaching method() to expect it, keeps
-		// method() focused on "one member" and matches how blank lines
-		// between members are already tolerated the same way.
+		// See class_declaration's own comment: a bare Eol/Semicolon
+		// between members is legitimate and needs skipping here directly,
+		// since method has no branch of its own for it.
 		if match(p, .Eol) || match(p, .Semicolon) {
 			continue
 		}
-		method(p)
-		// Unlike declaration() at the top level (see this file's
-		// declaration() proc), this loop needs its own panic_mode
-		// check: a malformed method whose error path leaves panic_mode
-		// set without consuming a token (e.g. consume() failing on
-		// `.Left_Brace` for a method body) would otherwise leave this
-		// loop's condition (still not Right_Brace/Eof) true forever,
-		// calling method() again on the exact same token with no
-		// progress. synchronize() is the same recovery declaration()
-		// uses; safe to reuse here since it always advances at least
-		// one token before returning, so it can't loop forever either.
+		member := method(p)
+		if member != nil {
+			append(&members, member)
+		}
+		// Same synchronize-on-panic need as class_declaration's own loop --
+		// a malformed method whose error path leaves panic_mode set
+		// without consuming a token would otherwise spin forever here.
 		if p.panic_mode {
 			synchronize(p)
 		}
 	}
 	consume(p, .Right_Brace, "Expect '}' after class body.")
-	emit_op(p, .Pop) // drop the class reference
 
-	if class_ctx.has_superclass {
-		end_scope(p) // closes the synthetic `super` local
-	}
-
-	p.current_class = class_ctx.enclosing
+	return new_clone(
+		Stmt_Class_Decl{base = Node_Base{token = name_tok}, name = name_tok, has_superclass = has_superclass, superclass = superclass, members = members[:]},
+	)
 }
 
 @(private = "file")
-method :: proc(p: ^Parser) {
+method :: proc(p: ^Parser) -> Class_Member {
 	is_static := match(p, .Static)
 
 	consume(p, .Identifier, "Expect method or field name.")
-	name := lexeme(p.previous)
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(name))
+	name := p.previous
 
 	if !check(p, .Left_Paren) {
 		if !is_static {
 			error(p, "Expect '(' after method name.")
-			return
+			return nil
 		}
+		init: Expr
 		if match(p, .Equal) {
-			expression(p)
-		} else {
-			emit_op(p, .Nil)
+			init = expression(p)
 		}
 		consume_eol(p, "Expect newline after class variable.")
-		emit_op_byte(p, .Class_Var, name_const)
-		return
+		return new_clone(Class_Var_Member{name = name, init = init})
 	}
 
-	if is_static && name == "init" {
+	name_str := lexeme(name)
+	if is_static && name_str == "init" {
 		error(p, "'init' cannot be static.")
 	}
-	type := Function_Type.Initializer if name == "init" else Function_Type.Method
+	fn_type := Function_Type.Initializer if name_str == "init" else Function_Type.Method
 
-	init_function_compiler(p, type, name)
-	compile_function(p)
-
-	emit_op_byte(p, .Static_Method if is_static else .Method, name_const)
+	decl := parse_function_decl(p, fn_type, name)
+	return new_clone(Method{name = name, is_static = is_static, decl = decl})
 }
 
 // -----------------------------------------------------------------------
 // Imports
 
-import_statement :: proc(p: ^Parser) {
+import_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
+	items: [dynamic]Import_Item
 	for {
 		consume(p, .Identifier, "Expect module name.")
-		module_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
-		alias := lexeme(p.previous)
-		alias_const := module_const
+		module := p.previous
 
+		has_alias := false
+		alias: Token
 		if match(p, .As) {
 			consume(p, .Identifier, "Expect alias after 'as'.")
-			alias = lexeme(p.previous)
-			alias_const = core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(alias))
+			has_alias = true
+			alias = p.previous
 		}
-
-		emit_op_byte(p, .Import, module_const)
-		emit_byte(p, alias_const)
-
-		// Op_Import defines the alias's global itself at runtime; the
-		// compiler only needs the slot to exist so later code in this
-		// compilation unit (and, for the REPL, later lines) can
-		// resolve the name.
-		global_slot(p, alias)
-		mark_global_declared(p, alias)
+		append(&items, Import_Item{module = module, has_alias = has_alias, alias = alias})
 
 		if !match(p, .Comma) {
 			break
 		}
 	}
 	consume_eol(p, "Expect newline after import.")
+	return new_clone(Stmt_Import{base = Node_Base{token = tok}, items = items[:]})
 }
 
-from_import_statement :: proc(p: ^Parser) {
+from_import_statement :: proc(p: ^Parser) -> Stmt {
+	tok := p.previous
 	consume(p, .Identifier, "Expect module name.")
-	module_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
+	module := p.previous
 	consume(p, .Import, "Expect 'import' after module name.")
 
 	if match(p, .Star) {
-		emit_op_byte(p, .Import_From, module_const)
-		emit_byte(p, 0) // 0 = import everything the module exports
-		// Not consume_eol: the scanner's own Eol-suppression heuristic
-		// (scanner.odin's keep_eol) treats `*` purely as a token type,
-		// with no way to know this one is `from mod import *`'s wildcard
-		// marker rather than the multiplication operator -- which
-		// legitimately continues onto the next line (`x = a *\nb`), so
-		// `Star` is in keep_eol's suppress-after set. That means the Eol
-		// that would normally follow `from mod import *` on its own line
-		// is never even scanned into the token stream here at all --
-		// requiring one via consume_eol always failed with "Expect
-		// newline after import.", since there was structurally nothing
-		// for it to match. Nothing can legally follow `*` in this
-		// grammar position anyway (unlike real multiplication), so no
-		// terminator check is needed here at all; the next token just
-		// starts the next statement normally.
-		return
+		// Not consume_eol -- see from_import_statement's own comment on
+		// why the scanner's Eol-suppression heuristic means there is
+		// structurally no Eol token here to require.
+		return new_clone(Stmt_From_Import{base = Node_Base{token = tok}, module = module, wildcard = true})
 	}
 
-	name_consts: [dynamic]u8
+	names: [dynamic]From_Import_Name
 	for {
 		consume(p, .Identifier, "Expect imported name.")
-		name := lexeme(p.previous)
-		append(&name_consts, core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(name)))
-		global_slot(p, name)
-		mark_global_declared(p, name)
+		append(&names, From_Import_Name{name = p.previous})
 		if !match(p, .Comma) {
 			break
 		}
 	}
-	if len(name_consts) > 255 {
+	if len(names) > 255 {
 		error(p, "Too many imported names.")
 	}
-	emit_op_byte(p, .Import_From, module_const)
-	emit_byte(p, u8(len(name_consts)))
-	for c in name_consts {
-		emit_byte(p, c)
-	}
 	consume_eol(p, "Expect newline after import.")
+	return new_clone(Stmt_From_Import{base = Node_Base{token = tok}, module = module, names = names[:]})
 }

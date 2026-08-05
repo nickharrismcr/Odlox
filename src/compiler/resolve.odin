@@ -2,37 +2,58 @@ package compiler
 
 import "core:fmt"
 
-// Implementation phase 4 of docs/plans/compiler-ast-split.md: the
-// Resolver. Reincarnates compiler_state.odin's scope/local/upvalue/global
-// logic as an AST walk instead of parse-time interleaving -- annotates
-// nodes in place (Var_Ref/declared_slot/is_local/local_exits/etc., all
-// already declared on the relevant ast.odin node types) and runs every
-// validity check the original performs inline during parsing that needs
-// more than a token comparison to decide (self-inheritance is pure lexeme
-// comparison and already happens at parse time -- see v2_stmt.odin's
-// class_declaration_ast).
+// The Resolver: walks the AST the parser built (parser.odin/rules.odin/
+// expr.odin/stmt.odin), annotating nodes in place with scope/local/
+// upvalue/global resolution (Var_Ref/declared_slot/is_local/local_exits/
+// etc., all declared on the relevant ast.odin node types) and running
+// every validity check that needs more than a token comparison to decide
+// (self-inheritance is pure lexeme comparison and happens at parse time
+// instead -- see stmt.odin's class_declaration). See docs/plans/
+// compiler-ast-split.md for the full design.
 //
-// Scope covers everything except try/finally *crossing* (a return/break/
-// continue whose target is outside an enclosing try) -- that's
-// implementation phase 6. This phase still resolves names *inside*
-// try/except/finally bodies as ordinary nested scopes, including a single
-// normal-completion pass over finally_body; phase 6 layers the per-
-// crossing-site re-resolution on top of that without disturbing this.
+// A return/break/continue whose target is outside an enclosing try
+// (crosses_tries) is resolved here too; resolve_finally_for_crossing is
+// what lets a crossed try's finally be *emitted* correctly, since its own
+// local slot numbers are replay-relative -- see its own doc comment and
+// Finally_Resolve_Ctx's.
 //
-// Hard invariant carried over from the plan doc: this file never touches
-// core.Chunk. It only ever assigns slot *numbers* (local index, upvalue
-// index, global index) -- never bytecode-pool indices -- which is what
-// keeps the seam clean for a future type-checker to occupy the same
-// position in the pipeline (after this, before Emit).
+// Hard invariant: this file never touches core.Chunk. It only ever
+// assigns slot *numbers* (local index, upvalue index, global index) --
+// never bytecode-pool indices -- which is what keeps the seam clean for
+// a future type-checker to occupy the same position in the pipeline
+// (after this, before Emit).
 
 // -----------------------------------------------------------------------
 // Types
-//
-// Local/Upvalue/Class_Compiler are compiler_state.odin's, reused
-// unchanged (both migrate to this file at cutover, at which point
-// compiler_state.odin goes away and this comment does too). Local's
-// `debug_info_idx` is never touched here -- it only means something once
-// a real Chunk exists (Emit's job).
+
+Function_Type :: enum {
+	Function,
+	Script,
+	Method,
+	Initializer,
+}
+
+// Local's `debug_info_idx` is never touched here -- it only means
+// something once a real Chunk exists (Emit's job); it's set by
+// emit.odin's open_local_debug instead.
+Local :: struct {
+	name:           Token,
+	lexeme:         string,
+	depth:          int, // -1 = declared but not yet initialised
+	is_captured:    bool,
+	is_const:       bool,
+	debug_info_idx: int,
+}
+
+Upvalue :: struct {
+	index:    u8,
+	is_local: bool,
+}
+
+Class_Compiler :: struct {
+	enclosing:      ^Class_Compiler,
+	has_superclass: bool,
+}
 
 // Resolve_Loop tracks one enclosing loop -- just scope_depth (the depth
 // the loop's own control-variable scope lives at, same meaning as
@@ -66,14 +87,16 @@ Resolve_Try :: struct {
 // a Stmt_Try's finally_body was first resolved -- everything Emit needs
 // to correctly re-resolve it fresh at a later emission site (both the
 // two "normal" copies and any crossing site; implementation phase 6):
-// enclosing_scope (for upvalue climbs to reach an outer function's
-// locals), outer_tries (deliberately *excludes* this try itself -- a
-// return/break/continue written directly inside this finally_body must
-// not try to cross this same try again, matching how
-// compile_pending_trampolines temporarily swaps Compiler.tries to
-// try_ctx.previous during a replay today), current_class (for this/
-// super), and entry_scope_depth/entry_local_count (the try statement's
-// own starting point, used for the two ordinary non-crossing copies).
+// enclosing_scope (the try's own function scope, reused -- not climbed
+// into -- by resolve_finally_for_crossing, since finally_body is lexically
+// part of the same function as the try, not a nested one), outer_tries
+// (deliberately *excludes* this try itself -- a return/break/continue
+// written directly inside this finally_body must not try to cross this
+// same try again, matching how compile_pending_trampolines temporarily
+// swaps Compiler.tries to try_ctx.previous during a replay today),
+// current_class (for this/super), and entry_scope_depth/entry_local_count
+// (the try statement's own starting point, used for the two ordinary
+// non-crossing copies).
 Finally_Resolve_Ctx :: struct {
 	resolver:          ^Resolver,
 	enclosing_scope:   ^Resolve_Scope,
@@ -817,32 +840,48 @@ local_count_at_depth_rs :: proc(rs: ^Resolver, boundary_scope_depth: int) -> int
 // try's own fixed entry scope depth -- callable more than once against
 // the same subtree (implementation phase 6), for the two ordinary
 // non-crossing copies (pass finally_ctx.entry_local_count) or any
-// crossing site (pass that site's own local_count_at_crossing). Shares
-// the original Resolver's global table (map/dynamic-array headers are
-// reference-semantic in Odin, so this sees and can safely re-affirm
-// already-assigned global slots) and enclosing scope chain (for upvalue
-// climbs), but starts tries at outer_tries, not this try itself -- see
-// Finally_Resolve_Ctx's own doc comment.
+// crossing site (pass that site's own local_count_at_crossing). Reuses
+// the try's own Resolve_Scope (ctx.enclosing_scope) directly rather than
+// fabricating a child scope with it as `.enclosing` -- finally_body is
+// lexically part of the SAME function as the try, not a nested one, so
+// any reference to a local declared outside the try's own immediate
+// block (e.g. a `for` loop's own control variable) must resolve as a
+// plain Local via that same scope's locals array, not climb out as an
+// Upvalue into a scope with no real function/closure backing it. Starts
+// tries at outer_tries, not this try itself -- see Finally_Resolve_Ctx's
+// own doc comment. Mutable fields on both the shared Resolver and the
+// borrowed scope are saved and restored around the replay so nothing
+// else that might read them later observes the scratch state.
 resolve_finally_for_crossing :: proc(try_node: ^Stmt_Try, local_count_at_crossing: int) -> (exits: []Local_Exit, had_error: bool) {
 	ctx := try_node.finally_ctx
+	rs := ctx.resolver
+	sc := ctx.enclosing_scope
 
-	scope := new(Resolve_Scope)
-	scope.enclosing = ctx.enclosing_scope
-	scope.fn_type = ctx.fn_type
-	scope.scope_depth = ctx.entry_scope_depth
-	scope.local_count = local_count_at_crossing
-	scope.tries = ctx.outer_tries
+	saved_scope := rs.scope
+	saved_class := rs.current_class
+	saved_had_error := rs.had_error
+	saved_local_count := sc.local_count
+	saved_scope_depth := sc.scope_depth
+	saved_tries := sc.tries
 
-	temp_rs := new(Resolver)
-	temp_rs^ = ctx.resolver^ // shares globals/globals_declared/global_names_by_slot (reference-semantic)
-	temp_rs.scope = scope
-	temp_rs.current_class = ctx.current_class
-	temp_rs.had_error = false
+	rs.scope = sc
+	rs.current_class = ctx.current_class
+	rs.had_error = false
+	sc.local_count = local_count_at_crossing
+	sc.scope_depth = ctx.entry_scope_depth
+	sc.tries = ctx.outer_tries
 
-	begin_scope_rs(temp_rs)
-	resolve_stmt_list(temp_rs, try_node.finally_body)
-	exits = end_scope_rs(temp_rs)
-	had_error = temp_rs.had_error
+	begin_scope_rs(rs)
+	resolve_stmt_list(rs, try_node.finally_body)
+	exits = end_scope_rs(rs)
+	had_error = rs.had_error
+
+	rs.scope = saved_scope
+	rs.current_class = saved_class
+	rs.had_error = saved_had_error
+	sc.local_count = saved_local_count
+	sc.scope_depth = saved_scope_depth
+	sc.tries = saved_tries
 	return
 }
 

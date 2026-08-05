@@ -3,14 +3,15 @@ package compiler
 import "../core"
 import "core:testing"
 
-// Opcode-sequence tests for implementation phase 5 of docs/plans/
-// compiler-ast-split.md: the Emitter, exercised end to end through the
-// temporary Compile_V2 entry point (v2_compile.odin). Mirrors
-// compile_test.odin's own decode()/op_sequence()/contains_op()/count_op()
-// helpers and reuses several of its exact source strings, so passing here
-// is a direct opcode-for-opcode parity check against the old pipeline for
-// every case that doesn't involve a crossing return/break/continue out of
-// a try (implementation phase 6's scope, not this one).
+// Opcode-sequence tests for the Emitter, exercised end to end through
+// Compile()/Compile_Repl(). Duplicates compile_test.odin's own decode()/
+// op_sequence()/contains_op()/count_op() helpers (file-private there, so
+// can't be shared directly) and reuses several of its exact source
+// strings for direct opcode-for-opcode parity checks, plus dedicated
+// coverage for try/finally *crossing* (a return/break/continue whose
+// target is outside an enclosing try) -- something the old single-pass
+// compiler's trampoline design made hard to test deliberately, so
+// compile_test.odin has no equivalent of its own.
 
 @(private = "file")
 Decoded :: struct {
@@ -105,9 +106,9 @@ inner_function_chunk :: proc(t: ^testing.T, c: ^core.Chunk) -> ^core.Chunk {
 }
 
 @(private = "file")
-compile_v2_ok :: proc(t: ^testing.T, source: string) -> ^core.Chunk {
+compile_ok :: proc(t: ^testing.T, source: string) -> ^core.Chunk {
 	env := core.make_environment("test")
-	fn, ok := Compile_V2(source, "test.lox", env)
+	fn, ok := Compile(source, "test.lox", env)
 	testing.expectf(t, ok, "expected %q to compile without error", source)
 	return fn.chunk
 }
@@ -119,7 +120,7 @@ compile_v2_ok :: proc(t: ^testing.T, source: string) -> ^core.Chunk {
 
 @(test)
 test_emit_kitchen_sink_program_compiles :: proc(t: ^testing.T) {
-	compile_v2_ok(t, `
+	compile_ok(t, `
 class Animal {
 	init(name) {
 		this.name = name
@@ -177,7 +178,7 @@ from math import sqrt, pow
 
 @(test)
 test_emit_arithmetic_precedence_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "1 + 2 * 3\n")
+	c := compile_ok(t, "1 + 2 * 3\n")
 	seq := op_sequence(c)
 	testing.expectf(t, len(seq) >= 5, "expected at least 5 opcodes, got %d", len(seq))
 	testing.expect_value(t, seq[0], core.Op_Code.Constant)
@@ -189,72 +190,72 @@ test_emit_arithmetic_precedence_shape :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_comparison_operators_map_to_flip_plus_not :: proc(t: ^testing.T) {
-	le := compile_v2_ok(t, "1 <= 2\n")
+	le := compile_ok(t, "1 <= 2\n")
 	testing.expect(t, contains_op(le, .Greater))
 	testing.expect(t, contains_op(le, .Not))
 
-	ne := compile_v2_ok(t, "1 != 2\n")
+	ne := compile_ok(t, "1 != 2\n")
 	testing.expect(t, contains_op(ne, .Equal))
 	testing.expect(t, contains_op(ne, .Not))
 }
 
 @(test)
 test_emit_vector_add_uses_plus_plus :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "a ++ b\n")
+	c := compile_ok(t, "a ++ b\n")
 	testing.expect(t, contains_op(c, .Add_Vector))
 	testing.expect(t, !contains_op(c, .Add_Numeric))
 }
 
 @(test)
 test_emit_ternary_conditional_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "x ? 1 : 2\n")
+	c := compile_ok(t, "x ? 1 : 2\n")
 	testing.expect_value(t, count_op(c, .Jump_If_False), 1)
 	testing.expect_value(t, count_op(c, .Jump), 1)
 }
 
 @(test)
 test_emit_and_or_short_circuit_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "x and y\n")
+	c := compile_ok(t, "x and y\n")
 	testing.expect(t, contains_op(c, .Jump_If_False))
 
-	c2 := compile_v2_ok(t, "x or y\n")
+	c2 := compile_ok(t, "x or y\n")
 	testing.expect_value(t, count_op(c2, .Jump_If_False), 1)
 	testing.expect_value(t, count_op(c2, .Jump), 1)
 }
 
 @(test)
 test_emit_str_call_emits_str_opcode :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "str(x)\n")
+	c := compile_ok(t, "str(x)\n")
 	testing.expect(t, contains_op(c, .Str))
 }
 
 @(test)
 test_emit_list_dict_tuple_literals :: proc(t: ^testing.T) {
-	l := compile_v2_ok(t, "[1, 2, 3]\n")
+	l := compile_ok(t, "[1, 2, 3]\n")
 	testing.expect(t, contains_op(l, .Create_List))
 
-	d := compile_v2_ok(t, `var d = {"a": 1}` + "\n")
+	d := compile_ok(t, `var d = {"a": 1}` + "\n")
 	testing.expect(t, contains_op(d, .Create_Dict))
 
-	tup := compile_v2_ok(t, "(1, 2)\n")
+	tup := compile_ok(t, "(1, 2)\n")
 	testing.expect(t, contains_op(tup, .Create_Tuple))
 }
 
 @(test)
 test_emit_index_and_slice :: proc(t: ^testing.T) {
-	idx := compile_v2_ok(t, "x[0]\n")
+	idx := compile_ok(t, "x[0]\n")
 	testing.expect(t, contains_op(idx, .Index))
 
-	sl := compile_v2_ok(t, "x[1:2]\n")
+	sl := compile_ok(t, "x[1:2]\n")
 	testing.expect(t, contains_op(sl, .Slice))
 
-	open_sl := compile_v2_ok(t, "x[:]\n")
+	open_sl := compile_ok(t, "x[:]\n")
 	testing.expect(t, contains_op(open_sl, .Slice))
 }
 
 @(test)
 test_emit_compound_assignment_desugars_no_dedicated_opcode :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "var x = 1\nx += 2\n")
+	c := compile_ok(t, "var x = 1\nx += 2\n")
 	seq := op_sequence(c)
 	found := false
 	for i in 0 ..< len(seq) - 2 {
@@ -270,13 +271,13 @@ test_emit_compound_assignment_desugars_no_dedicated_opcode :: proc(t: ^testing.T
 
 @(test)
 test_emit_global_var_declaration_emits_define_global :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "var x = 5\n")
+	c := compile_ok(t, "var x = 5\n")
 	testing.expect(t, contains_op(c, .Define_Global))
 }
 
 @(test)
 test_emit_local_var_declaration_has_no_define_global :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "func f() { var x = 5; return x }\n")
+	c := compile_ok(t, "func f() { var x = 5; return x }\n")
 	fn_chunk := inner_function_chunk(t, c)
 	testing.expect(t, !contains_op(fn_chunk, .Define_Global))
 	testing.expect(t, contains_op(fn_chunk, .Get_Local))
@@ -284,26 +285,26 @@ test_emit_local_var_declaration_has_no_define_global :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_const_declaration_uses_define_global_const :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "const X = 1\n")
+	c := compile_ok(t, "const X = 1\n")
 	testing.expect(t, contains_op(c, .Define_Global_Const))
 }
 
 @(test)
 test_emit_const_without_initializer_is_error :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
-	_, ok := Compile_V2("const X\n", "test.lox", env)
+	_, ok := Compile("const X\n", "test.lox", env)
 	testing.expect(t, !ok)
 }
 
 @(test)
 test_emit_implicit_global_declaration :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "x = 5\n")
+	c := compile_ok(t, "x = 5\n")
 	testing.expect(t, contains_op(c, .Define_Global))
 }
 
 @(test)
 test_emit_destructuring_assignment_global :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "a, b = 1, 2\n")
+	c := compile_ok(t, "a, b = 1, 2\n")
 	testing.expect(t, contains_op(c, .Unpack))
 	testing.expect_value(t, count_op(c, .Define_Global), 2)
 }
@@ -313,34 +314,34 @@ test_emit_destructuring_assignment_global :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_if_else_jump_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "if x { print 1 } else { print 2 }\n")
+	c := compile_ok(t, "if x { print 1 } else { print 2 }\n")
 	testing.expect_value(t, count_op(c, .Jump_If_False), 1)
 	testing.expect_value(t, count_op(c, .Jump), 1)
 }
 
 @(test)
 test_emit_while_loop_has_back_edge :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "while x { print 1 }\n")
+	c := compile_ok(t, "while x { print 1 }\n")
 	testing.expect(t, contains_op(c, .Loop))
 	testing.expect_value(t, count_op(c, .Jump_If_False), 1)
 }
 
 @(test)
 test_emit_break_and_continue_in_loop :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "while x { if y { break } if z { continue } }\n")
+	c := compile_ok(t, "while x { if y { break } if z { continue } }\n")
 	testing.expect_value(t, count_op(c, .Loop), 2) // 1 real back-edge + 1 from `continue`
 }
 
 @(test)
 test_emit_break_outside_loop_is_error :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
-	_, ok := Compile_V2("break\n", "test.lox", env)
+	_, ok := Compile("break\n", "test.lox", env)
 	testing.expect(t, !ok)
 }
 
 @(test)
 test_emit_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "foreach x in items { print x }\n")
+	c := compile_ok(t, "foreach x in items { print x }\n")
 	testing.expect(t, contains_op(c, .Foreach))
 	testing.expect(t, contains_op(c, .Next))
 	testing.expect(t, contains_op(c, .End_Foreach))
@@ -348,7 +349,7 @@ test_emit_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_for_with_parens_and_no_increment :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "for (var i = 0; i < 3;) { print i }\n")
+	c := compile_ok(t, "for (var i = 0; i < 3;) { print i }\n")
 	testing.expect(t, contains_op(c, .Loop))
 }
 
@@ -357,7 +358,7 @@ test_emit_break_pops_locals_declared_inside_loop_body :: proc(t: ^testing.T) {
 	// A local declared inside the loop body must be popped right at the
 	// break site, since the jump bypasses that block's own Stmt_Block
 	// local_exits cleanup -- see ast.odin's Stmt_Break doc comment.
-	c := compile_v2_ok(t, "while x {\nvar y = 1\nif y { break }\n}\n")
+	c := compile_ok(t, "while x {\nvar y = 1\nif y { break }\n}\n")
 	fn_chunk := c
 	// Two Pop-producing scope exits should exist: one for the break's own
 	// pop_exits (popping y before jumping out) and one for the normal
@@ -370,7 +371,7 @@ test_emit_break_pops_locals_declared_inside_loop_body :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_default_parameter_emits_jump_if_defined :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "func f(a, b=1) { return a + b }\n")
+	c := compile_ok(t, "func f(a, b=1) { return a + b }\n")
 	fn_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(fn_chunk, .Jump_If_Defined))
 }
@@ -378,13 +379,13 @@ test_emit_default_parameter_emits_jump_if_defined :: proc(t: ^testing.T) {
 @(test)
 test_emit_non_default_after_default_is_error :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
-	_, ok := Compile_V2("func f(a=1, b) { return a }\n", "test.lox", env)
+	_, ok := Compile("func f(a=1, b) { return a }\n", "test.lox", env)
 	testing.expect(t, !ok)
 }
 
 @(test)
 test_emit_closure_captures_upvalue :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func outer() {
 	var x = 1
 	return func() { return x }
@@ -398,7 +399,7 @@ func outer() {
 
 @(test)
 test_emit_lambda_expression_compiles :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "var f = func(x) { return x }\n")
+	c := compile_ok(t, "var f = func(x) { return x }\n")
 	testing.expect(t, contains_op(c, .Closure))
 }
 
@@ -407,7 +408,7 @@ test_emit_lambda_expression_compiles :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_class_declaration_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 class Point {
 	init(x, y) {
 		this.x = x
@@ -423,7 +424,7 @@ class Point {
 
 @(test)
 test_emit_class_inheritance_emits_inherit_and_super :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 class A { greet() { return "a" } }
 class B < A { greet() { return super.greet() } }
 `)
@@ -435,7 +436,7 @@ class B < A { greet() { return super.greet() } }
 
 @(test)
 test_emit_try_except_finally_shape :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 try {
 	raise "x"
 } except RunTimeError as e {
@@ -458,7 +459,7 @@ try {
 @(test)
 test_emit_try_without_except_or_finally_is_error :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
-	_, ok := Compile_V2("try {\nraise \"x\"\n}\n", "test.lox", env)
+	_, ok := Compile("try {\nraise \"x\"\n}\n", "test.lox", env)
 	testing.expect(t, !ok)
 }
 
@@ -472,7 +473,7 @@ test_emit_try_without_except_or_finally_is_error :: proc(t: ^testing.T) {
 
 @(test)
 test_emit_return_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func f() {
 	try {
 		return 1
@@ -493,7 +494,7 @@ func f() {
 
 @(test)
 test_emit_return_crossing_try_without_finally_only_end_try :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func f() {
 	try {
 		return 1
@@ -509,7 +510,7 @@ func f() {
 
 @(test)
 test_emit_break_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func f() {
 	while (true) {
 		try {
@@ -530,7 +531,7 @@ func f() {
 
 @(test)
 test_emit_continue_crossing_finally_replays_it_a_third_time :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func f() {
 	while (true) {
 		try {
@@ -550,7 +551,7 @@ func f() {
 
 @(test)
 test_emit_return_crossing_nested_trys_replays_both_finallys :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, `
+	c := compile_ok(t, `
 func f() {
 	try {
 		try {
@@ -579,7 +580,7 @@ func f() {
 
 @(test)
 test_emit_peephole_fuses_local_increment :: proc(t: ^testing.T) {
-	c := compile_v2_ok(t, "func f() {\nvar a = 1\nvar b = 2\na = a + b\nreturn a\n}\n")
+	c := compile_ok(t, "func f() {\nvar a = 1\nvar b = 2\na = a + b\nreturn a\n}\n")
 	fn_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(fn_chunk, .Add_Nn))
 	testing.expect(t, !contains_op(fn_chunk, .Add_Numeric))
@@ -588,18 +589,18 @@ test_emit_peephole_fuses_local_increment :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // REPL global-slot continuity (implementation phase 7) -- same two
 // regression tests compile_test.odin has for the old pipeline, run
-// against Compile_Repl_V2/Repl_State_V2 instead.
+// against Compile_Repl/Repl_State instead.
 
 @(test)
 test_emit_repl_second_line_reuses_first_lines_global_slot :: proc(t: ^testing.T) {
 	env := core.make_environment("repl")
-	st := make_repl_state_v2(env)
+	st := make_repl_state(env)
 
-	_, ok1 := Compile_Repl_V2("var x = 1\n", &st)
+	_, ok1 := Compile_Repl("var x = 1\n", &st)
 	testing.expect(t, ok1)
 	slot_after_line1 := st.globals["x"]
 
-	fn2, ok2 := Compile_Repl_V2("x = x + 1\n", &st)
+	fn2, ok2 := Compile_Repl("x = x + 1\n", &st)
 	testing.expect(t, ok2)
 	testing.expect_value(t, st.globals["x"], slot_after_line1)
 
@@ -617,13 +618,13 @@ test_emit_repl_second_line_reuses_first_lines_global_slot :: proc(t: ^testing.T)
 @(test)
 test_emit_repl_failed_line_does_not_corrupt_state :: proc(t: ^testing.T) {
 	env := core.make_environment("repl")
-	st := make_repl_state_v2(env)
+	st := make_repl_state(env)
 
-	_, ok1 := Compile_Repl_V2("var x = 1\n", &st)
+	_, ok1 := Compile_Repl("var x = 1\n", &st)
 	testing.expect(t, ok1)
 	count_before := st.global_count
 
-	_, ok2 := Compile_Repl_V2("var 1 = 2\n", &st) // syntax error
+	_, ok2 := Compile_Repl("var 1 = 2\n", &st) // syntax error
 	testing.expect(t, !ok2)
 	testing.expect_value(t, st.global_count, count_before)
 }

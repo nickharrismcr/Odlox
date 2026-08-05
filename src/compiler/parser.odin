@@ -2,51 +2,27 @@ package compiler
 
 // The Pratt (operator-precedence) parser core: token-stream driving,
 // error recovery, and the precedence-climbing expression driver. This
-// file deliberately has no knowledge of *what* any given token compiles
+// file deliberately has no knowledge of *what* any given token parses
 // to -- that's the per-token Parse_Rule table (rules.odin) and the
-// individual prefix/infix functions (expr.odin/stmt.odin). Single-pass,
-// no AST: every parse function that recognizes a construct emits its
-// bytecode directly, via the emit_* helpers in compiler_state.odin.
+// individual prefix/infix functions (expr.odin/stmt.odin), which build
+// and return AST nodes. Resolution (locals/upvalues/globals/validity) and
+// bytecode emission happen in later passes (resolve.odin, emit*.odin) --
+// see docs/plans/compiler-ast-split.md for the full design.
 
 import "core:fmt"
 
 Parser :: struct {
-	scn:              ^Scanner,
-	filename:         string,
+	scn:               ^Scanner,
+	filename:          string,
 	current, previous: Token,
 	had_error:         bool,
 	panic_mode:        bool,
-
-	current_compiler: ^Compiler,
-	current_class:    ^Class_Compiler,
-
-	// Global slot assignment for this whole compilation unit -- see
-	// compiler_state.odin's global_slot. globals_declared distinguishes
-	// "explicitly declared via var/const/import/implicit-assignment"
-	// from "merely referenced" (forward references are allowed: a name
-	// gets a slot on first *mention*, not first *declaration*).
-	globals:             map[string]int,
-	globals_declared:    map[string]bool,
-	global_count:        int,
-	global_names_by_slot: [dynamic]string,
 
 	// Recursion-depth guards against runaway nesting -- Odin's own call
 	// stack would overflow on sufficiently pathological input otherwise,
 	// which can't be recovered from the way an ordinary parse error can.
 	expr_depth: int,
 	stmt_depth: int,
-
-	// Snapshotted from the package-level DebugSkipPeephole (see
-	// compiler_state.odin) once, when this Parser is constructed --
-	// end_compiler reads this field, not the global, so one compile's
-	// peephole behavior can't be affected by another compile
-	// concurrently flipping the global mid-run (two compiles running on
-	// different threads, one toggling the flag around itself, could
-	// otherwise interleave with a completely unrelated compile that
-	// never touches the flag at all). This makes each compile's
-	// behavior a stable snapshot taken at its own start, not shared
-	// mutable state.
-	skip_peephole: bool,
 }
 
 MAX_EXPR_DEPTH :: 1000
@@ -115,11 +91,12 @@ consume_eol :: proc(p: ^Parser, message: string) {
 // snapshot_pos/restore_pos let the parser rewind and re-parse a range of
 // already-scanned tokens -- safe because the whole token stream is
 // materialized up front (scanner.odin), so replaying is side-effect-free.
-// Used by try/finally compilation (stmt.odin) to compile a `finally`
-// block's source twice (once for the normal-completion landing point,
-// once for the always-matching re-raise handler) without duplicating
-// bytecode by hand, which would require relocating every local/upvalue
-// operand baked into it.
+// Used by stmt.odin's looks_like_destructuring for its own lookahead
+// probe (`identifier (, identifier)* =`). try/finally no longer needs
+// this the way the old single-pass compiler did: Stmt_Try captures its
+// whole body/excepts/finally_body as data instead of needing to re-parse
+// source text to replay finally -- see resolve.odin's
+// resolve_finally_for_crossing and emit_stmt.odin's emit_finally_copy.
 snapshot_pos :: proc(p: ^Parser) -> Parser_Snapshot {
 	return Parser_Snapshot{current = p.current, previous = p.previous, token_idx = p.scn.token_idx}
 }
@@ -128,6 +105,11 @@ restore_pos :: proc(p: ^Parser, snap: Parser_Snapshot) {
 	p.current = snap.current
 	p.previous = snap.previous
 	p.scn.token_idx = snap.token_idx
+}
+
+Parser_Snapshot :: struct {
+	current, previous: Token,
+	token_idx:         int,
 }
 
 // -----------------------------------------------------------------------
@@ -183,7 +165,8 @@ synchronize :: proc(p: ^Parser) {
 }
 
 // -----------------------------------------------------------------------
-// Precedence-climbing expression driver
+// Precedence-climbing expression driver -- prefix/infix functions build
+// and return AST nodes (rules.odin/expr.odin) rather than emitting.
 
 Precedence :: enum {
 	None,
@@ -200,45 +183,48 @@ Precedence :: enum {
 	Primary,
 }
 
-Parse_Fn :: #type proc(p: ^Parser, can_assign: bool)
+Prefix_Fn :: #type proc(p: ^Parser, can_assign: bool) -> Expr
+Infix_Fn :: #type proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr
 
 Parse_Rule :: struct {
-	prefix, infix: Parse_Fn,
-	precedence:    Precedence,
+	prefix:     Prefix_Fn,
+	infix:      Infix_Fn,
+	precedence: Precedence,
 }
 
-expression :: proc(p: ^Parser) {
-	parse_precedence(p, .Assignment)
+expression :: proc(p: ^Parser) -> Expr {
+	return parse_precedence(p, .Assignment)
 }
 
-parse_precedence :: proc(p: ^Parser, precedence: Precedence) {
+parse_precedence :: proc(p: ^Parser, precedence: Precedence) -> Expr {
 	p.expr_depth += 1
 	defer p.expr_depth -= 1
 	if p.expr_depth > MAX_EXPR_DEPTH {
 		error(p, "Expression nested too deeply.")
 		skip_to_end(p)
-		return
+		return nil
 	}
 
 	advance(p)
 	prefix := get_rule(p.previous.type).prefix
 	if prefix == nil {
 		error(p, "Expect expression.")
-		return
+		return nil
 	}
 
 	can_assign := precedence <= .Assignment
-	prefix(p, can_assign)
+	left := prefix(p, can_assign)
 
 	for precedence <= get_rule(p.current.type).precedence {
 		advance(p)
 		infix := get_rule(p.previous.type).infix
-		infix(p, can_assign)
+		left = infix(p, left, can_assign)
 	}
 
 	if can_assign && match(p, .Equal) {
 		error(p, "Invalid assignment target.")
 	}
+	return left
 }
 
 // skip_to_end jumps straight to the trailing Eof -- used by the

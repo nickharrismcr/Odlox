@@ -2,14 +2,13 @@ package compiler
 
 import "core:testing"
 
-// Direct Resolver tests for implementation phase 4 of docs/plans/
-// compiler-ast-split.md: resolved slot numbers and expected validity
+// Direct Resolver tests: resolved slot numbers and expected validity
 // errors against known-good/known-bad programs, exercising resolve_program
-// directly rather than through Compile (which doesn't exist for the new
-// pipeline yet -- that's phase 5+).
+// directly rather than through Compile()'s full pipeline -- catches
+// resolution bugs precisely, at the layer they actually occur.
 
 // destroy_scanner is deliberately not called here -- see
-// v2_ast_expr_test.odin's parse_expr_ast for why.
+// ast_expr_test.odin's parse_expr for why.
 @(private = "file")
 parse_and_resolve :: proc(t: ^testing.T, source: string) -> (stmts: []Stmt, globals: Global_Table, had_error: bool) {
 	scn := tokenize(source)
@@ -17,7 +16,7 @@ parse_and_resolve :: proc(t: ^testing.T, source: string) -> (stmts: []Stmt, glob
 	advance(&p)
 	list: [dynamic]Stmt
 	for !match(&p, .Eof) {
-		s := declaration_ast(&p)
+		s := declaration(&p)
 		if s != nil {
 			append(&list, s)
 		}
@@ -197,13 +196,68 @@ class Dog < Animal {
 }
 
 @(test)
+test_resolve_finally_crossing_reference_to_for_loop_control_var_stays_local :: proc(t: ^testing.T) {
+	// Regression test: a continue crossing a try/finally *inside a for
+	// loop*, where the finally body references the for loop's own control
+	// variable, used to mis-resolve that reference as a Global (or an
+	// Upvalue into a scope with no real closure backing it) instead of a
+	// plain Local -- resolve_finally_for_crossing fabricated a brand-new
+	// Resolve_Scope pointing .enclosing at the try's real function scope,
+	// which made any local declared outside the try's own immediate block
+	// look like it belonged to a *different, enclosing function* rather
+	// than the same one being replayed. Confirmed via real script
+	// execution (not caught by any prior static test) as an "Undefined
+	// variable '#N'" runtime crash.
+	source := `
+for var i = 0; i < 3; i = i + 1 {
+	try {
+		if i == 1 { continue }
+	} finally {
+		print str(i)
+	}
+}
+`
+	stmts, _, had_error := parse_and_resolve(t, source)
+	testing.expect(t, !had_error)
+
+	for_stmt := stmts[0].(^Stmt_For)
+	body_block := for_stmt.body.(^Stmt_Block)
+	try_stmt := body_block.stmts[0].(^Stmt_Try)
+	if_stmt := try_stmt.body[0].(^Stmt_If)
+	then_block := if_stmt.then_branch.(^Stmt_Block)
+	continue_stmt := then_block.stmts[0].(^Stmt_Continue)
+
+	testing.expectf(
+		t,
+		len(continue_stmt.crosses_tries) == 1,
+		"expected the continue to cross exactly the one enclosing try",
+	)
+
+	// Mirrors what Emit does at this crossing site: re-resolve
+	// finally_body fresh against the continue's own local_count_at_crossing.
+	_, replay_had_error := resolve_finally_for_crossing(try_stmt, continue_stmt.local_count_at_crossing)
+	testing.expect(t, !replay_had_error)
+
+	print_stmt := try_stmt.finally_body[0].(^Stmt_Print)
+	str_call := print_stmt.expr.(^Expr_Str_Call)
+	var_ref := str_call.inner.(^Expr_Variable)
+	testing.expect(
+		t,
+		var_ref.resolved.kind == .Local,
+		"expected the for loop's control variable to resolve as a plain Local even when re-resolved for a continue crossing",
+	)
+	i_decl := for_stmt.init.(^Stmt_Var_Decl)
+	testing.expect_value(t, var_ref.resolved.slot, i_decl.declared_slot)
+}
+
+@(test)
 test_resolve_self_inheritance_still_flagged_at_parse_time :: proc(t: ^testing.T) {
 	// Confirms resolve_program doesn't need to (and doesn't) re-check
-	// this -- class_declaration_ast already rejects it during parsing.
+	// this -- class_declaration already rejects it during parsing.
 	scn := tokenize("class Foo < Foo {\n}")
 	p := Parser{scn = &scn, filename = "test.lox"}
 	advance(&p)
 	advance(&p) // consume 'class'
-	class_declaration_ast(&p)
+	class_declaration(&p)
 	testing.expect(t, p.had_error)
 }

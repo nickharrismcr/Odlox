@@ -1,431 +1,334 @@
 package compiler
 
 import "../core"
-import "core:fmt"
 import "core:strconv"
 
 // All prefix/infix expression parse functions the rule table (rules.odin)
 // dispatches to. Each one assumes p.previous is the token that triggered
-// it (standard Pratt-parser convention) and, for an infix function, that
-// the left operand's bytecode has already been emitted.
+// it (standard Pratt-parser convention) and builds/returns an AST node --
+// see docs/plans/compiler-ast-split.md. Validity checks that need more
+// than a token comparison (`this`/`super` outside a class, const
+// reassignment) are deliberately NOT done here -- they're the Resolver's
+// job (resolve.odin), which is also where `Var_Ref`/`declared_slot`
+// fields left zero-valued below get filled in.
 
 // -----------------------------------------------------------------------
 // Literals
 
-int_literal :: proc(p: ^Parser, can_assign: bool) {
-	v, ok := strconv.parse_i64(lexeme(p.previous))
+int_literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	v, ok := strconv.parse_i64(lexeme(tok))
 	if !ok {
 		error(p, "Invalid integer literal.")
-		return
 	}
-	emit_constant(p, core.make_int_value(int(v)))
+	return new_clone(Expr_Literal{base = Node_Base{token = tok}, kind = .Int, value = core.make_int_value(int(v))})
 }
 
-float_literal :: proc(p: ^Parser, can_assign: bool) {
-	v, ok := strconv.parse_f64(lexeme(p.previous))
+float_literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	v, ok := strconv.parse_f64(lexeme(tok))
 	if !ok {
 		error(p, "Invalid float literal.")
-		return
 	}
-	emit_constant(p, core.make_float_value(v))
+	return new_clone(Expr_Literal{base = Node_Base{token = tok}, kind = .Float, value = core.make_float_value(v)})
 }
 
-// string_literal strips the surrounding quote bytes every String token
-// carries (real or scanner-synthesized -- see scanner.odin's scan_string).
-string_literal :: proc(p: ^Parser, can_assign: bool) {
-	text := lexeme(p.previous)
-	emit_constant(p, core.make_string_value(text[1:len(text) - 1]))
+string_literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	text := lexeme(tok)
+	return new_clone(
+		Expr_Literal{base = Node_Base{token = tok}, kind = .String, value = core.make_string_value(text[1:len(text) - 1])},
+	)
 }
 
-literal :: proc(p: ^Parser, can_assign: bool) {
-	#partial switch p.previous.type {
+literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	#partial switch tok.type {
 	case .False:
-		emit_op(p, .False)
+		return new_clone(Expr_Literal{base = Node_Base{token = tok}, kind = .Bool, value = core.make_bool_value(false)})
 	case .True:
-		emit_op(p, .True)
-	case .Nil:
-		emit_op(p, .Nil)
+		return new_clone(Expr_Literal{base = Node_Base{token = tok}, kind = .Bool, value = core.make_bool_value(true)})
 	}
+	return new_clone(Expr_Literal{base = Node_Base{token = tok}, kind = .Nil, value = core.NIL_VALUE})
 }
 
-// str_call compiles the reserved `str(expr)` form straight to Op_Code.Str
-// -- also what string interpolation desugars into (scanner.odin).
-str_call :: proc(p: ^Parser, can_assign: bool) {
+// str_call is the reserved `str(expr)` form -- Op_Code.Str, not an
+// ordinary call (no callee, no argument-count checking).
+str_call :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
 	consume(p, .Left_Paren, "Expect '(' after 'str'.")
-	expression(p)
+	inner := expression(p)
 	consume(p, .Right_Paren, "Expect ')' after expression.")
-	emit_op(p, .Str)
+	return new_clone(Expr_Str_Call{base = Node_Base{token = tok}, inner = inner})
 }
 
 // -----------------------------------------------------------------------
 // Grouping, unary, binary
 
-// grouping handles both `(expr)` and a tuple literal `(a, b, ...)` --
-// the two are distinguished by whether a comma follows the first
-// expression, matching how `,`-terminated forms read naturally as
-// tuples rather than needing a separate leading marker.
-grouping :: proc(p: ^Parser, can_assign: bool) {
+// parenthesized handles both `(expr)` and a tuple literal
+// `(a, b, ...)`, distinguished by whether a comma follows the first
+// expression -- matching grouping()'s own behavior. Plain `(expr)`
+// produces no node at all: the inner expression is returned directly.
+parenthesized :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
 	if match(p, .Right_Paren) {
-		emit_op_byte(p, .Create_Tuple, 0)
-		return
+		return new_clone(Expr_Tuple{base = Node_Base{token = tok}})
 	}
-	expression(p)
-	count := 1
+	elements: [dynamic]Expr
+	append(&elements, expression(p))
 	for match(p, .Comma) {
 		if check(p, .Right_Paren) {
 			break // trailing comma
 		}
-		expression(p)
-		count += 1
+		append(&elements, expression(p))
 	}
 	consume(p, .Right_Paren, "Expect ')' after expression.")
-	if count > 1 {
-		if count > 255 {
+	if len(elements) > 1 {
+		if len(elements) > 255 {
 			error(p, "Can't have more than 255 items in a tuple literal.")
 		}
-		emit_op_byte(p, .Create_Tuple, u8(count))
+		return new_clone(Expr_Tuple{base = Node_Base{token = tok}, elements = elements[:]})
 	}
+	return elements[0]
 }
 
-unary :: proc(p: ^Parser, can_assign: bool) {
-	op_type := p.previous.type
-	parse_precedence(p, .Unary)
-	#partial switch op_type {
-	case .Minus:
-		emit_op(p, .Negate)
-	case .Bang:
-		emit_op(p, .Not)
-	}
+unary :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	operand := parse_precedence(p, .Unary)
+	return new_clone(Expr_Unary{base = Node_Base{token = tok}, op = tok.type, operand = operand})
 }
 
 // binary compiles a left-associative infix operator: everything at
-// strictly higher precedence than this operator's own is folded into
-// the right operand first (`+1` from the enum below its own level).
-//
-// The compiler can't know an operand's runtime type, so `+`/`++` pick
-// *which* opcode to emit (Add_Numeric vs. Add_Vector) rather than
-// deciding the actual arithmetic -- each opcode does its own runtime
-// type check/dispatch. `<=`/`>=` have no opcode of their own;
-// they compile as the flipped strict comparison plus Not, exactly like
-// `!=` compiles as Equal+Not.
-binary :: proc(p: ^Parser, can_assign: bool) {
-	op_type := p.previous.type
-	rule := get_rule(op_type)
-	parse_precedence(p, Precedence(int(rule.precedence) + 1))
-
-	#partial switch op_type {
-	case .Plus:
-		emit_op(p, .Add_Numeric)
-	case .Plus_Plus:
-		emit_op(p, .Add_Vector)
-	case .Minus:
-		emit_op(p, .Subtract)
-	case .Star:
-		emit_op(p, .Multiply)
-	case .Slash:
-		emit_op(p, .Divide)
-	case .Percent:
-		emit_op(p, .Modulus)
-	case .Ampersand:
-		emit_op(p, .Concat)
-	case .Bang_Equal:
-		emit_op(p, .Equal)
-		emit_op(p, .Not)
-	case .Equal_Equal:
-		emit_op(p, .Equal)
-	case .Greater:
-		emit_op(p, .Greater)
-	case .Greater_Equal:
-		emit_op(p, .Less)
-		emit_op(p, .Not)
-	case .Less:
-		emit_op(p, .Less)
-	case .Less_Equal:
-		emit_op(p, .Greater)
-		emit_op(p, .Not)
-	case .In:
-		emit_op(p, .In)
-	}
+// strictly higher precedence than this operator's own folds into the
+// right operand first, matching binary()'s own precedence-climbing.
+binary :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
+	rule := get_rule(tok.type)
+	right := parse_precedence(p, Precedence(int(rule.precedence) + 1))
+	return new_clone(Expr_Binary{base = Node_Base{token = tok}, op = tok.type, left = left, right = right})
 }
 
 // -----------------------------------------------------------------------
 // Short-circuiting and/or, ternary
 
-and_ :: proc(p: ^Parser, can_assign: bool) {
-	end_jump := emit_jump(p, .Jump_If_False)
-	emit_op(p, .Pop)
-	parse_precedence(p, .And)
-	patch_jump(p, end_jump)
+and_ :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
+	right := parse_precedence(p, .And)
+	return new_clone(Expr_Logical{base = Node_Base{token = tok}, op = .And, left = left, right = right})
 }
 
-or_ :: proc(p: ^Parser, can_assign: bool) {
-	else_jump := emit_jump(p, .Jump_If_False)
-	end_jump := emit_jump(p, .Jump)
-	patch_jump(p, else_jump)
-	emit_op(p, .Pop)
-	parse_precedence(p, .Or)
-	patch_jump(p, end_jump)
+or_ :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
+	right := parse_precedence(p, .Or)
+	return new_clone(Expr_Logical{base = Node_Base{token = tok}, op = .Or, left = left, right = right})
 }
 
-// conditional compiles `cond ? then : else` as an infix operator on the
-// already-parsed condition. The false branch parses at Conditional
+// conditional compiles `cond ? then : else` as an infix operator on
+// the already-parsed condition. The else branch parses at Conditional
 // (not Assignment) precedence so `a ? b : c ? d : e` chains
-// right-associatively rather than the outer `?:` swallowing the whole
-// rest of the expression.
-conditional :: proc(p: ^Parser, can_assign: bool) {
-	then_jump := emit_jump(p, .Jump_If_False)
-	emit_op(p, .Pop)
-	parse_precedence(p, .Assignment)
-	else_jump := emit_jump(p, .Jump)
-
+// right-associatively, matching conditional()'s own precedence choice.
+conditional :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
+	then_branch := parse_precedence(p, .Assignment)
 	consume(p, .Colon, "Expect ':' after '?' branch.")
-	patch_jump(p, then_jump)
-	emit_op(p, .Pop)
-	parse_precedence(p, .Conditional)
-	patch_jump(p, else_jump)
+	else_branch := parse_precedence(p, .Conditional)
+	return new_clone(
+		Expr_Conditional{base = Node_Base{token = tok}, condition = left, then_branch = then_branch, else_branch = else_branch},
+	)
 }
 
 // -----------------------------------------------------------------------
 // Variables, assignment, compound assignment
 
-variable :: proc(p: ^Parser, can_assign: bool) {
-	named_variable(p, p.previous, can_assign)
+variable :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	// Snapshotted to a local first, not passed as `p.previous` directly:
+	// named_variable's own value-branch calls expression(p), which
+	// advances p.previous well past this identifier before the Expr_Assign
+	// is built. Passing p.previous straight through observed that later
+	// value instead of the one at this call site.
+	name := p.previous
+	return named_variable(p, name, can_assign)
 }
 
-// named_variable resolves name (local/upvalue/global -- see
-// resolve_variable) and, if this reference is in assignable position,
-// handles plain assignment and compound assignment (+= etc.) --
-// otherwise it's a read.
-named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) {
-	// name's own lexeme is captured up front, not re-derived from `name`
-	// later in this proc: the compound-assignment branch below calls
-	// advance(p), which mutates p.current/p.previous and must not be
-	// allowed to affect the token this function is still working from --
-	// re-deriving the lexeme after that advance(p) would read the wrong
-	// token (e.g. `+=` instead of the variable name) in an error message.
-	name_lexeme := lexeme(name)
-	arg, get_op, set_op := resolve_variable(p, name)
-	is_const_local := get_op == .Get_Local && p.current_compiler.locals[arg].is_const
-
+// named_variable builds a read (Expr_Variable) or, if this reference
+// is in assignable position, a plain or compound assignment (Expr_Assign)
+// -- resolution (local/upvalue/global) and const-reassignment checking
+// are the Resolver's job, not the parser's, so `resolved` is left
+// zero-valued (.Unresolved) here.
+named_variable :: proc(p: ^Parser, name: Token, can_assign: bool) -> Expr {
 	if can_assign && match(p, .Equal) {
-		if is_const_local {
-			error(p, fmt.tprintf("Cannot assign to const '%s'.", name_lexeme))
-		}
-		expression(p)
-		emit_op_byte(p, set_op, u8(arg))
-		return
+		value := expression(p)
+		return new_clone(Expr_Assign{base = Node_Base{token = name}, name = name, is_compound = false, value = value})
 	}
 	if can_assign {
-		if op, ok := compound_assign_op(p.current.type); ok {
+		if op, ok := compound_assign_token(p.current.type); ok {
 			advance(p) // consume the += / -= / *= / /= / %= token
-			if is_const_local {
-				error(p, fmt.tprintf("Cannot assign to const '%s'.", name_lexeme))
-			}
-			emit_op_byte(p, get_op, u8(arg))
-			expression(p)
-			emit_op(p, op)
-			emit_op_byte(p, set_op, u8(arg))
-			return
+			value := expression(p)
+			return new_clone(
+				Expr_Assign{base = Node_Base{token = name}, name = name, is_compound = true, compound_op = op, value = value},
+			)
 		}
 	}
-	emit_op_byte(p, get_op, u8(arg))
+	return new_clone(Expr_Variable{base = Node_Base{token = name}, name = name})
 }
 
 @(private = "file")
-compound_assign_op :: proc(t: Token_Type) -> (core.Op_Code, bool) {
+compound_assign_token :: proc(t: Token_Type) -> (Token_Type, bool) {
 	#partial switch t {
-	case .Plus_Equal:
-		return .Add_Numeric, true
-	case .Minus_Equal:
-		return .Subtract, true
-	case .Star_Equal:
-		return .Multiply, true
-	case .Slash_Equal:
-		return .Divide, true
-	case .Percent_Equal:
-		return .Modulus, true
+	case .Plus_Equal, .Minus_Equal, .Star_Equal, .Slash_Equal, .Percent_Equal:
+		return t, true
 	}
-	return .Noop, false
+	return .Error, false
 }
 
 // -----------------------------------------------------------------------
 // this / super
 
-this_ :: proc(p: ^Parser, can_assign: bool) {
-	if p.current_class == nil {
-		error(p, "Can't use 'this' outside of a class.")
-		return
-	}
-	named_variable(p, p.previous, false) // read-only: `this` can't be an assignment target
+// The "outside a class"/"no superclass" checks are the Resolver's job
+// (resolve.odin) -- this/super only build nodes here.
+this_ :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	return new_clone(Expr_This{base = Node_Base{token = tok}})
 }
 
-super_ :: proc(p: ^Parser, can_assign: bool) {
-	if p.current_class == nil {
-		error(p, "Can't use 'super' outside of a class.")
-	} else if !p.current_class.has_superclass {
-		error(p, "Can't use 'super' in a class with no superclass.")
-	}
-
+super_ :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
 	consume(p, .Dot, "Expect '.' after 'super'.")
 	consume(p, .Identifier, "Expect superclass method name.")
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
-
-	push_named(p, "this")
+	method_name := p.previous
 	if match(p, .Left_Paren) {
-		arg_count := argument_list(p)
-		push_named(p, "super")
-		emit_op_byte(p, .Super_Invoke, name_const)
-		emit_byte(p, arg_count)
-	} else {
-		push_named(p, "super")
-		emit_op_byte(p, .Get_Super, name_const)
+		args := argument_list(p)
+		return new_clone(Expr_Super{base = Node_Base{token = tok}, method_name = method_name, has_args = true, args = args})
 	}
-}
-
-// push_named emits a Get for the local/upvalue named `name` (always
-// `this`/`super`, both declared as synthetic locals during class/method
-// compilation -- see stmt.odin's class_declaration and
-// compiler_state.odin's init_function_compiler).
-@(private = "file")
-push_named :: proc(p: ^Parser, name: string) {
-	arg, get_op, _ := resolve_variable(p, synthetic_token(.Identifier, name, p.previous.line))
-	emit_op_byte(p, get_op, u8(arg))
+	return new_clone(Expr_Super{base = Node_Base{token = tok}, method_name = method_name})
 }
 
 // -----------------------------------------------------------------------
 // Calls, property access
 
-call :: proc(p: ^Parser, can_assign: bool) {
-	arg_count := argument_list(p)
-	emit_op_byte(p, .Call, arg_count)
+call :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
+	args := argument_list(p)
+	return new_clone(Expr_Call{base = Node_Base{token = tok}, callee = left, args = args})
 }
 
-argument_list :: proc(p: ^Parser) -> u8 {
-	count := 0
+argument_list :: proc(p: ^Parser) -> []Expr {
+	args: [dynamic]Expr
 	if !check(p, .Right_Paren) {
 		for {
-			expression(p)
-			if count == 255 {
+			arg := expression(p)
+			if len(args) == 255 {
 				error(p, "Can't have more than 255 arguments.")
 			}
-			count += 1
+			append(&args, arg)
 			if !match(p, .Comma) {
 				break
 			}
 		}
 	}
 	consume(p, .Right_Paren, "Expect ')' after arguments.")
-	return u8(count)
+	return args[:]
 }
 
-// emit_property_cache allocates a fresh monomorphic-inline-cache slot on
-// the current chunk (core.chunk_add_property_cache) and emits it as the
-// trailing operand byte of a Get_Property/Invoke instruction -- see
-// core/chunk.odin's Property_Cache doc comment for what it caches and
-// why. Guards the 255-slots-per-chunk limit the u8 index implies, same
-// pattern as argument_list's 255-argument check.
-@(private = "file")
-emit_property_cache :: proc(p: ^Parser) {
-	if len(current_chunk(p).property_caches) == 255 {
-		error(p, "Too many property accesses/method calls in one function.")
-	}
-	emit_byte(p, core.chunk_add_property_cache(current_chunk(p)))
-}
-
-// dot compiles `.name`, `.name = expr`, `.name <compound>= expr`, and
-// `.name(args)` (a method invoke, via Op_Code.Invoke rather than a
-// separate Get_Property+Call -- the VM's fast path for the common case).
-dot :: proc(p: ^Parser, can_assign: bool) {
+// dot covers all four forms dot() compiles today: plain `.name` read,
+// `.name = expr` write, `.name <compound>= expr` compound write, and
+// `.name(args)` invoke.
+dot :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
 	consume(p, .Identifier, "Expect property name after '.'.")
-	name_const := core.chunk_add_constant(current_chunk(p), core.make_interned_string_value(lexeme(p.previous)))
+	name := p.previous
 
 	if can_assign && match(p, .Equal) {
-		expression(p)
-		emit_op_byte(p, .Set_Property, name_const)
-		return
+		value := expression(p)
+		return new_clone(Expr_Property{base = Node_Base{token = tok}, object = left, name = name, kind = .Set, value = value})
 	}
 	if can_assign {
-		if op, ok := compound_assign_op(p.current.type); ok {
+		if op, ok := compound_assign_token(p.current.type); ok {
 			advance(p)
-			// Get_Property consumes the object reference on top of the
-			// stack, but Set_Property needs it again afterward -- Dup
-			// keeps a copy around for that second use.
-			emit_op(p, .Dup)
-			emit_op_byte(p, .Get_Property, name_const)
-			emit_property_cache(p)
-			expression(p)
-			emit_op(p, op)
-			emit_op_byte(p, .Set_Property, name_const)
-			return
+			value := expression(p)
+			return new_clone(
+				Expr_Property{
+					base = Node_Base{token = tok},
+					object = left,
+					name = name,
+					kind = .Compound_Set,
+					compound_op = op,
+					value = value,
+				},
+			)
 		}
 	}
 	if match(p, .Left_Paren) {
-		arg_count := argument_list(p)
-		emit_op_byte(p, .Invoke, name_const)
-		emit_byte(p, arg_count)
-		emit_property_cache(p)
-		return
+		args := argument_list(p)
+		return new_clone(
+			Expr_Property{base = Node_Base{token = tok}, object = left, name = name, kind = .Invoke, args = args},
+		)
 	}
-	emit_op_byte(p, .Get_Property, name_const)
-	emit_property_cache(p)
+	return new_clone(Expr_Property{base = Node_Base{token = tok}, object = left, name = name, kind = .Get})
 }
 
 // -----------------------------------------------------------------------
 // Indexing & slicing
-//
-// Stack convention: the indexed/sliced object is already on the
-// stack (its own expression compiled before subscript() ever runs, as
-// the infix operator's left operand); subscript then pushes start
-// (Nil if the bound before `:` was omitted) and, for a slice, end
-// (Nil if the bound after `:` was omitted) on top of it, in that order.
 
-subscript :: proc(p: ^Parser, can_assign: bool) {
+subscript :: proc(p: ^Parser, left: Expr, can_assign: bool) -> Expr {
+	tok := p.previous
 	if match(p, .Colon) {
-		emit_op(p, .Nil) // open start bound
-		emit_slice_end(p)
-		finish_subscript(p, can_assign, true)
-		return
+		end := slice_end(p)
+		return finish_subscript(p, tok, left, can_assign, true, nil, end)
 	}
 
-	expression(p) // single index, or a slice's start bound
+	first := expression(p) // single index, or a slice's start bound
 	if match(p, .Colon) {
-		emit_slice_end(p)
-		finish_subscript(p, can_assign, true)
-		return
+		end := slice_end(p)
+		return finish_subscript(p, tok, left, can_assign, true, first, end)
 	}
 	consume(p, .Right_Bracket, "Expect ']' after index.")
-	finish_subscript(p, can_assign, false)
+	return finish_subscript(p, tok, left, can_assign, false, first, nil)
 }
 
 @(private = "file")
-emit_slice_end :: proc(p: ^Parser) {
+slice_end :: proc(p: ^Parser) -> Expr {
 	if check(p, .Right_Bracket) {
-		emit_op(p, .Nil) // open end bound
-	} else {
-		expression(p)
+		consume(p, .Right_Bracket, "Expect ']' after slice.")
+		return nil // open end bound
 	}
+	e := expression(p)
 	consume(p, .Right_Bracket, "Expect ']' after slice.")
+	return e
 }
 
 @(private = "file")
-finish_subscript :: proc(p: ^Parser, can_assign: bool, is_slice: bool) {
-	if can_assign && match(p, .Equal) {
-		expression(p)
-		emit_op(p, .Slice_Assign if is_slice else .Index_Assign)
-		return
+finish_subscript :: proc(
+	p: ^Parser,
+	tok: Token,
+	object: Expr,
+	can_assign: bool,
+	is_slice: bool,
+	start_or_index: Expr,
+	end: Expr,
+) -> Expr {
+	node := Expr_Subscript{base = Node_Base{token = tok}, object = object, is_slice = is_slice}
+	if is_slice {
+		node.slice_start = start_or_index
+		node.slice_end = end
+	} else {
+		node.index = start_or_index
 	}
-	emit_op(p, .Slice if is_slice else .Index)
+	if can_assign && match(p, .Equal) {
+		node.assign_value = expression(p)
+	}
+	return new_clone(node)
 }
 
 // -----------------------------------------------------------------------
 // Collection literals
 
-list_literal :: proc(p: ^Parser, can_assign: bool) {
-	count := 0
+list_literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	elements: [dynamic]Expr
 	if !check(p, .Right_Bracket) {
 		for {
-			expression(p)
-			count += 1
+			append(&elements, expression(p))
 			if !match(p, .Comma) {
 				break
 			}
@@ -435,24 +338,21 @@ list_literal :: proc(p: ^Parser, can_assign: bool) {
 		}
 	}
 	consume(p, .Right_Bracket, "Expect ']' after list elements.")
-	if count > 255 {
+	if len(elements) > 255 {
 		error(p, "Can't have more than 255 items in a list literal.")
 	}
-	emit_op_byte(p, .Create_List, u8(count))
+	return new_clone(Expr_List{base = Node_Base{token = tok}, elements = elements[:]})
 }
 
-// dict_literal emits key-expr, value-expr pairs -- keys are ordinary
-// expressions at compile time; whether a given key Value is usable
-// (i.e. a string) is a runtime check (the Op_Code.Create_Dict
-// handler), same as core.Dict_Object requiring string keys.
-dict_literal :: proc(p: ^Parser, can_assign: bool) {
-	count := 0
+dict_literal :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous
+	entries: [dynamic]Dict_Entry
 	if !check(p, .Right_Brace) {
 		for {
-			expression(p)
+			key := expression(p)
 			consume(p, .Colon, "Expect ':' after dict key.")
-			expression(p)
-			count += 1
+			value := expression(p)
+			append(&entries, Dict_Entry{key = key, value = value})
 			if !match(p, .Comma) {
 				break
 			}
@@ -462,21 +362,21 @@ dict_literal :: proc(p: ^Parser, can_assign: bool) {
 		}
 	}
 	consume(p, .Right_Brace, "Expect '}' after dict elements.")
-	if count > 255 {
+	if len(entries) > 255 {
 		error(p, "Can't have more than 255 pairs in a dict literal.")
 	}
-	emit_op_byte(p, .Create_Dict, u8(count))
+	return new_clone(Expr_Dict{base = Node_Base{token = tok}, entries = entries[:]})
 }
 
 // -----------------------------------------------------------------------
 // Lambdas
 
-// lambda compiles `func(params) { body }` used as an expression -- the
-// closure it produces is left as this expression's value. Declared
-// functions (stmt.odin's function_declaration) and class methods
-// (stmt.odin's method) share the same underlying compile_function
+// lambda compiles `func(params) { body }` used as an expression --
+// declared functions (stmt.odin's function_declaration) and class
+// methods (stmt.odin's method) share the same parse_function_decl
 // (functions.odin); only what surrounds the call differs.
-lambda :: proc(p: ^Parser, can_assign: bool) {
-	init_function_compiler(p, .Function, "<lambda>")
-	compile_function(p)
+lambda :: proc(p: ^Parser, can_assign: bool) -> Expr {
+	tok := p.previous // 'func' token
+	decl := parse_function_decl(p, .Function, synthetic_token(.Identifier, "<lambda>", tok.line))
+	return new_clone(Expr_Lambda{base = Node_Base{token = tok}, decl = decl})
 }
