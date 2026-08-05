@@ -15,3 +15,6 @@ tests/new_tests/tmp
 # why it lives here): its own git history/node_modules aren't tracked as
 # part of this repo.
 jslox/
+# bin/dist.sh's bundled output -- generated, zippable folders for handing
+# a script to someone without this repo (see bin/dist.sh's own header).
+dist/
