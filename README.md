@@ -115,6 +115,18 @@ Implemented in Odin, developed with the assistance of Claude Code (Anthropic).
 
 ---
 
+## Compiler Architecture
+
+clox compiles Lox source to bytecode in a single pass: a Pratt parser recognizes grammar, resolves names/scopes, and emits bytecode all in the same walk over the token stream, with no intermediate representation ever built. `odlox`'s compiler (`src/compiler/`) instead runs three explicit phases:
+
+1. **Parse** (`parser.odin`, `rules.odin`, `expr.odin`, `stmt.odin`, `functions.odin`) — a Pratt parser identical in structure to clox's, except prefix/infix functions build and return AST nodes (`ast.odin`) instead of writing bytecode.
+2. **Resolve** (`resolve.odin`) — walks the AST, annotating each node in place with its resolved scope (local slot, upvalue index, or global slot) and running every validity check that needs more than the current token to decide (duplicate declarations, break/continue outside a loop, `this`/`super` outside a class, const reassignment, and so on).
+3. **Emit** (`emit.odin`, `emit_expr.odin`, `emit_stmt.odin`) — walks the resolved AST and generates bytecode into the same `core.Chunk`/`Op_Code` target clox-style compilation would have produced directly.
+
+This is to facilitate possible future compiler enhancements such as optional typing.
+
+---
+
 ## Performance Notes
 
 Benchmarks run via `bin/benchmarks.sh` (the loxcraft suite: arithmetic, object/class dispatch, collections, and recursion). All numbers are from the release build (see **Build** above), measured back-to-back in one sitting, 3-run averages.
