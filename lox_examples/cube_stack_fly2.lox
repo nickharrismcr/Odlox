@@ -90,7 +90,7 @@ func createColoredTextures(count) {
         
        
         foreach (pos in positions) {
-            if (random.integer(0,2) != 0) {
+            if (random.integer(0,10) != 0) {
                 continue  // Skip some rectangles randomly
             }   
             hue = random.integer(0, 360)  // Different random hue for each rectangle
