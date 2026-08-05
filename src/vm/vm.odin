@@ -118,6 +118,17 @@ VM :: struct {
 	// docs/plans/bytecode-cache.md. Never affects the entry script,
 	// which never consults the cache at all.
 	force_compile: bool,
+
+	// force_bc_cache: the opposite trust direction from force_compile --
+	// when set, bc_cache_load (vm/bc_cache.odin) skips the source-mtime
+	// freshness check entirely and trusts a `.lxc` unconditionally
+	// whenever one exists, and read_module_source (module.odin) will
+	// resolve a module from a `.lxc` alone even when no matching `.lox`
+	// exists on disk at all. Exists for compiled-only library
+	// distribution: ship `__loxcache__/<name>.lxc` without the source
+	// `.lox` it was built from. Never affects the entry script, same as
+	// force_compile.
+	force_bc_cache: bool,
 }
 
 // new_vm_raw constructs a bare VM with no exception hierarchy bootstrapped

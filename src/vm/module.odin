@@ -3,6 +3,7 @@ package vm
 
 import "../compiler"
 import "../core"
+import "core:fmt"
 import "core:mem"
 import "core:os"
 import "core:path/filepath"
@@ -145,7 +146,15 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return nil, false
 	}
 	defer delete(data)
-	module_source_cache[name] = strings.clone(string(data), module_source_allocator)
+	// data is nil for a --force-bc-cache-only resolution (a .lxc with no
+	// matching .lox at all -- see read_module_source) -- there's no
+	// source text to cache for stack traces in that case, and
+	// frame_source's own map lookup already degrades to an empty context
+	// line when module_source_cache has no entry for a name, so this is
+	// simply skipped rather than storing "".
+	if data != nil {
+		module_source_cache[name] = strings.clone(string(data), module_source_allocator)
+	}
 
 	sub := new_vm_raw(path)
 	sub.root_script = vm.root_script
@@ -159,7 +168,8 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	sub.builtins = vm.builtins
 	sub.builtin_modules = vm.builtin_modules
 	sub.force_compile = vm.force_compile
-	status := compile_and_run_module(sub, path, string(data))
+	sub.force_bc_cache = vm.force_bc_cache
+	status := compile_and_run_module(sub, path, string(data), data == nil)
 	if status != .Ok {
 		runtime_error(vm, "Failed to import module '%s'.", name)
 		return nil, false
@@ -217,8 +227,16 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 // docs/plans/bytecode-cache.md). Mirrors interpret's own reset-state
 // prelude, since it bypasses interpret altogether, but never touches
 // sub.repl -- a module's own sub-VM is never a REPL session.
+//
+// cache_only is true for a --force-bc-cache resolution that found no
+// .lox at all (source is ""): if bc_cache_load then misses too (corrupt/
+// incompatible cache, or --force-compile also set, which always misses
+// unconditionally), there is nothing to fall back to compiling -- that's
+// reported directly here rather than calling compiler.Compile("", ...),
+// which would "succeed" by compiling an empty program instead of
+// surfacing the real problem.
 @(private = "file")
-compile_and_run_module :: proc(sub: ^VM, path: string, source: string) -> Interpret_Result {
+compile_and_run_module :: proc(sub: ^VM, path: string, source: string, cache_only: bool) -> Interpret_Result {
 	reset_stack(sub)
 	delete(sub.stack_trace)
 	sub.stack_trace = nil
@@ -229,6 +247,11 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string) -> Interp
 	if fn, hit := bc_cache_load(sub, path, sub.environment); hit {
 		status, _ := run_compiled(sub, fn)
 		return status
+	}
+
+	if cache_only {
+		fmt.eprintfln("odlox: %s has no source and no usable bytecode cache", path)
+		return .Compile_Error
 	}
 
 	fn, ok := compiler.Compile(source, sub.script, sub.environment)
@@ -250,6 +273,20 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string) -> Interp
 // modules into subfolders. The stdlib modules live under a `modules/`
 // directory at the LOX_PATH root, since `src/` in this repository is
 // exclusively Odin source, not Lox source.
+//
+// When vm.force_bc_cache is set, the first two (non-recursive) locations
+// also accept a cache-only match: no `<name>.lox` there, but a
+// `__loxcache__/<name>.lxc` sitting where that .lox would have been --
+// see cache_only_module_path. data is nil in that case; the (nonexistent
+// on disk) would-be .lox path is still returned as `path`, since
+// bc_cache_path/bc_cache_load derive the .lxc location from it purely by
+// string manipulation, never by statting it. The recursive subdirectory
+// search deliberately isn't extended to cache-only matches -- it walks
+// for a file literally named `<name>.lox`, and teaching it to also
+// filesystem-walk for `.lxc` names is unneeded scope for what
+// --force-bc-cache is for (vendoring compiled stdlib-style libraries
+// into `modules/`, or dropping them alongside the entry script -- both
+// already covered by the two direct candidates above).
 @(private = "file")
 read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string, found: bool) {
 	filename := strings.concatenate({name, ".lox"})
@@ -262,6 +299,12 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 		candidate, _ := filepath.join({modules_dir, filename})
 		if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
 			return d, candidate, true
+		}
+		if vm.force_bc_cache {
+			if p, cache_ok := cache_only_module_path(candidate); cache_ok {
+				delete(candidate)
+				return nil, p, true
+			}
 		}
 		delete(candidate)
 	}
@@ -278,6 +321,12 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 	if d, err := os.read_entire_file_from_path(candidate2, context.allocator); err == nil {
 		return d, candidate2, true
 	}
+	if vm.force_bc_cache {
+		if p, ok := cache_only_module_path(candidate2); ok {
+			delete(candidate2)
+			return nil, p, true
+		}
+	}
 	delete(candidate2)
 
 	if found_path, ok := find_module_in_subdirs(dir, filename); ok {
@@ -288,6 +337,23 @@ read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string
 	}
 
 	return nil, "", false
+}
+
+// cache_only_module_path checks whether would_be_source_path -- a .lox
+// path that just failed to open above -- has a matching
+// __loxcache__/<name>.lxc sitting next to it anyway. Returns
+// would_be_source_path itself, cloned: bc_cache_path/bc_cache_load both
+// derive the .lxc location from this string alone, never by statting the
+// .lox path itself, so a path with nothing at it on disk is a perfectly
+// valid key.
+@(private = "file")
+cache_only_module_path :: proc(would_be_source_path: string) -> (path: string, ok: bool) {
+	cache_path := bc_cache_path(would_be_source_path)
+	defer delete(cache_path)
+	if _, err := os.modification_time_by_path(cache_path); err != nil {
+		return "", false
+	}
+	return strings.clone(would_be_source_path), true
 }
 
 // find_module_in_subdirs recursively searches root for a file named

@@ -49,16 +49,33 @@ read_global_string :: proc(t: ^testing.T, vm_instance: ^VM, name: string) -> str
 }
 
 @(private = "file")
-run_main_importing_helper :: proc(t: ^testing.T, root: string, main_source: string, force_compile := false) -> ^VM {
+run_main_importing_helper :: proc(t: ^testing.T, root: string, main_source: string, force_compile := false, force_bc_cache := false) -> ^VM {
 	main_path, _ := filepath.join({root, "main.lox"})
 	defer delete(main_path)
 
 	vm_instance := new_vm(main_path)
 	vm_instance.force_compile = force_compile
+	vm_instance.force_bc_cache = force_bc_cache
 	define_builtins(vm_instance)
 	status, _ := interpret(vm_instance, main_source)
 	testing.expectf(t, status == .Ok, "expected Ok, got %v: %s", status, vm_instance.error_msg)
 	return vm_instance
+}
+
+// run_main_importing_helper_expecting_failure is run_main_importing_helper
+// for the negative-path tests below: the import is expected to fail
+// (module not found, or found-but-uncompileable), so it doesn't assert
+// status == .Ok the way the happy-path helper does.
+@(private = "file")
+run_main_importing_helper_expecting_failure :: proc(t: ^testing.T, root: string, main_source: string, force_bc_cache := false) -> Interpret_Result {
+	main_path, _ := filepath.join({root, "main.lox"})
+	defer delete(main_path)
+
+	vm_instance := new_vm(main_path)
+	vm_instance.force_bc_cache = force_bc_cache
+	define_builtins(vm_instance)
+	status, _ := interpret(vm_instance, main_source)
+	return status
 }
 
 // -----------------------------------------------------------------------
@@ -307,4 +324,108 @@ test_bc_cache_corrupted_lxc_falls_back_and_self_heals :: proc(t: ^testing.T) {
 	test_one_corruption_falls_back_and_self_heals(t, root, []u8{'O', 'L', 'X', 'C', 0xFF, 0xFF}, "wrong version")
 	test_one_corruption_falls_back_and_self_heals(t, root, []u8{'O', 'L', 'X', 'C', 1, 0, 0, 0}, "truncated body")
 	test_one_corruption_falls_back_and_self_heals(t, root, []u8{0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00, 0x00}, "not a cache file at all")
+}
+
+// -----------------------------------------------------------------------
+// Stage 6: --force-bc-cache -- the opposite trust direction from
+// --force-compile. A module with a .lxc but no matching .lox at all
+// (compiled-only distribution: ship the cache, not the source) must
+// fail to resolve by default ("Module not found" -- read_module_source
+// never finds a .lox to read) and succeed once force_bc_cache is set,
+// running straight off the planted cache with no compiler invocation at
+// all (proven by there being no source to compile even if it tried).
+
+@(private = "file")
+FORCE_BC_CACHE_HELPER_SOURCE :: "func value() { return 7 }\n"
+
+@(test)
+test_force_bc_cache_resolves_module_with_no_source_present :: proc(t: ^testing.T) {
+	base, _ := os.temp_dir(context.temp_allocator)
+	root, _ := filepath.join({base, "odlox_bc_cache_test_sourceless"})
+	defer delete(root)
+	defer os.remove_all(root)
+	os.remove_all(root) // defensive: clear any leftover state from an earlier interrupted run
+	testing.expect(t, os.make_directory_all(root) == nil)
+
+	main_source := `
+import helper
+var result = helper.value()
+`
+	// helper_path is never written to disk -- bc_cache_path only needs
+	// the string, not a real file, to derive __loxcache__/helper.lxc's
+	// location (see cache_only_module_path's own doc comment).
+	helper_path, _ := filepath.join({root, "helper.lox"})
+	defer delete(helper_path)
+
+	compile_env := core.make_environment(helper_path)
+	fn, ok := compiler.Compile(FORCE_BC_CACHE_HELPER_SOURCE, helper_path, compile_env)
+	testing.expect(t, ok)
+	data, enc_ok := core.function_serialise(fn)
+	testing.expect(t, enc_ok)
+	defer delete(data)
+
+	cache_path := bc_cache_path(helper_path)
+	defer delete(cache_path)
+	testing.expect(t, os.make_directory_all(filepath.dir(cache_path)) == nil)
+	testing.expect(t, os.write_entire_file(cache_path, data) == nil)
+
+	testing.expect(t, os.exists(helper_path) == false) // the whole point of this test
+
+	without_flag := run_main_importing_helper_expecting_failure(t, root, main_source)
+	testing.expectf(t, without_flag == .Runtime_Error, "expected 'Module not found' without --force-bc-cache when helper.lox doesn't exist, got %v", without_flag)
+
+	with_flag := run_main_importing_helper(t, root, main_source, force_bc_cache = true)
+	testing.expect_value(t, read_global_int(t, with_flag, "result"), 7)
+}
+
+// -----------------------------------------------------------------------
+// Stage 7: --force-bc-cache trusts the cache *unconditionally* -- no
+// source-mtime freshness check at all, unlike ordinary caching (Stage 4
+// above). Proven the same way Stage 5 proves --force-compile's opposite
+// direction: plant a real, valid cache compiled from *different* source
+// than what's actually on disk, then check whether it gets used.
+//
+// Deliberately one import in one test function, not a multi-VM before/
+// after sequence like Stage 4's: module_cache (module.odin) is process-
+// wide, not per-VM, by design (see its own doc comment) -- a second
+// `import helper` from a second VM within the *same test binary process*
+// hits that shared in-memory cache directly and never re-touches disk at
+// all, so it can't observe a mid-test cache-file change. Every other
+// hand-planted-cache test in this file (Stage 2, Stage 5's own bogus-
+// cache check) avoids the same trap the same way, for the same reason.
+@(test)
+test_force_bc_cache_trusts_a_mismatched_cache :: proc(t: ^testing.T) {
+	base, _ := os.temp_dir(context.temp_allocator)
+	root, _ := filepath.join({base, "odlox_bc_cache_test_forced_trust"})
+	defer delete(root)
+	defer os.remove_all(root)
+	os.remove_all(root) // defensive: clear any leftover state from an earlier interrupted run
+	testing.expect(t, os.make_directory_all(root) == nil)
+
+	main_source := `
+import helper
+var result = helper.value()
+`
+	helper_path := write_temp_file(t, root, "helper.lox", "func value() { return 2 }\n")
+	defer delete(helper_path)
+
+	// Plant a real, valid cache compiled from *different* source ("return
+	// 1") than what's actually on disk ("return 2"), written after
+	// helper.lox so it would even pass an ordinary freshness check too --
+	// the point here is specifically bc_cache_load's force_bc_cache
+	// branch (skips the freshness check and the source stat entirely),
+	// not staleness detection, which Stage 4 already covers.
+	stale_env := core.make_environment(helper_path)
+	stale_fn, stale_ok := compiler.Compile("func value() { return 1 }\n", helper_path, stale_env)
+	testing.expect(t, stale_ok)
+	stale_data, stale_enc_ok := core.function_serialise(stale_fn)
+	testing.expect(t, stale_enc_ok)
+	defer delete(stale_data)
+	cache_path := bc_cache_path(helper_path)
+	defer delete(cache_path)
+	testing.expect(t, os.make_directory_all(filepath.dir(cache_path)) == nil)
+	testing.expect(t, os.write_entire_file(cache_path, stale_data) == nil)
+
+	vm_instance := run_main_importing_helper(t, root, main_source, force_bc_cache = true)
+	testing.expectf(t, read_global_int(t, vm_instance, "result") == 1, "--force-bc-cache should have trusted the planted cache (1) over the real source on disk (2)")
 }

@@ -2,7 +2,8 @@ package main
 
 // CLI entry point: file execution, REPL, the standalone `--print-tokens`
 // scanner smoke test, and debug-tooling flags (--compile-only,
-// --disassemble, --info, --debug, --instrument, --no-peephole).
+// --disassemble, --info, --debug, --instrument, --no-peephole,
+// --force-compile, --force-bc-cache).
 
 import "core:bufio"
 import "core:fmt"
@@ -16,9 +17,10 @@ import "natives"
 import "vm"
 
 Options :: struct {
-	trace:         bool, // --debug: attach debug.Trace_Hook while running
-	instrument:    bool, // --instrument: attach debug.Instrument_Hook, report the count after running
-	force_compile: bool, // --force-compile: bypass the bytecode cache's read (imported modules only)
+	trace:          bool, // --debug: attach debug.Trace_Hook while running
+	instrument:     bool, // --instrument: attach debug.Instrument_Hook, report the count after running
+	force_compile:  bool, // --force-compile: bypass the bytecode cache's read (imported modules only)
+	force_bc_cache: bool, // --force-bc-cache: trust the bytecode cache unconditionally, even with no matching source (imported modules only)
 }
 
 main :: proc() {
@@ -78,6 +80,18 @@ main :: proc() {
 			// (see docs/plans/bytecode-cache.md) -- never affects the
 			// entry script, which never consults the cache at all.
 			opts.force_compile = true
+		case "--force-bc-cache":
+			// Same reasoning as --force-compile above for needing an
+			// explicit case here rather than falling into `case:` below.
+			//
+			// Trusts an imported module's __loxcache__/<name>.lxc
+			// unconditionally -- no source-mtime freshness check, and a
+			// module resolves successfully even with no matching .lox on
+			// disk at all (see vm/bc_cache.odin's bc_cache_load and
+			// module.odin's read_module_source). For distributing a
+			// library as compiled bytecode only. Never affects the entry
+			// script, which never consults the cache at all.
+			opts.force_bc_cache = true
 		case:
 			// file_path is also appended to script_args: sys.args()
 			// (see builtins_sys.odin) includes the script's own path as
@@ -135,6 +149,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	vm_instance := vm.new_vm(path)
 	vm_instance.script_args = script_args
 	vm_instance.force_compile = opts.force_compile
+	vm_instance.force_bc_cache = opts.force_bc_cache
 	vm.define_builtins(vm_instance)
 	natives.define_natives(vm_instance)
 	if opts.trace {
@@ -402,6 +417,8 @@ Options:
   --debug             Attach a live execution trace while running (needs a -debug build)
   --instrument        Count executed instructions while running (needs a -debug build)
   --no-peephole       Disable the peephole optimizer
+  --force-compile     Bypass the bytecode cache's read for imported modules
+  --force-bc-cache    Trust the bytecode cache unconditionally for imported modules, even with no matching source
   -h, --help          Show this help`)
 	os.exit(1)
 }

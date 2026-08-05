@@ -253,12 +253,14 @@ bin/odlox.exe --repl
 <tr><td><code>--instrument</code></td><td>Count executed instructions while running</td></tr>
 <tr><td><code>--no-peephole</code></td><td>Disable the peephole optimiser</td></tr>
 <tr><td><code>--force-compile</code></td><td>Bypass the bytecode cache's read for imported modules (see below); still refreshes the cache afterward</td></tr>
+<tr><td><code>--force-bc-cache</code></td><td>Trust an imported module's bytecode cache unconditionally — no source-freshness check, and a module resolves even with no matching source file at all (see below)</td></tr>
 <tr><td><code>-h</code>, <code>--help</code></td><td>Show usage and exit</td></tr>
 </tbody>
 </table>
 <div class="note"><strong>No short-flag aliases</strong>Every flag is long-form only — there are no single-letter equivalents.</div>
 <div class="note"><strong><code>--debug</code>/<code>--instrument</code> need a debug build</strong>These attach a per-instruction hook that costs real dispatch-loop performance if it's always compiled in, so a release build (<code>bin/build.sh --release</code>) compiles it out entirely — passing either flag there prints a warning and produces no trace/count output. Use the default debug build (<code>bin/build.sh</code>, no arguments) for real trace/instrument output.</div>
 <div class="note"><strong>Bytecode cache</strong>Imported modules (never the entry script) are cached as compiled bytecode in a <code>__loxcache__/&lt;name&gt;.lxc</code> file alongside the module's own source — the cache is used whenever it exists and is newer than the source, and is invalidated (recompiled and refreshed) the moment the source changes. <code>--force-compile</code> skips the cache lookup for that run but still refreshes it afterward.</div>
+<div class="note"><strong>Compiled-only module distribution</strong><code>--force-bc-cache</code> is the opposite trust direction from <code>--force-compile</code>: it trusts a <code>.lxc</code> unconditionally, with no source-freshness check at all, and will resolve a module purely from its <code>__loxcache__/&lt;name&gt;.lxc</code> even when the matching <code>.lox</code> was never shipped — for distributing a library as compiled bytecode only. If neither a usable cache nor a source file can be found, the import still fails cleanly with the ordinary "Module not found" error.</div>
 
 <h3>The REPL</h3>
 <p><code>bin/odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>

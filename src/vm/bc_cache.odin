@@ -33,7 +33,11 @@ bc_cache_path :: proc(module_source_path: string) -> string {
 // ok=false for *any* reason a fresh compile should happen instead --
 // --force-compile set, no .lxc yet, cache not newer than source, bad
 // header, or a malformed body. Callers never need to distinguish these:
-// falling back to compiling from source is always correct. A version
+// falling back to compiling from source is always correct -- *unless*
+// vm.force_bc_cache is set and there's no source to fall back to at all
+// (a compiled-only module load; see read_module_source/
+// compile_and_run_module in module.odin, which handle that case as a
+// real error rather than silently compiling empty source). A version
 // mismatch specifically (a real cache of ours, just from a different
 // schema) gets one non-fatal stderr line -- see core.Bc_Decode_Error's
 // own doc comment for why that case alone is worth a diagnostic.
@@ -45,16 +49,24 @@ bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.En
 	cache_path := bc_cache_path(module_source_path)
 	defer delete(cache_path)
 
-	src_mtime, src_err := os.modification_time_by_path(module_source_path)
-	if src_err != nil {
-		return nil, false
-	}
 	cache_mtime, cache_err := os.modification_time_by_path(cache_path)
 	if cache_err != nil {
 		return nil, false // no .lxc yet -- not an error, the common case
 	}
-	if time.diff(src_mtime, cache_mtime) <= 0 {
-		return nil, false // cache not strictly newer than source -- stale
+
+	// force_bc_cache trusts the cache unconditionally once it exists --
+	// no source stat, no freshness comparison. This is what makes a
+	// source-free module (only __loxcache__/<name>.lxc shipped, no
+	// matching .lox at all) loadable at all: module_source_path may not
+	// exist on disk in that case, so stat-ing it here would always fail.
+	if !vm.force_bc_cache {
+		src_mtime, src_err := os.modification_time_by_path(module_source_path)
+		if src_err != nil {
+			return nil, false
+		}
+		if time.diff(src_mtime, cache_mtime) <= 0 {
+			return nil, false // cache not strictly newer than source -- stale
+		}
 	}
 
 	data, read_err := os.read_entire_file_from_path(cache_path, context.allocator)
