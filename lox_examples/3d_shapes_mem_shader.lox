@@ -184,7 +184,7 @@ class BrightObject {
         }
         
         // Draw shape at origin since translation is handled by shader
-        win.cylinder(vec3(0, 0, 0), this.size*0.5,0, 1.5, this.color)
+        win.cylinder(vec3(0, 0, 0), this.size, this.size, this.size, this.color)
         
         if (memory_shader.is_valid()) {
             win.end_shader_mode()
@@ -195,7 +195,7 @@ class BrightObject {
 // Create objects
 objects = []
 for (i = 0; i < SHAPES; i = i + 1) {
-    size = random.float(0.3, 2.0)
+    size = random.float(0.1, 1.0)
     color = colour_utils.random()  
     objects.append(BrightObject(size, color))
 }

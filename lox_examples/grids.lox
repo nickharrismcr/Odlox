@@ -176,7 +176,7 @@ while (!win.should_close()) {
     grids[0].update(x.get(), y.get(), size.get())
     shift.update()
     grids[0].col = shift.get()
-    grids[0].draw(win)
+    grids[0].draw()
 
     
     for (var i = len(grids) - 1; i > 0; i = i - 1) {

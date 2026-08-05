@@ -509,7 +509,7 @@ while (!win.should_close()) {
         if (obj.is_exploded) continue
         if (obj.explosion_timer > 0 and obj.explosion_timer < 5) {
             // Pre-explosion visual warning: flash white and expand size
-            expanded_size = obj.size.x * 1.5  // 50% larger than normal
+            expanded_size = obj.size.x * 4   
             normal_batch.add(obj.pos, vec3(expanded_size, expanded_size, expanded_size), col.WHITE)
             continue
         }
