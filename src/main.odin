@@ -51,6 +51,8 @@ main :: proc() {
 			mode = "repl"
 		case "--print-tokens":
 			mode = "print-tokens"
+		case "--print-ast":
+			mode = "print-ast"
 		case "--compile-only":
 			mode = "compile-only"
 		case "--disassemble":
@@ -97,6 +99,9 @@ main :: proc() {
 	case "print-tokens":
 		require_file(file_path)
 		print_tokens_for_file(file_path)
+	case "print-ast":
+		require_file(file_path)
+		print_ast_for_file(file_path)
 	case "compile-only":
 		require_file(file_path)
 		compile_only(file_path)
@@ -347,12 +352,50 @@ print_tokens_for_file :: proc(path: string) {
 	compiler.print_tokens(&s)
 }
 
+// print_ast_for_file parses (but does not resolve or emit) path and dumps
+// the resulting tree -- stopping before resolve_program deliberately: the
+// Resolver mutates AST nodes in place (Var_Ref.kind/slot, declared_slot,
+// local_exits, ...), so running it first would print a resolved tree
+// instead of Parse's own raw output, and would gate the dump on scope/
+// unresolved-variable errors unrelated to whether the tree parsed at all.
+// Same convention as print_tokens_for_file bypassing Compile() entirely.
+print_ast_for_file :: proc(path: string) {
+	data, err := os.read_entire_file_from_path(path, context.allocator)
+	if err != nil {
+		fmt.eprintfln("odlox: could not read %q: %v", path, err)
+		os.exit(1)
+	}
+	defer delete(data)
+
+	scn := compiler.tokenize(string(data))
+	defer compiler.destroy_scanner(&scn)
+
+	p := compiler.Parser{scn = &scn, filename = path}
+	compiler.advance(&p)
+
+	stmts: [dynamic]compiler.Stmt
+	for !compiler.match(&p, .Eof) {
+		s := compiler.declaration(&p)
+		if s != nil {
+			append(&stmts, s)
+		}
+	}
+	if p.had_error {
+		os.exit(65)
+	}
+
+	out := compiler.print_ast(stmts[:])
+	defer delete(out)
+	fmt.print(out)
+}
+
 usage :: proc() {
 	fmt.eprintln(`Usage: odlox [options] filename
 
 Options:
   --repl              Start interactive REPL
   --print-tokens      Tokenize a file and print the token stream, then exit
+  --print-ast         Parse a file and print its AST, then exit
   --compile-only      Compile a file and report success/failure, then exit
   --disassemble       Compile a file and print its full bytecode listing, then exit
   --info              Compile a file and print a size summary, then exit
