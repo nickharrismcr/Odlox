@@ -240,6 +240,18 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			return false
 		}
 		result = core.make_int_value(int(rl.GetFPS()))
+	case "get_frame_time":
+		// Actual measured duration of the last frame, in seconds -- unlike
+		// get_fps() (an average smoothed over ~10 frames), this reflects
+		// that one frame directly, so per-frame motion can be scaled by it
+		// (distance/turn_rate * get_frame_time()) to stay speed-correct
+		// even when the frame rate isn't perfectly steady, rather than
+		// baking in an assumption of a fixed frame budget.
+		if arg_count != 0 {
+			vm.runtime_error(v, "get_frame_time() takes no arguments.")
+			return false
+		}
+		result = core.make_float_value(f64(rl.GetFrameTime()))
 
 	// --- input ---
 	case "key_down":

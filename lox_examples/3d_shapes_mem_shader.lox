@@ -2,13 +2,17 @@ from gfx import *
 // Shader Loading from Memory Demo - Animated Rotating Cylinders with Basic Lighting
 // Demonstrates loading shaders from code strings rather than files
 // Shows cylinders rotating in all 3 planes with Phong lighting model (ambient + diffuse + specular)
+// The camera is attached to the moving light itself, always looking in the direction the light is
+// currently travelling (see light_dir/light_target_dir below) -- a first-person ride-along view.
+// The light travels in straight lines, occasionally and smoothly easing onto a new heading rather
+// than curving continuously.
 
 import colour as col
 import colour_utils
 import random
 import math
 
-SHAPES=1500
+SHAPES=500
 
 win = window(1,1)
 win.init()
@@ -95,7 +99,7 @@ void main() {
     
     // Distance attenuation
     float distance = length(lightPos - fragPosition);
-    float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.032 * distance * distance);
+    float attenuation = 1.0 / (1.0 + 0.09 * distance + 0.002 * distance * distance);
     
     vec4 texelColor = texture(texture0, fragTexCoord);
     vec3 lighting = (ambient + (diffuse + specular) * attenuation);
@@ -112,6 +116,8 @@ view_pos_loc = -1
 translation_loc = -1
 rotation_loc = -1
 
+vec3_0 = vec3(0.0, 0.0, 0.0)
+
 if (memory_shader.is_valid()) {
     brightness_loc = memory_shader.get_location("brightness")
     light_pos_loc = memory_shader.get_location("lightPos")
@@ -122,17 +128,50 @@ if (memory_shader.is_valid()) {
     print("Failed to load shader from memory")
 }
 
-angle = 0.0
-cam_angle = 0.0
 frame_count = 0
-brightness = 1.0  // Fixed brightness value
-// Dynamic light position - will move randomly
-light_angle_x = 0.0
-light_angle_y = 0.0
-light_angle_z = 0.0
-light_speed_x = random.float(0.008, 0.025)
-light_speed_y = random.float(0.012, 0.035)
-light_speed_z = random.float(0.006, 0.02)
+brightness = 3.0  // Fixed brightness value
+
+// Light/camera motion: straight-line travel at a constant speed, with the
+// heading occasionally re-targeted to a new random direction and eased
+// toward it a little every frame (LIGHT_TURN_RATE) rather than snapped --
+// so turns are smooth and infrequent instead of the light constantly
+// curving. light_target_dir is the heading being eased toward; light_dir
+// is the actual current heading, advanced along every frame to move
+// light_pos. frames_until_turn counts down to the next retarget, reset
+// to a fresh random interval each time one happens.
+//
+// Confined to a single horizontal XZ plane -- the same plane BrightObject
+// orbit positions are laid out in (pos.x/pos.z from orbit_radius/
+// orbit_angle, Y as height) -- rather than the XY plane, which would cut
+// across that layout at a rotated angle. y is fixed at LIGHT_CENTRE_Y and
+// every heading below is built directly from a 2D angle in X/Z (cos/sin,
+// no pitch term), so light_dir.y and light_pos.y never move away from it.
+const LIGHT_CENTRE_Y = 12.0       // height of the XZ plane the light travels in
+light_pos = vec3(0.0, LIGHT_CENTRE_Y, 0.0)
+light_dir = vec3(1.0, 0.0, 0.0)
+light_target_dir = vec3(1.0, 0.0, 0.0)
+frames_until_turn = random.integer(120, 300)
+const LIGHT_SPEED = 0.25          // world units per frame
+const LIGHT_TURN_RATE = 0.01      // fraction of the way from light_dir to light_target_dir eased per frame
+const LIGHT_BOUNDS = 60.0         // once further than this from (0, LIGHT_CENTRE_Y, 0) in X/Z, new headings bias back toward it
+
+// The camera trails CAMERA_TRAIL units behind the light along light_dir
+// and looks CAMERA_LOOK_AHEAD units ahead of it, rather than sitting
+// exactly at light_pos. BrightObjects sit as close as radius 5 from the
+// scene origin, well within the area the light travels through, so a
+// camera placed exactly at light_pos frequently ends up right on top of
+// (or inside) a nearby object; the triangles straddling the camera's
+// near clip plane in that case interpolate fragNormal into garbage
+// (confirmed by visualising fragNormal directly: solid black, i.e. every
+// component clamped from a NaN, only when the camera sits at light_pos --
+// swapping back to a distant camera with the exact same shader made the
+// same normals render correctly), which zeroes diffuse and specular and
+// leaves everything looking unlit. Trailing behind keeps the camera
+// "attached to" the light -- same position rigidly offset, same
+// direction -- while giving it breathing room from whatever the light
+// itself is about to fly past.
+const CAMERA_TRAIL = 4.0
+const CAMERA_LOOK_AHEAD = 10.0
 
 class BrightObject {
     init(size, color) {
@@ -146,24 +185,20 @@ class BrightObject {
         this.rotation_speed_z = random.float(-0.05, 0.05)
         
         // Orbital parameters
-        this.orbit_radius = random.float(5, 255)
+        this.orbit_radius = random.float(5, 355)
         this.orbit_speed = random.float(0.005, 0.02) * (1.0 / this.orbit_radius)  // Closer objects orbit faster
         this.orbit_angle = random.float(0, 6.28)  // Random starting angle
-        this.orbit_height = 10.0  // Fixed Y position for all  
+        this.orbit_height = random.float(0, 20.0)  // Fixed Y position for all  
         
         // Calculate initial position
         this.pos = vec3(math.cos(this.orbit_angle) * this.orbit_radius, this.orbit_height, math.sin(this.orbit_angle) * this.orbit_radius)
     }
     
     update() {
-        // Update orbital motion
-        this.orbit_angle = this.orbit_angle + this.orbit_speed
-        
-        // Calculate new position based on orbit - all at same Y height
-        this.pos.x = math.cos(this.orbit_angle) * this.orbit_radius
-        this.pos.z = math.sin(this.orbit_angle) * this.orbit_radius
-        this.pos.y = this.orbit_height
-        
+        // Orbital motion disabled -- this.pos stays at its initial orbit
+        // position (set once in init()) instead of advancing orbit_angle
+        // every frame.
+
         // Update rotations
         this.rotation_x = this.rotation_x + this.rotation_speed_x
         this.rotation_y = this.rotation_y + this.rotation_speed_y
@@ -184,7 +219,7 @@ class BrightObject {
         }
         
         // Draw shape at origin since translation is handled by shader
-        win.cylinder(vec3(0, 0, 0), this.size, this.size, this.size, this.color)
+        win.cylinder(vec3_0, this.size, this.size, 0.1, this.color)
         
         if (memory_shader.is_valid()) {
             win.end_shader_mode()
@@ -195,32 +230,63 @@ class BrightObject {
 // Create objects
 objects = []
 for (i = 0; i < SHAPES; i = i + 1) {
-    size = random.float(0.1, 1.0)
+    size = random.float(0.5, 3.0)
     color = colour_utils.random()  
     objects.append(BrightObject(size, color))
 }
 
 while (!win.should_close()) {
-    angle = angle + 0.01
-    cam_angle = cam_angle + 0.03
-    x = math.cos(angle) * 30
-    z = math.sin(angle) * 30
-    // Add slow vertical camera movement - oscillate between y=5 and y=15
-    y = 10 + 50 * math.sin(cam_angle * 0.1)
-    cam.set_position(vec3(x, y, z))
-    // Keep camera pointed at center of action
-    cam.set_target(vec3(0, 10, 0))
-    
     frame_count = frame_count + 1
-    
-    // Update dynamic light position with complex 3D movement
-    light_angle_x = light_angle_x + light_speed_x
-    light_angle_y = light_angle_y + light_speed_y
-    light_angle_z = light_angle_z + light_speed_z
-    
-    // Create complex 3D light movement pattern
-    light_pos = vec3(15 * math.cos(light_angle_x) + 8 * math.sin(light_angle_y * 0.7),12 + 6 * math.sin(light_angle_z) + 4 * math.cos(light_angle_x * 1.3),15 * math.sin(light_angle_x) + 8 * math.cos(light_angle_z * 0.9))
-    
+
+    // Occasionally (every frames_until_turn frames) pick a new random
+    // heading to ease toward -- a plain 2D angle in X/Z, so y never enters
+    // into it. Once far enough from (0, LIGHT_CENTRE_Y, 0), the new
+    // heading is blended back toward it instead of a fully free
+    // direction, so the light wanders the populated area around the
+    // centre rather than drifting off indefinitely.
+    frames_until_turn = frames_until_turn - 1
+    if (frames_until_turn <= 0) {
+        theta = random.float(0.0, 6.28318)
+        new_dir = vec3(math.cos(theta), 0.0, math.sin(theta))
+        dx = light_pos.x
+        dz = light_pos.z
+        dist_from_centre = math.sqrt(dx * dx + dz * dz)
+        if (dist_from_centre > LIGHT_BOUNDS) {
+            to_centre = vec3(-dx / dist_from_centre, 0.0, -dz / dist_from_centre)
+            blended = vec3(new_dir.x + to_centre.x * 2.0, 0.0, new_dir.z + to_centre.z * 2.0)
+            blended_len = math.sqrt(blended.x * blended.x + blended.z * blended.z)
+            new_dir = vec3(blended.x / blended_len, 0.0, blended.z / blended_len)
+        }
+        light_target_dir = new_dir
+        frames_until_turn = random.integer(120, 300)
+    }
+
+    // Ease the current heading toward the target a little every frame
+    // (a cheap lerp-and-renormalise approximation of slerp, accurate
+    // enough for the small per-frame steps LIGHT_TURN_RATE takes) --
+    // smooth, gradual turns instead of snapping to a new direction.
+    light_dir = vec3(
+        light_dir.x + (light_target_dir.x - light_dir.x) * LIGHT_TURN_RATE,
+        light_dir.y + (light_target_dir.y - light_dir.y) * LIGHT_TURN_RATE,
+        light_dir.z + (light_target_dir.z - light_dir.z) * LIGHT_TURN_RATE
+    )
+    dir_len = math.sqrt(light_dir.x * light_dir.x + light_dir.y * light_dir.y + light_dir.z * light_dir.z)
+    light_dir = vec3(light_dir.x / dir_len, light_dir.y / dir_len, light_dir.z / dir_len)
+
+    // Advance straight along the current heading.
+    light_pos = vec3(light_pos.x + light_dir.x * LIGHT_SPEED, light_pos.y + light_dir.y * LIGHT_SPEED, light_pos.z + light_dir.z * LIGHT_SPEED)
+
+    // Camera is attached to the light -- trailing CAMERA_TRAIL units
+    // behind it (see CAMERA_TRAIL's own comment above for why not exactly
+    // at light_pos) and looking CAMERA_LOOK_AHEAD units ahead along its
+    // heading. Turns are smooth and infrequent now (LIGHT_TURN_RATE/
+    // frames_until_turn above), rather than the light constantly curving
+    // around a closed loop, so following light_dir no longer reads as the
+    // camera continuously spinning.
+    cam_pos = vec3(light_pos.x - light_dir.x * CAMERA_TRAIL, light_pos.y - light_dir.y * CAMERA_TRAIL, light_pos.z - light_dir.z * CAMERA_TRAIL)
+    cam.set_position(cam_pos)
+    cam.set_target(vec3(light_pos.x + light_dir.x * CAMERA_LOOK_AHEAD, light_pos.y + light_dir.y * CAMERA_LOOK_AHEAD, light_pos.z + light_dir.z * CAMERA_LOOK_AHEAD))
+
     // Update shader uniforms
     if (memory_shader.is_valid()) {
         if (brightness_loc >= 0) {
@@ -230,7 +296,7 @@ while (!win.should_close()) {
             memory_shader.set_value_vec3(light_pos_loc, light_pos)
         }
         if (view_pos_loc >= 0) {
-            memory_shader.set_value_vec3(view_pos_loc, vec3(x, y, z))
+            memory_shader.set_value_vec3(view_pos_loc, cam_pos)
         }
     }
     
@@ -242,19 +308,12 @@ while (!win.should_close()) {
     win.begin()
     win.begin_blend_mode(win.BLEND_ALPHA)  
     
-    // Slowly changing background hue - smooth HSV color cycling
-    hue_time = frame_count * 0.001  // Very slow color change
-    hue = hue_time - math.floor(hue_time / 6.28) * 6.28  // Keep hue in 0-2π range for smooth cycling
-    
-    // Convert HSV to RGB for smooth hue transitions (S=0.6, V=0.3 for dark background)
-    bg_color = colour_utils.hsv_to_rgb(hue * 57.2958, 0.6, 0.3)  // Convert radians to degrees for native function
-    
-    win.clear(vec4(bg_color.x, bg_color.y, bg_color.z, 255))
+    win.clear(col.DARKGRAY)
     win.begin_3d(cam)
-    
-    // Draw light position indicator
-    win.sphere(light_pos, 0.1, vec4(255, 255, 0, 255))
-    
+
+ 
+    win.sphere(light_pos, 0.001, vec4(0, 0, 0, 0))
+
     // Draw objects
     foreach (obj in objects) {
         obj.draw(win)
