@@ -89,3 +89,33 @@ composite-literal convention idiomatically keeps a trailing comma on the last el
 habit doesn't carry over to Lox function calls/parameter lists. When writing a multi-line
 `some_call(\n    a,\n    b,\n)`-shaped call or `func f(\n    a,\n    b,\n)`-shaped definition,
 drop the comma after the last argument/parameter.
+
+## Performance: avoid per-frame/per-cell allocation in graphics scripts targeting 60fps
+
+odlox's GC is mark-sweep. Allocating inside a loop that runs every frame (or every cell, every
+frame) creates continuous churn the collector must periodically sweep, which shows up as
+occasional multi-hundred-ms stalls -- not steadily lower fps, a stall. This is independent of the
+debug-vs-release build gap (bounds-checking/`-o:speed`): it happens in `--release` builds too,
+since it's heap pressure, not instruction overhead.
+
+**When writing or editing a `.lox` script targeting real-time (60fps-class) rendering, allocate
+every per-frame working buffer once, up front, and write into it in place every frame --
+never allocate a new list/float_array/dict inside a loop that runs every frame or every cell.**
+Concretely:
+- A function that builds and returns a fresh collection each call (e.g. a per-row or per-cell
+  scratch buffer) should instead take an `out` parameter and write into that, with the buffer
+  itself allocated once at startup as a module-level variable.
+- Where more than one buffer role is needed at once (e.g. a rolling prev/curr/next window), use a
+  small *fixed* pool of buffer objects rotated by reference reassignment (swap which variable
+  points at which buffer) -- never grow the pool or allocate a replacement per iteration.
+- A larger intermediate result needed once per frame/generation (a derived grid, an indicator
+  array) should be one of a small set of preallocated buffers passed in, not freshly constructed
+  on every call.
+
+Real case: `lox_examples/game_of_life.lox` was allocating a fresh `cols`-length list every grid
+row, every generation, for every ruleset (`horiz_sum_of`), plus a fresh grid-sized `float_array`
+per call in `state_indicator`/`neighbour_count_array` (up to 8 such allocations per generation for
+the QuadLife ruleset) -- this produced occasional multi-hundred-ms stalls, roughly once per
+ruleset. Fixed by preallocating a small fixed set of row/grid buffers once at startup
+(`ROW_BUF_A/B/C`, `IND_BUF_1..4`, `COUNT_BUF_1..4`) and writing into them every generation instead;
+allocation from this machinery is now zero regardless of ruleset.

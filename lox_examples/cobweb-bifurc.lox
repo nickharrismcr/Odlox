@@ -218,7 +218,9 @@ fun draw_cobweb_and_live_bifurcation(rr, x0, steps) {
         
         // Draw current cobweb and logistic curve (right half)
         win.draw_render_texture(cobweb_buffer, half_width, 0, colour.WHITE);
-        
+
+        win.text("Logistic map bifurcation diagram + cobweb diagram", 10, 10, 24, colour.WHITE);
+
         win.end();
         
         // Auto-advance parameter only if not paused

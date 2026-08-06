@@ -15,9 +15,10 @@ from gfx import *
 // be the actual bottleneck otherwise), then blitted to the screen with one
 // draw_render_texture() call.
 //
-// ESC to quit. The grid clears, re-randomises, and switches to the next
-// strategy every RESET_TICKS generations (most random starts stabilise or
-// die out well before that).
+// ESC to quit, SPACE to jump straight to the next strategy. The grid also
+// clears, re-randomises, and switches to the next strategy on its own
+// every RESET_TICKS generations (most random starts stabilise or die out
+// well before that).
 
 import random
 import colour
@@ -40,6 +41,39 @@ var screen_w = int(win.get_screen_width())
 var screen_h = int(win.get_screen_height())
 var cols = screen_w / CELL_SIZE
 var rows = screen_h / CELL_SIZE
+
+// Fixed buffers reused every generation instead of allocating fresh ones
+// -- horiz_sum_of/step_generic/neighbour_count_array used to allocate a
+// new `cols`-length list (or, for state_indicator/neighbour_count_array,
+// a whole new cols*rows float_array) on essentially every call, i.e.
+// every row of every generation of every strategy; the resulting steady
+// GC churn (worse still for Generations/Brian's Brain, which need one
+// extra grid-sized array per generation, and Immigration Game/QuadLife,
+// which need two/four) is the leading theory for this file's occasional
+// multi-hundred-ms stalls. cols/rows never change once the window
+// exists, so these can all be allocated once, up front, and written into
+// in place from then on.
+//
+// ROW_BUF_A/B/C: the horiz_sum_of rolling window's three row buffers,
+// shared by every step_generic/neighbour_count_array call regardless of
+// strategy -- see step_generic's own comment on the 3-buffer rotation
+// this enables (h_prev/h_curr/h_next cycle through these three fixed
+// objects rather than any of them ever being freshly allocated).
+var ROW_BUF_A = float_array(cols, 1)
+var ROW_BUF_B = float_array(cols, 1)
+var ROW_BUF_C = float_array(cols, 1)
+
+// IND_BUF_1..4/COUNT_BUF_1..4: state_indicator()/neighbour_count_array()
+// results. Up to 4 of each can be live at once (QuadLife), fewer for
+// simpler strategies -- see each step_*() function for how many it uses.
+var IND_BUF_1 = float_array(cols, rows)
+var IND_BUF_2 = float_array(cols, rows)
+var IND_BUF_3 = float_array(cols, rows)
+var IND_BUF_4 = float_array(cols, rows)
+var COUNT_BUF_1 = float_array(cols, rows)
+var COUNT_BUF_2 = float_array(cols, rows)
+var COUNT_BUF_3 = float_array(cols, rows)
+var COUNT_BUF_4 = float_array(cols, rows)
 
 var rt = render_texture(screen_w, screen_h)
 
@@ -138,23 +172,24 @@ func randomise(grid) {
     seed_shapes(grid, func () { return 1.0 })
 }
 
-// horiz_sum_of returns a `cols`-length list where entry x is the sum of
-// row y's three cells around column x (x-1, x, x+1, wrapping at the
-// edges) in `source` -- the horizontal half of each cell's 3x3
-// neighbourhood. Computed with a sliding window (prev/curr/next locals),
-// so after the first cell each later x only costs one new float_array
-// read, not three.
-func horiz_sum_of(source, y) {
-    var row = []
+// horiz_sum_of writes into `out` (a cols-length, 1-row float_array --
+// ROW_BUF_A/B/C in practice) the sum of row y's three cells around each
+// column (x-1, x, x+1, wrapping at the edges) in `source` -- the
+// horizontal half of each cell's 3x3 neighbourhood. Computed with a
+// sliding window (prev/curr/next locals), so after the first cell each
+// later x only costs one new float_array read, not three. `out` is
+// caller-owned rather than freshly allocated here -- see step_generic's
+// own comment on the 3-buffer rotation this is built for.
+func horiz_sum_of(source, y, out) {
     var prev = source.get(cols - 1, y)
     var curr = source.get(0, y)
     for (var x = 0; x < cols; x = x + 1) {
         var next = source.get((x + 1) % cols, y)
-        row.append(prev + curr + next)
+        out.set(x, 0, prev + curr + next)
         prev = curr
         curr = next
     }
-    return row
+    return out
 }
 
 // step_generic computes each cell's neighbour count from `source` (a 0/1
@@ -181,20 +216,32 @@ func horiz_sum_of(source, y) {
 // Verified to produce identical output to the naive 8-neighbour version
 // against a known blinker oscillator and 20 generations of a random
 // 30x30 grid before landing.
+//
+// h_prev/h_curr/h_next cycle through exactly the three fixed ROW_BUF_A/
+// B/C objects (module-level, allocated once) rather than horiz_sum_of
+// ever allocating a new row -- h_next_buf always names whichever of the
+// three is *not* currently h_prev or h_curr, so it's always safe to
+// overwrite. After each row, the buffer that was h_prev (no longer
+// needed -- this row's done reading it) becomes the next iteration's
+// h_next_buf, and h_prev/h_curr slide down as before. Net effect:
+// step_generic makes zero allocations of its own, for any strategy.
 func step_generic(source, grid, next, rule) {
-    var h_prev = horiz_sum_of(source, rows - 1)
-    var h_curr = horiz_sum_of(source, 0)
+    var h_prev = horiz_sum_of(source, rows - 1, ROW_BUF_A)
+    var h_curr = horiz_sum_of(source, 0, ROW_BUF_B)
+    var h_next_buf = ROW_BUF_C
     for (var y = 0; y < rows; y = y + 1) {
-        var h_next = horiz_sum_of(source, (y + 1) % rows)
+        var h_next = horiz_sum_of(source, (y + 1) % rows, h_next_buf)
         for (var x = 0; x < cols; x = x + 1) {
-            var total = h_prev[x] + h_curr[x] + h_next[x]
+            var total = h_prev.get(x, 0) + h_curr.get(x, 0) + h_next.get(x, 0)
             var self_indicator = source.get(x, y)
             var n = total - self_indicator
             var state = grid.get(x, y)
             next.set(x, y, rule(state, n))
         }
+        var old_prev_buf = h_prev
         h_prev = h_curr
         h_curr = h_next
+        h_next_buf = old_prev_buf
     }
 }
 
@@ -205,18 +252,19 @@ func step_generic(source, grid, next, rule) {
 // Generations and Brian's Brain below for why), and by Immigration
 // Game's two competing colours (each needs its own indicator, counted
 // separately).
-func state_indicator(grid, target_state) {
-    var ind = float_array(cols, rows)
+// `out` is caller-owned (one of IND_BUF_1..4) rather than freshly
+// allocated here -- see the module-level buffer comment near cols/rows.
+func state_indicator(grid, target_state, out) {
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
             if (grid.get(x, y) == target_state) {
-                ind.set(x, y, 1.0)
+                out.set(x, y, 1.0)
             } else {
-                ind.set(x, y, 0.0)
+                out.set(x, y, 0.0)
             }
         }
     }
-    return ind
+    return out
 }
 
 // neighbour_count_array materialises step_generic's own per-cell
@@ -228,22 +276,26 @@ func state_indicator(grid, target_state) {
 // overhead), but a strategy like Immigration Game needs *two* full
 // neighbour-count arrays at once (one per competing colour, see below)
 // before it can decide anything per cell, so there's no single rule
-// callback to fuse into.
-func neighbour_count_array(source) {
-    var counts = float_array(cols, rows)
-    var h_prev = horiz_sum_of(source, rows - 1)
-    var h_curr = horiz_sum_of(source, 0)
+// callback to fuse into. `out` is caller-owned (one of COUNT_BUF_1..4);
+// the h_prev/h_curr/h_next rotation is the same fixed-3-buffer scheme
+// step_generic uses -- see its own comment for why it's safe.
+func neighbour_count_array(source, out) {
+    var h_prev = horiz_sum_of(source, rows - 1, ROW_BUF_A)
+    var h_curr = horiz_sum_of(source, 0, ROW_BUF_B)
+    var h_next_buf = ROW_BUF_C
     for (var y = 0; y < rows; y = y + 1) {
-        var h_next = horiz_sum_of(source, (y + 1) % rows)
+        var h_next = horiz_sum_of(source, (y + 1) % rows, h_next_buf)
         for (var x = 0; x < cols; x = x + 1) {
-            var total = h_prev[x] + h_curr[x] + h_next[x]
+            var total = h_prev.get(x, 0) + h_curr.get(x, 0) + h_next.get(x, 0)
             var self_indicator = source.get(x, y)
-            counts.set(x, y, total - self_indicator)
+            out.set(x, y, total - self_indicator)
         }
+        var old_prev_buf = h_prev
         h_prev = h_curr
         h_curr = h_next
+        h_next_buf = old_prev_buf
     }
-    return counts
+    return out
 }
 
 // -----------------------------------------------------------------------
@@ -315,7 +367,7 @@ func gen_rule(state, n) {
 }
 
 func step_generations(grid, next) {
-    step_generic(state_indicator(grid, 1.0), grid, next, gen_rule)
+    step_generic(state_indicator(grid, 1.0, IND_BUF_1), grid, next, gen_rule)
 }
 
 func generations_colour(state) {
@@ -412,7 +464,7 @@ func brain_rule(state, n) {
 }
 
 func step_brain(grid, next) {
-    step_generic(state_indicator(grid, 1.0), grid, next, brain_rule)
+    step_generic(state_indicator(grid, 1.0, IND_BUF_1), grid, next, brain_rule)
 }
 
 func brain_colour(state) {
@@ -543,8 +595,8 @@ func randomise_immigration(grid) {
 }
 
 func step_immigration(grid, next) {
-    var count_a = neighbour_count_array(state_indicator(grid, 1.0))
-    var count_b = neighbour_count_array(state_indicator(grid, 2.0))
+    var count_a = neighbour_count_array(state_indicator(grid, 1.0, IND_BUF_1), COUNT_BUF_1)
+    var count_b = neighbour_count_array(state_indicator(grid, 2.0, IND_BUF_2), COUNT_BUF_2)
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
             var ca = count_a.get(x, y)
@@ -649,10 +701,10 @@ func quadlife_birth_colour(c1, c2, c3, c4) {
 }
 
 func step_quadlife(grid, next) {
-    var count1 = neighbour_count_array(state_indicator(grid, 1.0))
-    var count2 = neighbour_count_array(state_indicator(grid, 2.0))
-    var count3 = neighbour_count_array(state_indicator(grid, 3.0))
-    var count4 = neighbour_count_array(state_indicator(grid, 4.0))
+    var count1 = neighbour_count_array(state_indicator(grid, 1.0, IND_BUF_1), COUNT_BUF_1)
+    var count2 = neighbour_count_array(state_indicator(grid, 2.0, IND_BUF_2), COUNT_BUF_2)
+    var count3 = neighbour_count_array(state_indicator(grid, 3.0, IND_BUF_3), COUNT_BUF_3)
+    var count4 = neighbour_count_array(state_indicator(grid, 4.0, IND_BUF_4), COUNT_BUF_4)
     for (var y = 0; y < rows; y = y + 1) {
         for (var x = 0; x < cols; x = x + 1) {
             var c1 = count1.get(x, y)
@@ -752,12 +804,18 @@ while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }
-
+    if (win.key_pressed(win.KEY_SPACE)) {
+        strategy_index = (strategy_index + 1) % len(strategies)
+        strategy = strategies[strategy_index]
+        strategy.randomise(grid)
+        generation = 0
+    }
     strategy.step(grid, next_grid)
+ 
     var tmp = grid
     grid = next_grid
     next_grid = tmp
-
+ 
     generation = generation + 1
     if (generation >= RESET_TICKS) {
         strategy_index = (strategy_index + 1) % len(strategies)
@@ -765,7 +823,6 @@ while (!win.should_close()) {
         strategy.randomise(grid)
         generation = 0
     }
-
     draw_grid(grid, strategy.colour)
 
     win.begin()
@@ -773,6 +830,11 @@ while (!win.should_close()) {
     win.draw_render_texture(rt, 0, 0, colour.WHITE)
     win.text(format("%s -- Generation %d / %d", strategy.name, generation, RESET_TICKS), 10, 10, 20, colour.WHITE)
     win.text(format("%d x %d cells, %dpx", cols, rows, CELL_SIZE), 10, 34, 16, vec4(180, 180, 180, 255))
+    win.text("SPACE: next strategy", 10, 54, 16, vec4(180, 180, 180, 255))
+ 
     win.end()
+ 
+
+   
 }
 win.close()

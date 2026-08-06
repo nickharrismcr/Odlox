@@ -252,6 +252,16 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			return false
 		}
 		result = core.make_float_value(f64(rl.GetFrameTime()))
+	case "get_time":
+		// Seconds elapsed since rl.InitWindow, as a monotonic f64 -- unlike
+		// get_frame_time() (one frame's duration) or get_fps() (a smoothed
+		// rate), this is a plain clock reading, for timing arbitrary spans
+		// of script code by taking the difference between two calls.
+		if arg_count != 0 {
+			vm.runtime_error(v, "get_time() takes no arguments.")
+			return false
+		}
+		result = core.make_float_value(rl.GetTime())
 
 	// --- input ---
 	case "key_down":
