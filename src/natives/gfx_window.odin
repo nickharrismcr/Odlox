@@ -359,6 +359,28 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			return false
 		}
 		result = core.make_bool_value(bool(rl.IsCursorHidden()))
+	case "disable_cursor":
+		// Unlike hide_cursor (visibility only), this locks the cursor to
+		// the window -- raylib re-centres it every frame internally, so
+		// mouse_delta() keeps reporting real relative movement no matter
+		// how far or how long the mouse is pushed in one direction,
+		// instead of the real OS cursor drifting into a screen edge and
+		// getting stuck there (no further delta in that direction until
+		// physically moved back). The standard raylib idiom for a
+		// mouse-look/FPS-style camera.
+		if arg_count != 0 {
+			vm.runtime_error(v, "disable_cursor() takes no arguments.")
+			return false
+		}
+		rl.DisableCursor()
+		result = core.NIL_VALUE
+	case "enable_cursor":
+		if arg_count != 0 {
+			vm.runtime_error(v, "enable_cursor() takes no arguments.")
+			return false
+		}
+		rl.EnableCursor()
+		result = core.NIL_VALUE
 
 	// --- 2D drawing ---
 	case "clear":

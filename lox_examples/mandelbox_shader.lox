@@ -1,0 +1,383 @@
+from gfx import *
+// GPU (GLSL fragment shader) Mandelbox -- a 3D fractal (Tom Lowe, 2010)
+// rendered by sphere-tracing (raymarching) a distance-estimate (DE) derived
+// from the iteration below, entirely on the GPU: one ray per pixel, all
+// pixels in parallel, the same fullscreen-quad-plus-fragment-shader approach
+// mandel_shader.lox uses for the 2D Mandelbrot.
+//
+// Each iteration applies a box fold (clamp every axis independently to
+// [-fold_limit, fold_limit], then mirror) followed by a sphere fold (rescale
+// points falling inside a sphere so detail stays roughly uniform at every
+// distance from the origin, not just close in). The box fold is what gives
+// the Mandelbox its flat faces and sharp edges, unlike a Mandelbulb's
+// spherical-fold-only iteration, which rounds everything off.
+//
+// Free-fly camera: WASD to move, Q/E down/up, mouse to look (cursor hidden,
+// not locked -- see hide_cursor()'s own doc comment below for why moving it
+// off-screen can momentarily stop registering deltas), LEFT SHIFT to move
+// faster. UP/DOWN change the fractal's scale parameter live (the single
+// number that most changes its structure -- try the 1.5-3.0 range), R resets
+// it, ESC quits.
+
+import math
+
+// GLSL vertex shader for a fullscreen textured quad -- identical to
+// mandel_shader.lox's own, since the geometry role is the same (a single
+// rectangle covering the screen; the actual fractal math reads gl_FragCoord
+// directly in the fragment shader below, not any vertex attribute).
+var vertex_shader = "
+#version 330
+
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main()
+{
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+var mandelbox_shader_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform vec2 resolution;
+uniform vec3 camPos;
+uniform vec3 camForward;
+uniform vec3 camRight;
+uniform vec3 camUp;
+uniform float scale;
+uniform float min_radius2;
+uniform float fixed_radius2;
+uniform float fold_limit;
+uniform float time;
+
+const int ITERATIONS = 24;
+const int MAX_STEPS = 128;
+const float MAX_DIST = 50.0;
+const float SURF_DIST = 0.0008;
+
+// Distance estimate to the Mandelbox surface from `pos`: `pos` doubles as
+// both the ray-marched sample point and the fractal's own additive constant
+// (its 'c', in Mandelbrot-iteration terms), so this only ever needs to be
+// evaluated at the point currently being tested, not seeded separately.
+float mandelbox_de(vec3 pos) {
+    vec3 z = pos;
+    float dr = 1.0;
+    for (int i = 0; i < ITERATIONS; i++) {
+        // Box fold: reflect any axis that strayed outside
+        // [-fold_limit, fold_limit] back inside it.
+        z = clamp(z, -fold_limit, fold_limit) * 2.0 - z;
+
+        // Sphere fold: points falling inside fixed_radius get rescaled
+        // (more aggressively the closer they are to the origin), which is
+        // what keeps the fractal's detail roughly self-similar at every
+        // distance instead of only close to the origin.
+        float r2 = dot(z, z);
+        if (r2 < min_radius2) {
+            float f = fixed_radius2 / min_radius2;
+            z *= f;
+            dr *= f;
+        } else if (r2 < fixed_radius2) {
+            float f = fixed_radius2 / r2;
+            z *= f;
+            dr *= f;
+        }
+
+        z = z * scale + pos;
+        dr = dr * abs(scale) + 1.0;
+    }
+    return length(z) / abs(dr);
+}
+
+// Re-runs the same iteration purely to recover an orbit-trap value (the
+// closest the iterate ever came to the origin) for surface colouring --
+// called once per pixel, at the final hit point only, so duplicating the
+// loop here is cheaper than threading a trap accumulator through
+// mandelbox_de's every call (raymarch steps through many points per pixel
+// that never end up being the hit point at all).
+float mandelbox_trap(vec3 pos) {
+    vec3 z = pos;
+    float trap = 1e9;
+    for (int i = 0; i < ITERATIONS; i++) {
+        z = clamp(z, -fold_limit, fold_limit) * 2.0 - z;
+        float r2 = dot(z, z);
+        if (r2 < min_radius2) {
+            z *= fixed_radius2 / min_radius2;
+        } else if (r2 < fixed_radius2) {
+            z *= fixed_radius2 / r2;
+        }
+        z = z * scale + pos;
+        trap = min(trap, length(z));
+    }
+    return trap;
+}
+
+float raymarch(vec3 ro, vec3 rd, out int steps_taken) {
+    float t = 0.0;
+    for (int i = 0; i < MAX_STEPS; i++) {
+        vec3 p = ro + rd * t;
+        float d = mandelbox_de(p);
+        // A slightly conservative step (0.9x the DE) trades a few extra
+        // steps for fewer overshoots past thin/sharp Mandelbox features.
+        t += d * 0.9;
+        steps_taken = i;
+        if (d < SURF_DIST * (1.0 + t * 0.05) || t > MAX_DIST) {
+            break;
+        }
+    }
+    return t;
+}
+
+vec3 calc_normal(vec3 p) {
+    vec2 e = vec2(0.0015, 0.0);
+    return normalize(vec3(
+        mandelbox_de(p + e.xyy) - mandelbox_de(p - e.xyy),
+        mandelbox_de(p + e.yxy) - mandelbox_de(p - e.yxy),
+        mandelbox_de(p + e.yyx) - mandelbox_de(p - e.yyx)
+    ));
+}
+
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * resolution) / resolution.y;
+    // Flip y so screen-up is +uv.y, matching mandel_shader.lox's own
+    // (resolution.y - gl_FragCoord.y) flip for the same reason (GL's
+    // gl_FragCoord has row 0 at the bottom).
+    uv.y = -uv.y;
+
+    vec3 rd = normalize(camForward + uv.x * camRight + uv.y * camUp);
+    vec3 ro = camPos;
+
+    int steps_taken = 0;
+    float t = raymarch(ro, rd, steps_taken);
+
+    vec3 background = vec3(1.0, 1.0, 1.0);
+    vec3 col = background;
+
+    if (t < MAX_DIST) {
+        vec3 p = ro + rd * t;
+        vec3 n = calc_normal(p);
+        float trap = mandelbox_trap(p);
+
+        vec3 light_dir = normalize(vec3(0.6, 0.8, -0.4));
+        float diff = max(dot(n, light_dir), 0.0);
+        // Cheap ambient occlusion: a ray that used most of its step budget
+        // to reach the surface was grazing something nearby (a crevice or
+        // corner), so darken it relative to one that hit cleanly.
+        float ao = 1.0 - float(steps_taken) / float(MAX_STEPS);
+        float rim = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+
+        vec3 base = 0.5 + 0.5 * cos(6.28318530718 * (trap * 0.6 + vec3(0.0, 0.33, 0.67) + time * 0.03));
+        col = base * (0.15 + 0.85 * diff) * (0.4 + 0.6 * ao) + rim * 0.25;
+
+        float fog = clamp(t / MAX_DIST, 0.0, 1.0);
+        col = mix(col, background, fog * fog);
+    }
+
+    finalColor = vec4(col, 1.0);
+}
+"
+
+// ---- vec3 helpers ----------------------------------------------------
+// odlox's `+`/`*` operators don't cover vector-times-scalar or
+// vector-plus-vector (that's `++`, see arithmetic.odin) -- 3d_shapes_mem_
+// shader.lox builds vec3 results component-wise for the same reason, so
+// this follows the same pattern rather than relying on `++`.
+func vec3_add(a, b) {
+    return vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+}
+func vec3_sub(a, b) {
+    return vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+func vec3_scale(v, s) {
+    return vec3(v.x * s, v.y * s, v.z * s)
+}
+func vec3_cross(a, b) {
+    return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+}
+func vec3_length(v) {
+    return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
+}
+func vec3_normalize(v) {
+    var len = vec3_length(v)
+    return vec3(v.x / len, v.y / len, v.z / len)
+}
+
+const DEFAULT_SCALE = 2.5
+const MIN_RADIUS2 = 0.25   // (0.5)^2
+const FIXED_RADIUS2 = 1.0
+const FOLD_LIMIT = 1.0
+
+const MOVE_SPEED = 2.5
+const BOOST_MULT = 4.0
+// At the camera's current start distance (20 units), the fractal's ~3-unit
+// extent only subtends ~17 degrees of the ~53-degree vertical FOV -- with
+// the old 0.0025 rad/pixel sensitivity, one ordinary mouse swipe (a few
+// hundred pixels) turns the camera by tens of degrees, well past that 17
+// degrees, so the fractal exits the frame in a single motion. Not a sign/
+// direction bug (the camera basis itself is correct -- see forward's own
+// comment below) -- just too much rotation per pixel for how small a
+// target this is at range. Cut ~4x for finer control.
+const MOUSE_SENS = 0.0006
+const PITCH_LIMIT = 1.5 // just under pi/2, avoids the forward vector flipping at the poles
+const SCALE_MIN = 1.2
+const SCALE_MAX = 3.5
+const SCALE_RATE = 0.6 // units per second while UP/DOWN is held
+
+var win = window(1, 1)
+win.init()
+win.toggle_fullscreen()
+win.set_target_fps(60)
+
+var width = win.get_screen_width()
+var height = win.get_screen_height()
+
+var mandelbox_shader = shader()
+mandelbox_shader.load_from_memory(vertex_shader, mandelbox_shader_src)
+if (!mandelbox_shader.is_valid()) {
+    print("Failed to load Mandelbox shader")
+}
+
+var resolution_loc = mandelbox_shader.get_location("resolution")
+var cam_pos_loc = mandelbox_shader.get_location("camPos")
+var cam_forward_loc = mandelbox_shader.get_location("camForward")
+var cam_right_loc = mandelbox_shader.get_location("camRight")
+var cam_up_loc = mandelbox_shader.get_location("camUp")
+var scale_loc = mandelbox_shader.get_location("scale")
+var min_radius2_loc = mandelbox_shader.get_location("min_radius2")
+var fixed_radius2_loc = mandelbox_shader.get_location("fixed_radius2")
+var fold_limit_loc = mandelbox_shader.get_location("fold_limit")
+var time_loc = mandelbox_shader.get_location("time")
+
+// resolution/min_radius2/fixed_radius2/fold_limit never change once the
+// window exists, so these upload once, up front, rather than every frame.
+mandelbox_shader.set_value_vec2(resolution_loc, vec2(width, height))
+mandelbox_shader.set_value_float(min_radius2_loc, MIN_RADIUS2)
+mandelbox_shader.set_value_float(fixed_radius2_loc, FIXED_RADIUS2)
+mandelbox_shader.set_value_float(fold_limit_loc, FOLD_LIMIT)
+
+// +20 on z: the classic Mandelbox parameter set below (scale 2.5,
+// fold_limit 1, min/fixed radius 0.5/1.0) extends roughly 1.5-3 units from
+// the origin. The ray fan's implicit vertical FOV (uv.y spans -0.5..0.5
+// against unit-length camUp/camRight/camForward, i.e. +/-atan(0.5) =~ 26.5
+// degrees half-angle) means fitting a half-extent E inside frame needs
+// distance >= E / tan(26.5 deg) =~ 2*E -- 6 units would put the set right
+// at the frame edge with no margin, so 20 (roughly 6-7x the extent) leaves
+// it comfortably small in frame with lots of room on every side.
+var pos = vec3(0.0, 0.0, 20.0)
+var yaw = 0.0   // radians; yaw 0 / pitch 0 looks down -z, towards the origin from `pos` above
+var pitch = 0.0
+var scale_param = DEFAULT_SCALE
+var t = 0.0
+
+// disable_cursor() locks the cursor to the window (raylib re-centres it
+// every frame internally) as well as hiding it -- unlike hide_cursor(),
+// which only hides the OS pointer, leaving it free to drift into a screen
+// edge and get stuck there (no further mouse_delta() in that direction
+// until physically moved back the other way).
+win.disable_cursor()
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+
+    var dt = win.get_frame_time()
+    t = t + dt
+
+    var delta = win.mouse_delta()
+    yaw = yaw + delta.x * MOUSE_SENS
+    pitch = pitch - delta.y * MOUSE_SENS
+    if (pitch > PITCH_LIMIT) {
+        pitch = PITCH_LIMIT
+    }
+    if (pitch < -PITCH_LIMIT) {
+        pitch = -PITCH_LIMIT
+    }
+
+    // Forward points down -z at yaw/pitch 0 (not +z) to match raylib/
+    // OpenGL's own right-handed, y-up, look-down--z convention -- that's
+    // what makes cross(forward, world_up) below come out as world-space
+    // +x ("right") instead of -x. Getting this backwards (forward down +z)
+    // was the earlier bug: right ended up pointing left, mirroring the
+    // whole rendered view left/right and making strafe/look feel inverted.
+    var forward = vec3(math.cos(pitch) * math.sin(yaw), math.sin(pitch), -math.cos(pitch) * math.cos(yaw))
+    var right = vec3_normalize(vec3_cross(forward, vec3(0.0, 1.0, 0.0)))
+    var up = vec3_cross(right, forward)
+
+    var speed = MOVE_SPEED
+    if (win.key_down(win.KEY_LEFT_SHIFT)) {
+        speed = speed * BOOST_MULT
+    }
+    var step = speed * dt
+
+    if (win.key_down(win.KEY_W)) {
+        pos = vec3_add(pos, vec3_scale(forward, step))
+    }
+    if (win.key_down(win.KEY_S)) {
+        pos = vec3_sub(pos, vec3_scale(forward, step))
+    }
+    if (win.key_down(win.KEY_D)) {
+        pos = vec3_add(pos, vec3_scale(right, step))
+    }
+    if (win.key_down(win.KEY_A)) {
+        pos = vec3_sub(pos, vec3_scale(right, step))
+    }
+    if (win.key_down(win.KEY_E)) {
+        pos = vec3_add(pos, vec3_scale(up, step))
+    }
+    if (win.key_down(win.KEY_Q)) {
+        pos = vec3_sub(pos, vec3_scale(up, step))
+    }
+
+    if (win.key_down(win.KEY_UP)) {
+        scale_param = scale_param + SCALE_RATE * dt
+    }
+    if (win.key_down(win.KEY_DOWN)) {
+        scale_param = scale_param - SCALE_RATE * dt
+    }
+    if (scale_param > SCALE_MAX) {
+        scale_param = SCALE_MAX
+    }
+    if (scale_param < SCALE_MIN) {
+        scale_param = SCALE_MIN
+    }
+    if (win.key_pressed(win.KEY_R)) {
+        scale_param = DEFAULT_SCALE
+    }
+
+    mandelbox_shader.set_value_vec3(cam_pos_loc, pos)
+    mandelbox_shader.set_value_vec3(cam_forward_loc, forward)
+    mandelbox_shader.set_value_vec3(cam_right_loc, right)
+    mandelbox_shader.set_value_vec3(cam_up_loc, up)
+    mandelbox_shader.set_value_float(scale_loc, scale_param)
+    mandelbox_shader.set_value_float(time_loc, t)
+
+    win.begin()
+    win.clear(vec4(255, 255, 255, 255))
+    win.begin_shader_mode(mandelbox_shader)
+    // A single fullscreen rectangle is all the geometry the shader needs --
+    // the raymarch above reads gl_FragCoord and the camera uniforms
+    // directly, so the rectangle's own colour/texcoords don't matter.
+    win.rectangle(0, 0, width, height, vec4(255, 255, 255, 255))
+    win.end_shader_mode()
+
+    win.text(format("FPS: %d", win.get_fps()), 10, 10, 20, vec4(0, 0, 0, 255))
+    win.text(format("Scale: %.2f  (UP/DOWN to change, R to reset)", scale_param), 10, 40, 16, vec4(60, 60, 60, 255))
+    win.text("WASD move, Q/E down/up, mouse look, SHIFT boost, ESC quit", 10, 64, 16, vec4(60, 60, 60, 255))
+    win.end()
+}
+
+win.enable_cursor()
+mandelbox_shader.unload()
+win.close()
