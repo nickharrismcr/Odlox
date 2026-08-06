@@ -1,0 +1,391 @@
+from gfx import *
+// Mouse-drawn line list: fullscreen, black background. Each committed
+// line is drawn with a small circular handle at both ends; any handle the
+// mouse is currently over flashes (a white/red pulse via colour.lerp,
+// driven by a frame counter through math.sin) -- every handle is tested
+// independently against the mouse, so all handles sharing a joint flash
+// together, not just one.
+//
+// Left click on empty space starts a brand new line (start = the click
+// position, end = the live mouse position while held), with its own
+// random colour picked once when the drag starts. Left click on an
+// existing handle grabs it and drags it; since two lines can share an
+// endpoint (see shift-click below), moving a handle moves every line-end
+// that sits exactly on top of it, not just the one that was clicked --
+// `find_attached` groups them by exact coordinate match, which holds
+// because attachments only ever get created by copying a handle's exact
+// coordinates (never by two lines coincidentally landing on the same
+// pixel), and a whole group is written the same new position every frame
+// while dragging, so the match never drifts.
+//
+// Shift + left click on a handle instead starts a brand new line whose
+// start is snapped to that handle's exact coordinates -- a segment
+// branching off an existing line -- rather than dragging it.
+//
+// Right-clicking a handle deletes that one line entirely. Right-clicking
+// empty space instead starts a selection box (grows as the button is held
+// and the mouse dragged); on release, every line with a handle inside the
+// box is deleted. `lines` is fully redrawn every frame.
+//
+// Every committed line also gets a static box2d body -- box2d has no
+// segment/edge shape (only add_circle/add_box), so a line is represented
+// the same way box2d_demo.lox's ramps are: a thin static box spanning the
+// line's own length and angle (see line_body). The body is rebuilt
+// (removed and re-added) whenever the line's endpoints change -- once per
+// commit or completed drag, not every intermediate frame, since dragging
+// itself just edits x1/y1/x2/y2 directly with no physics involved.
+//
+// Every SPAWN_INTERVAL seconds, a dynamic circle spawns at the top of the
+// screen at a random x position; gravity drops it down through whatever
+// static lines are in its way. A circle that falls off the bottom of the
+// screen is despawned. ESC to quit.
+
+import random
+import colour
+import math
+import box2d
+
+const HANDLE_RADIUS = 8
+const FLASH_SPEED = 0.25 // radians per frame
+
+const SCALE = 25.0        // pixels per metre
+const LINE_HALF_THICK = 0.05 // half-thickness of a line's static box, in metres
+const BALL_RADIUS = 20.0 / SCALE
+const BALL_RADIUS_MIN_MULT = 0.3 // smallest spawned ball, as a multiple of BALL_RADIUS
+const BALL_RADIUS_MAX_MULT = 3.0 // largest spawned ball, as a multiple of BALL_RADIUS
+const BALL_SPAWN_Y = 20   // pixels from the top of the screen
+const KILL_Y = -2.0       // world y below which a ball is off-screen and despawned
+const GRAVITY = -25.0
+
+const TARGET_FPS = 60
+const SPAWN_INTERVAL = 0.5 // seconds between automatic ball drops -- configurable
+const SPAWN_INTERVAL_FRAMES = int(SPAWN_INTERVAL * TARGET_FPS)
+
+const STATIC = 0
+const DYNAMIC = 2
+
+var win = window(1, 1)
+win.init()
+win.toggle_fullscreen()
+win.set_target_fps(TARGET_FPS)
+
+var WIDTH = int(win.get_screen_width())
+var HEIGHT = int(win.get_screen_height())
+
+// Box2D is Y-up with an arbitrary origin; these map screen pixels (Y-down,
+// origin top-left) to/from a world where y=0 is the bottom of the screen,
+// same convention box2d_demo.lox uses.
+func to_world(p) {
+    return vec2(p.x / SCALE, (HEIGHT - p.y) / SCALE)
+}
+
+func to_screen(p) {
+    return vec2(p.x * SCALE, HEIGHT - p.y * SCALE)
+}
+
+var world = box2d.world(vec2(0.0, GRAVITY))
+
+class Line {
+    init(x1, y1, x2, y2, col) {
+        this.x1 = x1
+        this.y1 = y1
+        this.x2 = x2
+        this.y2 = y2
+        this.colour = col
+        this.body_id = nil // set once committed to `lines` -- see line_body
+    }
+}
+
+class Handle_Hit {
+    init(line, which, index) {
+        this.line = line
+        this.which = which
+        this.index = index
+    }
+}
+
+class Rect {
+    init(x, y, w, h) {
+        this.x = x
+        this.y = y
+        this.w = w
+        this.h = h
+    }
+}
+
+func random_colour() {
+    return vec4(random.integer(0, 255), random.integer(0, 255), random.integer(0, 255), 255)
+}
+
+func handle_hit(hx, hy, pos) {
+    var dx = pos.x - hx
+    var dy = pos.y - hy
+    return dx * dx + dy * dy <= HANDLE_RADIUS * HANDLE_RADIUS
+}
+
+func end_x(l, which) {
+    if (which == 1) {
+        return l.x1
+    }
+    return l.x2
+}
+
+func end_y(l, which) {
+    if (which == 1) {
+        return l.y1
+    }
+    return l.y2
+}
+
+// find_handle returns the first line in `lines` whose start (which=1) or
+// end (which=2) handle contains `pos`, or nil if none does.
+func find_handle(lines, pos) {
+    for (var i = 0; i < len(lines); i = i + 1) {
+        var l = lines[i]
+        if (handle_hit(l.x1, l.y1, pos)) {
+            return Handle_Hit(l, 1, i)
+        }
+        if (handle_hit(l.x2, l.y2, pos)) {
+            return Handle_Hit(l, 2, i)
+        }
+    }
+    return nil
+}
+
+// find_attached returns every (line, which) whose endpoint sits exactly
+// on (hx, hy) -- the group of line-ends that share that joint and should
+// move together.
+func find_attached(lines, hx, hy) {
+    var result = []
+    for (var i = 0; i < len(lines); i = i + 1) {
+        var l = lines[i]
+        if (l.x1 == hx and l.y1 == hy) {
+            result.append(Handle_Hit(l, 1, i))
+        }
+        if (l.x2 == hx and l.y2 == hy) {
+            result.append(Handle_Hit(l, 2, i))
+        }
+    }
+    return result
+}
+
+// rect_from_corners builds a normalised Rect (positive width/height) from
+// two arbitrary corner points, regardless of drag direction.
+func rect_from_corners(p1, p2) {
+    var x = math.min(p1.x, p2.x)
+    var y = math.min(p1.y, p2.y)
+    var w = math.abs(p2.x - p1.x)
+    var h = math.abs(p2.y - p1.y)
+    return Rect(x, y, w, h)
+}
+
+func point_in_rect(px, py, r) {
+    return px >= r.x and px <= r.x + r.w and py >= r.y and py <= r.y + r.h
+}
+
+// line_body (re)builds `l`'s static box2d body from its current endpoints
+// and returns the new body id -- call world.remove(l.body_id) first if
+// one already exists.
+func line_body(l) {
+    var dx = l.x2 - l.x1
+    var dy = l.y2 - l.y1
+    var length = math.sqrt(dx * dx + dy * dy)
+    var half_len = math.max((length / 2) / SCALE, 0.01) // avoid a degenerate zero-length box
+    var mid = vec2((l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2)
+    var angle = math.atan2(-dy, dx) // screen y is flipped relative to box2d's y-up world
+    return world.add_box(to_world(mid), vec2(half_len, LINE_HALF_THICK), angle, STATIC, 1.0, 0.3, 0.2)
+}
+
+func move_line_end(l, which, pos) {
+    if (which == 1) {
+        l.x1 = pos.x
+        l.y1 = pos.y
+    } else {
+        l.x2 = pos.x
+        l.y2 = pos.y
+    }
+}
+
+// draw_rect_outline draws `r`'s four edges as separate lines -- win.rectangle
+// is a filled rl.DrawRectangle under the hood, not an outline, so it can't
+// be used for a selection box without covering everything underneath it.
+func draw_rect_outline(win, r, col) {
+    var x2 = r.x + r.w
+    var y2 = r.y + r.h
+    win.line(r.x, r.y, x2, r.y, col)
+    win.line(x2, r.y, x2, y2, col)
+    win.line(x2, y2, r.x, y2, col)
+    win.line(r.x, y2, r.x, r.y, col)
+}
+
+// draw_line_with_handles draws `l` and its two handles, flashing either
+// one (independently) if it's currently under the mouse.
+func draw_line_with_handles(win, l, pos, flash_colour) {
+    win.line(l.x1, l.y1, l.x2, l.y2, l.colour)
+    var c1 = colour.WHITE
+    if (handle_hit(l.x1, l.y1, pos)) {
+        c1 = flash_colour
+    }
+    var c2 = colour.WHITE
+    if (handle_hit(l.x2, l.y2, pos)) {
+        c2 = flash_colour
+    }
+    win.circle_fill(l.x1, l.y1, HANDLE_RADIUS, c1)
+    win.circle_fill(l.x2, l.y2, HANDLE_RADIUS, c2)
+}
+
+var lines = []
+var drawing = false     // creating a brand new line
+var current = nil
+var dragging = false    // moving every line-end attached to a handle
+var drag_group = []
+var box_active = false  // right-drag box-select-delete
+var box_start = nil
+var frame = 0
+var ball_ids = []
+var ball_colours = []
+var ball_radii = []
+var frames_since_spawn = 0
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+
+    frame = frame + 1
+    var pos = win.mouse_position()
+    var shift = win.key_down(win.KEY_LEFT_SHIFT) or win.key_down(win.KEY_RIGHT_SHIFT)
+
+    frames_since_spawn = frames_since_spawn + 1
+    if (frames_since_spawn >= SPAWN_INTERVAL_FRAMES) {
+        frames_since_spawn = 0
+        var radius = BALL_RADIUS * random.float(BALL_RADIUS_MIN_MULT, BALL_RADIUS_MAX_MULT)
+        var spawn_x = random.float(radius * SCALE, WIDTH - radius * SCALE)
+        var spawn = to_world(vec2(spawn_x, BALL_SPAWN_Y))
+        var id = world.add_circle(spawn, radius, DYNAMIC, 1.0, 0.3, 0.5)
+        ball_ids.append(id)
+        ball_colours.append(random_colour())
+        ball_radii.append(radius)
+    }
+
+    if (win.mouse_pressed(win.MOUSE_RIGHT)) {
+        var hit = find_handle(lines, pos)
+        if (hit != nil) {
+            world.remove(hit.line.body_id)
+            lines.remove(hit.index)
+            dragging = false
+            drag_group = []
+        } else {
+            box_active = true
+            box_start = pos
+        }
+    } else if (box_active and win.mouse_down(win.MOUSE_RIGHT)) {
+        // box grows live from `pos` in the draw phase below; nothing to
+        // update here
+    } else if (box_active and win.mouse_released(win.MOUSE_RIGHT)) {
+        var box = rect_from_corners(box_start, pos)
+        var kept = []
+        for (var i = 0; i < len(lines); i = i + 1) {
+            var l = lines[i]
+            var hit1 = point_in_rect(l.x1, l.y1, box)
+            var hit2 = point_in_rect(l.x2, l.y2, box)
+            if (!hit1 and !hit2) {
+                kept.append(l)
+            } else {
+                world.remove(l.body_id)
+            }
+        }
+        lines = kept
+        box_active = false
+        box_start = nil
+    } else if (win.mouse_pressed(win.MOUSE_LEFT)) {
+        var hit = find_handle(lines, pos)
+        if (hit != nil and shift) {
+            var hx = end_x(hit.line, hit.which)
+            var hy = end_y(hit.line, hit.which)
+            drawing = true
+            current = Line(hx, hy, hx, hy, random_colour())
+        } else if (hit != nil) {
+            var hx = end_x(hit.line, hit.which)
+            var hy = end_y(hit.line, hit.which)
+            dragging = true
+            drag_group = find_attached(lines, hx, hy)
+        } else {
+            drawing = true
+            current = Line(pos.x, pos.y, pos.x, pos.y, random_colour())
+        }
+    } else if (dragging and win.mouse_down(win.MOUSE_LEFT)) {
+        for (var i = 0; i < len(drag_group); i = i + 1) {
+            var h = drag_group[i]
+            move_line_end(h.line, h.which, pos)
+        }
+    } else if (drawing and win.mouse_down(win.MOUSE_LEFT)) {
+        current.x2 = pos.x
+        current.y2 = pos.y
+    } else if (dragging and win.mouse_released(win.MOUSE_LEFT)) {
+        // A dragged joint can touch several distinct lines (see
+        // find_attached) -- rebuild each one's body exactly once.
+        var rebuilt = []
+        for (var i = 0; i < len(drag_group); i = i + 1) {
+            var l = drag_group[i].line
+            if (rebuilt.find(l) == nil) {
+                rebuilt.append(l)
+                world.remove(l.body_id)
+                l.body_id = line_body(l)
+            }
+        }
+        dragging = false
+        drag_group = []
+    } else if (drawing and win.mouse_released(win.MOUSE_LEFT)) {
+        current.x2 = pos.x
+        current.y2 = pos.y
+        current.body_id = line_body(current)
+        lines.append(current)
+        drawing = false
+        current = nil
+    }
+
+    world.step(1.0 / TARGET_FPS)
+
+    // Cull balls that have fallen off the bottom of the screen.
+    var new_ball_ids = []
+    var new_ball_colours = []
+    var new_ball_radii = []
+    for (var i = 0; i < len(ball_ids); i = i + 1) {
+        var id = ball_ids[i]
+        var p = world.get_position(id)
+        if (p.y < KILL_Y) {
+            world.remove(id)
+        } else {
+            new_ball_ids.append(id)
+            new_ball_colours.append(ball_colours[i])
+            new_ball_radii.append(ball_radii[i])
+        }
+    }
+    ball_ids = new_ball_ids
+    ball_colours = new_ball_colours
+    ball_radii = new_ball_radii
+
+    var flash_t = (math.sin(frame * FLASH_SPEED) + 1) / 2
+    var flash_colour = colour.lerp(colour.WHITE, colour.RED, flash_t)
+
+    win.begin()
+    win.clear(colour.BLACK)
+    for (var i = 0; i < len(lines); i = i + 1) {
+        draw_line_with_handles(win, lines[i], pos, flash_colour)
+    }
+    if (drawing) {
+        draw_line_with_handles(win, current, pos, flash_colour)
+    }
+    if (box_active) {
+        var box = rect_from_corners(box_start, pos)
+        draw_rect_outline(win, box, colour.WHITE)
+    }
+    for (var i = 0; i < len(ball_ids); i = i + 1) {
+        var screen_pos = to_screen(world.get_position(ball_ids[i]))
+        win.circle_fill(screen_pos.x, screen_pos.y, ball_radii[i] * SCALE, ball_colours[i])
+    }
+    win.text(format("Left: add/move (shift: branch)   Right handle: delete   Right drag: box delete   Ball every %.1fs", SPAWN_INTERVAL), 10, 10, 20, colour.WHITE)
+    win.end()
+}
+win.close()

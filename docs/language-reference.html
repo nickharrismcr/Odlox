@@ -932,9 +932,18 @@ win.close()</code></pre>
 <tbody>
 <tr><td><code>key_down(key)</code></td><td><code>true</code> while a key is held</td></tr>
 <tr><td><code>key_pressed(key)</code></td><td><code>true</code> on the frame a key is first pressed</td></tr>
+<tr><td><code>mouse_position()</code></td><td>Current mouse position as a <code>vec2</code></td></tr>
+<tr><td><code>mouse_delta()</code></td><td>Mouse movement since the last frame, as a <code>vec2</code></td></tr>
+<tr><td><code>mouse_down(button)</code></td><td><code>true</code> while a mouse button is held</td></tr>
+<tr><td><code>mouse_pressed(button)</code></td><td><code>true</code> on the frame a mouse button is first pressed</td></tr>
+<tr><td><code>mouse_released(button)</code></td><td><code>true</code> on the frame a mouse button is released</td></tr>
+<tr><td><code>mouse_wheel()</code></td><td>Mouse wheel movement for the current frame</td></tr>
+<tr><td><code>show_cursor()</code> / <code>hide_cursor()</code></td><td>Show / hide the mouse cursor</td></tr>
+<tr><td><code>is_cursor_hidden()</code></td><td><code>true</code> if the cursor is currently hidden</td></tr>
 </tbody>
 </table>
 <p><strong>Key constants</strong> are exposed as <code>win.KEY_*</code>, e.g. <code>win.KEY_SPACE</code>, <code>win.KEY_ESCAPE</code>, <code>win.KEY_ENTER</code>, <code>win.KEY_A</code> … <code>win.KEY_Z</code>.</p>
+<p><strong>Mouse button constants:</strong> <code>win.MOUSE_LEFT</code>, <code>win.MOUSE_RIGHT</code>, <code>win.MOUSE_MIDDLE</code>, <code>win.MOUSE_SIDE</code>, <code>win.MOUSE_EXTRA</code>, <code>win.MOUSE_FORWARD</code>, <code>win.MOUSE_BACK</code>.</p>
 
 <h3>Batch type constants</h3>
 <p>Passed to <a href="#batch"><code>batch()</code></a>: <code>win.BATCH_CUBE</code>, <code>win.BATCH_TEXTURED_CUBE</code>, <code>win.BATCH_SPHERE</code>, <code>win.BATCH_TRIANGLE3</code>, <code>win.BATCH_CIRCLE3</code>.</p>

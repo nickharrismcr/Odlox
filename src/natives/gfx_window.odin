@@ -264,6 +264,79 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			return false
 		}
 		result = core.make_bool_value(bool(rl.IsKeyPressed(rl.KeyboardKey(core.as_int(key_val)))))
+	case "mouse_position":
+		if arg_count != 0 {
+			vm.runtime_error(v, "mouse_position() takes no arguments.")
+			return false
+		}
+		pos := rl.GetMousePosition()
+		result = core.make_vec2_value(f64(pos.x), f64(pos.y))
+	case "mouse_delta":
+		if arg_count != 0 {
+			vm.runtime_error(v, "mouse_delta() takes no arguments.")
+			return false
+		}
+		delta := rl.GetMouseDelta()
+		result = core.make_vec2_value(f64(delta.x), f64(delta.y))
+	case "mouse_down":
+		if arg_count != 1 {
+			vm.runtime_error(v, "mouse_down() takes one win.MOUSE_XXX argument.")
+			return false
+		}
+		button_val := vm.peek(v, 0)
+		if !core.is_int(button_val) {
+			vm.runtime_error(v, "mouse_down() argument must be an integer (a win.MOUSE_XXX constant).")
+			return false
+		}
+		result = core.make_bool_value(bool(rl.IsMouseButtonDown(rl.MouseButton(core.as_int(button_val)))))
+	case "mouse_pressed":
+		if arg_count != 1 {
+			vm.runtime_error(v, "mouse_pressed() takes one win.MOUSE_XXX argument.")
+			return false
+		}
+		button_val := vm.peek(v, 0)
+		if !core.is_int(button_val) {
+			vm.runtime_error(v, "mouse_pressed() argument must be an integer (a win.MOUSE_XXX constant).")
+			return false
+		}
+		result = core.make_bool_value(bool(rl.IsMouseButtonPressed(rl.MouseButton(core.as_int(button_val)))))
+	case "mouse_released":
+		if arg_count != 1 {
+			vm.runtime_error(v, "mouse_released() takes one win.MOUSE_XXX argument.")
+			return false
+		}
+		button_val := vm.peek(v, 0)
+		if !core.is_int(button_val) {
+			vm.runtime_error(v, "mouse_released() argument must be an integer (a win.MOUSE_XXX constant).")
+			return false
+		}
+		result = core.make_bool_value(bool(rl.IsMouseButtonReleased(rl.MouseButton(core.as_int(button_val)))))
+	case "mouse_wheel":
+		if arg_count != 0 {
+			vm.runtime_error(v, "mouse_wheel() takes no arguments.")
+			return false
+		}
+		result = core.make_float_value(f64(rl.GetMouseWheelMove()))
+	case "show_cursor":
+		if arg_count != 0 {
+			vm.runtime_error(v, "show_cursor() takes no arguments.")
+			return false
+		}
+		rl.ShowCursor()
+		result = core.NIL_VALUE
+	case "hide_cursor":
+		if arg_count != 0 {
+			vm.runtime_error(v, "hide_cursor() takes no arguments.")
+			return false
+		}
+		rl.HideCursor()
+		result = core.NIL_VALUE
+	case "is_cursor_hidden":
+		if arg_count != 0 {
+			vm.runtime_error(v, "is_cursor_hidden() takes no arguments.")
+			return false
+		}
+		result = core.make_bool_value(bool(rl.IsCursorHidden()))
 
 	// --- 2D drawing ---
 	case "clear":
@@ -1047,14 +1120,15 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 	return true
 }
 
-// window_constant answers a `win.KEY_*`/`win.BLEND_*`/`win.WRAP_*`/
-// `win.BATCH_*` property read, via window_vtable's get_property hook
-// (vm/properties.odin's get_property .Userdata case). These are exposed
-// directly on the window object rather than as module-level constants,
-// so scripts access them as `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not
-// `gfx.KEY_SPACE`. Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU
-// (Android-only buttons not exposed by vendor:raylib's Odin binding);
-// full BLEND_*/WRAP_*/BATCH_* coverage. Values are plain immutable ints,
+// window_constant answers a `win.KEY_*`/`win.MOUSE_*`/`win.BLEND_*`/
+// `win.WRAP_*`/`win.BATCH_*` property read, via window_vtable's
+// get_property hook (vm/properties.odin's get_property .Userdata case).
+// These are exposed directly on the window object rather than as
+// module-level constants, so scripts access them as
+// `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`. Full
+// rl.KeyboardKey coverage except KEY_BACK/KEY_MENU (Android-only buttons
+// not exposed by vendor:raylib's Odin binding); full rl.MouseButton/
+// BLEND_*/WRAP_*/BATCH_* coverage. Values are plain immutable ints,
 // identical across every Window instance, so this is a pure function of
 // the name rather than per-object state.
 @(private = "file")
@@ -1075,6 +1149,13 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "BATCH_SPHERE": return core.make_int_value(int(Batch_Primitive.Sphere), true), true
 	case "BATCH_TRIANGLE3": return core.make_int_value(int(Batch_Primitive.Triangle3), true), true
 	case "BATCH_CIRCLE3": return core.make_int_value(int(Batch_Primitive.Circle3), true), true
+	case "MOUSE_LEFT": return core.make_int_value(int(rl.MouseButton.LEFT), true), true
+	case "MOUSE_RIGHT": return core.make_int_value(int(rl.MouseButton.RIGHT), true), true
+	case "MOUSE_MIDDLE": return core.make_int_value(int(rl.MouseButton.MIDDLE), true), true
+	case "MOUSE_SIDE": return core.make_int_value(int(rl.MouseButton.SIDE), true), true
+	case "MOUSE_EXTRA": return core.make_int_value(int(rl.MouseButton.EXTRA), true), true
+	case "MOUSE_FORWARD": return core.make_int_value(int(rl.MouseButton.FORWARD), true), true
+	case "MOUSE_BACK": return core.make_int_value(int(rl.MouseButton.BACK), true), true
 	}
 
 	key: rl.KeyboardKey
