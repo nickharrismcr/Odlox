@@ -539,6 +539,73 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			name_const := fl.code[ip]
 			ip += 1
 			set_property(vm, core.as_string(fl.constants[name_const]))
+
+		// --- swizzle-component assignment write-back (`v.x = expr`) --
+		// see properties.odin's swizzle_assign doc comment. Each reads
+		// the receiver straight from its own storage (not off the VM
+		// stack -- unlike every Get_* opcode, there's no separate "get"
+		// step emitted first; see emit_expr.odin's emit_property), mutates
+		// a local copy if it's a vector, writes the mutated whole value
+		// back into that same storage, and leaves the assigned scalar on
+		// the stack either way -- these compile as the *entire* target
+		// half of the assignment, not just the write-back tail of one.
+		case .Set_Local_Vec_Field:
+			slot := fl.code[ip]
+			name_const := fl.code[ip + 1]
+			ip += 2
+			name := core.as_string(fl.constants[name_const])
+			value := peek(vm, 0)
+			recv := vm.stack[fl.f.slots + int(slot)]
+			mutated, write_back, ok := swizzle_assign(vm, recv, name, value)
+			if ok && write_back {
+				vm.stack[fl.f.slots + int(slot)] = mutated
+			}
+		case .Set_Global_Vec_Field:
+			slot := fl.code[ip]
+			name_const := fl.code[ip + 1]
+			ip += 2
+			name := core.as_string(fl.constants[name_const])
+			value := peek(vm, 0)
+			if int(slot) >= len(fl.fn.environment.defined) || !fl.fn.environment.defined[slot] {
+				runtime_error(vm, "Undefined variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
+			} else {
+				recv := fl.fn.environment.globals[slot]
+				if recv.immutable {
+					runtime_error(vm, "Cannot assign to const variable '%s'.", core.env_name_for_slot(fl.fn.environment, int(slot)))
+				} else {
+					mutated, write_back, ok := swizzle_assign(vm, recv, name, value)
+					if ok && write_back {
+						core.env_set_global(fl.fn.environment, int(slot), mutated)
+					}
+				}
+			}
+		case .Set_Upvalue_Vec_Field:
+			slot := fl.code[ip]
+			name_const := fl.code[ip + 1]
+			ip += 2
+			name := core.as_string(fl.constants[name_const])
+			value := peek(vm, 0)
+			recv := fl.f.closure.upvalues[slot].location^
+			mutated, write_back, ok := swizzle_assign(vm, recv, name, value)
+			if ok && write_back {
+				fl.f.closure.upvalues[slot].location^ = mutated
+			}
+		case .Set_Property_Vec_Field:
+			outer_const := fl.code[ip]
+			inner_const := fl.code[ip + 1]
+			ip += 2
+			outer_name := core.as_string(fl.constants[outer_const])
+			inner_name := core.as_string(fl.constants[inner_const])
+			value := pop(vm)
+			recv := pop(vm)
+			container := pop(vm)
+			mutated, write_back, ok := swizzle_assign(vm, recv, inner_name, value)
+			if ok {
+				if write_back {
+					set_obj_field(vm, container, outer_name, mutated)
+				}
+				push(vm, value)
+			}
 		case .Get_Super:
 			name_const := fl.code[ip]
 			ip += 1

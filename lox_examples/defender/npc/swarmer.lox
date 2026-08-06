@@ -36,7 +36,7 @@ func state_chase(e, width, height) {
             e.fire_bullet_at(player)
         }
     }
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
 
     // keep inside the play area vertically
     if (e.pos.y < 110) { e.pos.y = 110 }

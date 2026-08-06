@@ -43,9 +43,12 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		     .Static_Method, .Class_Var, .Get_Super, .Class:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
-		     .Incr_Const_N, .Super_Invoke, .Import, .Get_Property:
-			// Get_Property: [name_const][cache_idx] -- see expr.odin's
-			// dot/emit_property_cache.
+		     .Incr_Const_N, .Super_Invoke, .Import, .Get_Property,
+		     .Set_Local_Vec_Field, .Set_Global_Vec_Field, .Set_Upvalue_Vec_Field,
+		     .Set_Property_Vec_Field:
+			// Get_Property: [name_const][cache_idx]; Set_*_Vec_Field:
+			// [slot_or_const][swizzle_name_const] -- see expr.odin's
+			// dot/emit_property_cache and emit_expr.odin's emit_swizzle_set.
 			n = 2
 		case .Invoke:
 			// [name_const][arg_count][cache_idx] -- see expr.odin's dot.
@@ -246,6 +249,45 @@ test_vector_add_uses_plus_plus :: proc(t: ^testing.T) {
 	c := compile_ok(t, "a ++ b\n")
 	testing.expect(t, contains_op(c, .Add_Vector))
 	testing.expect(t, !contains_op(c, .Add_Numeric))
+}
+
+// -----------------------------------------------------------------------
+// Swizzle-component assignment write-back (`v.x = expr`) -- see
+// emit_expr.odin's emit_swizzle_set and core/chunk.odin's
+// Set_*_Vec_Field family. A top-level `var` resolves as a global (see
+// run_builtins's own finding in vm/builtins_test.odin), so this is the
+// Global half of the family; the Local/Upvalue/Property halves are
+// covered end-to-end in vm/builtins_test.odin instead, since their
+// distinguishing behavior (a real write-back into a function-local slot
+// or an instance field) needs the VM actually running, not just opcode
+// shape.
+
+@(test)
+test_vec_swizzle_assign_uses_dedicated_opcode :: proc(t: ^testing.T) {
+	c := compile_ok(t, "var v = vec2(1, 2)\nv.x = 5\n")
+	testing.expect(t, contains_op(c, .Set_Global_Vec_Field))
+	testing.expect(t, !contains_op(c, .Set_Property))
+}
+
+@(test)
+test_vec_swizzle_assign_through_index_is_compile_error :: proc(t: ^testing.T) {
+	env := core.make_environment("test")
+	_, ok := Compile("var v = [vec2(1, 2)]\nv[0].x = 5\n", "test.lox", env)
+	testing.expect(t, !ok)
+}
+
+@(test)
+test_vec_swizzle_assign_through_call_result_is_compile_error :: proc(t: ^testing.T) {
+	env := core.make_environment("test")
+	_, ok := Compile("func get_v() { return vec2(1, 2) }\nget_v().x = 5\n", "test.lox", env)
+	testing.expect(t, !ok)
+}
+
+@(test)
+test_vec_swizzle_compound_assign_uses_dedicated_opcode :: proc(t: ^testing.T) {
+	c := compile_ok(t, "var v = vec2(1, 2)\nv.x += 5\n")
+	testing.expect(t, contains_op(c, .Set_Global_Vec_Field))
+	testing.expect(t, !contains_op(c, .Set_Property))
 }
 
 @(test)

@@ -7,14 +7,17 @@ package core
 
 import "core:testing"
 
-// Pins down the whole point of the #raw_union design: Value must be 16
-// bytes, matching clox, not the 32 bytes the reference implementation's Go interface-based
-// Value costs. If this regresses (e.g. a field gets added without
-// checking alignment/size first), it should fail loudly here rather
-// than silently show up later as "the VM is slower than expected".
+// Pins down the whole point of the #raw_union design: Value's size must
+// match what docs/ARCHITECTURE.md's Value representation section
+// documents -- 40 bytes as of the Vec2/3/4 inlining change
+// (docs/plans/inline-vec-value.md), up from 16 bytes in the original
+// (Obj-only-payload) design. If this regresses (e.g. a field gets added
+// without checking alignment/size first), it should fail loudly here
+// rather than silently show up later as "the VM is slower than
+// expected".
 @(test)
-test_value_is_sixteen_bytes :: proc(t: ^testing.T) {
-	testing.expect_value(t, size_of(Value), 16)
+test_value_size :: proc(t: ^testing.T) {
+	testing.expect_value(t, size_of(Value), 40)
 }
 
 @(test)
@@ -144,13 +147,17 @@ test_tuple_and_list_with_same_items_are_not_equal :: proc(t: ^testing.T) {
 	testing.expect(t, !values_equal(list, tuple, true))
 }
 
+// Vec2/Vec3/Vec4 are inlined directly into Value's payload (no heap
+// object, no identity at all) -- two separately-constructed vec2s with
+// equal components are simply equal, by field comparison, same as two
+// ints. There's no `.obj` to compare for non-identity anymore; that's
+// the point of this test relative to the old heap-object design.
 @(test)
-test_vec2_equality_is_by_value_not_identity :: proc(t: ^testing.T) {
+test_vec2_equality_is_by_value :: proc(t: ^testing.T) {
 	a := make_vec2_value(1, 2)
 	b := make_vec2_value(1, 2)
 	c := make_vec2_value(1, 3)
 
-	testing.expect(t, a.obj != b.obj)
 	testing.expect(t, values_equal(a, b, true))
 	testing.expect(t, !values_equal(a, c, true))
 }
@@ -158,15 +165,13 @@ test_vec2_equality_is_by_value_not_identity :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // obj_type caching
 
-// Confirms make_object_value/make_vecN_value always set obj_type from
-// the object actually being wrapped -- the cached tag every hot-loop
-// discrimination site (Phase 4) trusts instead of dereferencing the
-// object.
+// Confirms make_object_value always sets obj_type from the object
+// actually being wrapped -- the cached tag every hot-loop discrimination
+// site trusts instead of dereferencing the object. Vec2/3/4 don't
+// participate: they're never Object_Type-tagged (no heap object exists
+// to tag) -- see is_vec2/3/4, which check Value.type directly instead.
 @(test)
 test_obj_type_is_cached_on_construction :: proc(t: ^testing.T) {
 	s := make_string_value("x")
 	testing.expect_value(t, s.obj_type, Object_Type.String)
-
-	v := make_vec3_value(0, 0, 0)
-	testing.expect_value(t, v.obj_type, Object_Type.Vec3)
 }

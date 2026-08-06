@@ -728,7 +728,7 @@ d.remove("a")</code></pre>
 
 <!-- ==================== VECTORS ==================== -->
 <h2 class="section" id="vectors">Vectors</h2>
-<p><code>vec2</code>, <code>vec3</code> and <code>vec4</code> are native fixed-size float vectors. Each is a small heap-allocated object (like lists, dicts and other native types), referenced from its <code>Value</code> the same way any other object is — not unboxed into the value representation the way <code>int</code>/<code>float</code>/<code>bool</code> are. They are used throughout the graphics API (positions, sizes, and RGBA colours as <code>vec4</code>).</p>
+<p><code>vec2</code>, <code>vec3</code> and <code>vec4</code> are native fixed-size float vectors, unboxed directly into the value representation the same way <code>int</code>/<code>float</code>/<code>bool</code> are — a genuine value type, not a heap object referenced from its <code>Value</code> the way lists, dicts, and other native types are. Assigning, passing, or storing one always copies it; there's no way for two variables to end up sharing "the same" vector such that mutating one is observed through the other. They are used throughout the graphics API (positions, sizes, and RGBA colours as <code>vec4</code>).</p>
 <p>Unlike the <a href="#mod-gfx"><code>gfx</code></a> constructors (<code>window</code>, <code>batch</code>, …), the vector constructors <code>vec2()</code> / <code>vec3()</code> / <code>vec4()</code> are <strong>built-in</strong> — always available, no import needed — because vectors are core value types rather than graphics objects.</p>
 <pre><code class="lox">v2 = vec2(1, 2)
 v3 = vec3(1, 2, 3)
@@ -750,22 +750,16 @@ sum = vec3(1, 2, 3) ++ vec3(10, 10, 10)   // vec3(11, 12, 13)</code></pre>
 </tbody>
 </table>
 <p>For vector length, normalisation, rotation and scaling helpers, see the <a href="#mod-math">math module</a>.</p>
-<h3>In-place addition</h3>
-<p>Each vector type also has an <code>.add(other)</code> method that mutates the receiver's components directly instead of allocating a new vector — useful in hot loops (e.g. updating an entity's position every frame).</p>
+<h3>Component assignment</h3>
+<p>Assigning to a component (<code>v.x = expr</code>) is supported on a bare variable or one level of property access (<code>this.pos.x = expr</code>, <code>entity.pos.x = expr</code>) — the common shapes real scripts use. Assigning into a vector reached through a list/dict index (<code>list[i].x = expr</code>) or a call's direct result (<code>get_vector().x = expr</code>) is a compile error rather than a silently-lost write; assign the whole vector instead (<code>list[i] = vec3(...)</code>). Compound assignment on a component (<code>v.x += 1</code>) isn't supported either — write <code>v.x = v.x + 1</code>.</p>
 <pre><code class="lox">pos = vec2(0, 0)
-dp = vec2(1, 1)
-pos.add(dp)        // pos becomes vec2(1, 1); dp is unchanged</code></pre>
-<p><strong>Caution:</strong> unlike <code>++</code> (which always allocates a fresh vector), <code>.add()</code> mutates the existing object, so any other reference to that same vector — e.g. a value stored via <code>this.pos = pos</code> in a constructor, when the caller kept its own reference to the argument — is mutated too. Prefer <code>.add()</code> only where the receiver is known not to be aliased elsewhere (a field set from an unshared literal, for example); otherwise use <code>++</code>.</p>
+pos.x = 10          // pos becomes vec2(10, 0)
 
-<h3>In-place replacement: <code>.set()</code></h3>
-<p>Each vector type also has a <code>.set(x, y[, z[, w]])</code> method that overwrites every component of the receiver in place and returns it, given plain numbers rather than another vector.</p>
-<pre><code class="lox">pos = vec2(0, 0)
-pos.set(10, 20)     // pos becomes vec2(10, 20) -- same object, no allocation</code></pre>
-<p>Same aliasing caution as <code>.add()</code> above: <code>.set()</code> mutates the receiver, so anything else still holding a reference to it sees the change too.</p>
-
-<h3>Allocation cost in hot loops</h3>
-<p>Every <code>vec2()</code>/<code>vec3()</code>/<code>vec4()</code> call — including the one <code>++</code> performs internally on every use — allocates a new heap object that the garbage collector must later trace and sweep, same as any other native object (see the first paragraph of this section). In code that runs once, or a handful of times, this is not worth thinking about. In a per-frame update loop it is: a script that reconstructs a handful of vectors per entity, per frame, at 60fps, generates real, sustained GC pressure.</p>
-<p>If a vector is only ever read (its components extracted) before being discarded, consider passing its components as plain numbers instead of constructing it at all. If a vector already exists as a long-lived field (an entity's position, say) and needs updating every frame, use <code>.set()</code> or <code>.add()</code> rather than reassigning a freshly constructed one. Reach for <code>++</code> and fresh <code>vec2()</code>/<code>vec3()</code>/<code>vec4()</code> calls freely everywhere else — this only matters in loops that run every frame or every iteration of a large batch.</p>
+class Entity {
+    init() { this.pos = vec3(0, 0, 0) }
+    move(dx) { this.pos.x = this.pos.x + dx }   // one level of property access -- supported
+}</code></pre>
+<p>Since vectors are values, not references, there's no aliasing to reason about here the way there would be for a mutable object: <code>other = pos</code> then later mutating <code>pos</code> never affects <code>other</code>, regardless of whether the mutation goes through a component assignment or a whole-value reassignment.</p>
 
 <!-- ==================== BUILT-IN FUNCTIONS ==================== -->
 <h2 class="section" id="builtins">Built-in functions</h2>
@@ -1237,7 +1231,6 @@ while (!win.should_close()) {
 <tr><td><code>get_box_transform(id)</code></td><td>For a static box body, returns <code>(position, half_extents, axis, angle)</code> — feed straight into <a href="#window"><code>win.cube_rotated()</code></a> so drawing always matches exactly what physics collided against</td></tr>
 <tr><td><code>remove(id)</code></td><td>Remove a body from the simulation</td></tr>
 <tr><td><code>get_position(id)</code></td><td>Current position of a body as a <code>vec3</code></td></tr>
-<tr><td><code>get_position_into(id, vec3)</code></td><td>Writes a body's current position into an existing <code>vec3</code> in place instead of allocating a new one — for syncing many bodies' positions every frame without a fresh allocation per body per frame</td></tr>
 <tr><td><code>add_impulse(id, impulse_vec3)</code></td><td>Add an instantaneous velocity change (<code>vel += impulse</code>) to one body</td></tr>
 <tr><td><code>step(dt)</code></td><td>Advance the simulation one step: gravity, boundary bounce, collision resolution</td></tr>
 <tr><td><code>collisions()</code></td><td>List of tuples <code>(a_id, b_id, normal_vec3, impulse)</code> for pairs that <em>newly</em> touched during the last <code>step()</code>; resting contacts are not repeated</td></tr>
@@ -1962,7 +1955,7 @@ p.close()</code></pre>
 <li>Move hot per-object simulation into native types where available (e.g. <a href="#physics-world"><code>physics_world</code></a>) rather than per-object Lox method dispatch.</li>
 <li>Short strings (40 bytes or under — identifiers, small values) are interned to a canonical pointer, so equality and method/property/global lookup are pointer compares; longer strings are ordinary garbage-collected values, not interned.</li>
 </ul>
-<p>Interpreter-level optimisations include a 16-byte <code>Value</code> struct, slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>Add_Ii</code>/<code>Add_Ff</code>/<code>Incr_Const_I</code>/<code>Incr_Const_F</code>), a monomorphic inline cache on property/method access, inline call frames, and a hoisted dispatch-loop frame context.</p>
+<p>Interpreter-level optimisations include slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>Add_Ii</code>/<code>Add_Ff</code>/<code>Incr_Const_I</code>/<code>Incr_Const_F</code>), a monomorphic inline cache on property/method access, inline call frames, and a hoisted dispatch-loop frame context.</p>
 
 <footer>
 <p>odlox Language Reference. For implementation details (package layout, value/object representation, GC design) see <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>

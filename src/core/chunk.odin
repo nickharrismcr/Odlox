@@ -84,6 +84,22 @@ Op_Code :: enum u8 {
 	Static_Method,
 	Class_Var,
 
+	// Swizzle-component assignment (`v.x = expr`) write-back family --
+	// see vm/properties.odin's swizzle_assign doc comment for why these
+	// exist: a vec2/3/4 Value is an inline copy (see value.odin), so
+	// mutating a component read via plain Get_Local/Get_Global/
+	// Get_Upvalue/Get_Property has nothing to write back into unless the
+	// compiler also emits the matching write-back half. One opcode per
+	// storage kind, mirroring Get_Local/Get_Global/Get_Upvalue/
+	// Get_Property's own four-way split. Falls back to an ordinary
+	// Instance/Class/Module field-set (no write-back needed -- those stay
+	// reference types) if the receiver turns out not to be a vector at
+	// runtime.
+	Set_Local_Vec_Field,
+	Set_Global_Vec_Field,
+	Set_Upvalue_Vec_Field,
+	Set_Property_Vec_Field,
+
 	Invoke,
 	Inherit,
 	Get_Super,

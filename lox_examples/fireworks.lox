@@ -16,8 +16,10 @@ MAX_DELAY=40
 // particle update function
 func move(particle) {
     var dpos = particle.dpos;
-    dpos.x = dpos.x * 0.98;  
+    dpos.x = dpos.x * 0.98;
     dpos.y = dpos.y + 0.1;  //gravity
+    particle.dpos = dpos; // vec2 is a value type -- dpos is a copy, so the
+                           // mutations above need writing back explicitly
     particle.size = particle.size * 0.97; // Gradually reduce size
 }
 
@@ -61,10 +63,6 @@ func make_stars(){
         var pos=random_vec_2D(0,width,0,height);
         var size=1;
         var a=random.integer(1,255);
-        // color is built once here and mutated in place below rather than
-        // reallocated every frame -- 300 stars x 60fps of fresh vec4()
-        // allocations was pure per-frame GC churn with nothing to show for
-        // it, since only the alpha channel ever actually changes.
         stars.append([pos,size,vec4(255,255,255,a)]);
     }
     return stars;
@@ -74,7 +72,10 @@ func update_stars(stars) {
     foreach (var s in stars) {
 
         if (random.integer(0,1000) < 4) {
-            s[2].a = random.integer(1, 255); // Randomly change alpha in place
+            // vec4 is a value type, so this reassigns the whole list
+            // element rather than mutating a component in place -- no
+            // allocation cost either way (see docs/plans/inline-vec-value.md).
+            s[2] = vec4(s[2].x, s[2].y, s[2].z, random.integer(1, 255));
         }
         pos,size,col = s
         win.circle_fill(pos.x, pos.y, size, col)

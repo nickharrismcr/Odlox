@@ -117,7 +117,7 @@ floor_flash_color = vec4(255, 255, 255, 255)
 class MovingObject {
     init(id, size, color) {
         this.id = id                                        // Handle into physics_world
-        this.pos = vec3(0, 0, 0)                            // Mutated in place from world each frame (world.get_position_into) -- never replaced, so it stays one persistent object for this ball's whole lifetime
+        this.pos = vec3(0, 0, 0)                            // Reassigned from world each frame (world.get_position(this.id))
         this.shadow_center = vec3(0, 0, 0)                  // Reused/mutated in add_shadow() instead of allocating a fresh vec3 every frame
         this.ground_height = 0.0                            // Written by ground_at(x, z, this) -- see add_shadow()
         this.ground_axis = UP_AXIS                          // ground_at() always reassigns this to a shared, read-only constant (UP_AXIS or one of ramp_ground's own axes), never mutates it -- a plain reference swap, no allocation
@@ -397,13 +397,12 @@ while (!win.should_close()) {
 
     // Sync rendered/gameplay position from the physics world. Skipping
     // exploded objects is safe -- their bodies were already removed from
-    // world when they exploded. get_position_into writes into obj.pos in
-    // place (a single persistent vec3 per ball, set up once in init())
-    // instead of get_position() allocating a brand new one every ball,
-    // every frame -- SHAPES=500 balls means 500 fewer allocations/frame.
+    // world when they exploded. vec3 is a plain value, so this reassigns
+    // obj.pos wholesale every frame rather than mutating it in place --
+    // no allocation either way.
     foreach (obj in objects) {
         if (obj.is_exploded) continue
-        world.get_position_into(obj.id, obj.pos)
+        obj.pos = world.get_position(obj.id)
     }
 
     // ===== EXPLOSION MECHANICS =====

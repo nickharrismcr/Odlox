@@ -336,6 +336,22 @@ set_op_for_ref :: proc(kind: Var_Ref_Kind) -> core.Op_Code {
 	return .Noop
 }
 
+// set_vec_field_op_for_ref is set_op_for_ref's counterpart for
+// swizzle-component assignment (`v.x = expr`) directly on a bare
+// variable -- see emit_expr.odin's emit_swizzle_set and core/chunk.odin's
+// Set_*_Vec_Field family doc comment.
+set_vec_field_op_for_ref :: proc(kind: Var_Ref_Kind) -> core.Op_Code {
+	#partial switch kind {
+	case .Local:
+		return .Set_Local_Vec_Field
+	case .Upvalue:
+		return .Set_Upvalue_Vec_Field
+	case .Global:
+		return .Set_Global_Vec_Field
+	}
+	return .Noop
+}
+
 // compound_op_code maps a compound-assignment token to the opcode that
 // computes its operator (the Set_* half is separate -- see
 // get_op_for_ref/set_op_for_ref), same mapping as expr.odin's

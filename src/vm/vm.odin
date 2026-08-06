@@ -102,14 +102,6 @@ VM :: struct {
 	next_gc:         int,
 	gray_stack:      [dynamic]^core.Obj,
 
-	// Per-type free lists for high-churn small fixed-size objects (see
-	// docs/plans/pool-allocator.md) -- intrusive, reusing Obj.next the
-	// same way vm.objects itself does, so a parked object costs nothing
-	// beyond what it already occupied. sweep() parks vec2/3/4 here
-	// instead of free()ing them; alloc_vec2/3/4 (gc.odin) check here
-	// before falling back to a fresh new().
-	vec2_free, vec3_free, vec4_free: ^core.Obj,
-
 	debug_hook: Debug_Hook,
 
 	// force_compile: when set, module.odin's load_module skips

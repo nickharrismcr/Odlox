@@ -100,7 +100,7 @@ func enter_descend(e) {
 }
 
 func state_descend(e, width, height) {
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
 
     mh = e.mgr.mountains.get(e.pos.x)
     msh = e.mgr.height - mh
@@ -121,7 +121,7 @@ func enter_search(e) {
 }
 
 func state_search(e, width, height) {
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
     mh = e.mgr.mountains.get(e.pos.x)
     msh = e.mgr.height - mh
     e.pos.y = msh - 200
@@ -152,7 +152,7 @@ func enter_grab(e) {
 }
 
 func state_grab(e,width, height) {
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
     if (e.human == nil or e.human.state == "dying" or !e.human.alive) {
         enter_search(e)   // target died before being grabbed -- find another
         return
@@ -215,7 +215,7 @@ func state_mutated(e,width, height) {
             e.dp.x = -mutant_speed
         }
     }
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
     if (e.counter%20 == 0) {
         e.dp.y = random.choice((-5,5))
     }

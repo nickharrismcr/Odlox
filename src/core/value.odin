@@ -3,10 +3,12 @@ package core
 import "core:fmt"
 
 // Value: the tagged union every VM stack slot, local, global, and
-// constant is. `data` and `obj` share one 8-byte slot via a raw union
-// (see Value_Payload below), giving a 16-byte Value with no unsafe code
+// constant is. `data`, `obj`, and `vec` share one slot via a raw union
+// (see Value_Payload below), giving a ~40-byte Value with no unsafe code
 // at all. See docs/ARCHITECTURE.md's Value representation section for
-// the full reasoning.
+// the full reasoning, including why Vec2/Vec3/Vec4 are inlined here
+// (true copy semantics, no GC involvement) rather than heap-allocated
+// like every other Object_Type.
 
 Value_Type :: enum u8 {
 	Nil,
@@ -20,20 +22,25 @@ Value_Type :: enum u8 {
 	Undefined, // VM-internal: an omitted default-parameter slot before its default runs
 }
 
-// Value_Payload is `#raw_union` (not a tagged Odin `union`): `data` and
-// `obj` are never both meaningful for the same Value at once -- which
-// one is valid is entirely determined by `Value.type` -- so they can
-// overlap the same 8 bytes with no discriminant of their own, the same
-// way clox's `as` union does.
+// Value_Payload is `#raw_union` (not a tagged Odin `union`): `data`,
+// `obj`, and `vec` are never more than one meaningful for the same Value
+// at once -- which one is valid is entirely determined by `Value.type`
+// -- so they can overlap the same bytes with no discriminant of their
+// own, the same way clox's `as` union does. `vec` is sized for a Vec4
+// (the largest of the three); Vec2/Vec3 just leave the trailing lanes
+// unused. This is the one field that makes Value_Payload (and so Value)
+// bigger than a single register-width slot -- see value.odin's header
+// comment.
 Value_Payload :: struct #raw_union {
 	data: u64, // int (bit pattern), f64 (bit pattern via transmute), or bool (0/1)
-	obj:  ^Obj, // heap object pointer -- meaningful iff type is Obj/Vec2/Vec3/Vec4
+	obj:  ^Obj, // heap object pointer -- meaningful iff type is Obj
+	vec:  [4]f64, // inline Vec2/Vec3/Vec4 components -- meaningful iff type is Vec2/Vec3/Vec4
 }
 
 Value :: struct {
 	using payload: Value_Payload,
 	type:          Value_Type,
-	obj_type:      Object_Type, // cached concrete subtype; valid iff type carries an object
+	obj_type:      Object_Type, // cached concrete subtype; valid iff type == .Obj
 	immutable:     bool,
 }
 
@@ -80,21 +87,23 @@ make_object_value :: proc(obj: ^Obj, immutable := false) -> Value {
 }
 
 make_vec2_value :: proc(x, y: f64, immutable := false) -> Value {
-	return make_tagged_object_value(.Vec2, &make_vec2_object(x, y).obj, immutable)
+	v: Value
+	v.type = .Vec2
+	v.vec = {x, y, 0, 0}
+	v.immutable = immutable
+	return v
 }
 make_vec3_value :: proc(x, y, z: f64, immutable := false) -> Value {
-	return make_tagged_object_value(.Vec3, &make_vec3_object(x, y, z).obj, immutable)
+	v: Value
+	v.type = .Vec3
+	v.vec = {x, y, z, 0}
+	v.immutable = immutable
+	return v
 }
 make_vec4_value :: proc(x, y, z, w: f64, immutable := false) -> Value {
-	return make_tagged_object_value(.Vec4, &make_vec4_object(x, y, z, w).obj, immutable)
-}
-
-@(private = "file")
-make_tagged_object_value :: proc(type: Value_Type, obj: ^Obj, immutable: bool) -> Value {
 	v: Value
-	v.type = type
-	v.obj_type = obj.type
-	v.obj = obj
+	v.type = .Vec4
+	v.vec = {x, y, z, w}
 	v.immutable = immutable
 	return v
 }
@@ -181,14 +190,14 @@ as_native :: proc(v: Value) -> ^Native_Object {
 as_file :: proc(v: Value) -> ^File_Object {
 	return cast(^File_Object)v.obj
 }
-as_vec2 :: proc(v: Value) -> ^Vec2_Object {
-	return cast(^Vec2_Object)v.obj
+as_vec2 :: proc(v: Value) -> Vec2 {
+	return {v.vec[0], v.vec[1]}
 }
-as_vec3 :: proc(v: Value) -> ^Vec3_Object {
-	return cast(^Vec3_Object)v.obj
+as_vec3 :: proc(v: Value) -> Vec3 {
+	return {v.vec[0], v.vec[1], v.vec[2]}
 }
-as_vec4 :: proc(v: Value) -> ^Vec4_Object {
-	return cast(^Vec4_Object)v.obj
+as_vec4 :: proc(v: Value) -> Vec4 {
+	return {v.vec[0], v.vec[1], v.vec[2], v.vec[3]}
 }
 
 // -----------------------------------------------------------------------

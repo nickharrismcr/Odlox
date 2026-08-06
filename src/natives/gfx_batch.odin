@@ -109,7 +109,7 @@ batch_data_free :: proc(data: rawptr) {
 }
 
 @(private = "file")
-batch_add :: proc(b: ^Batch_Data, pos, size: ^core.Vec3_Object, color: ^core.Vec4_Object) -> int {
+batch_add :: proc(b: ^Batch_Data, pos, size: core.Vec3, color: core.Vec4) -> int {
 	append(&b.entries, Batch_Entry{
 		position = rl.Vector3{f32(pos.x), f32(pos.y), f32(pos.z)},
 		size     = rl.Vector3{f32(size.x), f32(size.y), f32(size.z)},
@@ -119,7 +119,7 @@ batch_add :: proc(b: ^Batch_Data, pos, size: ^core.Vec3_Object, color: ^core.Vec
 }
 
 @(private = "file")
-batch_add_triangle3 :: proc(b: ^Batch_Data, p1, p2, p3: ^core.Vec3_Object, color: ^core.Vec4_Object) -> int {
+batch_add_triangle3 :: proc(b: ^Batch_Data, p1, p2, p3: core.Vec3, color: core.Vec4) -> int {
 	append(&b.triangles, Triangle_Batch_Entry{
 		point1 = rl.Vector3{f32(p1.x), f32(p1.y), f32(p1.z)},
 		point2 = rl.Vector3{f32(p2.x), f32(p2.y), f32(p2.z)},
@@ -130,7 +130,7 @@ batch_add_triangle3 :: proc(b: ^Batch_Data, p1, p2, p3: ^core.Vec3_Object, color
 }
 
 @(private = "file")
-batch_add_circle3 :: proc(b: ^Batch_Data, center: ^core.Vec3_Object, radius: f64, axis: ^core.Vec3_Object, angle: f64, color: ^core.Vec4_Object) -> int {
+batch_add_circle3 :: proc(b: ^Batch_Data, center: core.Vec3, radius: f64, axis: core.Vec3, angle: f64, color: core.Vec4) -> int {
 	append(&b.circles, Circle_Batch_Entry{
 		center = rl.Vector3{f32(center.x), f32(center.y), f32(center.z)},
 		radius = f32(radius),
@@ -142,7 +142,7 @@ batch_add_circle3 :: proc(b: ^Batch_Data, center: ^core.Vec3_Object, radius: f64
 }
 
 @(private = "file")
-batch_set_circle3_full :: proc(b: ^Batch_Data, index: int, x, y, z, radius: f64, color: ^core.Vec4_Object) -> bool {
+batch_set_circle3_full :: proc(b: ^Batch_Data, index: int, x, y, z, radius: f64, color: core.Vec4) -> bool {
 	if index < 0 || index >= len(b.circles) {
 		return false
 	}
@@ -155,7 +155,7 @@ batch_set_circle3_full :: proc(b: ^Batch_Data, index: int, x, y, z, radius: f64,
 }
 
 @(private = "file")
-batch_set_circle3_color :: proc(b: ^Batch_Data, index: int, color: ^core.Vec4_Object) -> bool {
+batch_set_circle3_color :: proc(b: ^Batch_Data, index: int, color: core.Vec4) -> bool {
 	if index < 0 || index >= len(b.circles) {
 		return false
 	}
@@ -164,7 +164,7 @@ batch_set_circle3_color :: proc(b: ^Batch_Data, index: int, color: ^core.Vec4_Ob
 }
 
 @(private = "file")
-batch_set_position :: proc(b: ^Batch_Data, index: int, pos: ^core.Vec3_Object) -> bool {
+batch_set_position :: proc(b: ^Batch_Data, index: int, pos: core.Vec3) -> bool {
 	if index < 0 || index >= len(b.entries) {
 		return false
 	}
@@ -173,7 +173,7 @@ batch_set_position :: proc(b: ^Batch_Data, index: int, pos: ^core.Vec3_Object) -
 }
 
 @(private = "file")
-batch_set_color :: proc(b: ^Batch_Data, index: int, color: ^core.Vec4_Object) -> bool {
+batch_set_color :: proc(b: ^Batch_Data, index: int, color: core.Vec4) -> bool {
 	if index < 0 || index >= len(b.entries) {
 		return false
 	}
@@ -182,7 +182,7 @@ batch_set_color :: proc(b: ^Batch_Data, index: int, color: ^core.Vec4_Object) ->
 }
 
 @(private = "file")
-batch_set_size :: proc(b: ^Batch_Data, index: int, size: ^core.Vec3_Object) -> bool {
+batch_set_size :: proc(b: ^Batch_Data, index: int, size: core.Vec3) -> bool {
 	if index < 0 || index >= len(b.entries) {
 		return false
 	}
@@ -191,7 +191,7 @@ batch_set_size :: proc(b: ^Batch_Data, index: int, size: ^core.Vec3_Object) -> b
 }
 
 @(private = "file")
-batch_set_triangle3 :: proc(b: ^Batch_Data, index: int, p1, p2, p3: ^core.Vec3_Object) -> bool {
+batch_set_triangle3 :: proc(b: ^Batch_Data, index: int, p1, p2, p3: core.Vec3) -> bool {
 	if index < 0 || index >= len(b.triangles) {
 		return false
 	}
@@ -206,7 +206,7 @@ batch_set_triangle3 :: proc(b: ^Batch_Data, index: int, p1, p2, p3: ^core.Vec3_O
 }
 
 @(private = "file")
-batch_set_triangle3_full :: proc(b: ^Batch_Data, index: int, x1, y1, z1, x2, y2, z2, x3, y3, z3: f64, color: ^core.Vec4_Object) -> bool {
+batch_set_triangle3_full :: proc(b: ^Batch_Data, index: int, x1, y1, z1, x2, y2, z2, x3, y3, z3: f64, color: core.Vec4) -> bool {
 	if index < 0 || index >= len(b.triangles) {
 		return false
 	}
@@ -220,7 +220,7 @@ batch_set_triangle3_full :: proc(b: ^Batch_Data, index: int, x1, y1, z1, x2, y2,
 }
 
 @(private = "file")
-batch_set_triangle3_color :: proc(b: ^Batch_Data, index: int, color: ^core.Vec4_Object) -> bool {
+batch_set_triangle3_color :: proc(b: ^Batch_Data, index: int, color: core.Vec4) -> bool {
 	if index < 0 || index >= len(b.triangles) {
 		return false
 	}
@@ -585,8 +585,7 @@ batch_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int)
 			vm.runtime_error(v, "get_position(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		o := vm.alloc_vec3(v, f64(p.x), f64(p.y), f64(p.z))
-		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
+		result = core.make_vec3_value(f64(p.x), f64(p.y), f64(p.z))
 	case "get_color":
 		if arg_count != 1 {
 			vm.runtime_error(v, "get_color() expects 1 argument (index).")
@@ -602,8 +601,7 @@ batch_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int)
 			vm.runtime_error(v, "get_color(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		o := vm.alloc_vec4(v, f64(col.r), f64(col.g), f64(col.b), f64(col.a))
-		result = core.Value{type = .Vec4, obj_type = .Vec4, obj = &o.obj}
+		result = core.make_vec4_value(f64(col.r), f64(col.g), f64(col.b), f64(col.a))
 	case "get_size":
 		if arg_count != 1 {
 			vm.runtime_error(v, "get_size() expects 1 argument (index).")
@@ -619,8 +617,7 @@ batch_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int)
 			vm.runtime_error(v, "get_size(): index out of range: %d.", core.as_int(idx_val))
 			return false
 		}
-		o := vm.alloc_vec3(v, f64(size.x), f64(size.y), f64(size.z))
-		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
+		result = core.make_vec3_value(f64(size.x), f64(size.y), f64(size.z))
 	case "draw":
 		if arg_count != 0 {
 			vm.runtime_error(v, "draw() takes no arguments.")

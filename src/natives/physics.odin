@@ -17,8 +17,8 @@ import "core:mem"
 
 // P_Vec3 is purely an internal math type for the SoA simulation -- not
 // exposed to Lox directly (positions/velocities/etc. cross the Lox
-// boundary as core.Vec3_Object, converted at the method-dispatch layer
-// below). Named to avoid clashing with core.Vec3_Object.
+// boundary as core.Vec3 values, converted at the method-dispatch layer
+// below). Named to avoid clashing with core.Vec3.
 P_Vec3 :: struct {
 	x, y, z: f64,
 }
@@ -750,8 +750,7 @@ p_vec3_of :: proc(v: core.Value) -> P_Vec3 {
 
 @(private = "file")
 make_vec3_result :: proc(v: ^vm.VM, p: P_Vec3) -> core.Value {
-	o := vm.alloc_vec3(v, p.x, p.y, p.z)
-	return core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
+	return core.make_vec3_value(p.x, p.y, p.z)
 }
 
 @(private = "file")
@@ -883,36 +882,6 @@ physics_world_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_cou
 			return false
 		}
 		result = make_vec3_result(v, pos)
-	case "get_position_into":
-		// Writes into an existing vec3 in place instead of allocating a
-		// fresh one every call -- for a script syncing hundreds of bodies'
-		// positions every frame (e.g. lox_examples/3d_balls_physics_shaders.lox),
-		// get_position() means one new Vec3_Object per body per frame that's
-		// immediately discarded; this lets a script keep one persistent vec3
-		// per body instead.
-		if arg_count != 2 {
-			vm.runtime_error(v, "get_position_into() expects 2 arguments (id, vec3).")
-			return false
-		}
-		id_into_val, target_val := vm.peek(v, 1), vm.peek(v, 0)
-		if !core.is_int(id_into_val) {
-			vm.runtime_error(v, "get_position_into() first argument must be an integer (id).")
-			return false
-		}
-		if !core.is_vec3(target_val) {
-			vm.runtime_error(v, "get_position_into() second argument must be a vec3.")
-			return false
-		}
-		pos_into, err_into, ok_into := physics_world_get_position(w, core.as_int(id_into_val))
-		if !ok_into {
-			vm.runtime_error(v, "%s", err_into)
-			return false
-		}
-		target := core.as_vec3(target_val)
-		target.x = pos_into.x
-		target.y = pos_into.y
-		target.z = pos_into.z
-		result = core.NIL_VALUE
 	case "add_impulse":
 		if arg_count != 2 {
 			vm.runtime_error(v, "add_impulse() expects 2 arguments (id, impulse).")

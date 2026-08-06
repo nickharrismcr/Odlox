@@ -100,15 +100,14 @@ test_vec_constructors :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.as_float(v), 3.0)
 }
 
-// Regression test for a real, pre-existing gap: set_property only ever
-// checked `receiver.type == .Obj` before dispatching, but a vec2/vec3/
-// vec4's own .type is never .Obj (see value.odin) -- so `v.x = ...`
-// always fell straight through to the generic "Only instances,
-// classes, and modules have settable properties." error, even though
-// *reading* v.x already worked (get_property has its own vec-swizzle
-// case). The reference implementation's own OP_SET_PROPERTY has a real Vec2/Vec3/Vec4 case.
-// Found porting particle_sys.lox, a real module that assigns
-// `this.pos.x = ...` directly.
+// Swizzle-component assignment (`v.x = ...`) through a bare global
+// variable -- see emit_expr.odin's emit_swizzle_set and
+// properties.odin's swizzle_assign. Because Vec2/3/4 are inlined into
+// Value (see core/value.odin), `v` here is an independent copy each
+// time it's read off the global slot -- Set_Global_Vec_Field (run.odin)
+// is what actually writes the mutated whole vector back into that slot;
+// without it, `v.x = 10` would silently do nothing observable (the
+// mutation would happen to a copy on the stack and be discarded).
 @(test)
 test_vec_field_assignment :: proc(t: ^testing.T) {
 	v := run_builtins(t, "var v = vec2(1, 2)\nv.x = 10\nvar result = v.x + v.y\n", "result")
@@ -116,6 +115,89 @@ test_vec_field_assignment :: proc(t: ^testing.T) {
 
 	v2 := run_builtins(t, "var v = vec3(1, 2, 3)\nv.z = 30\nvar result = v.z\n", "result")
 	testing.expect_value(t, core.as_float(v2), 30.0)
+}
+
+// Same as above but through a real function-local slot (Set_Local_Vec_Field)
+// rather than a global -- run_builtins only ever inspects globals, so this
+// routes the local through a return value instead.
+@(test)
+test_vec_field_assignment_local :: proc(t: ^testing.T) {
+	v := run_builtins(t, `
+func f() {
+	var v = vec2(1, 2)
+	v.x = 10
+	return v.x + v.y
+}
+var result = f()
+`, "result")
+	testing.expect_value(t, core.as_float(v), 12.0)
+}
+
+// Through an upvalue (Set_Upvalue_Vec_Field) -- a closure capturing an
+// enclosing local and mutating a component of it.
+@(test)
+test_vec_field_assignment_upvalue :: proc(t: ^testing.T) {
+	v := run_builtins(t, `
+func make() {
+	var v = vec2(1, 2)
+	var setter = func() { v.x = 10 }
+	setter()
+	return v.x + v.y
+}
+var result = make()
+`, "result")
+	testing.expect_value(t, core.as_float(v), 12.0)
+}
+
+// Through one level of instance-property access (Set_Property_Vec_Field)
+// -- the real-world shape every migrated example script uses
+// (`this.pos.x = ...`), and the case set_vec_swizzle's old
+// pointer-aliasing trick relied on most directly before vec2/3/4 were
+// inlined.
+@(test)
+test_vec_field_assignment_property :: proc(t: ^testing.T) {
+	v := run_builtins(t, `
+class C {
+	init() { this.pos = vec3(1, 2, 3) }
+	bump() { this.pos.x = 10 }
+}
+var c = C()
+c.bump()
+var result = c.pos.x + c.pos.y + c.pos.z
+`, "result")
+	testing.expect_value(t, core.as_float(v), 15.0)
+}
+
+// r/g/b/a are accepted as aliases for x/y/z/w on Vec4 in the same
+// write-back path (see properties.odin's vec_with_field_set).
+@(test)
+test_vec_field_assignment_color_aliases :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var c = vec4(0, 0, 0, 0)\nc.r = 255\nvar result = c.x\n", "result")
+	testing.expect_value(t, core.as_float(v), 255.0)
+}
+
+// Copy independence: since vec2/3/4 are inline values (not shared heap
+// objects -- see core/value.odin), assigning one variable's value to
+// another must never let a later mutation through one be observed
+// through the other. This is the direct mirror-image of what the old
+// (now-deleted) pool allocator's stress test checked -- that one caught
+// stale reused-heap-memory leaking between logically distinct vectors;
+// this one catches the opposite failure mode a naive inlining port
+// could introduce (accidentally keeping reference semantics somewhere).
+@(test)
+test_vec_assignment_is_a_copy_not_an_alias :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var a = vec2(1, 2)\nvar b = a\nb.x = 99\nvar result = a.x\n", "result")
+	testing.expect_value(t, core.as_float(v), 1.0)
+}
+
+// A swizzle assignment expression evaluates to the assigned scalar, not
+// the mutated vector -- matching plain `x = 5`'s own expression-value
+// contract (see run.odin's Set_*_Vec_Field handlers, which push `value`
+// on success, not the write-back destination's new whole-vector value).
+@(test)
+test_vec_field_assignment_expression_value_is_the_scalar :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var v = vec2(1, 2)\nvar result = (v.x = 5)\n", "result")
+	testing.expect_value(t, core.as_float(v), 5.0)
 }
 
 // -----------------------------------------------------------------------

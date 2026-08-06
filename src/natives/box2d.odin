@@ -89,8 +89,7 @@ box2d_vec2_of :: proc(v: core.Value) -> b2.Vec2 {
 
 @(private = "file")
 box2d_vec2_result :: proc(v: ^vm.VM, vec: b2.Vec2) -> core.Value {
-	o := vm.alloc_vec2(v, f64(vec.x), f64(vec.y))
-	return core.Value{type = .Vec2, obj_type = .Vec2, obj = &o.obj}
+	return core.make_vec2_value(f64(vec.x), f64(vec.y))
 }
 
 @(private = "file")

@@ -70,7 +70,7 @@ func state_chase(e, width, height) {
                            random.integer(-200, 0), random.integer(-100, 100))
         e.nextthink = 30                    // re-aim every 0.5s
     }
-    e.pos.add(e.dp)
+    e.pos = e.pos ++ e.dp
 
     if (e.pos.y < 110) { e.pos.y = 110 }
     if (e.pos.y > height - 40) { e.pos.y = height - 40 }

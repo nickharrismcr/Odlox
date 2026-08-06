@@ -125,8 +125,7 @@ camera_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 			return false
 		}
 		p := c.camera.position
-		o := vm.alloc_vec3(v, f64(p.x), f64(p.y), f64(p.z))
-		result = core.Value{type = .Vec3, obj_type = .Vec3, obj = &o.obj}
+		result = core.make_vec3_value(f64(p.x), f64(p.y), f64(p.z))
 	case:
 		vm.runtime_error(v, "Undefined Camera method '%s'.", name)
 		return false

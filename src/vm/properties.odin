@@ -142,18 +142,16 @@ get_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string) -> bool {
 	return true
 }
 
-// set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`).
-// Vec2/3/4 objects are mutable heap values (a Value just wraps a
-// pointer to one -- see obj_vec.odin), so this mutates the field in
-// place rather than replacing anything on the stack, same shape as
-// Instance/Class/Module's map-entry updates.
-set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
-	if !core.is_number(value) {
-		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)
-		return false
-	}
-	f := core.as_float(value)
-	ok := true
+// vec_with_field_set returns v (a Vec2/3/4 Value) with its swizzle
+// component named `name` set to f, and whether `name` was a valid
+// component for v's arity. Pure computation, no VM/stack involvement --
+// v is an inline value (see core/value.odin), so this can't mutate it
+// in place the way the old heap-object design did; the caller (either
+// set_vec_swizzle below, for the ordinary-and-now-unreachable-via-vec
+// Set_Property path, or swizzle_assign below, for the real
+// write-back-capable path) is responsible for doing something with the
+// returned whole value.
+vec_with_field_set :: proc(v: core.Value, name: string, f: f64) -> (result: core.Value, ok: bool) {
 	#partial switch v.type {
 	case .Vec2:
 		vv := core.as_vec2(v)
@@ -163,8 +161,9 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 		case "y":
 			vv.y = f
 		case:
-			ok = false
+			return v, false
 		}
+		return core.make_vec2_value(vv.x, vv.y, v.immutable), true
 	case .Vec3:
 		vv := core.as_vec3(v)
 		switch name {
@@ -175,8 +174,9 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 		case "z":
 			vv.z = f
 		case:
-			ok = false
+			return v, false
 		}
+		return core.make_vec3_value(vv.x, vv.y, vv.z, v.immutable), true
 	case .Vec4:
 		vv := core.as_vec4(v)
 		switch name {
@@ -189,9 +189,29 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 		case "w", "a":
 			vv.w = f
 		case:
-			ok = false
+			return v, false
 		}
+		return core.make_vec4_value(vv.x, vv.y, vv.z, vv.w, v.immutable), true
 	}
+	return v, false
+}
+
+// set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`)
+// via the ordinary (non-write-back) Set_Property opcode -- reachable
+// today only if something outside compiled Lox code calls set_property
+// directly with a vector receiver, since the compiler now always routes
+// a swizzle-shaped assignment target through the write-back-capable
+// Set_*_Vec_Field family instead (see emit_expr.odin's emit_property)
+// or rejects it at compile time. Kept for that defensive case: computes
+// the mutated value correctly, same as ever, but -- with no write-back
+// destination available here -- the mutation isn't observable afterward,
+// same as it never was for value types.
+set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
+	if !core.is_number(value) {
+		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)
+		return false
+	}
+	_, ok := vec_with_field_set(v, name, core.as_float(value))
 	if !ok {
 		runtime_error(vm, "Undefined vector field '%s'.", name)
 		return false
@@ -202,6 +222,33 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 	return true
 }
 
+// set_obj_field mutates recv's `name` property in place -- the shared
+// logic behind set_property's Instance/Class/Module cases, extracted so
+// the swizzle-assignment write-back opcodes (run.odin's
+// Set_*_Vec_Field handlers) can reach it too, for the case where a
+// swizzle-shaped target (`recv.x = ...`) turns out at runtime to hold
+// something other than a vector -- e.g. an Instance with a field
+// genuinely named "x". Takes recv/value as plain parameters rather than
+// reading them off the VM stack, unlike set_property, since callers
+// besides the ordinary Set_Property opcode need this too.
+set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> bool {
+	if recv.type == .Obj {
+		#partial switch recv.obj_type {
+		case .Instance:
+			core.as_instance(recv).fields[name] = value
+			return true
+		case .Class:
+			core.as_class(recv).statics[name] = value
+			return true
+		case .Module:
+			core.env_set_var(core.as_module(recv).environment, name, value)
+			return true
+		}
+	}
+	runtime_error(vm, "Only instances, classes, and modules have settable properties.")
+	return false
+}
+
 set_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	receiver := peek(vm, 1)
 	value := peek(vm, 0)
@@ -210,29 +257,48 @@ set_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	case .Vec2, .Vec3, .Vec4:
 		return set_vec_swizzle(vm, receiver, core.string_get(name), value)
 	case .Obj:
-		#partial switch receiver.obj_type {
-		case .Instance:
-			core.as_instance(receiver).fields[name] = value
-			pop(vm)
-			pop(vm)
-			push(vm, value)
-			return true
-		case .Class:
-			core.as_class(receiver).statics[name] = value
-			pop(vm)
-			pop(vm)
-			push(vm, value)
-			return true
-		case .Module:
-			core.env_set_var(core.as_module(receiver).environment, name, value)
-			pop(vm)
-			pop(vm)
-			push(vm, value)
-			return true
+		if !set_obj_field(vm, receiver, name, value) {
+			return false
 		}
+		pop(vm)
+		pop(vm)
+		push(vm, value)
+		return true
 	}
 	runtime_error(vm, "Only instances, classes, and modules have settable properties.")
 	return false
+}
+
+// swizzle_assign implements the runtime half of `<target>.f = value`
+// where f is a swizzle component name (x/y/z/w/r/g/b/a) and `recv` is
+// <target>'s current value. If recv is a vector, the mutated whole
+// vector is returned for the caller to write back into wherever recv
+// came from (write_back = true) -- recv itself, being an inline Value
+// copy, was never actually mutated. If recv is an Instance/Class/Module
+// (a genuine field/static/module-var named "x" or similar), it's
+// mutated in place via set_obj_field and write_back is false -- already
+// reference-shared, no write-back needed. Either way, on success the
+// caller should push `value` as the assignment expression's result (the
+// caller owns the stack; this proc doesn't touch it).
+swizzle_assign :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> (mutated: core.Value, write_back: bool, ok: bool) {
+	#partial switch recv.type {
+	case .Vec2, .Vec3, .Vec4:
+		name_str := core.string_get(name)
+		if !core.is_number(value) {
+			runtime_error(vm, "Vector field '%s' must be assigned a number.", name_str)
+			return {}, false, false
+		}
+		m, field_ok := vec_with_field_set(recv, name_str, core.as_float(value))
+		if !field_ok {
+			runtime_error(vm, "Undefined vector field '%s'.", name_str)
+			return {}, false, false
+		}
+		return m, true, true
+	case .Obj:
+		return {}, false, set_obj_field(vm, recv, name, value)
+	}
+	runtime_error(vm, "Only instances, classes, and modules have settable properties.")
+	return {}, false, false
 }
 
 // -----------------------------------------------------------------------

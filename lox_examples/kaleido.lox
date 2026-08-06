@@ -65,7 +65,7 @@ class Pen {
     }
 
     update() {
-        this.lastp.set(this.pos.x, this.pos.y)
+        this.lastp = vec2(this.pos.x, this.pos.y)
         this.pos.x = this.pos.x + this.speed * math.cos(this.dir)
         this.pos.y = this.pos.y + this.speed * math.sin(this.dir)
 

@@ -49,7 +49,7 @@ window_created: bool
 // own drawing methods and gfx_texture.odin's Render_Texture-mirrored
 // drawing methods both need them.
 @(private)
-vec4_to_rl_color :: proc(v: ^core.Vec4_Object) -> rl.Color {
+vec4_to_rl_color :: proc(v: core.Vec4) -> rl.Color {
 	return rl.Color{
 		u8(clamp(v.x, 0, 255)),
 		u8(clamp(v.y, 0, 255)),

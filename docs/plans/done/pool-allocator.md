@@ -1,5 +1,19 @@
 # Pool allocator for high-churn small objects
 
+**Superseded for vec2/3/4**: Tier 1+2 below (the vec2/3/4 pooling this document was originally written for)
+was reverted by `docs/plans/inline-vec-value.md` — vec2/3/4 are no longer heap objects at all (inlined
+directly into `Value`, see `docs/ARCHITECTURE.md`'s Value representation section), so there's nothing left
+to pool for these three types. Pooling cut allocation *overhead* (~8% wall-clock, measured below) but not GC
+*cycle frequency* (pooled reuse still counts toward the allocation threshold that triggers a collection) —
+inlining addresses the frequency problem directly, at the root, instead. Tier 3 (upvalues/bound methods,
+never started) is unrelated and still a live idea; the design below remains a valid reference for it. Kept
+as a historical record rather than deleted — the struct-size audit, the measured 8% number, and the
+free-list correctness-testing methodology (thousands of allocate/collect/reallocate cycles, asserting no
+stale field leaks between reused slots) are all still accurate and reusable for Tier 3, even though Tier 1+2
+themselves no longer exist in the codebase.
+
+---
+
 Design record for `TODO.md`'s Phase 7 item: "Consider a free-list/pool allocator for high-churn small
 fixed-size objects (vec2/3/4, upvalues, bound methods)." Grounded in a direct audit of the current
 allocation lifecycle for these five types (every allocation site, every GC integration point), not assumed.

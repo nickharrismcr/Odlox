@@ -193,7 +193,7 @@ can plausibly approach clox's performance where the Go port structurally
 cannot: **every option glox's roadmap rejected as unsafe-in-Go is safe and
 ordinary in Odin.**
 
-### V1 design (safe, no unsafe code, 16 bytes)
+### V2 design (safe, no unsafe code, 40 bytes)
 
 ```odin
 Value_Type :: enum u8 {
@@ -210,22 +210,26 @@ Value_Type :: enum u8 {
 
 Value :: struct {
     using payload: struct #raw_union {
-        data: u64,   // int (cast), f64 bits (transmute), or bool (0/1)
-        obj:  ^Obj,  // heap object pointer — meaningful iff type is Obj/Vec2/Vec3/Vec4
+        data: u64,     // int (cast), f64 bits (transmute), or bool (0/1)
+        obj:  ^Obj,    // heap object pointer — meaningful iff type is Obj
+        vec:  [4]f64,  // inline Vec2/Vec3/Vec4 components — meaningful iff type is Vec2/Vec3/Vec4
     },
     type:      Value_Type,
-    obj_type:  Object_Type,  // cached concrete subtype; see Object model
+    obj_type:  Object_Type,  // cached concrete subtype; valid iff type == .Obj — see Object model
     immutable: bool,
 }
 ```
 
-`size_of(Value) == 16` — the union makes `data` and `obj` share one 8-byte
-slot (never both meaningful at once, exactly like clox's own `as` union),
-and the three 1-byte tags round up to the next 8-byte alignment step for
-free. This is **clox parity, achieved with a safe tagged union — no
-`unsafe.Pointer`, no NaN-boxing, no pointer tagging** — because Odin never
-needed the interface (`Obj Object`) glox's `Data`+`Obj` split existed to
-work around in the first place.
+`size_of(Value) == 40` — up from V1's 16 bytes; see
+[Vec2/Vec3/Vec4 are inlined, not heap objects](#vec2vec3vec4-are-inlined-not-heap-objects)
+below for why, and for why that cost is accepted rather than fought.
+`data`/`obj`/`vec` share one slot (never more than one meaningful at once,
+exactly like clox's own `as` union — `vec` is just the field that makes the
+union bigger than a register), and the three 1-byte tags round up to the
+next 8-byte alignment step for free. This is still **clox parity, achieved
+with a safe tagged union — no `unsafe.Pointer`, no NaN-boxing, no pointer
+tagging** — because Odin never needed the interface (`Obj Object`) glox's
+`Data`+`Obj` split existed to work around in the first place.
 
 Dropping `InternedId` entirely is deliberate, not an oversight — see
 [Object model](#object-model): with true pointer-interning, string equality
@@ -255,28 +259,62 @@ free; fitting a second first-class numeric type in means spending one more
 tag pattern (there's room — quiet-NaN payload space is wide) to hold a
 53-or-so-bit integer directly in the boxed `u64`, no heap indirection at
 all for integers (an improvement over both clox and glox, where only floats
-are unboxed). **Not attempted at V1** — ship correctness on the 16-byte
-struct first, then revisit if profiling (see
-[Performance](#performance-what-odin-allows-that-go-didnt)) says width is
-still the bottleneck.
+are unboxed). **Not attempted at V1** — ship correctness first, then revisit
+if profiling (see [Performance](#performance-what-odin-allows-that-go-didnt))
+says width is still the bottleneck.
 
-### Vec2/Vec3/Vec4 stay heap objects — but tracked correctly
+**Scope changed by the V2 (Vec2/Vec3/Vec4-inlined) design above**: classic
+NaN-boxing packs every non-float case into the unused bit patterns of a
+single 8-byte double, which has no room left over for a `[4]f64` payload —
+an inline vec4 alone is 32 bytes. A NaN-boxed `Value` would need to either
+box vec2/3/4 back onto the heap (reversing the inlining change's whole
+point) or accept a hybrid representation (NaN-boxing for
+Nil/Bool/Int/Float/Obj, `[4]f64` staying a separate wider case). Worth
+re-scoping if ever attempted, not a straightforward "shrink `Value` to 8
+bytes" anymore — see `docs/plans/inline-vec-value.md`.
 
-A `vec3` is 24 bytes of `f64` — too big to live in the 8-byte union
-payload, so it stays a heap-allocated `Obj` referenced through
-`payload.obj`, same as glox. Two differences from glox's Go version:
+### Vec2/Vec3/Vec4 are inlined, not heap objects
 
-1. Glox's own comment on `pushVec` admits vec2/3/4 objects "got a GCHeader
-   for interface conformance from the start but were never actually linked
-   into any VM's registry" — relying entirely on Go's real GC as a
-   backstop. **Odin has no backstop GC**, so odlox must actually link every
-   vec2/3/4 allocation into the real registry from day one, or they leak
-   for the process lifetime. Non-optional for correctness.
-2. Vector arithmetic in a tight loop (`a = a ++ vec3(2,3,4)`) is exactly
-   the kind of high-churn, fixed-size, short-lived allocation a general
-   `new`/`free` pair handles worst. See
-   [Performance](#performance-what-odin-allows-that-go-didnt) for the
-   free-list pool this motivates.
+Unlike glox (which heap-allocates every vec2/3/4, same as clox's own object
+model), odlox inlines them directly into `Value`'s payload as a `[4]f64` —
+true copy semantics, never GC-tracked, exactly like `int`/`float`/`bool`.
+This is a deliberate departure from clox/glox, not an accident of the Odin
+port: it started as a heap-object design (matching glox, tracked correctly
+per the two points the previous revision of this section made — see git
+history if that reasoning is needed), and was later replaced once profiling
+real scripts (`fireworks.lox`, `3d_balls_physics_shaders.lox`) showed vec
+churn was the dominant source of GC-cycle frequency, which surfaced as a
+visible frame hitch in smooth on-screen movement — a pause-*frequency*
+problem a free-list pool allocator (tried first; see
+`docs/plans/done/pool-allocator.md`, now superseded) could only address
+partially, since pooled reuse still counts toward the allocation threshold
+that triggers a collection. Removing vec2/3/4 from the GC's object graph
+entirely removes that threshold pressure at the source.
+
+The design is modeled on Godot's `Variant`, which inlines
+`Vector2/3/4`/`Quaternion`/`Color` directly in its own tagged union (sized
+to `sizeof(real_t) * 4`) while still heap-boxing genuinely large aggregates
+(`Transform3D`, `Basis`) to keep `Variant` itself from ballooning — the same
+size-vs-frequency tradeoff `Value`'s `vec: [4]f64` field makes here, at the
+same order of magnitude (Godot's double-precision build lives at a
+comparable `Variant` size in production).
+
+**Consequence for mutation**: since a `Value` is always a copy, reading a
+vector out of a variable/field/list element and mutating a component of
+that copy does nothing to where it came from — unlike an `Obj`, which stays
+reference-shared. Swizzle-component *reads* (`v.x`) and whole-value
+reassignment (`v = vec3(...)`) are unaffected by this, but swizzle-component
+*assignment* (`v.x = 5`) needs a dedicated write-back mechanism to still do
+anything observable — see `docs/plans/inline-vec-value.md` for the full
+design (a small family of opcodes, `Set_Local_Vec_Field` and friends, that
+read a vector's current storage location directly, mutate a copy, and write
+the whole mutated value back) and its scope (bare variables and one level
+of property access; indexing or a call's direct result are compile errors
+rather than silently-lost mutations). The two in-place mutating methods
+that used to exist for exactly this reason, `.add()`/`.set()`, are removed
+entirely — there's no allocation cost left to avoid by mutating in place,
+so scripts use the ordinary allocating operators (`pos = pos ++ delta`,
+`v = vec3(x, y, z)`) instead.
 
 ---
 
@@ -309,7 +347,6 @@ Object_Type :: enum u8 {
     // that; Odin's tag-then-cast dispatch convention needs the tag
     // itself to already be enough).
     List_Iterator, Int_Iterator, String_Iterator,
-    Vec2, Vec3, Vec4,
     Float_Array, // Phase 6f -- a plain w*h f64 buffer, ported from glox's FloatArrayObject
 }
 
@@ -329,10 +366,16 @@ Closure_Object :: struct {
 
 ...and so on for every concrete type (`List_Object`, `Dict_Object`,
 `Class_Object`, `Instance_Object`, `Bound_Method_Object`, `Upvalue_Object`,
-`Function_Object`, `Module_Object`, the four iterator kinds, `Vec2/3/4_Object`).
-`using obj: Obj` promotes `.type`/`.marked`/`.next` onto every concrete
-struct, exactly mirroring how glox's Go structs embed `GCHeader` today —
-this part of the port is closer to a straight transliteration than most.
+`Function_Object`, `Module_Object`, the four iterator kinds). `using obj:
+Obj` promotes `.type`/`.marked`/`.next` onto every concrete struct, exactly
+mirroring how glox's Go structs embed `GCHeader` today — this part of the
+port is closer to a straight transliteration than most.
+
+Vec2/Vec3/Vec4 are conspicuously absent from this list: unlike every other
+concrete type, they're not `Obj`-derived at all, and never were a fully
+straight port of glox's own heap-object design for them — see [Value
+representation](#value-representation)'s "Vec2/Vec3/Vec4 are inlined, not
+heap objects" for why.
 
 Dispatch is a `switch obj.type { case .List: l := (^List_Object)(obj); ... }`
 — one enum compare and a pointer cast, no vtable, no `reflect`. This kills
@@ -1005,7 +1048,12 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
   `v.x = expr` always fell through to a generic error even though
   *reading* `v.x` already worked — glox's own `OP_SET_PROPERTY` has a
   real `Vec2`/`Vec3`/`Vec4` case (`set_vec_swizzle` now mirrors the
-  existing `get_vec_swizzle`). Relatedly, `create_dict` used to reject
+  existing `get_vec_swizzle`). This was still the whole mechanism
+  behind `v.x = expr` at the time — vec2/3/4 were heap objects then, so
+  mutating the popped receiver in place was sufficient; once they became
+  inline values, `v.x = expr` needed a real write-back mechanism instead
+  (see "Vec2/Vec3/Vec4 are inlined, not heap objects" above), which
+  `set_vec_swizzle` alone no longer provides. Relatedly, `create_dict` used to reject
   any non-string dict-literal key outright instead of coercing it to
   its string representation the way glox's own `createDict` does
   (`key.String()`) — real glox source relies on this (an int-keyed
@@ -1479,13 +1527,13 @@ roadmap either couldn't fix it or rated the fix "high risk":
 
 | Cost (glox roadmap's own naming) | Why Go was stuck | What Odin does instead |
 |---|---|---|
-| `Value` interface width (32B struct) | Fixing needs `unsafe.Pointer`/handles; roadmap rates this medium-high effort, and full pointer-free handles "high risk" (semi-manual heap, use-after-free) *in Go specifically* | Safe `#raw_union` of `u64`/`^Obj` → 16 bytes, zero unsafe code — see [Value representation](#value-representation) |
+| `Value` interface width (32B struct) | Fixing needs `unsafe.Pointer`/handles; roadmap rates this medium-high effort, and full pointer-free handles "high risk" (semi-manual heap, use-after-free) *in Go specifically* | Safe `#raw_union` of `u64`/`^Obj`/`[4]f64` → 40 bytes, zero unsafe code — see [Value representation](#value-representation) |
 | `GetType()` vtable dispatch | Interface method call, rarely devirtualised | Enum tag + pointer cast, no vtable exists to call — see [Object model](#object-model) |
 | GC scanning the whole value stack + write barriers | `Value.Obj` is a real Go-GC-visible pointer; roadmap calls this "the one tax that is family B" and the hardest to remove in Go | We write the collector; it scans exactly what `mark_roots` says to scan, nothing more, nothing implicit |
 | `frame.Ip`/stack-top as bounds-checked indices, not registers | No safe raw-pointer-into-slice idiom without `unsafe` | Ordinary Odin pointer arithmetic, safely, in a release build — see [VM dispatch loop](#vm-dispatch-loop--calling-convention) |
 | Per-instance `map[int]Value` fields (family A, the largest attributable cost the roadmap's own profiling found — ~32% cumulative CPU on `trees.lox`) | Attempted a slot-based fix, **reverted** — net *regression* on access-heavy benchmarks because a runtime-resolved slot table is still a map lookup, just smaller; roadmap concludes the real fix needs compile-time-baked slot *opcodes* or an inline cache, not attempted alongside this experimental branch | Not automatically fixed by the language switch — but worth attempting properly in odlox from the start, since a fresh compiler is being written anyway: bake per-class field slot numbers into `OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT` bytecode operands at compile time (the roadmap's own conclusion for what "not an optional refinement" would need to look like) |
 | Per-object churn: fresh method-table maps, bound-method allocation on every access | Already partly fixed in glox (package-level shared method tables) | Port the already-fixed version directly; consider a monomorphic inline cache on `OP_GET_PROPERTY`/`OP_INVOKE` (class-id → slot/method) as a stretch goal, same as the roadmap's own "Option 5" |
-| Vec2/3/4 arithmetic allocation churn | Relies on Go's GC as backstop (never even registered with glox's own experimental collector) | Correctly GC-tracked (required — no backstop), *and* a candidate for a dedicated free-list/pool allocator per small fixed-size object kind (vec2/3/4, upvalues, bound methods), reusing sweep-freed slots instead of round-tripping through the general allocator — natural in Odin's manual-memory model, awkward to express safely in Go |
+| Vec2/3/4 arithmetic allocation churn | Relies on Go's GC as backstop (never even registered with glox's own experimental collector) | Not merely GC-tracked, or even pooled (a free-list pool allocator was tried first — see `docs/plans/done/pool-allocator.md` — and only cut allocation overhead, not GC-cycle frequency) — inlined directly into `Value` instead, removing the allocation entirely; upvalues/bound methods remain real heap objects and a live candidate for the same free-list pooling technique |
 
 **Sequencing recommendation** (mirrors the source roadmap's own
 "profile-first" philosophy — don't guess, measure): get correctness first

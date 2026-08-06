@@ -29,10 +29,6 @@ Object_Type :: enum u8 {
 	Int_Iterator,
 	String_Iterator,
 
-	Vec2,
-	Vec3,
-	Vec4,
-
 	Float_Array,
 
 	// Userdata: pluggable native-extension objects -- every native kind
@@ -100,12 +96,6 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 		return "<iterator>"
 	case .Int_Iterator:
 		return "<range iterator>"
-	case .Vec2, .Vec3, .Vec4:
-		// Reached only via a bare Value.Obj that happens to be a vector
-		// (e.g. through a container); the normal path is
-		// value_to_string's own Vec2/3/4 cases, which know the tag
-		// without needing to re-derive it from the object.
-		return value_to_string(make_object_value(obj), allocator)
 	case .Float_Array:
 		f := cast(^Float_Array_Object)obj
 		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)

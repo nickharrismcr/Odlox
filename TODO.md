@@ -72,8 +72,12 @@ Only after Phases 1–6 are correct and green against the test suite.
       `collections.lox`'s `dict` phase still trails CPython after fixing the redundant-intern cost there
       (Phase 7f fixed the hashing cost, not this allocation cost, and `dict_ops` in that benchmark calls
       `.keys()` every iteration). Lower priority than the object-model item above; not investigated further.
-- [ ] Free-list/pool allocator for upvalues/bound methods (`docs/plans/pool-allocator.md`'s Tier 3) — same
-      per-type intrusive free-list technique already used for vec2/3/4, not yet applied to these two types.
-- [ ] Stretch: NaN-boxing `Value` down to 8 bytes — only if profiling still shows `Value` width as a
-      bottleneck after the above.
+- [ ] Free-list/pool allocator for upvalues/bound methods (`docs/plans/done/pool-allocator.md`'s Tier 3) — the
+      same per-type intrusive free-list technique that doc's Tier 1/2 used for vec2/3/4, back when vec2/3/4
+      were still heap objects; those two tiers were later reverted (`docs/plans/inline-vec-value.md`) once
+      vec2/3/4 moved into `Value` directly, so this item stands on its own merits now, not as an extension of
+      already-landed work.
+- [ ] Stretch: NaN-boxing `Value` down to a single register-width slot — only if profiling still shows `Value`
+      width as a bottleneck after the above. A live option again post-inlining, though `Value` is now 40
+      bytes rather than 16 (see `docs/ARCHITECTURE.md`'s Value representation section), a wider gap to close.
 - [ ] Re-run the full benchmark suite after each change; keep a results table.

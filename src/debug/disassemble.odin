@@ -92,6 +92,16 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	case .Get_Property:
 		return get_property_instruction(c, offset)
 
+	// --- Set_Local_Vec_Field/Set_Global_Vec_Field/Set_Upvalue_Vec_Field:
+	// [slot][swizzle_name_const] -- see emit_expr.odin's emit_swizzle_set. ---
+	case .Set_Local_Vec_Field, .Set_Global_Vec_Field, .Set_Upvalue_Vec_Field:
+		return vec_field_slot_instruction(op, c, offset)
+
+	// --- Set_Property_Vec_Field: [outer_name_const][swizzle_name_const]
+	// -- see emit_expr.odin's emit_swizzle_set. ---
+	case .Set_Property_Vec_Field:
+		return vec_field_property_instruction(op, c, offset)
+
 	// --- one-byte global slot -- NOT a constant-pool index. Slots are
 	// numbered into Environment.globals; Chunk.global_names (populated
 	// only on the top-level chunk -- see chunk.odin's doc comment) is
@@ -284,6 +294,22 @@ invoke_instruction :: proc(op: core.Op_Code, c: ^core.Chunk, offset: int) -> int
 	name_const := c.code[offset + 1]
 	arg_count := c.code[offset + 2]
 	fmt.printfln("%-16v %v (%d args)", op, const_repr(c, name_const), arg_count)
+	return offset + 3
+}
+
+@(private = "file")
+vec_field_slot_instruction :: proc(op: core.Op_Code, c: ^core.Chunk, offset: int) -> int {
+	slot := c.code[offset + 1]
+	name_const := c.code[offset + 2]
+	fmt.printfln("%-16v %4d %v", op, slot, const_repr(c, name_const))
+	return offset + 3
+}
+
+@(private = "file")
+vec_field_property_instruction :: proc(op: core.Op_Code, c: ^core.Chunk, offset: int) -> int {
+	outer_const := c.code[offset + 1]
+	inner_const := c.code[offset + 2]
+	fmt.printfln("%-16v %v %v", op, const_repr(c, outer_const), const_repr(c, inner_const))
 	return offset + 3
 }
 

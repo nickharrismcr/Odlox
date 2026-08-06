@@ -26,7 +26,10 @@ import "core:strings"
 // explicit cap instead -- see BC_CACHE_MAX_PROPERTY_CACHES.
 
 BC_CACHE_MAGIC :: [4]u8{'O', 'L', 'X', 'C'}
-BC_CACHE_VERSION :: u16(1)
+BC_CACHE_VERSION :: u16(2) // bumped: inlining Vec2/3/4 into Value added new Op_Code variants
+                           // mid-enum (Set_*_Vec_Field -- see docs/plans/inline-vec-value.md),
+                           // shifting every later opcode's numeric value -- a v1 cache would
+                           // misdecode, not just miss.
 
 // BC_CACHE_MAX_PROPERTY_CACHES: chunk_add_property_cache (chunk.odin)
 // returns a u8 index, so no real compiler output can ever produce more

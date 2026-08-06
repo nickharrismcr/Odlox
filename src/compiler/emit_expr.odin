@@ -198,14 +198,40 @@ emit_super :: proc(em: ^Emitter, v: ^Expr_Super) {
 	}
 }
 
+// is_swizzle_field_name reports whether name could name a vec2/3/4
+// component -- x/y/z/w, plus r/g/b/a as Vec4's color-channel aliases
+// (see properties.odin's get_vec_swizzle/vec_with_field_set). Purely a
+// lexical check on the field name token, since the compiler can't know
+// at compile time whether a given property target actually holds a
+// vector -- see emit_swizzle_set's own doc comment for why that's fine.
+@(private = "file")
+is_swizzle_field_name :: proc(name: string) -> bool {
+	switch name {
+	case "x", "y", "z", "w", "r", "g", "b", "a":
+		return true
+	}
+	return false
+}
+
 // emit_property covers all four forms dot() compiles today: plain
 // `.name` read, `.name = value` write, `.name <op>= value` compound
-// write, and `.name(args)` invoke.
+// write, and `.name(args)` invoke. A `.Set`/`.Compound_Set` whose field
+// name could be a vec swizzle component is routed to emit_swizzle_set
+// instead -- see its own doc comment.
 @(private = "file")
 emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 	line := v.token.line
-	emit_expr(em, v.object)
 	name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(v.name)))
+
+	if is_swizzle_field_name(lexeme(v.name)) {
+		#partial switch v.kind {
+		case .Set, .Compound_Set:
+			emit_swizzle_set(em, v, name_const, line)
+			return
+		}
+	}
+
+	emit_expr(em, v.object)
 	switch v.kind {
 	case .Set:
 		emit_expr(em, v.value)
@@ -230,6 +256,101 @@ emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 	case .Get:
 		emit_op_byte(em, .Get_Property, name_const, line)
 		emit_property_cache(em, line)
+	}
+}
+
+// emit_swizzle_set compiles `<target>.f = value` and `<target>.f <op>=
+// value` where f could be a vector component name -- see
+// core/chunk.odin's Set_*_Vec_Field family and properties.odin's
+// swizzle_assign for why this needs dedicated codegen instead of the
+// ordinary Get/Set_Property path: <target>'s current value is always an
+// inline copy (see core/value.odin's Value representation), not a
+// shared heap reference, so a plain Get-then-Set_Property sequence has
+// nothing to write a mutated vector back into -- and unlike a *read*
+// (`v.x`) or any *other* field name, which never need write-back at
+// all, an assignment does.
+//
+// The runtime (swizzle_assign) doesn't need to know at compile time
+// whether <target> actually holds a vector -- Lox is dynamically typed,
+// and if it turns out to be an Instance/Class/Module with a field
+// genuinely named "x" or similar (by far the most common real case --
+// see the Expr_This case below), these opcodes fall back to an ordinary
+// field-set with no write-back needed (see run.odin's Set_*_Vec_Field
+// handlers). What the compiler *does* need to know statically is
+// <target>'s own shape, to emit the matching write-back half: a bare
+// variable or `this` (v.object is Expr_Variable/Expr_This, both
+// resolved by the Resolver same as any other read of them -- they need
+// identical treatment, since `this` resolves exactly like a Local) or
+// exactly one property access -- however its own object expression got
+// there; that part is emitted as an ordinary opaque expression and
+// Dup'd, so `this.pos.x`, `get_thing().pos.x`, and `a.b.c.pos.x` are all
+// equally supported, since only the *last* link needs the write-back
+// treatment. Anything else as the target -- indexing
+// (`list[i].x = ...`), or the vector itself being a call's direct
+// result (`get_vec().x = ...`) -- has no assignable storage location
+// the write-back opcodes could target, so it's a compile error rather
+// than a silently-lost mutation.
+//
+// Compound assignment (`v.x += 1`) additionally needs v.f's *current*
+// value before combining with the RHS -- read via an ordinary
+// Get_Property "f" on the same receiver the write-back half already has
+// in hand (correct for both a vector receiver, via get_vec_swizzle, and
+// an Instance/Class/Module receiver with a real field "f"), exactly
+// mirroring how the ordinary (non-swizzle) `.Compound_Set` case below
+// reads-before-writing through a Dup'd receiver.
+@(private = "file")
+emit_swizzle_set :: proc(em: ^Emitter, v: ^Expr_Property, field_name_const: u8, line: int) {
+	is_compound := v.kind == .Compound_Set
+
+	// emit_new_value emits whatever should end up as the top-of-stack
+	// scalar to write into the swizzle field: just the RHS for a plain
+	// `.Set`, or (current field value <op> RHS) for `.Compound_Set` --
+	// current_value_op, if is_compound, must already have pushed the
+	// receiver's current whole value (so Get_Property can read the old
+	// field value off it) and leaves nothing else behind.
+	emit_new_value :: proc(em: ^Emitter, v: ^Expr_Property, field_name_const: u8, is_compound: bool, line: int) {
+		if is_compound {
+			emit_op_byte(em, .Get_Property, field_name_const, line)
+			emit_property_cache(em, line)
+			emit_expr(em, v.value)
+			emit_op(em, compound_op_code(v.compound_op), line)
+		} else {
+			emit_expr(em, v.value)
+		}
+	}
+
+	#partial switch obj in v.object {
+	case ^Expr_Variable, ^Expr_This:
+		resolved: Var_Ref
+		#partial switch o in obj {
+		case ^Expr_Variable: resolved = o.resolved
+		case ^Expr_This: resolved = o.resolved
+		}
+		if is_compound {
+			emit_op_byte(em, get_op_for_ref(resolved.kind), u8(resolved.slot), line)
+		}
+		emit_new_value(em, v, field_name_const, is_compound, line)
+		op := set_vec_field_op_for_ref(resolved.kind)
+		emit_op_byte(em, op, u8(resolved.slot), line)
+		emit_byte(em, field_name_const, line)
+	case ^Expr_Property:
+		if obj.kind != .Get {
+			emit_error(em, line, "cannot assign to a vector component of this expression -- store it in a variable first.")
+			return
+		}
+		outer_name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(obj.name)))
+		emit_expr(em, obj.object)
+		emit_op(em, .Dup, line)
+		emit_op_byte(em, .Get_Property, outer_name_const, line)
+		emit_property_cache(em, line)
+		if is_compound {
+			emit_op(em, .Dup, line)
+		}
+		emit_new_value(em, v, field_name_const, is_compound, line)
+		emit_op_byte(em, .Set_Property_Vec_Field, outer_name_const, line)
+		emit_byte(em, field_name_const, line)
+	case:
+		emit_error(em, line, "cannot assign to a vector component of this expression -- store it in a variable first.")
 	}
 }
 

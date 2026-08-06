@@ -167,9 +167,6 @@ class Sphere {
         this.speed = speed
     }
 
-    // Scalar math + this.pos.set() instead of normalize3/scale3 + a fresh
-    // vec3(): zero vec3 allocations per sphere per frame. Safe because
-    // this.pos is never aliased anywhere else, unlike Vanguard.pos.
     update(target_pos) {
         dx = target_pos.x - this.pos.x
         dy = target_pos.y - this.pos.y
@@ -182,7 +179,7 @@ class Sphere {
             x = clamp_axis(this.pos.x + dx * scale, limit)
             y = clamp_axis(this.pos.y + dy * scale, limit)
             z = clamp_axis(this.pos.z + dz * scale, limit)
-            this.pos.set(x, y, z)
+            this.pos = vec3(x, y, z)
         }
     }
 
@@ -232,10 +229,7 @@ class Vanguard {
             dz = -dz
         }
 
-        // Both unaliased (this.pos: Swarm.update copies its x/y/z, not a
-        // reference; this.heading: perpendicular_heading returns a clone),
-        // so direct field mutation is safe -- zero vec3 allocs here.
-        this.pos.set(x, y, z)
+        this.pos = vec3(x, y, z)
         this.heading.x = dx
         this.heading.y = dy
         this.heading.z = dz
@@ -271,9 +265,11 @@ class Swarm {
             n = n + 1
         }
 
-        // Fixed-size ring buffer of independent vec3 slots, allocated once
-        // and never replaced -- update() copies x/y/z into a slot via
-        // .set() rather than storing a reference to this.vanguard.pos.
+        // Fixed-size ring buffer of independent vec3 snapshots -- each
+        // slot holds its own copy of the vanguard's position at sample
+        // time, not a reference to this.vanguard.pos (vec3 is a value
+        // type; storing this.vanguard.pos directly would still be an
+        // independent copy either way).
         this.trail = []
         n = 0
         while (n < SPHERES_PER_VANGUARD) {
@@ -301,7 +297,7 @@ class Swarm {
         if (this.frames_until_sample <= 0) {
             this.frames_until_sample = TRAIL_SAMPLE_INTERVAL
             this.trail_head = (this.trail_head - 1 + SPHERES_PER_VANGUARD) % SPHERES_PER_VANGUARD
-            this.trail[this.trail_head].set(this.vanguard.pos.x, this.vanguard.pos.y, this.vanguard.pos.z)
+            this.trail[this.trail_head] = vec3(this.vanguard.pos.x, this.vanguard.pos.y, this.vanguard.pos.z)
         }
 
         i = 0
@@ -322,7 +318,7 @@ arena_color = col.BLACK
 clear_color = vec4(80, 80, 80, 255)
 arena_wire_pos = vec3(0, 0, 0)
 arena_wire_size = vec3(ARENA_SIZE * 2, ARENA_SIZE * 2, ARENA_SIZE * 2)
-cam_pos = vec3(DISTANCE, 10, 0) // reused every frame via .set() below --
+cam_pos = vec3(DISTANCE, 10, 0) // reassigned every frame below --
                                  // the two calls that read it (camera and
                                  // shader uniform) just copy its values
 
@@ -331,7 +327,7 @@ while (!win.should_close()) {
     orbit_angle = orbit_angle + 0.005
     x = math.cos(orbit_angle) * DISTANCE
     z = math.sin(orbit_angle) * DISTANCE
-    cam_pos.set(x, 10, z)
+    cam_pos = vec3(x, 10, z)
     cam.set_position(cam_pos)
     lit_shader.set_value_vec3(view_pos_loc, cam_pos)
 

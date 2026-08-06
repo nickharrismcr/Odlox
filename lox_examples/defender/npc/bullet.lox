@@ -32,7 +32,7 @@ class Bullet < Sprite {
         if (this.dead()) {
             return;
         }
-        this.pos.add(this.dp)
+        this.pos = this.pos ++ this.dp
         this.ticks_to_live = this.ticks_to_live - 1
         if (this.pos.y < 100 or this.pos.y > height) {
             this.ticks_to_live = 0

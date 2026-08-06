@@ -137,10 +137,6 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 // (static_methods vs. methods).
 invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, arg_count)
-	#partial switch receiver.type {
-	case .Vec2, .Vec3, .Vec4:
-		return invoke_vector_method(vm, receiver, core.string_get(name), arg_count)
-	}
 	if receiver.type != .Obj {
 		runtime_error(vm, "Only objects have methods.")
 		return false
@@ -187,112 +183,6 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return call_value(vm, fn, arg_count)
 	}
 	runtime_error(vm, "Undefined method '%s'.", core.string_get(name))
-	return false
-}
-
-// invoke_vector_method implements the small method surface a vec2/3/4
-// value has: `.add(other)` is in-place addition with an argument of the
-// *same* vec type, mutating the receiver and leaving it on the stack as
-// its own return value (popping just the argument(s), matching the
-// receiver+args -> single-return-value convention every other Invoke
-// path follows). `.set(x, y[, z[, w]])` updates an existing vector's
-// components in place (`this.lastp.set(this.pos.x, this.pos.y)`)
-// instead of allocating a fresh `vec2(...)`/etc. every time, the same
-// low-allocation idiom `.add()` already enables for accumulation.
-//
-// Both are dispatched through this runtime type-checked path rather
-// than a dedicated opcode: Lox has no static types, so nothing at
-// compile time can tell `expr.set(...)` apart from a call to some
-// unrelated user-defined class's own `set` method -- only checking the
-// receiver's actual runtime type (as this whole function does) can,
-// which is exactly what Op_Invoke's existing dispatch in `invoke()`
-// above already provides.
-//
-// Anything else -- wrong arg count, a mismatched vec type on `.add()`,
-// a non-numeric argument to `.set()`, or any other method name -- is
-// "Invalid use of '.' operator". `.x`/`.y`/`.z`/`.w` (+ `.r`/`.g`/`.b`/
-// `.a` on Vec4) are a separate, already-implemented Get/Set_Property
-// fast path (properties.odin) -- not method calls, so not handled here.
-@(private = "file")
-invoke_vector_method :: proc(vm: ^VM, receiver: core.Value, name: string, arg_count: int) -> bool {
-	if name == "add" && arg_count == 1 {
-		other := peek(vm, 0)
-		#partial switch receiver.type {
-		case .Vec2:
-			if other.type == .Vec2 {
-				r, o := core.as_vec2(receiver), core.as_vec2(other)
-				r.x += o.x
-				r.y += o.y
-				pop(vm)
-				return true
-			}
-		case .Vec3:
-			if other.type == .Vec3 {
-				r, o := core.as_vec3(receiver), core.as_vec3(other)
-				r.x += o.x
-				r.y += o.y
-				r.z += o.z
-				pop(vm)
-				return true
-			}
-		case .Vec4:
-			if other.type == .Vec4 {
-				r, o := core.as_vec4(receiver), core.as_vec4(other)
-				r.x += o.x
-				r.y += o.y
-				r.z += o.z
-				r.w += o.w
-				pop(vm)
-				return true
-			}
-		}
-	} else if name == "set" {
-		#partial switch receiver.type {
-		case .Vec2:
-			if arg_count == 2 {
-				x_val, y_val := peek(vm, 1), peek(vm, 0)
-				if core.is_number(x_val) && core.is_number(y_val) {
-					r := core.as_vec2(receiver)
-					r.x = core.as_float(x_val)
-					r.y = core.as_float(y_val)
-					pop(vm)
-					pop(vm)
-					return true
-				}
-			}
-		case .Vec3:
-			if arg_count == 3 {
-				x_val, y_val, z_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
-				if core.is_number(x_val) && core.is_number(y_val) && core.is_number(z_val) {
-					r := core.as_vec3(receiver)
-					r.x = core.as_float(x_val)
-					r.y = core.as_float(y_val)
-					r.z = core.as_float(z_val)
-					pop(vm)
-					pop(vm)
-					pop(vm)
-					return true
-				}
-			}
-		case .Vec4:
-			if arg_count == 4 {
-				x_val, y_val, z_val, w_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
-				if core.is_number(x_val) && core.is_number(y_val) && core.is_number(z_val) && core.is_number(w_val) {
-					r := core.as_vec4(receiver)
-					r.x = core.as_float(x_val)
-					r.y = core.as_float(y_val)
-					r.z = core.as_float(z_val)
-					r.w = core.as_float(w_val)
-					pop(vm)
-					pop(vm)
-					pop(vm)
-					pop(vm)
-					return true
-				}
-			}
-		}
-	}
-	runtime_error(vm, "Invalid use of '.' operator")
 	return false
 }
 

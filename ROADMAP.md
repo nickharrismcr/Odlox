@@ -3547,6 +3547,159 @@ every frame) and `fireworks.lox` (colour module usage) running clean on both bui
 orphaned processes. `docs/plans/pool-allocator.md`/`TODO.md` updated: Tier 1+2 shipped, only upvalues/bound
 methods (Tier 3) left outstanding.
 
+### Phase 7i: inline Vec2/Vec3/Vec4 into `Value` — supersedes Tier 1+2 above
+
+Full design in `docs/plans/inline-vec-value.md`. Motivated by a report that heavy vec allocation in a
+real-time script (`3d_balls_physics_shaders.lox`, `fireworks.lox`) shows up as a visible frame hitch — a
+stop-the-world-pause-*frequency* problem, not a throughput one. Phase 7g's own honest result (no GC-cycle-count
+change, ~8% wall-clock from cheaper allocation) meant pooling could never fix that: pooled reuse still
+increments `bytes_allocated` and still crosses `next_gc`'s threshold at the same rate a fresh allocation
+would. Removing vec2/3/4 from the GC's object graph entirely — inlining them into `Value`'s payload as true
+copy-semantics values, modeled on Godot's `Variant` — addresses the frequency question at the root instead.
+`Value` grows from 16 to 40 bytes as a result, accepted deliberately (Godot's own double-precision build
+lives at a comparable `Variant` size in production) rather than fought with a narrower representation.
+
+**What shipped**: `core/value.odin`'s `Value_Payload` gained an inline `vec: [4]f64`; `Object_Type` dropped
+`Vec2/3/4` entirely (no heap object left to tag); the Tier 1+2 pool allocator this same file documents above
+(`alloc_vec{2,3,4}`, three `vecN_free` fields, `sweep`'s parking cases) is deleted, not extended — nothing
+left to pool once nothing allocates. Every native hand-building a vec `Value` (`gfx_camera.odin`,
+`gfx_batch.odin`, `physics.odin`, `colour_utils.odin`, `box2d.odin`) now calls `core.make_vec{2,3,4}_value`
+directly; every native taking a `^Vec3_Object`/`^Vec4_Object` pointer parameter takes the new by-value
+`core.Vec3`/`core.Vec4` struct instead. `.add()`/`.set()` (the only two vec instance methods that ever
+existed) are removed outright — a value type has no receiver identity left to usefully mutate — and 14 real
+script call sites migrated to the allocating operator form. `physics.odin`'s `get_position_into` (a native
+"write into an existing vec3 in place" method with the identical shared-heap-object-mutation assumption
+`.add()`/`.set()` had) is deleted too; its own justification (avoiding `get_position()`'s allocation)
+evaporated once `get_position()` stopped allocating at all.
+
+**The real new infrastructure**: swizzle-component assignment (`v.x = expr`). A vec `Value` is always a copy
+now, so a plain Get-then-Set_Property sequence (correct before, since every vec Value shared one heap
+pointer) has nothing to write a mutated vector back into — true even for the simplest case (`pos.x = 5`,
+`pos` a bare local), not just nested property chains. Four new opcodes (`Set_Local_Vec_Field`,
+`Set_Global_Vec_Field`, `Set_Upvalue_Vec_Field`, `Set_Property_Vec_Field`) read the receiver's current value
+directly from its own storage, mutate a copy if it's a vector, and write the mutated whole value back —
+falling back to an ordinary field-set with no write-back needed if the receiver turns out to be an
+Instance/Class/Module with a field genuinely named `x` or similar (the compiler can't know at compile time
+which, Lox being dynamically typed; it only needs the *target's* static shape — bare variable/`this`, or one
+property access whose own base can be any expression). Compound assignment (`v.x += 1`) got the same
+treatment, reusing the identical opcodes with an extra read-before-write. Unsupported shapes — indexing
+(`list[i].x = ...`) or a vector that's a call's direct result (`get_vec().x = ...`) — are compile errors, not
+silently-lost mutations; no `Index`-target write-back infrastructure exists (`emit_subscript` has no
+`Compound`-style get-modify-set pattern to build on) and building one wasn't justified by real usage.
+
+**Two real bugs found only by actually running the test suite, not by the design review**:
+1. `emit_swizzle_set`'s target-shape check originally handled `Expr_Variable` but not `Expr_This` — meaning
+   `this.x = value` (an ordinary class field named `x`, unrelated to vectors, easily the single most common
+   shape in real code) hit the "unsupported shape" compile error. Caught by 12 unrelated pytest failures
+   (`str_interp`, `module`, `pickle`, ...) all tripping over exactly this in their own test fixture classes.
+   Fixed by giving `Expr_This` the identical treatment as `Expr_Variable` (both resolve via the same
+   `Var_Ref` mechanism).
+2. The original design's "zero current usage" claim for both indexed swizzle-writes and compound swizzle
+   assignment was wrong — traced to a genuinely broken verification `grep` (an unescaped character class,
+   `2>/dev/null` silently swallowing the "Invalid range end" error instead of the intended "no matches").
+   `tests/new_tests/lox/plusequals.lox` (`c.x += 1`, `f.x *= 4`) exercises compound swizzle assignment for
+   real; `lox_examples/fireworks.lox` (`s[2].a = ...`, an `r`/`g`/`b`/`a`-alias case the corrected regex still
+   almost missed) exercises exactly the indexed-write shape the design had ruled out. Compound assignment on
+   a supported target shape is now implemented (not a compile error); the one real indexed-write site was
+   migrated to whole-element reassignment (`s[2] = vec4(s[2].x, s[2].y, s[2].z, ...)` — no allocation-cost
+   difference either way, vec4 being a value type now).
+
+**Also required**: `core/bc_cache.odin`'s `BC_CACHE_VERSION` bumped 1→2. Inserting the four new opcodes into
+the middle of the `Op_Code` enum shifted every later variant's numeric value — a stale `.lxc` written by an
+older binary would misdecode, not just miss (confirmed: this exact failure mode broke `imports`/`itertools`/
+`wordcount`/`sound`/`inspect` pytest cases against a leftover `__loxcache__/` from before this change, with a
+`run.odin` bounds-check catching the corruption rather than it silently mis-executing).
+
+**Verified**: full `pytest` — 236/0/26 (down from 237 only because `test_vec_pool.py`'s one test was deleted
+along with the pool allocator it tested). `odin test` — `core` (49/49) and `compiler` (169/169, including new
+opcode-shape and compile-error tests) both clean; `vm` package's only failures are
+`bc_cache_test.odin`'s `test_bc_cache_corrupted_lxc_falls_back_and_self_heals` and
+`test_bc_cache_force_compile_bypasses_read_but_refreshes_write`, confirmed to fail identically against
+unmodified `master` in an isolated worktree — pre-existing flakiness, not a regression (see this project's
+own README for the documented "known, not-fully-reliable secondary check" caveat on this exact test
+category). New tests: swizzle write-back through every supported target shape (Local/Global/Upvalue/
+one-level-Property), copy independence (the mirror image of the now-deleted pool-reuse stress test — checking
+the opposite failure mode, accidentally-kept reference semantics rather than stale reused memory), the
+expression-value contract (`y = (this.pos.x = 5)` must yield `5`), and both compile-error cases.
+`size_of(core.Value)` pinned at exactly 40.
+
+**GC re-measurement, and an honest surprise**: `3d_balls_physics_shaders.lox`, `-o:speed` release build, a
+temporary `ODLOX_GC_DEBUG`-gated per-cycle timer (same instrumentation technique as Phase 7g, not shipped),
+20-second window, compared against an identical build of the pre-this-phase commit (`master`) in a separate
+worktree — same script, same flags, same machine, same moment, to control for anything except the
+representation change itself:
+
+| | cycles/20s | total GC time/20s | avg pause |
+|---|---|---|---|
+| Before (Tier 1+2 pooled) | 165 | 28.6ms | 173µs |
+| After (inlined) | 475 | 39.7ms | 84µs |
+
+Cycle *frequency* went up ~2.9x and total GC time went up too, not down — the opposite of the naive
+expectation. Root cause: `next_gc`'s heap-growth heuristic (`next_gc = live_bytes * GC_HEAP_GROW_FACTOR`)
+resets its threshold from *surviving* `bytes_allocated` after every cycle. This script keeps ~450 persistent
+`MovingObject` instances alive, each with several long-lived vec3/vec4 fields; when those fields counted
+toward `bytes_allocated` (the pre-inlining design), they inflated the post-collection threshold baseline,
+letting the collector tolerate more churn before the next trigger. Once vec fields stopped counting toward
+`bytes_allocated` at all, that baseline shrank substantially, and the same absolute churn rate now crosses
+the (much lower) threshold far more often. Average pause duration *did* drop by more than half, exactly as
+expected (nothing to mark/trace through vec fields anymore), but not by enough to offset firing 2.9x more
+often. This doesn't undermine the representation change itself (correctness is unaffected, and the visible-
+hitch complaint this phase set out to fix is about individual pause *length*, where the result is genuinely
+better) — but it does mean the original "should reduce cycle frequency" framing was wrong for this workload,
+and it surfaces a real, scoped follow-up: `GC_HEAP_GROW_FACTOR`/`INITIAL_GC_THRESHOLD` were tuned against the
+old design's `bytes_allocated` semantics and may need retuning now that a whole class of long-lived value
+data no longer contributes to it. Not attempted here — needs its own measurement pass, not a guess.
+
+**A third real bug, found by actually watching `bin/showcase.sh` run** (not by static review, and not caught
+by any of the write-back audits above, since it isn't a write-back-target-shape problem at all):
+`fireworks.lox`'s `move(particle)` read `particle.dpos` into a local, mutated the local's `x`/`y` components
+(damping + gravity), and relied on that being visible through `particle.dpos` afterward — correct under the
+old shared-heap-object design, silently a no-op under value semantics, since the local is now an independent
+copy. `Set_Local_Vec_Field` was working exactly as designed (correctly writing the mutation into the local
+`dpos` itself); the bug was that nothing ever wrote `dpos` back into `particle.dpos`. Visually: gravity
+appeared to stop applying (`dpos.y` never accumulated). Fixed with an explicit `particle.dpos = dpos;` after
+the mutations. This is a distinct failure mode from every case `emit_swizzle_set` guards against — those are
+all about the *assignment target* shape; this is about a *read-into-a-local-then-mutate-then-forget-to-write-
+back* pattern that compiles and runs with no error at all, so it can only be caught by actually running the
+script and checking behavior, not by any compile-time check. A broader sweep (every `var X = expr.field`
+followed later by `X.<swizzle> =` in the same function, across `lox_examples/`+`modules/`) found no other
+instances — the rest either mutate a local that's used directly (no aliasing assumed), mutate a bare global
+(write-back-correct via `Set_Global_Vec_Field`), or already had an explicit write-back.
+
+**Benchmark re-run**: `bin/benchmarks.sh` (the standard 13-benchmark loxcraft suite) confirmed odlox is
+unaffected in its standing against glox/CPython in aggregate, but a direct odlox-only before/after
+(`master` vs this branch, both `-o:speed` release builds, 3 runs each, same machine/moment — isolating
+exactly the `Value` size change from everything else) surfaces a real, consistent cost on benchmarks that
+don't touch vec2/3/4 at all:
+
+| benchmark | before (16B `Value`) | after (40B `Value`) | ratio |
+|---|---|---|---|
+| loop | 2.5375s | 2.5326s | 1.00x |
+| zoo_batch | 10.0137s | 10.0128s | 1.00x |
+| instantiation | 31.6354s | 32.1333s | 1.02x |
+| collections | 4.8890s | 5.0420s | 1.03x |
+| invocation | 7.1406s | 7.4135s | 1.04x |
+| zoo | 9.4518s | 10.3875s | 1.10x |
+| fib | 9.1553s | 10.0995s | 1.10x |
+| method_call | 10.6500s | 12.0489s | 1.13x |
+| string_equality | 20.3037s | 23.0222s | 1.13x |
+| binary_trees | 25.0105s | 28.5649s | 1.14x |
+| equality | 25.3137s | 29.3657s | 1.16x |
+| properties | 9.7937s | 11.4896s | 1.17x |
+| trees | 23.3828s | 32.2755s | **1.38x** |
+
+Benchmarks with little Value-copying pressure (`loop`'s tight arithmetic, `zoo_batch`'s fixed-shape batch
+ops, `instantiation`/`collections`) are within noise. Everything call-, comparison-, or property-heavy shows
+a real 10-17% regression, and `trees` — deep object-tree construction/traversal, the most Value-copying-dense
+benchmark in the suite — is 38% slower. None of these benchmarks use vec2/3/4 at all: this is purely the
+cost of every stack push/pop, local/global read/write, and property get/set now moving a 40-byte `Value`
+instead of a 16-byte one, paid uniformly across the whole VM regardless of whether a script ever touches a
+vector. This is the accepted-tradeoff cost named up front in this phase's own design doc (Godot's
+double-precision `Variant` lives at a comparable size in production) made concrete and measured rather than
+theoretical — a real, non-trivial number, not something to wave away. Whether it's worth revisiting (e.g. the
+NaN-boxing option `docs/ARCHITECTURE.md`'s Value representation section already flags as re-scoped, not
+ruled out, by this change) is a separate decision, not resolved here.
+
 ## Phase 8 — Bytecode cache
 
 Shipped, not as a performance optimization (module-recompilation time was never measured to matter) but for
