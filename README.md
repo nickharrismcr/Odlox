@@ -41,7 +41,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 
 **Native & graphics**
 - **Raylib `window`** — 2D and 3D primitives, camera, textures, render textures, images, shaders (custom GLSL, uniform binding, shader/blend modes), keyboard input.
-- **Batch rendering** — `batch()` draws thousands of primitives per call; `batch_instanced()` draws 100k+ instanced textured cubes.
+- **Batch rendering** — `batch()` draws thousands of primitives per call; `batch_instanced()` draws 100k+ instanced textured cubes, lit by up to 4 `instanced_light()`s plus `instanced_ambient()`.
 - **`physics_world`** — native 3D rigid-body sphere/box simulation (gravity, boundary bounce, collisions).
 - **`box2d`** — wraps Odin's Box2D v3 bindings: 2D circle/box bodies (static/kinematic/dynamic), forces/impulses/torque, and collision events.
 - **File & directory I/O** via `os`; PNG output; RGB encode/decode.

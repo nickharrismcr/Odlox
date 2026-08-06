@@ -70,3 +70,52 @@ instruction_count :: proc() -> int {
 reset_instrument :: proc() {
 	instruction_count_val = 0
 }
+
+// Gc_Hook logs each GC cycle as it happens (bytes reclaimed, new
+// threshold) and tallies a running count/total for a post-run summary --
+// see main.odin's --trace-gc flag. gc_bytes_before_val is package-level
+// state bridging the .Gc_Start event (recorded here) to the matching
+// .Gc_End event (where the before/after delta is known), same
+// single-VM-at-a-time assumption instruction_count_val's own doc comment
+// explains.
+@(private)
+gc_cycle_count_val: int
+@(private)
+gc_bytes_freed_val: int
+@(private)
+gc_bytes_before_val: int
+
+Gc_Hook :: proc(v: ^vm.VM, event: vm.Debug_Event) {
+	when ODIN_DEBUG {
+		#partial switch event {
+		case .Gc_Start:
+			gc_bytes_before_val = v.bytes_allocated
+		case .Gc_End:
+			gc_cycle_count_val += 1
+			freed := gc_bytes_before_val - v.bytes_allocated
+			gc_bytes_freed_val += freed
+			fmt.eprintfln(
+				"[gc #%d] %d -> %d bytes (%d freed), next_gc=%d",
+				gc_cycle_count_val,
+				gc_bytes_before_val,
+				v.bytes_allocated,
+				freed,
+				v.next_gc,
+			)
+		}
+	}
+}
+
+gc_cycle_count :: proc() -> int {
+	return gc_cycle_count_val
+}
+
+gc_bytes_freed :: proc() -> int {
+	return gc_bytes_freed_val
+}
+
+reset_gc_stats :: proc() {
+	gc_cycle_count_val = 0
+	gc_bytes_freed_val = 0
+	gc_bytes_before_val = 0
+}

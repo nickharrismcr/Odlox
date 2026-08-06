@@ -3,22 +3,22 @@
 #
 # Usage: bin/build.sh [--release]
 #   (no args)   Debug build: -debug -vet -strict-style. Enables Odin's
-#               ODIN_DEBUG constant, so `--debug`/`--instrument`'s
-#               Trace_Hook/Instrument_Hook are actually compiled in (see
-#               src/debug/trace.odin) instead of warning and producing
-#               empty output (see main.odin's warnIfNoDebugHook-
-#               equivalent). -vet/-strict-style surface real Odin lints
-#               as build warnings (not build-breaking -- this is a dev
-#               build, not the examples/ repo's CI-grade
+#               ODIN_DEBUG constant, so `--debug`/`--instrument`/
+#               `--trace-gc`'s Trace_Hook/Instrument_Hook/Gc_Hook are
+#               actually compiled in (see src/debug/trace.odin) instead
+#               of warning and producing empty output (see main.odin's
+#               warnIfNoDebugHook-equivalent). -vet/-strict-style surface
+#               real Odin lints as build warnings (not build-breaking --
+#               this is a dev build, not the examples/ repo's CI-grade
 #               -warnings-as-errors regime; see that project's own
 #               CLAUDE.md if you're looking for that stricter flag set).
 #   --release   Release/benchmark build: -o:speed -disable-assert
 #               -no-bounds-check. No ODIN_DEBUG -- `--debug`/
-#               `--instrument` warn and produce empty/zero output on
-#               this build. This is the exact flag set every Phase 7
-#               benchmark baseline in ROADMAP.md was measured against
-#               (see bin/benchmarks.sh) -- don't change it without
-#               re-measuring.
+#               `--instrument`/`--trace-gc` warn and produce empty/zero
+#               output on this build. This is the exact flag set every
+#               Phase 7 benchmark baseline in ROADMAP.md was measured
+#               against (see bin/benchmarks.sh) -- don't change it
+#               without re-measuring.
 #
 # Mirrors the reference implementation's own fast-vs-debug build split
 # (bin/build.sh vs. bin/build_debug.sh / core.HotLoopDebugHookCompiled) --

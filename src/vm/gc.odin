@@ -108,10 +108,16 @@ maybe_collect_garbage :: proc(vm: ^VM) {
 }
 
 collect_garbage :: proc(vm: ^VM) {
+	if vm.debug_hook != nil {
+		vm.debug_hook(vm, .Gc_Start)
+	}
 	mark_roots(vm)
 	trace_references(vm)
 	sweep(vm)
 	vm.next_gc = vm.bytes_allocated * GC_HEAP_GROW_FACTOR
+	if vm.debug_hook != nil {
+		vm.debug_hook(vm, .Gc_End)
+	}
 }
 mark_roots :: proc(vm: ^VM) {
 	for i in 0 ..< vm.stack_top {

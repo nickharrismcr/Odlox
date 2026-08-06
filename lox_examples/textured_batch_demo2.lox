@@ -20,26 +20,6 @@ screenheight = win.get_screen_height()
 screen_buffer = render_texture(int(screenwidth), int(screenheight))
 screen_buffer.clear(vec4(0, 0, 0, 255))  //
 
-// Load shader after window initialization (OpenGL context must exist)
-rainbow_shader = shader("lox_examples/shaders/distance_hue.vs", "lox_examples/shaders/distance_hue.fs")
-time_location = -1      // Rainbow shader time uniform (for color animation)
-hue_scale_location = -1 // Hue scale uniform
-max_distance_location = -1 // Max distance uniform
- 
-if (rainbow_shader.is_valid()) {
-    time_location = rainbow_shader.get_location("time")
-    hue_scale_location = rainbow_shader.get_location("hueScale")
-    max_distance_location = rainbow_shader.get_location("maxDistance")
- 
-    
-    // Set initial values for gradual effect
-    rainbow_shader.set_value_float(hue_scale_location, 0.5)  // Very gradual hue shift
-    rainbow_shader.set_value_float(max_distance_location, 2000.0)  // Expected max distance
-    
-} else {
-    print("Warning: Rainbow shader failed to load. Using default rendering.")
-}
-
 // Camera parameters for orbiting
 camera_distance = 480.0
 camera_height = 140.0
@@ -60,6 +40,18 @@ texture2.circle_fill(16, 16, 8, vec4(0, 0, 255, 255))  // Blue circle
 batch_size=30000
 textured_batch1 = batch_instanced(texture1.get_texture(),float(cube_size),batch_size)
 textured_batch2 = batch_instanced(texture2.get_texture(),float(cube_size),batch_size)
+
+// Light for the instanced batches -- the shared instanced-drawing shader
+// supports up to 4 (type: 0=directional, 1=point), but just one is used
+// here. It orbits the cube block's centre in a vertical circle every
+// frame below (target stays fixed at the origin -- only position needs
+// updating, same set_position()-in-place pattern as the camera), sweeping
+// top -> side -> bottom -> side -> top.
+light = instanced_light(0, vec3(0, 600, 0), vec3(0, 0, 0), vec4(255, 210, 160, 255))
+instanced_ambient(vec4(60, 60, 60, 255))  // small base fill so faces the light isn't hitting aren't pure black
+
+light_angle = 0.0
+light_radius = 600.0
 
 grid_offset = -(grid_size * cube_spacing) / 2.0
 
@@ -89,36 +81,45 @@ textured_batch2.make_transforms()
  
 // Performance tracking
 frame_count = 0
- 
+
+// Constructed once and mutated via set_position() every frame instead of
+// calling camera() per-frame -- camera() heap-allocates a new Camera3D
+// object each call, and reallocating one every frame here was steady
+// enough churn to trip odlox's stop-the-world GC threshold periodically
+// (visible as pauses), on top of being wasted work since target/up never
+// change.
+cam = camera(vec3(camera_distance, camera_height, 0), camera_target, vec3(0, 1, 0))
 
 while (!win.should_close()) {
     frame_count = frame_count + 1
-   
-    camera_angle = camera_angle + 0.2 
+
+    camera_angle = camera_angle + 0.2
     // Calculate camera position after angle update
     cam_x = camera_target.x + camera_distance * 0.75 * math.cos(math.radians(camera_angle))
     cam_z = camera_target.z + camera_distance * 1.5 * math.sin(math.radians(camera_angle))
     cam_y = camera_target.y + camera_height * 3* math.sin(math.radians(camera_angle / 2.0))
-    cam = camera(vec3(cam_x, cam_y, cam_z), camera_target, vec3(0, 1, 0))
-    
+    cam.set_position(vec3(cam_x, cam_y, cam_z))
+
+    // Orbit the light around the cube block's centre in a vertical circle
+    // (target is fixed at the origin already, set once at construction
+    // above) -- angle=0 is straight overhead, 90 is side-on, 180 is
+    // straight underneath, 270 is side-on again.
+    light_angle = light_angle + 0.5
+    light.set_position(vec3(light_radius * math.sin(math.radians(light_angle)), light_radius * math.cos(math.radians(light_angle)), 0))
+
     win.begin()
     win.begin_texture_mode(screen_buffer)
-    win.clear(colour.WHITE)
+    win.clear(colour.BLACK)
     
     win.begin_3d(cam) 
     textured_batch1.draw(cam)
     textured_batch2.draw(cam)
     win.end_3d()
     win.end_texture_mode()
-    
-    
-    rainbow_shader.set_value_float(time_location, float(frame_count) * 0.001)  // Much slower time animation
-     
-    win.begin_shader_mode(rainbow_shader)
-    win.draw_render_texture(screen_buffer, 0, 0,colour.WHITE)
+
+    win.draw_render_texture(screen_buffer, 0, 0, colour.WHITE)
     win.end()
-    win.end_shader_mode()
-    
+
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }

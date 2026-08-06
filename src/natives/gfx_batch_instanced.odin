@@ -28,7 +28,10 @@ instanced_shader: rl.Shader
 @(private = "file")
 instanced_shader_ready: bool
 
-@(private = "file")
+// instanced_shader_get: package-private since gfx_light.odin's
+// gfx_instanced_light/light_invoke need it too, to resolve and update
+// the lights[] uniforms on this same shared shader.
+@(private)
 instanced_shader_get :: proc() -> rl.Shader {
 	if instanced_shader_ready {
 		return instanced_shader
@@ -43,8 +46,18 @@ instanced_shader_get :: proc() -> rl.Shader {
 	instanced_shader.locs[int(rl.ShaderLocationIndex.VECTOR_VIEW)] = rl.GetShaderLocation(instanced_shader, "viewPos")
 	instanced_shader.locs[int(rl.ShaderLocationIndex.MATRIX_MODEL)] = rl.GetShaderLocationAttrib(instanced_shader, "instanceTransform")
 
+	// lighting.fs divides ambient by 10 before use (finalColor +=
+	// texelColor*(ambient/10.0)*colDiffuse) -- 0.2 here matches the
+	// upstream shaders_mesh_instancing.odin raylib example's own default
+	// (ambient/10 = 0.02), a subtle base fill that leaves room for
+	// lights[] to actually be visible; an earlier default of 10.0
+	// (ambient/10 = 1.0, i.e. full brightness) saturated every instanced
+	// cube regardless of any added lights. Scripts can override this at
+	// runtime via gfx.instanced_ambient() (gfx_light.odin), which takes
+	// a 0-255 vec4 like instanced_light()'s color argument rather than
+	// this raw 0-1 float array.
 	ambient_loc := rl.GetShaderLocation(instanced_shader, "ambient")
-	ambient_values := [4]f32{10.0, 10.0, 10.0, 10.0}
+	ambient_values := [4]f32{0.2, 0.2, 0.2, 1.0}
 	rl.SetShaderValue(instanced_shader, ambient_loc, &ambient_values, .VEC4)
 
 	instanced_shader_ready = true

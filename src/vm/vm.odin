@@ -46,6 +46,8 @@ Debug_Event :: enum {
 	Opcode,
 	Call,
 	Return,
+	Gc_Start, // fired at the top of collect_garbage, before mark_roots
+	Gc_End,   // fired after sweep, once vm.bytes_allocated/next_gc reflect the finished cycle
 }
 
 Debug_Hook :: #type proc(vm: ^VM, event: Debug_Event)

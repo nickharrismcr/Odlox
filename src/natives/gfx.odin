@@ -5,14 +5,15 @@ import "../vm"
 import rl "vendor:raylib"
 
 // gfx: a large raylib-dependent module surface -- window/image/texture/
-// render_texture/shader/camera/batch/batch_instanced. Each object kind
-// (Userdata_Object -- see core/obj_userdata.odin and this package's own
-// README.md) lives in its own sibling file: gfx_window.odin,
-// gfx_image.odin, gfx_texture.odin (Texture + Render_Texture),
-// gfx_shader.odin, gfx_camera.odin, gfx_batch.odin,
-// gfx_batch_instanced.odin. This file holds module registration plus the
-// few plain functions (encode_rgba/decode_rgba/float_array) and helpers
-// shared across those sibling files.
+// render_texture/shader/camera/batch/batch_instanced/instanced_light.
+// Each object kind (Userdata_Object -- see core/obj_userdata.odin and
+// this package's own README.md) lives in its own sibling file:
+// gfx_window.odin, gfx_image.odin, gfx_texture.odin (Texture +
+// Render_Texture), gfx_shader.odin, gfx_camera.odin, gfx_batch.odin,
+// gfx_batch_instanced.odin, gfx_light.odin. This file holds module
+// registration plus the few plain functions
+// (encode_rgba/decode_rgba/float_array) and helpers shared across those
+// sibling files.
 //
 // gfx.window(width, height) only constructs the window object -- it
 // does *not* call raylib's InitWindow itself; that only happens inside
@@ -33,6 +34,8 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "camera", gfx_camera)
 	vm.define_builtin(v, "gfx", "batch", gfx_batch)
 	vm.define_builtin(v, "gfx", "batch_instanced", gfx_batch_instanced)
+	vm.define_builtin(v, "gfx", "instanced_light", gfx_instanced_light)
+	vm.define_builtin(v, "gfx", "instanced_ambient", gfx_instanced_ambient)
 }
 
 // window_created tracks whether a window exists: gfx.texture() requires

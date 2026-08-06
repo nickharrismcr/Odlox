@@ -19,6 +19,7 @@ import "vm"
 Options :: struct {
 	trace:          bool, // --debug: attach debug.Trace_Hook while running
 	instrument:     bool, // --instrument: attach debug.Instrument_Hook, report the count after running
+	trace_gc:       bool, // --trace-gc: attach debug.Gc_Hook, log each GC cycle and report a summary after running
 	force_compile:  bool, // --force-compile: bypass the bytecode cache's read (imported modules only)
 	force_bc_cache: bool, // --force-bc-cache: trust the bytecode cache unconditionally, even with no matching source (imported modules only)
 }
@@ -65,6 +66,8 @@ main :: proc() {
 			opts.trace = true
 		case "--instrument":
 			opts.instrument = true
+		case "--trace-gc":
+			opts.trace_gc = true
 		case "--no-peephole":
 			compiler.DebugSkipPeephole = true
 		case "--force-compile":
@@ -102,8 +105,8 @@ main :: proc() {
 	}
 
 	when !ODIN_DEBUG {
-		if opts.trace || opts.instrument {
-			fmt.eprintln("odlox: --debug/--instrument have no effect in this build (rebuild with `odin build src -debug`)")
+		if opts.trace || opts.instrument || opts.trace_gc {
+			fmt.eprintln("odlox: --debug/--instrument/--trace-gc have no effect in this build (rebuild with `odin build src -debug`)")
 		}
 	}
 
@@ -157,12 +160,18 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	} else if opts.instrument {
 		debug.reset_instrument()
 		vm_instance.debug_hook = debug.Instrument_Hook
+	} else if opts.trace_gc {
+		debug.reset_gc_stats()
+		vm_instance.debug_hook = debug.Gc_Hook
 	}
 
 	status, result := vm.interpret(vm_instance, string(data))
 
 	if opts.instrument {
 		fmt.eprintfln("odlox: %d instructions executed", debug.instruction_count())
+	}
+	if opts.trace_gc {
+		fmt.eprintfln("odlox: %d GC cycles, %d bytes freed total", debug.gc_cycle_count(), debug.gc_bytes_freed())
 	}
 
 	switch status {
@@ -416,6 +425,7 @@ Options:
   --info              Compile a file and print a size summary, then exit
   --debug             Attach a live execution trace while running (needs a -debug build)
   --instrument        Count executed instructions while running (needs a -debug build)
+  --trace-gc          Log each GC cycle (bytes freed, new threshold) and report a summary (needs a -debug build)
   --no-peephole       Disable the peephole optimizer
   --force-compile     Bypass the bytecode cache's read for imported modules
   --force-bc-cache    Trust the bytecode cache unconditionally for imported modules, even with no matching source

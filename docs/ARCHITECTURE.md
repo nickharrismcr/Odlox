@@ -1259,13 +1259,15 @@ variable's *source name*, recovered from `Chunk.local_vars` (debug info
 a name via `Chunk.global_names`. Both are lookups the disassembler does
 locally — they add no new state anywhere else.
 
-**The trace/instrument hooks** (`Trace_Hook`, `Instrument_Hook`) are a
-different matter: they implement `vm.Debug_Hook`
+**The trace/instrument/GC hooks** (`Trace_Hook`, `Instrument_Hook`,
+`Gc_Hook`) are a different matter: they implement `vm.Debug_Hook`
 (`proc(vm: ^VM, event: Debug_Event)`, fired from `run()`'s dispatch loop
 between opcodes and from `call()` on every call/return — see
-[VM dispatch loop](#vm-dispatch-loop--calling-convention)), so `debug`
-has to import `vm` to even name that type. This is the one place this
-phase's package layout diverges from the original plan — see
+[VM dispatch loop](#vm-dispatch-loop--calling-convention) — plus, for
+`Gc_Hook` specifically, from `gc.odin`'s `collect_garbage` around each
+mark-sweep cycle via the `.Gc_Start`/`.Gc_End` events), so `debug` has to
+import `vm` to even name that type. This is the one place this phase's
+package layout diverges from the original plan — see
 [Package layout](#package-layout)'s note on why that's still a clean DAG.
 
 Gating matches glox's own hot-loop debug hook
@@ -1281,19 +1283,22 @@ compiling out, and Phase 4 already needed it as the mechanism's on/off
 switch regardless of which hook (if any) is attached. What `when
 ODIN_DEBUG` actually removes from a release binary is the *work* each
 hook does when it fires: `Trace_Hook`'s per-step stack dump plus a full
-`disassemble_instruction` call, and `Instrument_Hook`'s counter
-increment — real, avoidable per-opcode cost if left in.
+`disassemble_instruction` call, `Instrument_Hook`'s counter increment —
+real, avoidable per-opcode cost if left in — and `Gc_Hook`'s per-cycle
+log line plus running byte/cycle tally (cheap by comparison, since GC
+cycles are rare next to opcodes, but gated the same way for consistency).
 
-`main.odin` exposes both through CLI flags (`--debug`, `--instrument`),
-plus `--compile-only` (compile, report, don't run — the milestone check
-[Phase 3](../ROADMAP.md) refers to), `--disassemble` (compile, dump via
-`disassemble_program`, don't run), `--info` (compile, print a size
-summary), and `--no-peephole` (toggles `compiler.DebugSkipPeephole`,
-combinable with any of the above). `--debug`/`--instrument` on a non-
-`-debug` build still set `vm.debug_hook` (there's no reason not to — the
-hook body itself is what's compiled out) but `main.odin` also prints one
-`when !ODIN_DEBUG`-gated note explaining why nothing will appear, so the
-flag fails informatively instead of silently doing nothing.
+`main.odin` exposes all three through CLI flags (`--debug`,
+`--instrument`, `--trace-gc`), plus `--compile-only` (compile, report,
+don't run — the milestone check [Phase 3](../ROADMAP.md) refers to),
+`--disassemble` (compile, dump via `disassemble_program`, don't run),
+`--info` (compile, print a size summary), and `--no-peephole` (toggles
+`compiler.DebugSkipPeephole`, combinable with any of the above).
+`--debug`/`--instrument`/`--trace-gc` on a non-`-debug` build still set
+`vm.debug_hook` (there's no reason not to — the hook body itself is what's
+compiled out) but `main.odin` also prints one `when !ODIN_DEBUG`-gated
+note explaining why nothing will appear, so the flags fail informatively
+instead of silently doing nothing.
 
 ---
 

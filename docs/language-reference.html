@@ -169,6 +169,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#window">window</a>
       <a href="#batch">batch</a>
       <a href="#batch-instanced">batch_instanced</a>
+      <a href="#light">light</a>
       <a href="#texture">texture</a>
       <a href="#render-texture">render_texture</a>
       <a href="#image">image</a>
@@ -251,6 +252,7 @@ bin/odlox.exe --repl
 <tr><td><code>--info</code></td><td>Compile a file and print a size summary, then exit</td></tr>
 <tr><td><code>--debug</code></td><td>Attach a live execution trace while running</td></tr>
 <tr><td><code>--instrument</code></td><td>Count executed instructions while running</td></tr>
+<tr><td><code>--trace-gc</code></td><td>Log each GC cycle (bytes freed, new threshold) and report a summary after running</td></tr>
 <tr><td><code>--no-peephole</code></td><td>Disable the peephole optimiser</td></tr>
 <tr><td><code>--force-compile</code></td><td>Bypass the bytecode cache's read for imported modules (see below); still refreshes the cache afterward</td></tr>
 <tr><td><code>--force-bc-cache</code></td><td>Trust an imported module's bytecode cache unconditionally — no source-freshness check, and a module resolves even with no matching source file at all (see below)</td></tr>
@@ -258,7 +260,7 @@ bin/odlox.exe --repl
 </tbody>
 </table>
 <div class="note"><strong>No short-flag aliases</strong>Every flag is long-form only — there are no single-letter equivalents.</div>
-<div class="note"><strong><code>--debug</code>/<code>--instrument</code> need a debug build</strong>These attach a per-instruction hook that costs real dispatch-loop performance if it's always compiled in, so a release build (<code>bin/build.sh --release</code>) compiles it out entirely — passing either flag there prints a warning and produces no trace/count output. Use the default debug build (<code>bin/build.sh</code>, no arguments) for real trace/instrument output.</div>
+<div class="note"><strong><code>--debug</code>/<code>--instrument</code>/<code>--trace-gc</code> need a debug build</strong>These attach a per-instruction (or per-GC-cycle) hook that costs real dispatch-loop performance if it's always compiled in, so a release build (<code>bin/build.sh --release</code>) compiles it out entirely — passing any of the three there prints a warning and produces no trace/count/GC output. Use the default debug build (<code>bin/build.sh</code>, no arguments) for real output.</div>
 <div class="note"><strong>Bytecode cache</strong>Imported modules (never the entry script) are cached as compiled bytecode in a <code>__loxcache__/&lt;name&gt;.lxc</code> file alongside the module's own source — the cache is used whenever it exists and is newer than the source, and is invalidated (recompiled and refreshed) the moment the source changes. <code>--force-compile</code> skips the cache lookup for that run but still refreshes it afterward.</div>
 <div class="note"><strong>Compiled-only module distribution</strong><code>--force-bc-cache</code> is the opposite trust direction from <code>--force-compile</code>: it trusts a <code>.lxc</code> unconditionally, with no source-freshness check at all, and will resolve a module purely from its <code>__loxcache__/&lt;name&gt;.lxc</code> even when the matching <code>.lox</code> was never shipped — for distributing a library as compiled bytecode only. If neither a usable cache nor a source file can be found, the import still fails cleanly with the ordinary "Module not found" error.</div>
 
@@ -812,7 +814,7 @@ import gfx
 win = gfx.window(800, 600)</code></pre>
 <ul>
 <li><strong>built-in:</strong> <a href="#vectors"><code>vec2</code>/<code>vec3</code>/<code>vec4</code></a></li>
-<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#float-array"><code>float_array</code></a>, plus the image/colour helpers below</li>
+<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code>, <a href="#float-array"><code>float_array</code></a>, plus the image/colour helpers below</li>
 <li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a> — hand-rolled 3D sphere/box simulation</li>
 <li><strong id="mod-box2d-list">box2d:</strong> <a href="#box2d"><code>box2d.world</code></a> — wraps Odin's Box2D v3 bindings, 2D circle/box bodies</li>
 </ul>
@@ -868,6 +870,7 @@ win.close()</code></pre>
 <tr><td><code>set_target_fps(fps)</code></td><td>Set the target frame rate</td></tr>
 <tr><td><code>get_fps()</code></td><td>Current measured frame rate</td></tr>
 <tr><td><code>show_fps(bool)</code></td><td>Toggle a built-in FPS overlay drawn at the top-left corner every frame (off by default)</td></tr>
+<tr><td><code>screenshot(path)</code></td><td>Save the current frame to a PNG/etc. file (format from the extension)</td></tr>
 </tbody>
 </table>
 
@@ -1040,7 +1043,47 @@ win.end_3d()</code></pre>
 <tr><td><code>count()</code></td><td>Number of instances added.</td></tr>
 </tbody>
 </table>
-<div class="note"><strong>Not customisable with <code>shader()</code></strong>Every <code>batch_instanced</code> renders with the same built-in lighting shader (ambient light only, one shared texture per batch); <code>win.begin_shader_mode()</code> has no effect on it, and instances carry only a transform — no per-instance colour or custom data. There is currently no way to give a <code>batch_instanced</code> a custom look from a <code>.lox</code> script. Use plain <a href="#batch"><code>batch</code></a> if you need per-object shader effects.</div>
+<div class="note"><strong>Custom shaders still aren't supported</strong>Every <code>batch_instanced</code> renders with the same built-in lighting shader (one shared texture per batch); <code>win.begin_shader_mode()</code> has no effect on it, and instances carry only a transform — no per-instance colour or custom data. What <em>is</em> controllable is that shader's own lighting — see <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code> below. Use plain <a href="#batch"><code>batch</code></a> if you need a genuinely custom shader effect.</div>
+
+<!-- ==================== LIGHT ==================== -->
+<h2 class="section" id="light">light <span class="pill">gfx</span></h2>
+<p>The shader every <a href="#batch-instanced"><code>batch_instanced</code></a> renders with supports up to 4 lights plus an ambient base fill. Lights and ambient are process-wide — shared by every <code>batch_instanced</code>, not per-batch.</p>
+<div class="sig"><span class="nm">instanced_light</span>(<em>type</em>, <em>position</em>, <em>target</em>, <em>color</em>) <span class="pill">→ light</span></div>
+<ul>
+<li><code>type</code> — <code>0</code> for directional (a fixed direction, <code>position - target</code>, applied uniformly everywhere — like a sun) or <code>1</code> for point (direction varies per fragment, based on its actual position).</li>
+<li><code>position</code>, <code>target</code> — <code>vec3</code>. For a directional light only their difference matters, not their absolute values.</li>
+<li><code>color</code> — <code>vec4</code>, 0–255 components (same convention as every other colour in odlox).</li>
+</ul>
+<p>Errors if called a 5th time — only 4 light slots exist.</p>
+<div class="sig"><span class="nm">instanced_ambient</span>(<em>color</em>) <span class="pill">→ nil</span></div>
+<p>Sets the base fill light applied regardless of any <code>instanced_light</code> — <code>vec4</code>, 0–255 components. Faces no light reaches render at this colour instead of pure black.</p>
+<pre><code class="lox">from gfx import window, camera, render_texture, batch_instanced, instanced_light, instanced_ambient
+win = window(1200, 800)
+win.init()
+cam = camera(vec3(0, 20, 60), vec3(0, 0, 0), vec3(0, 1, 0))
+
+rt = render_texture(64, 64)
+rt.clear(vec4(0, 0, 0, 255))
+rt.circle_fill(32, 32, 30, vec4(255, 128, 0, 255))
+
+cubes = batch_instanced(rt.get_texture(), 2.0, 1000)
+cubes.add(vec3(0, 0, 0), vec3(0, 1, 0), 0.0)
+cubes.make_transforms()
+
+sun = instanced_light(0, vec3(0, 100, 0), vec3(0, 0, 0), vec4(255, 210, 160, 255))  // overhead
+instanced_ambient(vec4(20, 20, 20, 255))  // faint base fill so unlit faces aren't pure black
+
+// render loop: move the light every frame, e.g. orbiting the origin
+sun.set_position(vec3(80, 60, 0))</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>set_position(vec3)</code></td><td>Move the light</td></tr>
+<tr><td><code>set_target(vec3)</code></td><td>Change what the light points at (only matters for directional)</td></tr>
+<tr><td><code>set_color(vec4)</code></td><td>Change the light's colour, 0–255 components</td></tr>
+<tr><td><code>enable()</code> / <code>disable()</code></td><td>Toggle the light on/off without releasing its slot</td></tr>
+</tbody>
+</table>
 
 <!-- ==================== TEXTURE ==================== -->
 <h2 class="section" id="texture">texture <span class="pill">gfx</span></h2>

@@ -193,6 +193,20 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 		}
 		rl.ToggleFullscreen()
 		result = core.NIL_VALUE
+	case "screenshot":
+		if arg_count != 1 {
+			vm.runtime_error(v, "screenshot() expects 1 argument (path).")
+			return false
+		}
+		path_val := vm.peek(v, 0)
+		if !core.is_string(path_val) {
+			vm.runtime_error(v, "screenshot() argument must be a string (path).")
+			return false
+		}
+		cpath := strings.clone_to_cstring(core.string_get(core.as_string(path_val)))
+		defer delete(cpath)
+		rl.TakeScreenshot(cpath)
+		result = core.NIL_VALUE
 	case "get_screen_width":
 		if arg_count != 0 {
 			vm.runtime_error(v, "get_screen_width() takes no arguments.")
