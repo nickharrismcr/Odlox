@@ -1,0 +1,27 @@
+// A click that lands in the overlap of two widgets should go to the
+// topmost one -- the one added (and therefore drawn) last -- not the one
+// underneath it.
+import gui
+
+class Fake_Win {
+    init(pos) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.pos = pos
+    }
+    mouse_position() { return this.pos }
+    mouse_pressed(btn) { return btn == this.MOUSE_LEFT }
+    mouse_down(btn) { return btn == this.MOUSE_LEFT }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var a = screen.add(gui.Button(0, 0, 20, 20, nil))
+var b = screen.add(gui.Button(5, 5, 20, 20, nil))
+a.on_left_click = func (w, pos) { print "a" }
+b.on_left_click = func (w, pos) { print "b" }
+
+// (10, 10) is inside both a's and b's rect -- only b (added last, drawn
+// on top) should receive the click.
+var win = Fake_Win(vec2(10, 10))
+screen.update(win)

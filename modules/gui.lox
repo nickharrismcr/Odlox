@@ -1,0 +1,230 @@
+//
+// @file gui.lox
+// @brief A small class-based GUI layer: Screen, Button, Draggable.
+//
+// Built entirely on the existing `gfx`/window native surface (texture
+// drawing, poll-based mouse input) -- no native code involved. Interaction
+// is wired up by assigning closures to callback fields:
+//
+//   import gui
+//   var screen = gui.Screen()
+//   var btn = screen.add(gui.Button(10, 10, 64, 64, my_texture))
+//   btn.on_left_click = func (b, pos) { print "clicked" }
+//
+//   while (!win.should_close()) {
+//       screen.update(win)
+//       win.begin()
+//       win.clear(colour.BLACK)
+//       screen.draw(win)
+//       win.end()
+//   }
+//
+// `Screen.update()` takes any object exposing the same surface as the
+// native `win` object (mouse_position/mouse_pressed/mouse_down/
+// mouse_released, MOUSE_LEFT/MOUSE_RIGHT) -- this is what lets the event
+// dispatch logic be exercised in tests without a real window.
+//
+
+import colour
+
+// Widget is the common base for anything a Screen can hold: position/size,
+// visibility/enabled state, hover/click callbacks, and hit-testing. Not
+// normally instantiated directly -- use Button or Draggable, or subclass it.
+class Widget {
+    init(x, y, w, h) {
+        this.x = x
+        this.y = y
+        this.w = w
+        this.h = h
+        this.visible = true
+        this.enabled = true
+
+        // Internal, written by Screen.update() -- don't set these directly.
+        this.hovering = false
+        this.pressed = false
+
+        this.on_left_click = nil
+        this.on_right_click = nil
+        this.on_mouse_over = nil
+        this.on_mouse_leave = nil
+    }
+
+    contains(px, py) {
+        return px >= this.x and px <= this.x + this.w and py >= this.y and py <= this.y + this.h
+    }
+
+    // is_draggable lets Screen.update() decide whether a left-click on this
+    // widget should start a drag, without a native type check.
+    is_draggable() {
+        return false
+    }
+
+    draw(win) {}
+}
+
+// Button draws an assignable texture at its position, with optional
+// hover/pressed art -- falls back to the base texture when those aren't
+// given.
+class Button < Widget {
+    init(x, y, w, h, texture, hover_texture=nil, pressed_texture=nil) {
+        super.init(x, y, w, h)
+        this.texture = texture
+        this.hover_texture = hover_texture
+        this.pressed_texture = pressed_texture
+    }
+
+    current_texture() {
+        if (this.pressed and this.pressed_texture != nil) {
+            return this.pressed_texture
+        }
+        if (this.hovering and this.hover_texture != nil) {
+            return this.hover_texture
+        }
+        return this.texture
+    }
+
+    draw(win) {
+        win.draw_texture(this.current_texture(), this.x, this.y, colour.WHITE)
+    }
+}
+
+// Draggable is a widget that can be picked up and moved by the mouse.
+// `texture` is optional -- a Draggable with no texture is a bare,
+// invisible drag handle.
+class Draggable < Widget {
+    init(x, y, w, h, texture=nil) {
+        super.init(x, y, w, h)
+        this.texture = texture
+
+        this.on_drag_start = nil
+        this.on_drag = nil
+        this.on_drag_end = nil
+
+        // Internal, written by Screen.update() -- don't set these directly.
+        this.dragging = false
+        this.drag_offset_x = 0
+        this.drag_offset_y = 0
+    }
+
+    is_draggable() {
+        return true
+    }
+
+    draw(win) {
+        if (this.texture != nil) {
+            win.draw_texture(this.texture, this.x, this.y, colour.WHITE)
+        }
+    }
+}
+
+// Screen owns a z-ordered list of widgets (later-added draws on top and
+// wins hit-testing ties) and turns raw mouse polling into hover/click/drag
+// callbacks on them.
+class Screen {
+    init() {
+        this.widgets = []
+        this.dragging = nil // the widget currently being dragged, or nil
+
+        // click_consumed is true for exactly the frame a left/right click
+        // landed on a widget -- lets host code (e.g. a level editor) tell
+        // "clicked a button" apart from "clicked empty canvas" without
+        // redoing hit-testing itself. See update().
+        this.click_consumed = false
+    }
+
+    add(widget) {
+        this.widgets.append(widget)
+        return widget
+    }
+
+    remove(widget) {
+        var idx = this.widgets.find(widget)
+        if (idx != nil) {
+            this.widgets.remove(idx)
+        }
+    }
+
+    // update reads live mouse state from `win` and dispatches hover/click/
+    // drag callbacks. Call once per frame, before draw().
+    update(win) {
+        var pos = win.mouse_position()
+        this.click_consumed = false
+
+        if (this.dragging != nil) {
+            var d = this.dragging
+            d.x = pos.x - d.drag_offset_x
+            d.y = pos.y - d.drag_offset_y
+            if (d.on_drag != nil) {
+                d.on_drag(d, pos)
+            }
+            if (win.mouse_released(win.MOUSE_LEFT)) {
+                d.dragging = false
+                this.dragging = nil
+                if (d.on_drag_end != nil) {
+                    d.on_drag_end(d, pos)
+                }
+            }
+            return
+        }
+
+        var hit = nil
+        for (var i = len(this.widgets) - 1; i >= 0; i = i - 1) {
+            var w = this.widgets[i]
+            if (w.visible and w.enabled and w.contains(pos.x, pos.y)) {
+                hit = w
+                break
+            }
+        }
+
+        for (var i = 0; i < len(this.widgets); i = i + 1) {
+            var w = this.widgets[i]
+            var over = w == hit
+            if (over and !w.hovering) {
+                w.hovering = true
+                if (w.on_mouse_over != nil) {
+                    w.on_mouse_over(w, pos)
+                }
+            } else if (!over and w.hovering) {
+                w.hovering = false
+                if (w.on_mouse_leave != nil) {
+                    w.on_mouse_leave(w, pos)
+                }
+            }
+            w.pressed = over and win.mouse_down(win.MOUSE_LEFT)
+        }
+
+        if (hit == nil) {
+            return
+        }
+
+        if (win.mouse_pressed(win.MOUSE_LEFT)) {
+            this.click_consumed = true
+            if (hit.on_left_click != nil) {
+                hit.on_left_click(hit, pos)
+            }
+            if (hit.is_draggable()) {
+                hit.dragging = true
+                hit.drag_offset_x = pos.x - hit.x
+                hit.drag_offset_y = pos.y - hit.y
+                this.dragging = hit
+                if (hit.on_drag_start != nil) {
+                    hit.on_drag_start(hit, pos)
+                }
+            }
+        } else if (win.mouse_pressed(win.MOUSE_RIGHT)) {
+            this.click_consumed = true
+            if (hit.on_right_click != nil) {
+                hit.on_right_click(hit, pos)
+            }
+        }
+    }
+
+    draw(win) {
+        for (var i = 0; i < len(this.widgets); i = i + 1) {
+            var w = this.widgets[i]
+            if (w.visible) {
+                w.draw(win)
+            }
+        }
+    }
+}

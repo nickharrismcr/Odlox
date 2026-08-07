@@ -1,0 +1,43 @@
+// gui.Screen.update() should fire on_left_click/on_right_click only on the
+// press edge, only on the widget under the cursor -- and neither when the
+// click lands on empty space.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed, right_pressed) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.right_pressed = right_pressed
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) {
+        if (btn == this.MOUSE_LEFT) {
+            return this.left_pressed[this.frame]
+        }
+        return this.right_pressed[this.frame]
+    }
+    mouse_down(btn) { return this.mouse_pressed(btn) }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var btn = screen.add(gui.Button(0, 0, 10, 10, nil))
+btn.on_left_click = func (w, pos) { print "left_click" }
+btn.on_right_click = func (w, pos) { print "right_click" }
+
+// frame 0: left-click on the button
+// frame 1: right-click on the button
+// frame 2: left-click on empty space -- must not fire
+var positions = [vec2(5, 5), vec2(5, 5), vec2(100, 100)]
+var left = [true, false, true]
+var right = [false, true, false]
+var win = Fake_Win(positions, left, right)
+for (var i = 0; i < 3; i = i + 1) {
+    screen.update(win)
+}

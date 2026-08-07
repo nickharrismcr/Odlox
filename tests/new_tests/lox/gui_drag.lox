@@ -1,0 +1,44 @@
+// gui.Screen.update() should drive a full press/drag/release cycle on a
+// Draggable: on_drag_start once, on_drag every frame the drag is held,
+// on_drag_end once on release, and the widget's position tracks the
+// mouse minus the offset captured at the start of the drag.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed, released) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.released = released
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return this.left_pressed[this.frame] }
+    mouse_released(btn) { return this.released[this.frame] }
+}
+
+var screen = gui.Screen()
+var d = screen.add(gui.Draggable(0, 0, 20, 20, nil))
+d.on_drag_start = func (w, pos) { print "start" }
+d.on_drag = func (w, pos) { print "drag" }
+d.on_drag_end = func (w, pos) {
+    print "end"
+    print w.x == 5
+    print w.y == 5
+}
+
+// frame 0: press at (5, 5) -- grabs the widget at offset (5, 5)
+// frame 1: drag to (8, 9) -- widget should move to (3, 4)
+// frame 2: drag to (10, 10) and release -- widget should end at (5, 5)
+var positions = [vec2(5, 5), vec2(8, 9), vec2(10, 10)]
+var left_pressed = [true, false, false]
+var released = [false, false, true]
+var win = Fake_Win(positions, left_pressed, released)
+for (var i = 0; i < 3; i = i + 1) {
+    screen.update(win)
+}
