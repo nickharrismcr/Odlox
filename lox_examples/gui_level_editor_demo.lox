@@ -14,7 +14,7 @@ from gfx import *
 // always clamped to stay fully on screen (gui.clamp()). Drag a placed
 // tile to move it (dragging brings it to the front via
 // Screen.bring_to_front(), so it stays on top of whatever it's dragged
-// over). Right-click a placed tile to delete it, or right-drag over
+// over). Right-click a placed tile     to delete it, or right-drag over
 // empty canvas to box-delete every tile inside the drawn rectangle
 // (gui.Marquee, gui.Rect).
 //
@@ -43,6 +43,7 @@ const LINE_MODE = 1
 var win = window(900, 600)
 win.init()
 win.set_target_fps(TARGET_FPS)
+win.toggle_fullscreen()
 
 // make_icon renders a TILE_SIZE-square icon texture: draw_icon(rt) paints
 // the mark, and -- when border_colour is given -- a border_colour frame
@@ -117,7 +118,7 @@ func draw_clear_icon_disabled(rt) {
 var tile_colour_pairs = [
     [colour.DARKGREEN, colour.LIME],
     [colour.DARKGRAY, colour.LIGHTGRAY],
-    [colour.MAROON, colour.RED],
+    [colour.MAROON, colour.RED]
 ]
 var tile_textures = []          // unselected palette icon, and the placed-tile texture
 var tile_textures_selected = [] // highlighted (yellow border) palette icon
