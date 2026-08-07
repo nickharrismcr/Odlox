@@ -1,0 +1,47 @@
+// Button.current_texture() must show pressed_texture over selected_texture
+// while the mouse is actually held down -- even when the click that
+// started the press is the very thing that set `selected = true` (e.g. a
+// palette entry selecting itself in its own on_left_click), which happens
+// in the same Screen.update() frame as the press. If selected won that
+// race, pressed_texture would never be visible for any self-selecting
+// button. Once released, it should fall back to selected_texture.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed, left_down, released) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.left_down = left_down
+        this.released = released
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return this.left_down[this.frame] }
+    mouse_released(btn) { return this.released[this.frame] }
+}
+
+var screen = gui.Screen()
+var btn = screen.add(gui.Button(0, 0, 10, 10, "base", nil, "pressed_tex", "selected_tex"))
+btn.on_left_click = func (w, pos) { w.selected = true }
+
+var pos = vec2(5, 5)
+var positions = [pos, pos, pos]
+var left_pressed = [true, false, false]
+var left_down = [true, true, false]
+var released = [false, false, true]
+var win = Fake_Win(positions, left_pressed, left_down, released)
+
+screen.update(win) // press edge -- on_left_click sets selected AND pressed is true
+print btn.current_texture() == "pressed_tex"
+
+screen.update(win) // still held
+print btn.current_texture() == "pressed_tex"
+
+screen.update(win) // released -- falls back to selected
+print btn.current_texture() == "selected_tex"

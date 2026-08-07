@@ -1,0 +1,66 @@
+// Button_Group: clicking one button selects it and clears the others,
+// select_none() clears everything, and an existing on_left_click on a
+// button still runs (chained, not replaced) when added to a group.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return false }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var a = screen.add(gui.Button(0, 0, 10, 10, "a_tex"))
+var b = screen.add(gui.Button(20, 0, 10, 10, "b_tex"))
+
+var clicks = []
+a.on_left_click = func (w, pos) { clicks.append("a") }
+
+var group = gui.Button_Group()
+group.add(a)
+group.add(b)
+
+var changes = []
+group.on_change = func (g, index) { changes.append(index) }
+
+print a.selected == false
+print b.selected == false
+print group.selected_index == -1
+
+// frame 0: click a (10, 5) -- inside a's rect
+var positions = [vec2(5, 5), vec2(25, 5)]
+var left_pressed = [true, true]
+var win = Fake_Win(positions, left_pressed)
+
+screen.update(win)
+print a.selected == true
+print b.selected == false
+print group.selected_index == 0
+print clicks[0] == "a" // a's original on_left_click still ran
+
+// frame 1: click b (25, 5) -- inside b's rect
+screen.update(win)
+print a.selected == false
+print b.selected == true
+print group.selected_index == 1
+
+group.select_none()
+print a.selected == false
+print b.selected == false
+print group.selected_index == -1
+
+print len(changes) == 3
+print changes[0] == 0
+print changes[1] == 1
+print changes[2] == -1

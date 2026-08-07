@@ -1,0 +1,29 @@
+// Marquee: tracks a drag rectangle, normalising it regardless of which
+// corner the drag started from. No window/Screen involved -- it's driven
+// directly by the host.
+import gui
+
+var m = gui.Marquee()
+print m.active == false
+
+// Drag from bottom-right to top-left -- rect() must still come out with
+// positive width/height and the top-left corner as (x, y).
+m.begin(vec2(100, 80))
+print m.active == true
+m.update(vec2(20, 10))
+
+var r = m.rect()
+print r.x == 20
+print r.y == 10
+print r.w == 80
+print r.h == 70
+
+var final = m.end()
+print m.active == false
+print final.x == 20
+print final.y == 10
+print final.w == 80
+print final.h == 70
+
+print final.contains(50, 50) == true
+print final.contains(0, 0) == false

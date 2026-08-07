@@ -1,0 +1,14 @@
+// gui.snap()/gui.clamp() are plain utility functions, no window needed.
+import gui
+
+var p = gui.snap(vec2(53, 97), 20)
+print p.x == 40
+print p.y == 80
+
+var p2 = gui.snap(vec2(0, 19), 20)
+print p2.x == 0
+print p2.y == 0
+
+print gui.clamp(5, 0, 10) == 5
+print gui.clamp(-5, 0, 10) == 0
+print gui.clamp(15, 0, 10) == 10

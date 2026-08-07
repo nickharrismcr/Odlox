@@ -1,14 +1,25 @@
 from gfx import *
 // Minimal level editor built on gui.lox: a palette sidebar of tile
-// Buttons, and a canvas where clicking places a Draggable tile using
-// whichever palette entry is currently selected. Every tile texture is
-// generated procedurally (a coloured square with a contrasting dot) via
-// render_texture, so the demo needs no external image asset.
+// Buttons, two mode buttons below it (tile tool / line tool -- the
+// selected one stays highlighted with a yellow border), and a canvas
+// shared by both tools. Every texture is generated procedurally
+// (coloured squares/dots) via render_texture, so the demo needs no
+// external image asset.
 //
-// Left-click a palette tile to select it (it stays visually "pressed").
-// Left-click empty canvas to place a copy of the selected tile there,
-// snapped to a TILE_SIZE grid. Drag a placed tile to move it. Right-click
-// a placed tile to delete it. ESC to quit.
+// Tile tool (default): click a palette tile to select it (highlighted),
+// then click empty canvas to place a copy there, snapped to a TILE_SIZE
+// grid. Drag a placed tile to move it. Right-click a placed tile to
+// delete it.
+//
+// Line tool: click empty canvas to start a wall, then keep clicking to
+// add more points -- a gui.Segmented_Line, the widget-based counterpart
+// of lox_examples/mouse_demo.lox's hand-rolled line-with-handles.
+// Right-click empty canvas finishes it. Once placed (or mid-draw), drag
+// any handle to move that point; right-click a handle removes it
+// (removing down to a single point discards the whole line).
+//
+// Click a mode button to switch tools, or use the T/L keyboard shortcuts.
+// ESC to quit.
 import gui
 import colour
 
@@ -17,48 +28,99 @@ const TILE_SIZE = 48
 const PALETTE_X = 10
 const PALETTE_GAP = 8
 const CANVAS_X = 100 // left edge of the placeable canvas, right of the palette sidebar
+const LINE_HANDLE_RADIUS = 8
+const SELECT_BORDER = 3
 
 var win = window(900, 600)
 win.init()
 win.set_target_fps(TARGET_FPS)
 
-func make_tile_texture(base_colour, mark_colour) {
+// make_icon renders a TILE_SIZE-square icon texture: draw_icon(rt) paints
+// the mark, and -- when border_colour is given -- a border_colour frame
+// is left showing around a bg_colour-filled interior, used for the
+// "selected" variant of a button's texture (see Button.selected_texture
+// in gui.lox).
+func make_icon(bg_colour, draw_icon, border_colour=nil) {
     var rt = render_texture(TILE_SIZE, TILE_SIZE)
-    rt.clear(base_colour)
-    rt.circle_fill(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 4, mark_colour)
+    if (border_colour != nil) {
+        rt.clear(border_colour)
+        rt.rectangle(SELECT_BORDER, SELECT_BORDER, TILE_SIZE - 2 * SELECT_BORDER, TILE_SIZE - 2 * SELECT_BORDER, bg_colour)
+    } else {
+        rt.clear(bg_colour)
+    }
+    draw_icon(rt)
     return rt.get_texture()
 }
 
-var tile_textures = [
-    make_tile_texture(colour.DARKGREEN, colour.LIME),
-    make_tile_texture(colour.DARKGRAY, colour.LIGHTGRAY),
-    make_tile_texture(colour.MAROON, colour.RED),
+func draw_dot(mark_colour) {
+    return func (rt) { rt.circle_fill(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 4, mark_colour) }
+}
+
+// brighten scales a colour's RGB channels up (clamped to 255, alpha left
+// alone) for a button's pressed_texture -- the mouse-held-down flash,
+// distinct from selected_texture's persistent yellow-border highlight.
+const BRIGHTEN_FACTOR = 1.6
+
+func clamp255(v) {
+    if (v > 255) {
+        return 255
+    }
+    return v
+}
+
+func brighten(c) {
+    return vec4(clamp255(c.x * BRIGHTEN_FACTOR), clamp255(c.y * BRIGHTEN_FACTOR), clamp255(c.z * BRIGHTEN_FACTOR), c.w)
+}
+
+func draw_tile_mode_icon(rt) {
+    rt.rectangle(TILE_SIZE / 4, TILE_SIZE / 4, TILE_SIZE / 2, TILE_SIZE / 2, colour.LIGHTGRAY)
+}
+
+func draw_line_mode_icon(rt) {
+    rt.line(8, TILE_SIZE - 8, TILE_SIZE - 8, 8, colour.SKYBLUE)
+    rt.circle_fill(8, TILE_SIZE - 8, 4, colour.SKYBLUE)
+    rt.circle_fill(TILE_SIZE - 8, 8, 4, colour.SKYBLUE)
+}
+
+var tile_colour_pairs = [
+    [colour.DARKGREEN, colour.LIME],
+    [colour.DARKGRAY, colour.LIGHTGRAY],
+    [colour.MAROON, colour.RED],
 ]
+var tile_textures = []          // unselected palette icon, and the placed-tile texture
+var tile_textures_selected = [] // highlighted (yellow border) palette icon
+var tile_textures_pressed = []  // brightened palette icon, while the mouse is held down on it
+for (var i = 0; i < len(tile_colour_pairs); i = i + 1) {
+    var pair = tile_colour_pairs[i]
+    tile_textures.append(make_icon(pair[0], draw_dot(pair[1])))
+    tile_textures_selected.append(make_icon(pair[0], draw_dot(pair[1]), colour.YELLOW))
+    tile_textures_pressed.append(make_icon(brighten(pair[0]), draw_dot(brighten(pair[1]))))
+}
 
 var screen = gui.Screen()
 var palette = []
 var current_tile = tile_textures[0]
 
-// select_tile marks palette entry `index` selected (drawn pressed) and
+// select_tile marks palette entry `index` selected (highlighted) and
 // clears every other entry's selection.
 func select_tile(index) {
     current_tile = tile_textures[index]
     for (var i = 0; i < len(palette); i = i + 1) {
-        palette[i].pressed = i == index
+        palette[i].selected = i == index
     }
 }
 
 for (var i = 0; i < len(tile_textures); i = i + 1) {
     // `i` is the for-loop's own control variable -- one shared slot across
     // every iteration, not a fresh binding per iteration -- so a closure
-    // capturing `i` directly would see its final value (3) on every click,
-    // not the index it was created with. `index` is a plain local declared
+    // capturing `i` directly would see its final value on every click, not
+    // the index it was created with. `index` is a plain local declared
     // inside the loop body instead, which does get a fresh slot each time
     // round (same pattern as tests/new_tests/lox/closure_list.lox).
     var index = i
     var x = PALETTE_X
     var y = PALETTE_X + i * (TILE_SIZE + PALETTE_GAP)
-    var b = screen.add(gui.Button(x, y, TILE_SIZE, TILE_SIZE, tile_textures[i]))
+    var b = screen.add(gui.Button(x, y, TILE_SIZE, TILE_SIZE, tile_textures[i], nil, tile_textures_pressed[i], tile_textures_selected[i]))
     b.on_left_click = func (w, pos) { select_tile(index) }
     palette.append(b)
 }
@@ -74,9 +136,71 @@ func place_tile(pos) {
     placed.on_right_click = func (w, pos2) { screen.remove(placed) }
 }
 
+var mode = "tile" // "tile" or "line"
+var current_line = nil // the in-progress Segmented_Line while drawing, or nil
+
+// wire_line gives a placed/in-progress line its colour and its
+// right-click-a-handle-to-remove-it behaviour: removing the last handle
+// that keeps it a line (2 points) discards the whole thing instead.
+func wire_line(line) {
+    line.colour = colour.SKYBLUE
+    line.handle_colour = colour.SKYBLUE
+    line.on_right_click = func (w, pos) {
+        if (!w.remove_point(w.active_handle)) {
+            screen.remove(w)
+        }
+    }
+}
+
+// finish_line stops extending the in-progress line -- the next canvas
+// click in line mode starts a new one instead. A line abandoned after
+// only one point (never extended) is discarded rather than left as a
+// stray, unclickable-as-a-line dot.
+func finish_line() {
+    if (current_line != nil) {
+        if (len(current_line.points) < 2) {
+            screen.remove(current_line)
+        }
+        current_line = nil
+    }
+}
+
+// Mode buttons, stacked below the tile palette.
+var mode_btn_y = PALETTE_X + len(tile_textures) * (TILE_SIZE + PALETTE_GAP) + PALETTE_GAP
+var tile_mode_icon = make_icon(colour.DARKGRAY, draw_tile_mode_icon)
+var tile_mode_icon_selected = make_icon(colour.DARKGRAY, draw_tile_mode_icon, colour.YELLOW)
+var tile_mode_icon_pressed = make_icon(brighten(colour.DARKGRAY), draw_tile_mode_icon)
+var line_mode_icon = make_icon(colour.DARKGRAY, draw_line_mode_icon)
+var line_mode_icon_selected = make_icon(colour.DARKGRAY, draw_line_mode_icon, colour.YELLOW)
+var line_mode_icon_pressed = make_icon(brighten(colour.DARKGRAY), draw_line_mode_icon)
+
+var tile_mode_btn = screen.add(gui.Button(PALETTE_X, mode_btn_y, TILE_SIZE, TILE_SIZE, tile_mode_icon, nil, tile_mode_icon_pressed, tile_mode_icon_selected))
+var line_mode_btn = screen.add(gui.Button(PALETTE_X, mode_btn_y + TILE_SIZE + PALETTE_GAP, TILE_SIZE, TILE_SIZE, line_mode_icon, nil, line_mode_icon_pressed, line_mode_icon_selected))
+
+// set_mode switches tools and keeps the two mode buttons' highlighted
+// state in sync -- the single place both the buttons and the T/L
+// keyboard shortcuts go through.
+func set_mode(m) {
+    mode = m
+    tile_mode_btn.selected = mode == "tile"
+    line_mode_btn.selected = mode == "line"
+    if (mode == "tile") {
+        finish_line()
+    }
+}
+tile_mode_btn.on_left_click = func (w, pos) { set_mode("tile") }
+line_mode_btn.on_left_click = func (w, pos) { set_mode("line") }
+set_mode("tile")
+
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
+    }
+    if (win.key_pressed(win.KEY_T)) {
+        set_mode("tile")
+    }
+    if (win.key_pressed(win.KEY_L)) {
+        set_mode("line")
     }
 
     screen.update(win)
@@ -84,7 +208,21 @@ while (!win.should_close()) {
     if (!screen.click_consumed and win.mouse_pressed(win.MOUSE_LEFT)) {
         var pos = win.mouse_position()
         if (pos.x >= CANVAS_X) {
-            place_tile(pos)
+            if (mode == "tile") {
+                place_tile(pos)
+            } else if (current_line == nil) {
+                current_line = screen.add(gui.Segmented_Line([pos], LINE_HANDLE_RADIUS))
+                wire_line(current_line)
+            } else {
+                current_line.add_point(pos)
+            }
+        }
+    }
+
+    if (mode == "line" and !screen.click_consumed and win.mouse_pressed(win.MOUSE_RIGHT)) {
+        var pos = win.mouse_position()
+        if (pos.x >= CANVAS_X) {
+            finish_line()
         }
     }
 
@@ -92,10 +230,12 @@ while (!win.should_close()) {
     win.clear(colour.BLACK)
     win.line(CANVAS_X, 0, CANVAS_X, win.get_screen_height(), colour.GRAY)
     screen.draw(win)
-    win.text(
-        "Click a palette tile, then click the canvas to place it. Drag placed tiles. Right-click deletes. ESC quits.",
-        CANVAS_X + 10, win.get_screen_height() - 30, 16, colour.WHITE
-    )
+    var help = "Tiles: click a palette tile, then the canvas to place it. Drag to move. Right-click deletes."
+    if (mode == "line") {
+        help = "Lines: click canvas to add points. Right-click empty canvas to finish. Right-click a handle to remove it."
+    }
+    win.text(help, CANVAS_X + 10, win.get_screen_height() - 30, 16, colour.WHITE)
+    win.text("T: tile tool   L: line tool   ESC: quit", CANVAS_X + 10, win.get_screen_height() - 50, 16, colour.LIGHTGRAY)
     win.end()
 }
 win.close()

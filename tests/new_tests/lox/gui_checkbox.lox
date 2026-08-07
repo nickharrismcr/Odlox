@@ -1,0 +1,51 @@
+// Checkbox's default on_left_click toggles it, fires on_change, and its
+// texture swaps -- driven through the real Screen.update() dispatch path.
+import gui
+
+class Fake_Win {
+    init(pos, left_pressed) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.pos = pos
+        this.left_pressed = left_pressed
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.pos
+    }
+    mouse_pressed(btn) {
+        if (btn == this.MOUSE_LEFT) {
+            return this.left_pressed[this.frame]
+        }
+        return false
+    }
+    mouse_down(btn) { return false }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var cb = screen.add(gui.Checkbox(0, 0, 10, "on_tex", "off_tex"))
+var changes = []
+cb.on_change = func (w, checked) { changes.append(checked) }
+
+print cb.checked == false
+print cb.current_texture() == "off_tex"
+
+// frame 0: press (toggles on). frame 1: no press. frame 2: press again (toggles off).
+var win = Fake_Win(vec2(5, 5), [true, false, true])
+
+screen.update(win)
+print cb.checked == true
+print cb.current_texture() == "on_tex"
+
+screen.update(win)
+print cb.checked == true // unchanged -- no press this frame
+
+screen.update(win)
+print cb.checked == false
+print cb.current_texture() == "off_tex"
+
+print len(changes) == 2
+print changes[0] == true
+print changes[1] == false

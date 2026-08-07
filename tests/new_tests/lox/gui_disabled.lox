@@ -1,0 +1,36 @@
+// Button.disabled_texture outranks pressed/selected/hover, and a
+// disabled widget (enabled == false) is skipped by Screen's hit-testing
+// entirely -- its on_left_click must not fire even on a direct hit.
+import gui
+
+class Fake_Win {
+    init(pos, left_pressed) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.pos = pos
+        this.left_pressed = left_pressed
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.pos
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return false }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var btn = screen.add(gui.Button(0, 0, 10, 10, "base", nil, "pressed_tex", "selected_tex", "disabled_tex"))
+btn.selected = true
+btn.enabled = false
+
+var clicked = false
+btn.on_left_click = func (w, pos) { clicked = true }
+
+print btn.current_texture() == "disabled_tex" // outranks selected even while selected
+
+var win = Fake_Win(vec2(5, 5), [true])
+screen.update(win)
+print clicked == false // disabled widget never gets hit-tested
+print screen.click_consumed == false

@@ -1,0 +1,56 @@
+// Slider: dragging its handle sets value within [min_value, max_value],
+// fires on_change, and clamps at the track's edges -- driven through the
+// real Screen.update() dispatch path.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed, released) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.released = released
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return this.left_pressed[this.frame] }
+    mouse_released(btn) { return this.released[this.frame] }
+}
+
+var screen = gui.Screen()
+var slider = screen.add(gui.Slider(0, 0, 100, 0, 200))
+print slider.value == 0
+
+// Regression: odlox's `/` truncates like integer division when both
+// operands are ints (65/100 == 0, not 0.65) -- handle_x() must not
+// silently collapse to the track's start for a plain-int constructor
+// call like this one.
+var initial = gui.Slider(20, 120, 200, 0, 100, 65)
+print initial.handle_x() == 150
+
+var changes = []
+slider.on_change = func (w, value) { changes.append(value) }
+
+// frame 0: press on the handle (value 0 -> handle at x=0)
+// frame 1: drag to x=50 -- track spans x in [0,100], value range [0,200], so value -> 100
+// frame 2: drag past the end, to x=250 -- must clamp to value 200
+// frame 3: release
+var positions = [vec2(0, 8), vec2(50, 8), vec2(250, 8), vec2(250, 8)]
+var left_pressed = [true, false, false, false]
+var released = [false, false, false, true]
+var win = Fake_Win(positions, left_pressed, released)
+
+screen.update(win) // frame 0: press
+screen.update(win) // frame 1: drag to 50
+print slider.value == 100
+
+screen.update(win) // frame 2: drag past the end
+print slider.value == 200 // clamped
+
+screen.update(win) // frame 3: release
+print slider.dragging == false
+print len(changes) == 3 // set_drag_position (and so on_change) fires on frames 1, 2, and 3

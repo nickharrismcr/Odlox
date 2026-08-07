@@ -1,0 +1,55 @@
+// gui.Segmented_Line should hit-test each handle individually, drag
+// whichever handle was grabbed (not the whole line), leave the other
+// points untouched, and support adding/removing vertices.
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed, released) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.released = released
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return this.left_pressed[this.frame] }
+    mouse_released(btn) { return this.released[this.frame] }
+}
+
+var screen = gui.Screen()
+var line = screen.add(gui.Segmented_Line([vec2(0, 0), vec2(50, 0), vec2(100, 0)], 8))
+line.on_drag_start = func (w, pos) { print "start" }
+line.on_drag = func (w, pos) { print "drag" }
+line.on_drag_end = func (w, pos) { print "end" }
+
+// frame 0: press right on the middle handle (50, 0) -- grabs it
+// frame 1: drag the middle handle to (60, 20)
+// frame 2: release at (60, 20)
+var positions = [vec2(50, 0), vec2(60, 20), vec2(60, 20)]
+var left_pressed = [true, false, false]
+var released = [false, false, true]
+var win = Fake_Win(positions, left_pressed, released)
+for (var i = 0; i < 3; i = i + 1) {
+    screen.update(win)
+}
+
+// Only the dragged (middle) handle should have moved.
+print line.points[0].x == 0 and line.points[0].y == 0
+print line.points[1].x == 60 and line.points[1].y == 20
+print line.points[2].x == 100 and line.points[2].y == 0
+
+// add_point/remove_point.
+line.add_point(vec2(150, 0))
+print len(line.points) == 4
+print line.remove_point(0)
+print len(line.points) == 3
+// Refuses to go below 2 points.
+line.remove_point(0)
+line.remove_point(0)
+print len(line.points) == 2
+print line.remove_point(0) == false

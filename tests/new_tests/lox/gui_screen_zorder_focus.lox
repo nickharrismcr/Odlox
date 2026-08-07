@@ -1,0 +1,50 @@
+// Screen.bring_to_front/send_to_back reorder hit-testing/draw priority,
+// and Screen.focused tracks the last widget a left-click landed on
+// (nil once a left-click lands on empty space).
+import gui
+
+class Fake_Win {
+    init(positions, left_pressed) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.positions = positions
+        this.left_pressed = left_pressed
+        this.frame = -1
+    }
+    mouse_position() {
+        this.frame = this.frame + 1
+        return this.positions[this.frame]
+    }
+    mouse_pressed(btn) { return this.left_pressed[this.frame] }
+    mouse_down(btn) { return false }
+    mouse_released(btn) { return false }
+}
+
+var screen = gui.Screen()
+var a = screen.add(gui.Button(0, 0, 20, 20, "a"))
+var b = screen.add(gui.Button(5, 5, 20, 20, "b")) // added after a -- starts on top
+
+var hits = []
+a.on_left_click = func (w, pos) { hits.append("a") }
+b.on_left_click = func (w, pos) { hits.append("b") }
+
+// (10, 10) is inside both rects -- b (topmost) should win before reordering.
+var positions = [vec2(10, 10), vec2(10, 10), vec2(200, 200)]
+var left_pressed = [true, true, true]
+var win = Fake_Win(positions, left_pressed)
+
+screen.update(win)
+print hits[0] == "b"
+print screen.focused == b
+
+screen.bring_to_front(a)
+screen.update(win)
+print hits[1] == "a" // a is now topmost, wins the same overlapping click
+print screen.focused == a
+
+// Clicking empty space clears focus.
+screen.update(win)
+print screen.focused == nil
+
+screen.send_to_back(b)
+print screen.widgets[0] == b

@@ -1,6 +1,10 @@
 //
 // @file gui.lox
-// @brief A small class-based GUI layer: Screen, Button, Draggable.
+// @brief A small class-based GUI layer.
+//
+// Widgets: Button, Label, Checkbox, Draggable, Slider, Segmented_Line.
+// Containers/helpers: Screen, Button_Group, Marquee, Rect.
+// Utilities: snap(pos, grid_size), clamp(v, lo, hi).
 //
 // Built entirely on the existing `gfx`/window native surface (texture
 // drawing, poll-based mouse input) -- no native code involved. Interaction
@@ -27,6 +31,23 @@
 
 import colour
 
+// snap rounds pos down to the nearest grid_size multiple on both axes --
+// e.g. for a level editor placing objects on a tile grid.
+func snap(pos, grid_size) {
+    return vec2(int(pos.x / grid_size) * grid_size, int(pos.y / grid_size) * grid_size)
+}
+
+// clamp restricts v to [lo, hi].
+func clamp(v, lo, hi) {
+    if (v < lo) {
+        return lo
+    }
+    if (v > hi) {
+        return hi
+    }
+    return v
+}
+
 // Widget is the common base for anything a Screen can hold: position/size,
 // visibility/enabled state, hover/click callbacks, and hit-testing. Not
 // normally instantiated directly -- use Button or Draggable, or subclass it.
@@ -42,11 +63,22 @@ class Widget {
         // Internal, written by Screen.update() -- don't set these directly.
         this.hovering = false
         this.pressed = false
+        this.dragging = false
+        this.drag_offset_x = 0
+        this.drag_offset_y = 0
 
         this.on_left_click = nil
         this.on_right_click = nil
         this.on_mouse_over = nil
         this.on_mouse_leave = nil
+
+        // Only ever fire if is_draggable() returns true, but every widget
+        // carries the fields (not just draggable subclasses) so
+        // Screen.update()'s generic drag handling can read/write them on
+        // anything without a per-subclass opt-in.
+        this.on_drag_start = nil
+        this.on_drag = nil
+        this.on_drag_end = nil
     }
 
     contains(px, py) {
@@ -59,28 +91,122 @@ class Widget {
         return false
     }
 
+    // drag_anchor/set_drag_position let Screen.update() drag something
+    // other than the widget's own x/y -- overridden by Segmented_Line to
+    // drag a single handle point instead of the whole widget.
+    drag_anchor() {
+        return vec2(this.x, this.y)
+    }
+
+    set_drag_position(pos) {
+        this.x = pos.x
+        this.y = pos.y
+    }
+
     draw(win) {}
 }
 
 // Button draws an assignable texture at its position, with optional
-// hover/pressed art -- falls back to the base texture when those aren't
-// given.
+// hover/pressed/selected art -- falls back to the base texture when those
+// aren't given.
 class Button < Widget {
-    init(x, y, w, h, texture, hover_texture=nil, pressed_texture=nil) {
+    init(x, y, w, h, texture, hover_texture=nil, pressed_texture=nil, selected_texture=nil, disabled_texture=nil) {
         super.init(x, y, w, h)
         this.texture = texture
         this.hover_texture = hover_texture
         this.pressed_texture = pressed_texture
+        this.selected_texture = selected_texture
+        this.disabled_texture = disabled_texture
+
+        // selected is a persistent toggle the host sets/clears itself
+        // (e.g. a palette's "currently chosen" entry) -- unlike `pressed`
+        // (transient: Screen.update() recomputes it from live mouse-down
+        // state every frame), it stays however the host last set it.
+        this.selected = false
     }
 
     current_texture() {
+        // disabled outranks everything: Screen.update() already skips a
+        // disabled widget (enabled == false) in hit-testing, so pressed/
+        // hovering can never become true on one -- but selected can still
+        // be true (set programmatically, independent of interaction),
+        // e.g. a currently-active tool that just got locked. A disabled
+        // widget should read as disabled regardless.
+        if (!this.enabled and this.disabled_texture != nil) {
+            return this.disabled_texture
+        }
+        // pressed outranks selected: a click's on_left_click handler
+        // commonly sets `selected` on the very same frame the press
+        // happens (e.g. a palette entry selecting itself) -- if selected
+        // won, that would mask pressed_texture for the entire press,
+        // since by the time the frame's texture is read `selected` is
+        // already true. Checking pressed first gives that same click a
+        // visible flash while held, settling into selected_texture (if
+        // any) only once released.
         if (this.pressed and this.pressed_texture != nil) {
             return this.pressed_texture
+        }
+        if (this.selected and this.selected_texture != nil) {
+            return this.selected_texture
         }
         if (this.hovering and this.hover_texture != nil) {
             return this.hover_texture
         }
         return this.texture
+    }
+
+    draw(win) {
+        win.draw_texture(this.current_texture(), this.x, this.y, colour.WHITE)
+    }
+}
+
+// Label draws static or dynamic text at a position -- `text` is a plain
+// mutable field, so a status line is just `label.text = "Placed: 5"`
+// every time it changes. Not hit-testable by default (w/h default to 0,
+// so the inherited contains() never matches) -- pass explicit w/h if you
+// want a clickable text label.
+class Label < Widget {
+    init(x, y, text, font_size=16, text_colour=nil) {
+        super.init(x, y, 0, 0)
+        this.text = text
+        this.font_size = font_size
+        this.colour = text_colour
+        if (this.colour == nil) {
+            this.colour = colour.WHITE
+        }
+    }
+
+    draw(win) {
+        win.text(this.text, this.x, this.y, this.font_size, this.colour)
+    }
+}
+
+// Checkbox is an on/off toggle. Unlike Button, its on_left_click has a
+// sensible default (toggle) since "click toggles" is the entire point of
+// a checkbox -- assign a different on_left_click for fully custom
+// behaviour, or leave it and use on_change to react to toggles instead.
+class Checkbox < Widget {
+    init(x, y, size, on_texture, off_texture) {
+        super.init(x, y, size, size)
+        this.on_texture = on_texture
+        this.off_texture = off_texture
+        this.checked = false
+        this.on_change = nil // (checkbox, checked) -> _, fired by toggle()
+        this.on_left_click = func (w, pos) { w.toggle() }
+    }
+
+    toggle() {
+        this.checked = !this.checked
+        if (this.on_change != nil) {
+            this.on_change(this, this.checked)
+        }
+    }
+
+    current_texture() {
+        if (this.checked) {
+            return this.on_texture
+        }
+        return this.off_texture
     }
 
     draw(win) {
@@ -95,15 +221,6 @@ class Draggable < Widget {
     init(x, y, w, h, texture=nil) {
         super.init(x, y, w, h)
         this.texture = texture
-
-        this.on_drag_start = nil
-        this.on_drag = nil
-        this.on_drag_end = nil
-
-        // Internal, written by Screen.update() -- don't set these directly.
-        this.dragging = false
-        this.drag_offset_x = 0
-        this.drag_offset_y = 0
     }
 
     is_draggable() {
@@ -113,6 +230,288 @@ class Draggable < Widget {
     draw(win) {
         if (this.texture != nil) {
             win.draw_texture(this.texture, this.x, this.y, colour.WHITE)
+        }
+    }
+}
+
+// Slider is a horizontal drag control: dragging its handle sets `value`
+// within [min_value, max_value]. Reuses the drag_anchor/set_drag_position
+// hooks Widget exposes (built for Segmented_Line) -- Screen.update() needs
+// no changes to support it. Hit-testing (and so dragging) only responds
+// near the handle itself, not anywhere along the track.
+class Slider < Widget {
+    init(x, y, w, min_value, max_value, value=nil) {
+        super.init(x, y, w, 16) // h is just a generous hit-box height around the track
+        this.min_value = min_value
+        this.max_value = max_value
+        if (value == nil) {
+            this.value = min_value
+        } else {
+            this.value = value
+        }
+        this.handle_radius = 8
+        this.track_colour = colour.GRAY
+        this.handle_colour = colour.WHITE
+        this.on_change = nil // (slider, value) -> _, fired whenever value changes via drag
+    }
+
+    is_draggable() {
+        return true
+    }
+
+    // handle_x/handle_y are the handle's current position, derived from
+    // value -- the single source of truth draw() and hit-testing/dragging
+    // both use. float(...) is required here: odlox's `/` truncates like
+    // integer division when both operands are ints (e.g. `65/100` is `0`,
+    // not `0.65`), and value/min_value/max_value are commonly given as
+    // plain int literals (gui.Slider(x, y, w, 0, 100, 65)).
+    handle_x() {
+        var t = float(this.value - this.min_value) / (this.max_value - this.min_value)
+        return this.x + t * this.w
+    }
+
+    handle_y() {
+        return this.y + this.h / 2.0
+    }
+
+    contains(px, py) {
+        var dx = px - this.handle_x()
+        var dy = py - this.handle_y()
+        return dx * dx + dy * dy <= this.handle_radius * this.handle_radius
+    }
+
+    drag_anchor() {
+        return vec2(this.handle_x(), this.handle_y())
+    }
+
+    set_drag_position(pos) {
+        var cx = clamp(pos.x, this.x, this.x + this.w)
+        var t = float(cx - this.x) / this.w
+        this.value = this.min_value + t * (this.max_value - this.min_value)
+        if (this.on_change != nil) {
+            this.on_change(this, this.value)
+        }
+    }
+
+    draw(win) {
+        var y = this.handle_y()
+        win.line(this.x, y, this.x + this.w, y, this.track_colour)
+        win.circle_fill(this.handle_x(), y, this.handle_radius, this.handle_colour)
+    }
+}
+
+// Segmented_Line is a polyline: an ordered list of vec2 points, drawn as
+// connected segments with a draggable handle at each vertex -- the
+// widget-based counterpart of the hand-rolled Line/handle bookkeeping in
+// lox_examples/mouse_demo.lox. Unlike Button/Draggable it isn't hit-tested
+// against a bounding rect -- contains() tests every handle individually
+// and records which one matched in `active_handle`, which the click/drag
+// logic below (and drag_anchor/set_drag_position) then acts on. That
+// makes contains() double as a hit *and* a selection step -- fine because
+// Screen.update() only ever calls it once per widget per frame, right
+// before using the result.
+class Segmented_Line < Widget {
+    // points: a list of >= 2 vec2 vertices. handle_radius: hit-test/draw
+    // radius, in pixels, for each vertex handle.
+    init(points, handle_radius=8) {
+        super.init(points[0].x, points[0].y, 0, 0) // x/y/w/h unused -- see contains()
+        this.points = points
+        this.handle_radius = handle_radius
+        this.colour = colour.WHITE
+        this.handle_colour = colour.WHITE
+
+        // Internal, written by Screen.update() via contains() -- don't
+        // set this directly.
+        this.active_handle = 0
+    }
+
+    contains(px, py) {
+        for (var i = 0; i < len(this.points); i = i + 1) {
+            var p = this.points[i]
+            var dx = px - p.x
+            var dy = py - p.y
+            if (dx * dx + dy * dy <= this.handle_radius * this.handle_radius) {
+                this.active_handle = i
+                return true
+            }
+        }
+        return false
+    }
+
+    is_draggable() {
+        return true
+    }
+
+    drag_anchor() {
+        return this.points[this.active_handle]
+    }
+
+    set_drag_position(pos) {
+        this.points[this.active_handle] = pos
+    }
+
+    // add_point appends a new vertex, extending the line by one segment.
+    add_point(p) {
+        this.points.append(p)
+    }
+
+    // remove_point deletes vertex `index` -- e.g. from an on_right_click
+    // handler doing `line.remove_point(line.active_handle)`. Refuses to
+    // drop below 2 points (a line needs at least one segment); returns
+    // whether the point was actually removed, so the caller can tell
+    // "now empty enough to discard the whole line" from "just shortened".
+    remove_point(index) {
+        if (len(this.points) <= 2) {
+            return false
+        }
+        this.points.remove(index)
+        return true
+    }
+
+    draw(win) {
+        for (var i = 0; i < len(this.points) - 1; i = i + 1) {
+            var a = this.points[i]
+            var b = this.points[i + 1]
+            win.line(a.x, a.y, b.x, b.y, this.colour)
+        }
+        for (var i = 0; i < len(this.points); i = i + 1) {
+            var p = this.points[i]
+            win.circle_fill(p.x, p.y, this.handle_radius, this.handle_colour)
+        }
+    }
+}
+
+// Rect is a plain axis-aligned rectangle value -- returned by
+// Marquee.end(), and generally useful for box-testing widgets/points
+// against a selection area.
+class Rect {
+    init(x, y, w, h) {
+        this.x = x
+        this.y = y
+        this.w = w
+        this.h = h
+    }
+
+    contains(px, py) {
+        return px >= this.x and px <= this.x + this.w and py >= this.y and py <= this.y + this.h
+    }
+}
+
+// Marquee tracks a drag-out selection rectangle -- deliberately dumb: it
+// doesn't know what a "selectable object" is and doesn't hook into Screen
+// at all. The host drives it directly (e.g. begin() on a right-press over
+// empty canvas -- i.e. when Screen.click_consumed is false -- update()
+// every held frame, end() on release) and, with the Rect end() returns,
+// tests its own list of objects and decides what to do with the ones
+// inside it. Generalizes lox_examples/mouse_demo.lox's box-select-delete.
+class Marquee {
+    init() {
+        this.active = false
+        this.start = nil
+        this.current = nil
+        this.colour = colour.WHITE
+    }
+
+    begin(pos) {
+        this.active = true
+        this.start = pos
+        this.current = pos
+    }
+
+    update(pos) {
+        if (this.active) {
+            this.current = pos
+        }
+    }
+
+    // end finishes the drag and returns the final Rect, normalised
+    // regardless of which corner the drag started from.
+    end() {
+        this.active = false
+        return this.rect()
+    }
+
+    rect() {
+        var x = this.start.x
+        if (this.current.x < x) {
+            x = this.current.x
+        }
+        var y = this.start.y
+        if (this.current.y < y) {
+            y = this.current.y
+        }
+        var w = this.current.x - this.start.x
+        if (w < 0) {
+            w = -w
+        }
+        var h = this.current.y - this.start.y
+        if (h < 0) {
+            h = -h
+        }
+        return Rect(x, y, w, h)
+    }
+
+    // draw outlines the box while active -- win.rectangle() is filled, so
+    // this draws the four edges separately instead (same technique as
+    // lox_examples/mouse_demo.lox's draw_rect_outline).
+    draw(win) {
+        if (!this.active) {
+            return
+        }
+        var r = this.rect()
+        var x2 = r.x + r.w
+        var y2 = r.y + r.h
+        win.line(r.x, r.y, x2, r.y, this.colour)
+        win.line(x2, r.y, x2, y2, this.colour)
+        win.line(x2, y2, r.x, y2, this.colour)
+        win.line(r.x, y2, r.x, r.y, this.colour)
+    }
+}
+
+// Button_Group enforces single-selection across a set of Buttons (radio-
+// button behaviour) -- replaces the "loop over every button and clear
+// .selected by hand" pattern otherwise needed at every call site (see
+// lox_examples/gui_level_editor_demo.lox's select_tile()/set_mode()
+// before this existed).
+class Button_Group {
+    init() {
+        this.buttons = []
+        this.selected_index = -1 // -1 = nothing selected
+        this.on_change = nil // (group, index) -> _, fired on selection change
+    }
+
+    // add wires btn's on_left_click to select it in the group. Any
+    // on_left_click already set on btn is preserved and still runs first.
+    add(btn) {
+        var index = len(this.buttons)
+        this.buttons.append(btn)
+        var previous_click = btn.on_left_click
+        btn.on_left_click = func (w, pos) {
+            if (previous_click != nil) {
+                previous_click(w, pos)
+            }
+            this.select(index)
+        }
+        return btn
+    }
+
+    select(index) {
+        this.selected_index = index
+        for (var i = 0; i < len(this.buttons); i = i + 1) {
+            this.buttons[i].selected = i == index
+        }
+        if (this.on_change != nil) {
+            this.on_change(this, index)
+        }
+    }
+
+    select_none() {
+        this.selected_index = -1
+        for (var i = 0; i < len(this.buttons); i = i + 1) {
+            this.buttons[i].selected = false
+        }
+        if (this.on_change != nil) {
+            this.on_change(this, -1)
         }
     }
 }
@@ -130,6 +529,14 @@ class Screen {
         // "clicked a button" apart from "clicked empty canvas" without
         // redoing hit-testing itself. See update().
         this.click_consumed = false
+
+        // focused is the widget that received the last consumed
+        // left-click, or nil once a left-click lands on empty space.
+        // Screen doesn't dispatch keyboard input itself (odlox's key API
+        // is per-constant polling, not "tell me what was pressed") -- the
+        // host does its own e.g. `if (win.key_pressed(win.KEY_DELETE) and
+        // screen.focused == some_widget) { ... }`, gated on this.
+        this.focused = nil
     }
 
     add(widget) {
@@ -144,6 +551,32 @@ class Screen {
         }
     }
 
+    // bring_to_front/send_to_back reorder widget -- z-order is otherwise
+    // fixed at insertion order (last added draws on top and wins
+    // hit-testing ties), with no other way to reorder short of
+    // remove()-then-add() (which also loses its position relative to
+    // untouched siblings).
+    bring_to_front(widget) {
+        var idx = this.widgets.find(widget)
+        if (idx != nil) {
+            this.widgets.remove(idx)
+            this.widgets.append(widget)
+        }
+    }
+
+    send_to_back(widget) {
+        var idx = this.widgets.find(widget)
+        if (idx == nil) {
+            return
+        }
+        this.widgets.remove(idx)
+        var reordered = [widget]
+        for (var i = 0; i < len(this.widgets); i = i + 1) {
+            reordered.append(this.widgets[i])
+        }
+        this.widgets = reordered
+    }
+
     // update reads live mouse state from `win` and dispatches hover/click/
     // drag callbacks. Call once per frame, before draw().
     update(win) {
@@ -152,8 +585,7 @@ class Screen {
 
         if (this.dragging != nil) {
             var d = this.dragging
-            d.x = pos.x - d.drag_offset_x
-            d.y = pos.y - d.drag_offset_y
+            d.set_drag_position(vec2(pos.x - d.drag_offset_x, pos.y - d.drag_offset_y))
             if (d.on_drag != nil) {
                 d.on_drag(d, pos)
             }
@@ -194,18 +626,23 @@ class Screen {
         }
 
         if (hit == nil) {
+            if (win.mouse_pressed(win.MOUSE_LEFT)) {
+                this.focused = nil
+            }
             return
         }
 
         if (win.mouse_pressed(win.MOUSE_LEFT)) {
             this.click_consumed = true
+            this.focused = hit
             if (hit.on_left_click != nil) {
                 hit.on_left_click(hit, pos)
             }
             if (hit.is_draggable()) {
                 hit.dragging = true
-                hit.drag_offset_x = pos.x - hit.x
-                hit.drag_offset_y = pos.y - hit.y
+                var anchor = hit.drag_anchor()
+                hit.drag_offset_x = pos.x - anchor.x
+                hit.drag_offset_y = pos.y - anchor.y
                 this.dragging = hit
                 if (hit.on_drag_start != nil) {
                     hit.on_drag_start(hit, pos)
