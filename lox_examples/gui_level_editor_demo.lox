@@ -1,15 +1,22 @@
 from gfx import *
-// Minimal level editor built on gui.lox: a palette sidebar of tile
-// Buttons, two mode buttons below it (tile tool / line tool -- the
-// selected one stays highlighted with a yellow border), and a canvas
-// shared by both tools. Every texture is generated procedurally
-// (coloured squares/dots) via render_texture, so the demo needs no
-// external image asset.
+// Level editor built on gui.lox, exercising every widget/helper the
+// module provides: a palette sidebar of tile Buttons (gui.Button_Group),
+// two mode buttons (tile tool / line tool, also a Button_Group), a
+// "snap to grid" Checkbox, a grid-size Slider, a "Clear All" Button that
+// disables itself (Button.disabled_texture) when there's nothing to
+// clear, status gui.Labels, and a canvas shared by both tools. Every
+// texture is generated procedurally via render_texture, so the demo
+// needs no external image asset.
 //
 // Tile tool (default): click a palette tile to select it (highlighted),
-// then click empty canvas to place a copy there, snapped to a TILE_SIZE
-// grid. Drag a placed tile to move it. Right-click a placed tile to
-// delete it.
+// then click empty canvas to place a copy there -- snapped to the
+// slider's grid size when "snap to grid" is checked (gui.snap()), and
+// always clamped to stay fully on screen (gui.clamp()). Drag a placed
+// tile to move it (dragging brings it to the front via
+// Screen.bring_to_front(), so it stays on top of whatever it's dragged
+// over). Right-click a placed tile to delete it, or right-drag over
+// empty canvas to box-delete every tile inside the drawn rectangle
+// (gui.Marquee, gui.Rect).
 //
 // Line tool: click empty canvas to start a wall, then keep clicking to
 // add more points -- a gui.Segmented_Line, the widget-based counterpart
@@ -18,8 +25,8 @@ from gfx import *
 // any handle to move that point; right-click a handle removes it
 // (removing down to a single point discards the whole line).
 //
-// Click a mode button to switch tools, or use the T/L keyboard shortcuts.
-// ESC to quit.
+// Click a mode button to switch tools, or T/L. B sends the last-clicked
+// tile to the back (Screen.focused + Screen.send_to_back). ESC quits.
 import gui
 import colour
 
@@ -30,6 +37,8 @@ const PALETTE_GAP = 8
 const CANVAS_X = 100 // left edge of the placeable canvas, right of the palette sidebar
 const LINE_HANDLE_RADIUS = 8
 const SELECT_BORDER = 3
+const TILE_MODE = 0
+const LINE_MODE = 1
 
 var win = window(900, 600)
 win.init()
@@ -52,6 +61,8 @@ func make_icon(bg_colour, draw_icon, border_colour=nil) {
     return rt.get_texture()
 }
 
+func draw_nothing(rt) {}
+
 func draw_dot(mark_colour) {
     return func (rt) { rt.circle_fill(TILE_SIZE / 2, TILE_SIZE / 2, TILE_SIZE / 4, mark_colour) }
 }
@@ -72,6 +83,12 @@ func brighten(c) {
     return vec4(clamp255(c.x * BRIGHTEN_FACTOR), clamp255(c.y * BRIGHTEN_FACTOR), clamp255(c.z * BRIGHTEN_FACTOR), c.w)
 }
 
+// dim is brighten's opposite, used for the "Clear All" button's
+// disabled_texture -- greyed out rather than flashing.
+func dim(c) {
+    return vec4(c.x / 3, c.y / 3, c.z / 3, c.w)
+}
+
 func draw_tile_mode_icon(rt) {
     rt.rectangle(TILE_SIZE / 4, TILE_SIZE / 4, TILE_SIZE / 2, TILE_SIZE / 2, colour.LIGHTGRAY)
 }
@@ -80,6 +97,21 @@ func draw_line_mode_icon(rt) {
     rt.line(8, TILE_SIZE - 8, TILE_SIZE - 8, 8, colour.SKYBLUE)
     rt.circle_fill(8, TILE_SIZE - 8, 4, colour.SKYBLUE)
     rt.circle_fill(TILE_SIZE - 8, 8, 4, colour.SKYBLUE)
+}
+
+func draw_check_icon(rt) {
+    rt.line(10, TILE_SIZE / 2, TILE_SIZE / 2 - 4, TILE_SIZE - 12, colour.LIME)
+    rt.line(TILE_SIZE / 2 - 4, TILE_SIZE - 12, TILE_SIZE - 10, 10, colour.LIME)
+}
+
+func draw_clear_icon(rt) {
+    rt.line(10, 10, TILE_SIZE - 10, TILE_SIZE - 10, colour.RED)
+    rt.line(TILE_SIZE - 10, 10, 10, TILE_SIZE - 10, colour.RED)
+}
+
+func draw_clear_icon_disabled(rt) {
+    rt.line(10, 10, TILE_SIZE - 10, TILE_SIZE - 10, colour.GRAY)
+    rt.line(TILE_SIZE - 10, 10, 10, TILE_SIZE - 10, colour.GRAY)
 }
 
 var tile_colour_pairs = [
@@ -98,56 +130,75 @@ for (var i = 0; i < len(tile_colour_pairs); i = i + 1) {
 }
 
 var screen = gui.Screen()
-var palette = []
 var current_tile = tile_textures[0]
 
-// select_tile marks palette entry `index` selected (highlighted) and
-// clears every other entry's selection.
-func select_tile(index) {
-    current_tile = tile_textures[index]
-    for (var i = 0; i < len(palette); i = i + 1) {
-        palette[i].selected = i == index
+// Palette: a Button_Group enforces "only one tile selected at a time"
+// without hand-looping over every button to clear .selected.
+var tile_group = gui.Button_Group()
+tile_group.on_change = func (g, index) {
+    if (index != -1) {
+        current_tile = tile_textures[index]
     }
 }
-
 for (var i = 0; i < len(tile_textures); i = i + 1) {
-    // `i` is the for-loop's own control variable -- one shared slot across
-    // every iteration, not a fresh binding per iteration -- so a closure
-    // capturing `i` directly would see its final value on every click, not
-    // the index it was created with. `index` is a plain local declared
-    // inside the loop body instead, which does get a fresh slot each time
-    // round (same pattern as tests/new_tests/lox/closure_list.lox).
-    var index = i
     var x = PALETTE_X
     var y = PALETTE_X + i * (TILE_SIZE + PALETTE_GAP)
     var b = screen.add(gui.Button(x, y, TILE_SIZE, TILE_SIZE, tile_textures[i], nil, tile_textures_pressed[i], tile_textures_selected[i]))
-    b.on_left_click = func (w, pos) { select_tile(index) }
-    palette.append(b)
+    tile_group.add(b)
 }
-select_tile(0)
+tile_group.select(0)
+
+var placed_tiles = [] // every Draggable tile currently on the canvas
+var placed_lines = [] // every finished Segmented_Line currently on the canvas
+
+var snap_enabled = true
+var snap_size = TILE_SIZE // adjustable via the grid-size Slider below
 
 // place_tile drops a new Draggable copy of the currently-selected tile at
-// `pos`, snapped to the tile grid, and wires up its own delete-on-right-
-// click handler.
+// `pos` (snapped to the grid via gui.snap() if snap_enabled, then
+// clamped fully on screen via gui.clamp() -- in that order, since
+// snapping after clamping could round the result back off-screen; e.g. a
+// click at CANVAS_X itself is already in bounds, but could still snap
+// down to a grid line left of CANVAS_X). Dragging it brings it to the
+// front (Screen.bring_to_front()); right-clicking it deletes it.
 func place_tile(pos) {
-    var gx = int(pos.x / TILE_SIZE) * TILE_SIZE
-    var gy = int(pos.y / TILE_SIZE) * TILE_SIZE
-    var placed = screen.add(gui.Draggable(gx, gy, TILE_SIZE, TILE_SIZE, current_tile))
-    placed.on_right_click = func (w, pos2) { screen.remove(placed) }
+    var placed_pos = pos
+    if (snap_enabled) {
+        placed_pos = gui.snap(placed_pos, snap_size)
+    }
+    var cx = gui.clamp(placed_pos.x, CANVAS_X, win.get_screen_width() - TILE_SIZE)
+    var cy = gui.clamp(placed_pos.y, 0, win.get_screen_height() - TILE_SIZE)
+    placed_pos = vec2(cx, cy)
+    var placed = screen.add(gui.Draggable(placed_pos.x, placed_pos.y, TILE_SIZE, TILE_SIZE, current_tile))
+    placed.on_drag_start = func (w, pos2) { screen.bring_to_front(w) }
+    placed.on_right_click = func (w, pos2) {
+        screen.remove(placed)
+        var idx = placed_tiles.find(placed)
+        if (idx != nil) {
+            placed_tiles.remove(idx)
+        }
+    }
+    placed_tiles.append(placed)
 }
 
 var mode = "tile" // "tile" or "line"
 var current_line = nil // the in-progress Segmented_Line while drawing, or nil
 
-// wire_line gives a placed/in-progress line its colour and its
-// right-click-a-handle-to-remove-it behaviour: removing the last handle
-// that keeps it a line (2 points) discards the whole thing instead.
+// wire_line gives a placed/in-progress line its colour, brings it to
+// front when a handle starts being dragged, and its right-click-a-
+// handle-to-remove-it behaviour: removing the last handle that keeps it
+// a line (2 points) discards the whole thing instead.
 func wire_line(line) {
     line.colour = colour.SKYBLUE
     line.handle_colour = colour.SKYBLUE
+    line.on_drag_start = func (w, pos) { screen.bring_to_front(w) }
     line.on_right_click = func (w, pos) {
         if (!w.remove_point(w.active_handle)) {
             screen.remove(w)
+            var idx = placed_lines.find(w)
+            if (idx != nil) {
+                placed_lines.remove(idx)
+            }
         }
     }
 }
@@ -155,17 +206,20 @@ func wire_line(line) {
 // finish_line stops extending the in-progress line -- the next canvas
 // click in line mode starts a new one instead. A line abandoned after
 // only one point (never extended) is discarded rather than left as a
-// stray, unclickable-as-a-line dot.
+// stray, unclickable-as-a-line dot; a real one is registered so the
+// marquee/"Clear All" logic below can find it.
 func finish_line() {
     if (current_line != nil) {
         if (len(current_line.points) < 2) {
             screen.remove(current_line)
+        } else {
+            placed_lines.append(current_line)
         }
         current_line = nil
     }
 }
 
-// Mode buttons, stacked below the tile palette.
+// Mode buttons, stacked below the tile palette -- another Button_Group.
 var mode_btn_y = PALETTE_X + len(tile_textures) * (TILE_SIZE + PALETTE_GAP) + PALETTE_GAP
 var tile_mode_icon = make_icon(colour.DARKGRAY, draw_tile_mode_icon)
 var tile_mode_icon_selected = make_icon(colour.DARKGRAY, draw_tile_mode_icon, colour.YELLOW)
@@ -177,31 +231,121 @@ var line_mode_icon_pressed = make_icon(brighten(colour.DARKGRAY), draw_line_mode
 var tile_mode_btn = screen.add(gui.Button(PALETTE_X, mode_btn_y, TILE_SIZE, TILE_SIZE, tile_mode_icon, nil, tile_mode_icon_pressed, tile_mode_icon_selected))
 var line_mode_btn = screen.add(gui.Button(PALETTE_X, mode_btn_y + TILE_SIZE + PALETTE_GAP, TILE_SIZE, TILE_SIZE, line_mode_icon, nil, line_mode_icon_pressed, line_mode_icon_selected))
 
-// set_mode switches tools and keeps the two mode buttons' highlighted
-// state in sync -- the single place both the buttons and the T/L
-// keyboard shortcuts go through.
-func set_mode(m) {
-    mode = m
-    tile_mode_btn.selected = mode == "tile"
-    line_mode_btn.selected = mode == "line"
+var help_label = screen.add(gui.Label(CANVAS_X + 10, 0, "", 16, colour.WHITE)) // y set once window height is known, below
+var hint_label = screen.add(gui.Label(CANVAS_X + 10, 0, "T: tile   L: line   B: send focused to back   ESC: quit", 16, colour.LIGHTGRAY))
+help_label.y = win.get_screen_height() - 30
+hint_label.y = win.get_screen_height() - 50
+
+// set_help updates help_label's text for the current mode -- called once
+// per mode change rather than every frame, since it only ever changes then.
+func set_help() {
     if (mode == "tile") {
-        finish_line()
+        help_label.text = "Tiles: click a palette tile, then the canvas to place it. Drag to move. Right-click (or right-drag a box) deletes."
+    } else {
+        help_label.text = "Lines: click canvas to add points. Right-click empty canvas to finish. Right-click a handle to remove it."
     }
 }
-tile_mode_btn.on_left_click = func (w, pos) { set_mode("tile") }
-line_mode_btn.on_left_click = func (w, pos) { set_mode("line") }
-set_mode("tile")
+
+// mode_group's on_change is the single place mode switches happen,
+// whether triggered by clicking a mode button or the T/L keyboard
+// shortcuts below.
+var mode_group = gui.Button_Group()
+mode_group.on_change = func (g, index) {
+    if (index == TILE_MODE) {
+        mode = "tile"
+        finish_line()
+    } else if (index == LINE_MODE) {
+        mode = "line"
+    }
+    set_help()
+}
+mode_group.add(tile_mode_btn)
+mode_group.add(line_mode_btn)
+mode_group.select(TILE_MODE)
+
+// Snap-to-grid Checkbox, below the mode buttons.
+var snap_y = mode_btn_y + 2 * (TILE_SIZE + PALETTE_GAP)
+var snap_off_icon = make_icon(colour.DARKGRAY, draw_nothing)
+var snap_on_icon = make_icon(colour.DARKGRAY, draw_check_icon)
+var snap_checkbox = screen.add(gui.Checkbox(PALETTE_X, snap_y, TILE_SIZE, snap_on_icon, snap_off_icon))
+snap_checkbox.checked = true
+snap_checkbox.on_change = func (w, checked) { snap_enabled = checked }
+
+// "Clear All" Button, below the checkbox -- disables itself (greyed out
+// via disabled_texture) whenever there's nothing placed to clear.
+var clear_y = snap_y + TILE_SIZE + PALETTE_GAP
+var clear_icon = make_icon(colour.DARKGRAY, draw_clear_icon)
+var clear_icon_pressed = make_icon(brighten(colour.DARKGRAY), draw_clear_icon)
+var clear_icon_disabled = make_icon(dim(colour.DARKGRAY), draw_clear_icon_disabled)
+var clear_btn = screen.add(gui.Button(PALETTE_X, clear_y, TILE_SIZE, TILE_SIZE, clear_icon, nil, clear_icon_pressed, nil, clear_icon_disabled))
+clear_btn.on_left_click = func (w, pos) {
+    for (var i = 0; i < len(placed_tiles); i = i + 1) {
+        screen.remove(placed_tiles[i])
+    }
+    for (var i = 0; i < len(placed_lines); i = i + 1) {
+        screen.remove(placed_lines[i])
+    }
+    placed_tiles = []
+    placed_lines = []
+    finish_line()
+}
+
+// Grid-size Slider, below "Clear All" -- controls snap_size (16..96px).
+var slider_y = clear_y + TILE_SIZE + PALETTE_GAP
+var grid_slider = screen.add(gui.Slider(PALETTE_X, slider_y, 80, 16, 96, TILE_SIZE))
+var grid_label = screen.add(gui.Label(PALETTE_X, slider_y + 16, "", 14, colour.LIGHTGRAY))
+func set_grid_label() {
+    grid_label.text = format("Grid: %dpx", int(grid_slider.value))
+}
+grid_slider.on_change = func (w, value) {
+    snap_size = int(value)
+    set_grid_label()
+}
+set_grid_label()
+
+// Status Label -- live counts, top-left of the canvas.
+var status_label = screen.add(gui.Label(CANVAS_X + 10, 10, "", 16, colour.WHITE))
+func set_status() {
+    status_label.text = format("Tiles: %d   Lines: %d", len(placed_tiles), len(placed_lines))
+}
+set_status()
+
+// Marquee (tile mode only): right-drag over empty canvas box-deletes
+// every placed tile whose centre falls inside the drawn rectangle --
+// right-clicking a tile directly still deletes just that one (handled by
+// place_tile()'s own on_right_click, and gated by click_consumed here so
+// the two never both fire for the same press).
+var marquee = gui.Marquee()
+marquee.colour = colour.ORANGE
+
+// bring_overlay_to_front keeps the status/help/hint text above whatever
+// tiles/lines get placed on the canvas -- z-order is otherwise plain
+// insertion order, and status_label in particular sits at the canvas's
+// top-left corner, a spot placed tiles can legally land on top of
+// (Screen.bring_to_front() is exactly the tool for this).
+func bring_overlay_to_front() {
+    screen.bring_to_front(help_label)
+    screen.bring_to_front(hint_label)
+    screen.bring_to_front(status_label)
+}
+
+set_help()
 
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }
     if (win.key_pressed(win.KEY_T)) {
-        set_mode("tile")
+        mode_group.select(TILE_MODE)
     }
     if (win.key_pressed(win.KEY_L)) {
-        set_mode("line")
+        mode_group.select(LINE_MODE)
     }
+    if (win.key_pressed(win.KEY_B) and screen.focused != nil) {
+        screen.send_to_back(screen.focused)
+    }
+
+    clear_btn.enabled = len(placed_tiles) > 0 or len(placed_lines) > 0
 
     screen.update(win)
 
@@ -210,6 +354,7 @@ while (!win.should_close()) {
         if (pos.x >= CANVAS_X) {
             if (mode == "tile") {
                 place_tile(pos)
+                set_status()
             } else if (current_line == nil) {
                 current_line = screen.add(gui.Segmented_Line([pos], LINE_HANDLE_RADIUS))
                 wire_line(current_line)
@@ -223,19 +368,41 @@ while (!win.should_close()) {
         var pos = win.mouse_position()
         if (pos.x >= CANVAS_X) {
             finish_line()
+            set_status()
         }
     }
+
+    if (mode == "tile") {
+        if (!screen.click_consumed and win.mouse_pressed(win.MOUSE_RIGHT)) {
+            var pos = win.mouse_position()
+            if (pos.x >= CANVAS_X) {
+                marquee.begin(pos)
+            }
+        } else if (marquee.active and win.mouse_down(win.MOUSE_RIGHT)) {
+            marquee.update(win.mouse_position())
+        } else if (marquee.active and win.mouse_released(win.MOUSE_RIGHT)) {
+            var box = marquee.end()
+            var kept = []
+            for (var i = 0; i < len(placed_tiles); i = i + 1) {
+                var t = placed_tiles[i]
+                if (box.contains(t.x + TILE_SIZE / 2.0, t.y + TILE_SIZE / 2.0)) {
+                    screen.remove(t)
+                } else {
+                    kept.append(t)
+                }
+            }
+            placed_tiles = kept
+            set_status()
+        }
+    }
+
+    bring_overlay_to_front()
 
     win.begin()
     win.clear(colour.BLACK)
     win.line(CANVAS_X, 0, CANVAS_X, win.get_screen_height(), colour.GRAY)
     screen.draw(win)
-    var help = "Tiles: click a palette tile, then the canvas to place it. Drag to move. Right-click deletes."
-    if (mode == "line") {
-        help = "Lines: click canvas to add points. Right-click empty canvas to finish. Right-click a handle to remove it."
-    }
-    win.text(help, CANVAS_X + 10, win.get_screen_height() - 30, 16, colour.WHITE)
-    win.text("T: tile tool   L: line tool   ESC: quit", CANVAS_X + 10, win.get_screen_height() - 50, 16, colour.LIGHTGRAY)
+    marquee.draw(win)
     win.end()
 }
 win.close()
