@@ -18,7 +18,8 @@ from gfx import *
 // ESC to quit, SPACE to jump straight to the next strategy. The grid also
 // clears, re-randomises, and switches to the next strategy on its own
 // every RESET_TICKS generations (most random starts stabilise or die out
-// well before that).
+// well before that) -- A toggles that auto-switch off/on; SPACE still
+// works either way.
 
 import random
 import colour
@@ -32,6 +33,18 @@ const NUM_BLOCKS = 10 // filled rectangles per reset
 const ALIVE_COLOUR = vec4(0, 230, 120, 255)
 const BG_COLOUR = colour.BLACK
 
+// The last two strategies (Immigration Game, QuadLife) each recompute 2/4
+// full neighbour_count_array()s per generation instead of the single fused
+// step_generic() pass every other strategy uses (see their own comments
+// below) -- visibly slower generations at full resolution. They run on a
+// quarter as many cells instead (half cols, half rows -- BOX_COLS/BOX_ROWS
+// below), cutting their per-generation cost roughly 4x, and are drawn into
+// a bordered box sized to match rather than stretched back up to
+// fullscreen -- the box's size is a direct consequence of the smaller
+// grid, not a separate cosmetic scale-down.
+const BOX_BORDER_COLOUR = vec4(90, 90, 90, 255)
+const BOX_BORDER_THICKNESS = 3
+
 var win = window(1, 1)
 win.init()
 win.toggle_fullscreen()
@@ -39,8 +52,19 @@ win.set_target_fps(30)
 
 var screen_w = int(win.get_screen_width())
 var screen_h = int(win.get_screen_height())
-var cols = screen_w / CELL_SIZE
-var rows = screen_h / CELL_SIZE
+var FULL_COLS = screen_w / CELL_SIZE
+var FULL_ROWS = screen_h / CELL_SIZE
+var BOX_COLS = FULL_COLS / 2
+var BOX_ROWS = FULL_ROWS / 2
+
+// cols/rows and every buffer below are reference-only globals from here on
+// -- select_buffers() (near draw_grid) repoints them at either the FULL_*
+// or BOX_* fixed allocations whenever the active strategy changes, instead
+// of resizing or reallocating anything: both resolutions' buffers are
+// allocated once, up front, and every generation just writes into
+// whichever set is currently selected.
+var cols = FULL_COLS
+var rows = FULL_ROWS
 
 // Fixed buffers reused every generation instead of allocating fresh ones
 // -- horiz_sum_of/step_generic/neighbour_count_array used to allocate a
@@ -50,32 +74,65 @@ var rows = screen_h / CELL_SIZE
 // GC churn (worse still for Generations/Brian's Brain, which need one
 // extra grid-sized array per generation, and Immigration Game/QuadLife,
 // which need two/four) is the leading theory for this file's occasional
-// multi-hundred-ms stalls. cols/rows never change once the window
-// exists, so these can all be allocated once, up front, and written into
-// in place from then on.
+// multi-hundred-ms stalls. Allocated once, up front, at both resolutions
+// this file ever runs at -- see select_buffers() -- and written into in
+// place from then on.
 //
 // ROW_BUF_A/B/C: the horiz_sum_of rolling window's three row buffers,
 // shared by every step_generic/neighbour_count_array call regardless of
 // strategy -- see step_generic's own comment on the 3-buffer rotation
 // this enables (h_prev/h_curr/h_next cycle through these three fixed
 // objects rather than any of them ever being freshly allocated).
-var ROW_BUF_A = float_array(cols, 1)
-var ROW_BUF_B = float_array(cols, 1)
-var ROW_BUF_C = float_array(cols, 1)
+var ROW_BUF_A_FULL = float_array(FULL_COLS, 1)
+var ROW_BUF_B_FULL = float_array(FULL_COLS, 1)
+var ROW_BUF_C_FULL = float_array(FULL_COLS, 1)
+var ROW_BUF_A_BOX = float_array(BOX_COLS, 1)
+var ROW_BUF_B_BOX = float_array(BOX_COLS, 1)
+var ROW_BUF_C_BOX = float_array(BOX_COLS, 1)
+var ROW_BUF_A = ROW_BUF_A_FULL
+var ROW_BUF_B = ROW_BUF_B_FULL
+var ROW_BUF_C = ROW_BUF_C_FULL
 
 // IND_BUF_1..4/COUNT_BUF_1..4: state_indicator()/neighbour_count_array()
 // results. Up to 4 of each can be live at once (QuadLife), fewer for
 // simpler strategies -- see each step_*() function for how many it uses.
-var IND_BUF_1 = float_array(cols, rows)
-var IND_BUF_2 = float_array(cols, rows)
-var IND_BUF_3 = float_array(cols, rows)
-var IND_BUF_4 = float_array(cols, rows)
-var COUNT_BUF_1 = float_array(cols, rows)
-var COUNT_BUF_2 = float_array(cols, rows)
-var COUNT_BUF_3 = float_array(cols, rows)
-var COUNT_BUF_4 = float_array(cols, rows)
+var IND_BUF_1_FULL = float_array(FULL_COLS, FULL_ROWS)
+var IND_BUF_2_FULL = float_array(FULL_COLS, FULL_ROWS)
+var IND_BUF_3_FULL = float_array(FULL_COLS, FULL_ROWS)
+var IND_BUF_4_FULL = float_array(FULL_COLS, FULL_ROWS)
+var COUNT_BUF_1_FULL = float_array(FULL_COLS, FULL_ROWS)
+var COUNT_BUF_2_FULL = float_array(FULL_COLS, FULL_ROWS)
+var COUNT_BUF_3_FULL = float_array(FULL_COLS, FULL_ROWS)
+var COUNT_BUF_4_FULL = float_array(FULL_COLS, FULL_ROWS)
+var IND_BUF_1_BOX = float_array(BOX_COLS, BOX_ROWS)
+var IND_BUF_2_BOX = float_array(BOX_COLS, BOX_ROWS)
+var IND_BUF_3_BOX = float_array(BOX_COLS, BOX_ROWS)
+var IND_BUF_4_BOX = float_array(BOX_COLS, BOX_ROWS)
+var COUNT_BUF_1_BOX = float_array(BOX_COLS, BOX_ROWS)
+var COUNT_BUF_2_BOX = float_array(BOX_COLS, BOX_ROWS)
+var COUNT_BUF_3_BOX = float_array(BOX_COLS, BOX_ROWS)
+var COUNT_BUF_4_BOX = float_array(BOX_COLS, BOX_ROWS)
+var IND_BUF_1 = IND_BUF_1_FULL
+var IND_BUF_2 = IND_BUF_2_FULL
+var IND_BUF_3 = IND_BUF_3_FULL
+var IND_BUF_4 = IND_BUF_4_FULL
+var COUNT_BUF_1 = COUNT_BUF_1_FULL
+var COUNT_BUF_2 = COUNT_BUF_2_FULL
+var COUNT_BUF_3 = COUNT_BUF_3_FULL
+var COUNT_BUF_4 = COUNT_BUF_4_FULL
 
-var rt = render_texture(screen_w, screen_h)
+// grid/next_grid/rt: same full/box split as the buffers above -- the
+// active generation's cell states, and the render_texture they're drawn
+// into once per frame (see draw_grid).
+var grid_full = float_array(FULL_COLS, FULL_ROWS)
+var next_grid_full = float_array(FULL_COLS, FULL_ROWS)
+var rt_full = render_texture(FULL_COLS * CELL_SIZE, FULL_ROWS * CELL_SIZE)
+var grid_box = float_array(BOX_COLS, BOX_ROWS)
+var next_grid_box = float_array(BOX_COLS, BOX_ROWS)
+var rt_box = render_texture(BOX_COLS * CELL_SIZE, BOX_ROWS * CELL_SIZE)
+var grid = grid_full
+var next_grid = next_grid_full
+var rt = rt_full
 
 // set_wrapped writes `value` into grid at (x, y), wrapping toroidally --
 // consistent with every other cell access in this file (see
@@ -778,6 +835,70 @@ var strategies = [
 ]
 var strategy_index = 0
 
+// select_buffers repoints every module-level cols/rows/grid/next_grid/rt/
+// ROW_BUF_*/IND_BUF_*/COUNT_BUF_* global at either the FULL_* or BOX_*
+// fixed allocations declared above -- a reference swap, not a fresh
+// allocation, so switching strategies (on SPACE or every RESET_TICKS
+// generations) never grows the heap the way per-frame allocation would.
+// Must run before the new strategy's randomise(grid) call, so the seed is
+// written into a grid already sized to match.
+func select_buffers(boxed) {
+    if (boxed) {
+        cols = BOX_COLS
+        rows = BOX_ROWS
+        ROW_BUF_A = ROW_BUF_A_BOX
+        ROW_BUF_B = ROW_BUF_B_BOX
+        ROW_BUF_C = ROW_BUF_C_BOX
+        IND_BUF_1 = IND_BUF_1_BOX
+        IND_BUF_2 = IND_BUF_2_BOX
+        IND_BUF_3 = IND_BUF_3_BOX
+        IND_BUF_4 = IND_BUF_4_BOX
+        COUNT_BUF_1 = COUNT_BUF_1_BOX
+        COUNT_BUF_2 = COUNT_BUF_2_BOX
+        COUNT_BUF_3 = COUNT_BUF_3_BOX
+        COUNT_BUF_4 = COUNT_BUF_4_BOX
+        grid = grid_box
+        next_grid = next_grid_box
+        rt = rt_box
+    } else {
+        cols = FULL_COLS
+        rows = FULL_ROWS
+        ROW_BUF_A = ROW_BUF_A_FULL
+        ROW_BUF_B = ROW_BUF_B_FULL
+        ROW_BUF_C = ROW_BUF_C_FULL
+        IND_BUF_1 = IND_BUF_1_FULL
+        IND_BUF_2 = IND_BUF_2_FULL
+        IND_BUF_3 = IND_BUF_3_FULL
+        IND_BUF_4 = IND_BUF_4_FULL
+        COUNT_BUF_1 = COUNT_BUF_1_FULL
+        COUNT_BUF_2 = COUNT_BUF_2_FULL
+        COUNT_BUF_3 = COUNT_BUF_3_FULL
+        COUNT_BUF_4 = COUNT_BUF_4_FULL
+        grid = grid_full
+        next_grid = next_grid_full
+        rt = rt_full
+    }
+}
+
+// is_boxed_strategy reports whether strategy index i is one of the last
+// two (Immigration Game, QuadLife) -- the slower rulesets that run at
+// BOX_COLS x BOX_ROWS instead of fullscreen, see select_buffers().
+func is_boxed_strategy(i) {
+    return i >= len(strategies) - 2
+}
+
+// draw_box_border outlines the box a boxed strategy's (smaller) texture is
+// drawn into, drawn as four filled bars rather than a rectangle-outline call
+// (win.rectangle is the only filled-rectangle primitive available here) --
+// the bars sit just outside (x, y, w, h) so the border doesn't overlap the
+// texture itself.
+func draw_box_border(x, y, w, h, thickness, col) {
+    win.rectangle(x - thickness, y - thickness, w + thickness * 2, thickness, col) // top
+    win.rectangle(x - thickness, y + h, w + thickness * 2, thickness, col) // bottom
+    win.rectangle(x - thickness, y, thickness, h, col) // left
+    win.rectangle(x + w, y, thickness, h, col) // right
+}
+
 func draw_grid(grid, colour_fn) {
     win.begin_texture_mode(rt)
     win.clear(BG_COLOUR)
@@ -792,34 +913,39 @@ func draw_grid(grid, colour_fn) {
     win.end_texture_mode()
 }
 
-var grid = float_array(cols, rows)
-var next_grid = float_array(cols, rows)
 var strategy = strategies[strategy_index]
+select_buffers(is_boxed_strategy(strategy_index))
 strategy.randomise(grid)
 draw_grid(grid, strategy.colour)
 
 var generation = 0
+var auto_switch = true // A toggles: when false, RESET_TICKS no longer advances the strategy on its own -- SPACE still does
 
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }
+    if (win.key_pressed(win.KEY_A)) {
+        auto_switch = !auto_switch
+    }
     if (win.key_pressed(win.KEY_SPACE)) {
         strategy_index = (strategy_index + 1) % len(strategies)
         strategy = strategies[strategy_index]
+        select_buffers(is_boxed_strategy(strategy_index))
         strategy.randomise(grid)
         generation = 0
     }
     strategy.step(grid, next_grid)
- 
+
     var tmp = grid
     grid = next_grid
     next_grid = tmp
- 
+
     generation = generation + 1
-    if (generation >= RESET_TICKS) {
+    if (auto_switch and generation >= RESET_TICKS) {
         strategy_index = (strategy_index + 1) % len(strategies)
         strategy = strategies[strategy_index]
+        select_buffers(is_boxed_strategy(strategy_index))
         strategy.randomise(grid)
         generation = 0
     }
@@ -827,10 +953,28 @@ while (!win.should_close()) {
 
     win.begin()
     win.clear(BG_COLOUR)
-    win.draw_render_texture(rt, 0, 0, colour.WHITE)
+    if (is_boxed_strategy(strategy_index)) {
+        // rt is already rt_box here (BOX_COLS/BOX_ROWS x CELL_SIZE, i.e.
+        // half the fullscreen pixel dimensions) -- centred, not scaled up,
+        // so the box's on-screen size is a direct consequence of the
+        // smaller grid computed above, not a separate draw-time stretch.
+        var box_w = BOX_COLS * CELL_SIZE
+        var box_h = BOX_ROWS * CELL_SIZE
+        var box_x = (screen_w - box_w) / 2
+        var box_y = (screen_h - box_h) / 2
+        draw_box_border(box_x, box_y, box_w, box_h, BOX_BORDER_THICKNESS, BOX_BORDER_COLOUR)
+        win.draw_render_texture(rt, box_x, box_y, colour.WHITE)
+    } else {
+        win.draw_render_texture(rt, 0, 0, colour.WHITE)
+    }
     win.text(format("%s -- Generation %d / %d", strategy.name, generation, RESET_TICKS), 10, 10, 20, colour.WHITE)
     win.text(format("%d x %d cells, %dpx", cols, rows, CELL_SIZE), 10, 34, 16, vec4(180, 180, 180, 255))
     win.text("SPACE: next strategy", 10, 54, 16, vec4(180, 180, 180, 255))
+    if (auto_switch) {
+        win.text("A: auto-switch ON", 10, 74, 16, vec4(180, 180, 180, 255))
+    } else {
+        win.text("A: auto-switch OFF", 10, 74, 16, vec4(255, 200, 60, 255))
+    }
  
     win.end()
  
