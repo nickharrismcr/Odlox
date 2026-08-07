@@ -82,12 +82,14 @@ func update_stars(stars) {
     }
 }
 
-const width=1500;
-const height=900;
+var width=1500;
+var height=900;
 var win = window(width,height);
 win.init();
 win.show_fps(true);
 win.toggle_fullscreen()
+width = win.get_screen_width();
+height = win.get_screen_height();
  
 var emitters = particle_sys.Emitters();
  
