@@ -34,7 +34,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Dictionaries** — `get(k, default)`, `keys()`, `remove()`, `in` key membership.
 - **Strings** — `${expr}` interpolation, `format()`, `&` concat, `*` repeat, slicing, `in`, `replace`, `join`; short strings (≤40 bytes — identifiers, small literals/values) are interned to a canonical object, longer ones are ordinary garbage-collected values.
 - **Native vectors** `vec2` / `vec3` / `vec4` — inlined directly into the value representation (no heap allocation, no GC involvement, true copy semantics), the same way `int`/`float`/`bool` are.
-- **`float_array`** — fast native 2D float grid, with bulk RGB-encode/decode helpers for image and data work.
+- **`float_array`** / **`float_array_3d`** — fast native 2D/3D float grids, with bulk RGB-encode/decode helpers for image and data work.
 
 **Classes**
 - **`toString()`** magic method, **static methods**, **class variables** (`static x = expr;`, shared across instances, inherited via the superclass chain on read), and the **iterator protocol** (`__iter__` / `__next__`).

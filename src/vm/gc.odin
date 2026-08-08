@@ -330,6 +330,10 @@ free_object :: proc(obj: ^core.Obj) {
 		f := cast(^core.Float_Array_Object)obj
 		delete(f.data)
 		free(f)
+	case .Float_Array_3D:
+		f3 := cast(^core.Float_Array_3D_Object)obj
+		delete(f3.data)
+		free(f3)
 	case .Userdata:
 		u := cast(^core.Userdata_Object)obj
 		u.vtable.free(u.data) // tears down + frees u.data itself
@@ -375,6 +379,11 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		// exactly the allocation-heavy case this object exists for.
 		f := cast(^core.Float_Array_Object)obj
 		return size_of(core.Float_Array_Object) + len(f.data) * size_of(f64)
+	case .Float_Array_3D:
+		// Same reasoning as Float_Array above -- dominated by the data
+		// slice, not the struct header.
+		f3 := cast(^core.Float_Array_3D_Object)obj
+		return size_of(core.Float_Array_3D_Object) + len(f3.data) * size_of(f64)
 	case .Userdata:
 		u := cast(^core.Userdata_Object)obj
 		size := size_of(core.Userdata_Object)

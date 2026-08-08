@@ -176,6 +176,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#camera">camera</a>
       <a href="#shader">shader</a>
       <a href="#float-array">float_array</a>
+      <a href="#float-array-3d">float_array_3d</a>
       <a href="#physics-world">physics_world</a>
       <a href="#box2d">box2d</a>
       <a href="#sound">sound</a>
@@ -814,7 +815,7 @@ import gfx
 win = gfx.window(800, 600)</code></pre>
 <ul>
 <li><strong>built-in:</strong> <a href="#vectors"><code>vec2</code>/<code>vec3</code>/<code>vec4</code></a></li>
-<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code>, <a href="#float-array"><code>float_array</code></a>, plus the image/colour helpers below</li>
+<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code>, <a href="#float-array"><code>float_array</code></a>/<a href="#float-array-3d"><code>float_array_3d</code></a>, plus the image/colour helpers below</li>
 <li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a> — hand-rolled 3D sphere/box simulation</li>
 <li><strong id="mod-box2d-list">box2d:</strong> <a href="#box2d"><code>box2d.world</code></a> — wraps Odin's Box2D v3 bindings, 2D circle/box bodies</li>
 </ul>
@@ -1232,6 +1233,27 @@ win.end()</code></pre>
 <tr><td><code>clear(value)</code></td><td>Fill the whole array with <code>value</code></td></tr>
 </tbody>
 </table>
+
+<!-- ==================== FLOAT ARRAY 3D ==================== -->
+<h2 class="section" id="float-array-3d">float_array_3d <span class="pill">gfx</span></h2>
+<p>The 3D counterpart to <a href="#float-array"><code>float_array</code></a> -- a dense <code>width</code>&times;<code>height</code>&times;<code>depth</code> array of floats, useful for voxel/volumetric data (e.g. a chunk of block ids or a 3D noise field) that a flat 2D grid can't represent.</p>
+<div class="sig"><span class="nm">float_array_3d</span>(<em>width</em>, <em>height</em>, <em>depth</em>) <span class="pill">→ float_array_3d</span></div>
+<pre><code class="lox">from gfx import float_array_3d
+grid = float_array_3d(16, 16, 16)
+grid.set(1, 2, 3, 42.0)
+print grid.get(1, 2, 3)   // 42
+print grid.get(0, 0, 0)   // 0 -- new cells start at zero
+grid.clear(0.0)           // reset every cell in place, no reallocation</code></pre>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>width()</code> / <code>height()</code> / <code>depth()</code></td><td>Array dimensions</td></tr>
+<tr><td><code>get(x, y, z)</code></td><td>Read the value at <code>(x, y, z)</code></td></tr>
+<tr><td><code>set(x, y, z, value)</code></td><td>Write a value at <code>(x, y, z)</code></td></tr>
+<tr><td><code>clear(value)</code></td><td>Fill the whole array with <code>value</code></td></tr>
+</tbody>
+</table>
+<div class="note"><strong>No image helpers</strong>Unlike <a href="#float-array"><code>float_array</code></a>, there's no <code>win.draw_array()</code>/<code>draw_png()</code> equivalent for <code>float_array_3d</code> -- those are inherently 2D-image operations. Use it for computation/storage (voxel grids, 3D fields), not direct rendering.</div>
 
 <!-- ==================== PHYSICS WORLD ==================== -->
 <h2 class="section" id="physics-world">physics_world <span class="pill">physics</span></h2>

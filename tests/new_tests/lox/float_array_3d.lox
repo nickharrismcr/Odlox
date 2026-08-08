@@ -1,0 +1,38 @@
+// gfx.float_array_3d(w, h, d): the 3D counterpart to float_array --
+// construction, get/set/clear, dimensions, string form, type(), and
+// bounds checking (both get and set) raise a catchable RunTimeError
+// rather than crashing.
+
+from gfx import float_array_3d
+
+arr = float_array_3d(4, 3, 2)
+print arr.width()
+print arr.height()
+print arr.depth()
+
+print arr.get(0, 0, 0) // new cells start at zero
+
+arr.set(1, 2, 1, 42.5)
+print arr.get(1, 2, 1)
+print arr.get(0, 0, 0) // unaffected by the set above
+
+arr.clear(7.0)
+print arr.get(0, 0, 0)
+print arr.get(3, 2, 1) // farthest corner, still reachable after clear
+
+print arr
+print type(arr)
+
+try {
+    arr.get(4, 0, 0)
+} except RunTimeError as e {
+    print "get oob: " & e.msg
+}
+
+try {
+    arr.set(0, 0, -1, 1.0)
+} except RunTimeError as e {
+    print "set oob: " & e.msg
+}
+
+print "float_array_3d complete"

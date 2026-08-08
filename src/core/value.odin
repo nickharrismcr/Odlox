@@ -163,6 +163,9 @@ as_dict :: proc(v: Value) -> ^Dict_Object {
 as_float_array :: proc(v: Value) -> ^Float_Array_Object {
 	return cast(^Float_Array_Object)v.obj
 }
+as_float_array_3d :: proc(v: Value) -> ^Float_Array_3D_Object {
+	return cast(^Float_Array_3D_Object)v.obj
+}
 as_userdata :: proc(v: Value) -> ^Userdata_Object {
 	return cast(^Userdata_Object)v.obj
 }

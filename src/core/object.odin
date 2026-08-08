@@ -30,6 +30,7 @@ Object_Type :: enum u8 {
 	String_Iterator,
 
 	Float_Array,
+	Float_Array_3D,
 
 	// Userdata: pluggable native-extension objects -- every native kind
 	// (Sound/Music/Process/Regex Pattern+Match/PhysicsWorld/Window/Image/
@@ -99,6 +100,9 @@ object_to_string :: proc(obj: ^Obj, allocator := context.allocator) -> string {
 	case .Float_Array:
 		f := cast(^Float_Array_Object)obj
 		return fmt.aprintf("<FloatArray %dx%d>", f.width, f.height, allocator = allocator)
+	case .Float_Array_3D:
+		f3 := cast(^Float_Array_3D_Object)obj
+		return fmt.aprintf("<FloatArray3D %dx%dx%d>", f3.width, f3.height, f3.depth, allocator = allocator)
 	case .Userdata:
 		u := cast(^Userdata_Object)obj
 		if u.vtable.to_string != nil {

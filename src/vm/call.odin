@@ -162,6 +162,8 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 		return invoke_builtin_string(vm, core.as_string(receiver), core.string_get(name), arg_count)
 	case .Float_Array:
 		return invoke_builtin_float_array(vm, core.as_float_array(receiver), core.string_get(name), arg_count)
+	case .Float_Array_3D:
+		return invoke_builtin_float_array_3d(vm, core.as_float_array_3d(receiver), core.string_get(name), arg_count)
 	case .Userdata:
 		u := core.as_userdata(receiver)
 		return u.vtable.invoke(rawptr(vm), u.data, core.string_get(name), arg_count)
@@ -375,6 +377,89 @@ invoke_builtin_float_array :: proc(vm: ^VM, f: ^core.Float_Array_Object, name: s
 		result = core.NIL_VALUE
 	case:
 		runtime_error(vm, "Undefined float_array method '%s'.", name)
+		return false
+	}
+	collapse_call(vm, arg_count, result)
+	return true
+}
+
+// invoke_builtin_float_array_3d: the 3D counterpart to
+// invoke_builtin_float_array above -- get/set/clear/width/height/depth,
+// same (x, y, z) argument order and out-of-bounds-is-a-runtime-error
+// convention.
+@(private = "file")
+invoke_builtin_float_array_3d :: proc(vm: ^VM, f: ^core.Float_Array_3D_Object, name: string, arg_count: int) -> bool {
+	result: core.Value
+	switch name {
+	case "width":
+		if arg_count != 0 {
+			runtime_error(vm, "width takes no arguments.")
+			return false
+		}
+		result = core.make_int_value(f.width)
+	case "height":
+		if arg_count != 0 {
+			runtime_error(vm, "height takes no arguments.")
+			return false
+		}
+		result = core.make_int_value(f.height)
+	case "depth":
+		if arg_count != 0 {
+			runtime_error(vm, "depth takes no arguments.")
+			return false
+		}
+		result = core.make_int_value(f.depth)
+	case "get":
+		if arg_count != 3 {
+			runtime_error(vm, "get takes three arguments (x, y, z).")
+			return false
+		}
+		x_val, y_val, z_val := peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_int(x_val) || !core.is_int(y_val) || !core.is_int(z_val) {
+			runtime_error(vm, "get arguments must be integers.")
+			return false
+		}
+		v, ok := core.float_array_3d_get(f, core.as_int(x_val), core.as_int(y_val), core.as_int(z_val))
+		if !ok {
+			runtime_error(
+				vm, "Index out of bounds: (%d, %d, %d) for array size %dx%dx%d.",
+				core.as_int(x_val), core.as_int(y_val), core.as_int(z_val), f.width, f.height, f.depth,
+			)
+			return false
+		}
+		result = core.make_float_value(v)
+	case "set":
+		if arg_count != 4 {
+			runtime_error(vm, "set takes four arguments (x, y, z, value).")
+			return false
+		}
+		x_val, y_val, z_val, val_val := peek(vm, 3), peek(vm, 2), peek(vm, 1), peek(vm, 0)
+		if !core.is_int(x_val) || !core.is_int(y_val) || !core.is_int(z_val) || !core.is_number(val_val) {
+			runtime_error(vm, "set arguments must be (int, int, int, number).")
+			return false
+		}
+		if !core.float_array_3d_set(f, core.as_int(x_val), core.as_int(y_val), core.as_int(z_val), core.as_float(val_val)) {
+			runtime_error(
+				vm, "Index out of bounds: (%d, %d, %d) for array size %dx%dx%d.",
+				core.as_int(x_val), core.as_int(y_val), core.as_int(z_val), f.width, f.height, f.depth,
+			)
+			return false
+		}
+		result = core.NIL_VALUE
+	case "clear":
+		if arg_count != 1 {
+			runtime_error(vm, "clear takes one argument.")
+			return false
+		}
+		val_val := peek(vm, 0)
+		if !core.is_number(val_val) {
+			runtime_error(vm, "clear argument must be a number.")
+			return false
+		}
+		core.float_array_3d_clear(f, core.as_float(val_val))
+		result = core.NIL_VALUE
+	case:
+		runtime_error(vm, "Undefined float_array_3d method '%s'.", name)
 		return false
 	}
 	collapse_call(vm, arg_count, result)

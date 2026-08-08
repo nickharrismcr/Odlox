@@ -348,6 +348,7 @@ Object_Type :: enum u8 {
     // itself to already be enough).
     List_Iterator, Int_Iterator, String_Iterator,
     Float_Array, // Phase 6f -- a plain w*h f64 buffer, ported from glox's FloatArrayObject
+    Float_Array_3D, // w*h*d counterpart to Float_Array above -- not in glox, added directly in odlox
 }
 
 Obj :: struct {

@@ -26,6 +26,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "encode_rgba", gfx_encode_rgba)
 	vm.define_builtin(v, "gfx", "decode_rgba", gfx_decode_rgba)
 	vm.define_builtin(v, "gfx", "float_array", gfx_float_array)
+	vm.define_builtin(v, "gfx", "float_array_3d", gfx_float_array_3d)
 	vm.define_builtin(v, "gfx", "window", gfx_window)
 	vm.define_builtin(v, "gfx", "image", gfx_image)
 	vm.define_builtin(v, "gfx", "texture", gfx_texture)
@@ -85,6 +86,23 @@ gfx_float_array :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.V
 		return core.NIL_VALUE
 	}
 	arr := core.make_float_array_object(core.as_int(w_val), core.as_int(h_val))
+	vm.gc_track(v, &arr.obj)
+	return core.make_object_value(&arr.obj)
+}
+
+@(private = "file")
+gfx_float_array_3d :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	v := vm.native_vm(vm_ptr)
+	if argc != 3 {
+		vm.runtime_error(v, "Invalid argument count to float_array_3d.")
+		return core.NIL_VALUE
+	}
+	w_val, h_val, d_val := v.stack[arg_stack_ptr], v.stack[arg_stack_ptr + 1], v.stack[arg_stack_ptr + 2]
+	if !core.is_int(w_val) || !core.is_int(h_val) || !core.is_int(d_val) {
+		vm.runtime_error(v, "float_array_3d arguments must be integers")
+		return core.NIL_VALUE
+	}
+	arr := core.make_float_array_3d_object(core.as_int(w_val), core.as_int(h_val), core.as_int(d_val))
 	vm.gc_track(v, &arr.obj)
 	return core.make_object_value(&arr.obj)
 }
