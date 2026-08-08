@@ -40,19 +40,23 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		     .Get_Global, .Set_Global, .Define_Global, .Define_Global_Const,
 		     .Get_Upvalue, .Set_Upvalue, .Call, .Create_List, .Create_Dict,
 		     .Create_Tuple, .Unpack, .Set_Property, .Method,
-		     .Static_Method, .Class_Var, .Get_Super, .Class:
+		     .Static_Method, .Class_Var, .Get_Super:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
 		     .Incr_Const_N, .Sub_Nn, .Decr_Const_N, .Mul_Nn, .Mul_Const_N,
 		     .Div_Nn, .Div_Const_N, .Super_Invoke, .Import, .Get_Property,
 		     .Set_Local_Vec_Field, .Set_Global_Vec_Field, .Set_Upvalue_Vec_Field,
-		     .Set_Property_Vec_Field:
+		     .Set_Property_Vec_Field, .Class, .Set_Field_Slot:
 			// Get_Property: [name_const][cache_idx]; Set_*_Vec_Field:
 			// [slot_or_const][swizzle_name_const] -- see expr.odin's
 			// dot/emit_property_cache and emit_expr.odin's emit_swizzle_set.
+			// Class: [name_const][field_slot_table_idx]. Set_Field_Slot:
+			// [slot][name_const] -- see emit_expr.odin's emit_property.
 			n = 2
-		case .Invoke:
-			// [name_const][arg_count][cache_idx] -- see expr.odin's dot.
+		case .Invoke, .Get_Field_Slot:
+			// Invoke: [name_const][arg_count][cache_idx] -- see expr.odin's
+			// dot. Get_Field_Slot: [slot][name_const][cache_idx] -- see
+			// emit_expr.odin's emit_property.
 			n = 3
 		case .Except:
 			// [type_const][skip_hi][skip_lo] -- see stmt.odin's
@@ -783,6 +787,55 @@ test_peephole_enabled_by_default_and_disabled_by_flag :: proc(t: ^testing.T) {
 	disabled_chunk := inner_function_chunk(t, disabled)
 	testing.expect(t, contains_op(disabled_chunk, .Add_Numeric))
 	testing.expect(t, !contains_op(disabled_chunk, .Add_Nn))
+}
+
+// -----------------------------------------------------------------------
+// Compile-time-baked instance field slots (resolve.odin's
+// discover_field_slots) -- see TODO.md's Phase 7 entry.
+
+@(test)
+test_field_slot_get_set_compiles :: proc(t: ^testing.T) {
+	c := compile_ok(t, "class P {\ninit(count) {\nthis.count = count\n}\nbump() {\nthis.count = this.count + 1\n}\n}\n")
+	init_chunk := inner_function_chunk(t, c)
+	testing.expect(t, contains_op(init_chunk, .Set_Field_Slot), "expected this.count = count in init to compile to Set_Field_Slot")
+	testing.expect(t, !contains_op(init_chunk, .Set_Property), "unslotted Set_Property must not also appear for the same assignment")
+
+	bump_chunk: ^core.Chunk
+	for v in c.constants {
+		if v.type == .Obj && v.obj_type == .Function && core.as_function(v).chunk != init_chunk {
+			bump_chunk = core.as_function(v).chunk
+		}
+	}
+	testing.expect(t, bump_chunk != nil, "expected to find bump()'s own chunk")
+	testing.expect(t, contains_op(bump_chunk, .Get_Field_Slot), "expected this.count read in bump() to compile to Get_Field_Slot")
+	testing.expect(t, contains_op(bump_chunk, .Set_Field_Slot), "expected this.count = ... write in bump() to compile to Set_Field_Slot")
+	testing.expect(t, !contains_op(bump_chunk, .Get_Property))
+	testing.expect(t, !contains_op(bump_chunk, .Set_Property))
+}
+
+@(test)
+test_field_slot_conditional_field_keeps_ordinary_property_ops :: proc(t: ^testing.T) {
+	c := compile_ok(t, "class P {\ninit(flag) {\nif (flag) {\nthis.maybe = 1\n}\n}\n}\n")
+	init_chunk := inner_function_chunk(t, c)
+	testing.expect(t, contains_op(init_chunk, .Set_Property), "a conditionally-assigned field must keep compiling through the ordinary Set_Property path")
+	testing.expect(t, !contains_op(init_chunk, .Set_Field_Slot))
+}
+
+@(test)
+test_field_slot_this_invoke_keeps_ordinary_invoke_op :: proc(t: ^testing.T) {
+	c := compile_ok(t, "class P {\ninit(fn) {\nthis.cb = fn\n}\nrun() {\nreturn this.cb()\n}\n}\n")
+	init_chunk := inner_function_chunk(t, c)
+	testing.expect(t, contains_op(init_chunk, .Set_Field_Slot), "\"cb\" should still be discovered and slot-optimized for its own assignment")
+
+	run_chunk: ^core.Chunk
+	for v in c.constants {
+		if v.type == .Obj && v.obj_type == .Function && core.as_function(v).chunk != init_chunk {
+			run_chunk = core.as_function(v).chunk
+		}
+	}
+	testing.expect(t, run_chunk != nil, "expected to find run()'s own chunk")
+	testing.expect(t, contains_op(run_chunk, .Invoke), "this.cb() must keep compiling to the ordinary Invoke opcode")
+	testing.expect(t, !contains_op(run_chunk, .Get_Field_Slot), "this.cb() must never compile to Get_Field_Slot even though \"cb\" is itself slot-optimized")
 }
 
 // -----------------------------------------------------------------------

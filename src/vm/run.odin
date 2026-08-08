@@ -888,8 +888,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		// --- classes / properties (see properties.odin) ---
 		case .Class:
 			name_const := fl.code[ip]
-			ip += 1
-			do_class(vm, core.string_get(core.as_string(fl.constants[name_const])))
+			field_slot_table_idx := fl.code[ip + 1]
+			ip += 2
+			do_class(vm, core.string_get(core.as_string(fl.constants[name_const])), fl.fn.chunk.field_slot_tables[field_slot_table_idx])
 		case .Inherit:
 			do_inherit(vm)
 		case .Method:
@@ -913,6 +914,50 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			name_const := fl.code[ip]
 			ip += 1
 			set_property(vm, core.as_string(fl.constants[name_const]))
+
+		// --- compile-time-baked instance field-slot fast path -- see
+		// core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc comment.
+		// inst.class == fl.f.closure.owner_class is the guard that makes
+		// this safe under inheritance: do_inherit copies method closures
+		// verbatim into a subclass's method table, so a superclass
+		// method's closure (and its baked-in slot index) can run against
+		// a subclass instance whose field-slot table wasn't built from
+		// the same init -- a mismatch there falls back to the exact same
+		// get_property/set_property path Get_Property/Set_Property use,
+		// same error behavior, just unoptimized for that one call.
+		// Get_Field_Slot additionally requires the slot not be
+		// core.UNDEFINED_VALUE (unset), so reading a field before its
+		// assignment line inside init still raises the same "Undefined
+		// property" error the map path already produces, instead of
+		// silently returning nil.
+		case .Get_Field_Slot:
+			slot := fl.code[ip]
+			name_const := fl.code[ip + 1]
+			cache_idx := fl.code[ip + 2]
+			ip += 3
+			receiver := peek(vm, 0)
+			inst := core.as_instance(receiver)
+			if inst.class == fl.f.closure.owner_class && inst.slots[slot].type != .Undefined {
+				pop(vm)
+				push(vm, inst.slots[slot])
+			} else {
+				get_property(vm, core.as_string(fl.constants[name_const]), &fl.fn.chunk.property_caches[cache_idx])
+			}
+		case .Set_Field_Slot:
+			slot := fl.code[ip]
+			name_const := fl.code[ip + 1]
+			ip += 2
+			receiver := peek(vm, 1)
+			inst := core.as_instance(receiver)
+			if inst.class == fl.f.closure.owner_class {
+				value := peek(vm, 0)
+				inst.slots[slot] = value
+				pop(vm)
+				pop(vm)
+				push(vm, value)
+			} else {
+				set_property(vm, core.as_string(fl.constants[name_const]))
+			}
 
 		// --- swizzle-component assignment write-back (`v.x = expr`) --
 		// see properties.odin's swizzle_assign doc comment. Each reads

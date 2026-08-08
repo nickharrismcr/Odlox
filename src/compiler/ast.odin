@@ -206,6 +206,7 @@ Expr_Property :: struct {
 	kind:        Property_Kind,
 	compound_op: Token_Type, // meaningful only if kind == .Compound_Set
 	value:       Expr, // meaningful only if kind == .Set or .Compound_Set
+	field_slot:  int, // filled in by the Resolver; >= 0 only when object is Expr_This and name is in the enclosing class's discovered field-slot table (see resolve.odin's discover_field_slots), else -1
 	args:        []Expr, // meaningful only if kind == .Invoke
 }
 
@@ -466,6 +467,7 @@ Stmt_Class_Decl :: struct {
 	is_local:          bool, // filled in by the Resolver
 	super_slot:        int, // filled in by the Resolver; meaningful only if has_superclass -- the synthetic `super` local wrapping the whole member list
 	super_is_captured: bool, // filled in by the Resolver; meaningful only if has_superclass
+	field_slot_names:  []string, // filled in by the Resolver -- index -> name, this class's own discovered field slots only (see resolve.odin's discover_field_slots); may be empty
 }
 
 Except_Clause :: struct {

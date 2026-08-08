@@ -131,7 +131,17 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	// show alongside it the way Get/Set_Property have -- same shape as
 	// constant_instruction either way. ---
 	case .Class:
-		return constant_instruction(op, c, offset)
+		return class_instruction(c, offset)
+
+	// --- Get_Field_Slot: [slot][name_const][cache_idx], Set_Field_Slot:
+	// [slot][name_const] -- see chunk.odin's opcode doc comment. slot is
+	// a literal array index (not a constant-pool index); name_const is
+	// shown for readability only, never consulted on Get_Field_Slot/
+	// Set_Field_Slot's own hot path. ---
+	case .Get_Field_Slot:
+		return get_field_slot_instruction(c, offset)
+	case .Set_Field_Slot:
+		return set_field_slot_instruction(c, offset)
 
 	// --- two-byte forward/backward jump offset. Loop is the only
 	// backward one of this group (emit_loop computes its offset
@@ -341,6 +351,35 @@ get_property_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	name_const := c.code[offset + 1]
 	cache_idx := c.code[offset + 2]
 	fmt.printfln("%-16v %4d %v (cache %d)", core.Op_Code.Get_Property, name_const, const_repr(c, name_const), cache_idx)
+	return offset + 3
+}
+
+// class_instruction: [name_const][field_table_idx] -- field_table_idx
+// indexes Chunk.field_slot_tables (compiler/resolve.odin's discover_field_slots),
+// not the constant pool, so it's shown directly rather than via
+// const_repr.
+@(private = "file")
+class_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
+	name_const := c.code[offset + 1]
+	field_table_idx := c.code[offset + 2]
+	fmt.printfln("%-16v %4d %v (fields %v)", core.Op_Code.Class, name_const, const_repr(c, name_const), c.field_slot_tables[field_table_idx])
+	return offset + 3
+}
+
+@(private = "file")
+get_field_slot_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
+	slot := c.code[offset + 1]
+	name_const := c.code[offset + 2]
+	cache_idx := c.code[offset + 3]
+	fmt.printfln("%-16v slot=%d %v (cache %d)", core.Op_Code.Get_Field_Slot, slot, const_repr(c, name_const), cache_idx)
+	return offset + 4
+}
+
+@(private = "file")
+set_field_slot_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
+	slot := c.code[offset + 1]
+	name_const := c.code[offset + 2]
+	fmt.printfln("%-16v slot=%d %v", core.Op_Code.Set_Field_Slot, slot, const_repr(c, name_const))
 	return offset + 3
 }
 

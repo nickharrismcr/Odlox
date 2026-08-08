@@ -133,28 +133,29 @@ Benchmarks run via `bin/benchmarks.sh` (the loxcraft suite: arithmetic, object/c
 
 | benchmark | odlox | CPython | odlox / CPython |
 |---|---|---|---|
-| binary_trees | 23.59s | 7.40s | 3.19× |
-| collections | 5.33s | 2.95s | 1.81× |
-| equality | 27.68s | 20.86s | 1.33× |
-| fib | 10.11s | 9.17s | 1.10× |
-| instantiation | 33.19s | 22.38s | 1.48× |
-| invocation | 8.82s | 9.38s | 0.94× |
-| loop | 2.60s | 3.59s | 0.72× |
-| method_call | 12.68s | 8.82s | 1.44× |
-| properties | 11.49s | 8.09s | 1.42× |
-| string_equality | 22.02s | 17.49s | 1.26× |
-| trees | 26.75s | 6.90s | 3.88× |
-| zoo | 10.32s | 10.10s | 1.02× |
+| binary_trees | 15.71s | 7.37s | 2.13× |
+| collections | 5.20s | 2.90s | 1.80× |
+| equality | 28.33s | 20.66s | 1.37× |
+| fib | 10.89s | 9.01s | 1.21× |
+| instantiation | 32.82s | 21.07s | 1.56× |
+| invocation | 9.77s | 9.46s | 1.03× |
+| loop | 1.29s | 3.47s | 0.37× |
+| method_call | 11.70s | 8.58s | 1.36× |
+| properties | 11.15s | 8.45s | 1.32× |
+| string_equality | 23.34s | 17.28s | 1.35× |
+| trees | 19.52s | 6.84s | 2.85× |
+| zoo | 10.34s | 10.28s | 1.01× |
 | zoo_batch | 10.01s | 10.02s | 1.00× |
 
-A ratio below 1.00× means odlox is faster. Across the suite: 1.58× arithmetic mean, 1.41× geometric mean, 1.49× by total time. odlox is at or ahead of CPython on `loop`, `invocation`, and `zoo`/`zoo_batch`; furthest behind on `binary_trees`/`trees` (deep object-tree construction and traversal) and `collections` (dictionary-heavy code).
+A ratio below 1.00× means odlox is faster. Across the suite: 1.41× arithmetic mean, 1.29× geometric mean, 1.40× by total time. odlox is at or ahead of CPython on `loop` and `zoo`/`zoo_batch`/`invocation`; furthest behind on `binary_trees`/`trees` (deep object-tree construction and traversal) and `collections` (dictionary-heavy code) — though `binary_trees`/`trees` improved substantially (3.19×/3.88× → 2.13×/2.85×) after `ROADMAP.md`'s Phase 7k added compile-time-baked instance field slots.
 
-**Where the remaining gap comes from.** The object-heavy end of the suite is dominated by one cost: `Instance_Object.fields` and `Class_Object.methods`/`statics` are hash maps keyed by interned string pointers, so a user-defined class's property and method access pays a hash-map lookup per access — a monomorphic inline cache on `Get_Property`/`Invoke` short-circuits the *method*-table half of that for a stable receiver class, but there is no equivalent for instance *fields*, since Lox instances have no fixed shape and a field masking a method on one instance says nothing about another instance of the same class. `binary_trees`/`trees` build and tear down deep object graphs continuously, so this cost dominates; `collections` spends a third of its time in dictionary operations against the same underlying hash-map machinery. CPython's own attribute lookup and dict implementation are the product of decades of targeted optimization and are a difficult target to beat at that specific job. The arithmetic/dispatch-heavy end of the suite (`loop`, `fib`, `invocation`, `equality`) tells a different story: slot-indexed globals (no hash lookup for `Get_Global`/`Set_Global`) and runtime-specialized numeric opcodes close — or in some cases close and reverse — the gap against CPython's own bytecode interpreter entirely.
+**Where the remaining gap comes from.** `Instance_Object.fields` and `Class_Object.methods`/`statics` are hash maps keyed by interned string pointers — a monomorphic inline cache on `Get_Property`/`Invoke` short-circuits the *method*-table half of a lookup for a stable receiver class, and, as of Phase 7k, `this.field` access *inside a class's own methods* compiles to a direct array-index (`Get_Field_Slot`/`Set_Field_Slot`) instead of a map lookup at all, for any field the compiler can prove is always assigned in `init`. What's left uncached: field access from *outside* the declaring class (`some_instance.field`, still a map lookup — Lox instances have no fixed shape, so this can't be cached at the class level the way method dispatch can), `this.field(...)` invocation (correctness-checked against the field-slot table but not fast-pathed), and a field assigned only conditionally or outside `init`. `binary_trees`/`trees` build and tear down deep object graphs continuously — construction cost and the remaining uncached access patterns still dominate there; `collections` spends a third of its time in dictionary operations against the same underlying hash-map machinery, unrelated to instance fields. CPython's own attribute lookup, dict implementation, and object allocator are the product of decades of targeted optimization and are a difficult target to beat at that specific job. The arithmetic/dispatch-heavy end of the suite (`loop`, `fib`, `invocation`, `equality`) tells a different story: slot-indexed globals (no hash lookup for `Get_Global`/`Set_Global`) and runtime-specialized numeric opcodes close — or in some cases close and reverse — the gap against CPython's own bytecode interpreter entirely.
 
 Optimisations in place:
 - **Slot-indexed globals** — globals are stored in a slice indexed by a compiler-assigned integer slot rather than looked up by name at runtime; `Get_Global`/`Set_Global` are a direct slice index, not a hash-map lookup.
+- **Compile-time-baked instance field slots** — `this.field` access inside a class's own methods compiles to a direct array index (`Get_Field_Slot`/`Set_Field_Slot`) instead of a `Get_Property`/`Set_Property` map lookup, for any field the compiler proves is always assigned in `init` (unconditionally, or identically in both branches of an `if`/`else`). Stays correct under inheritance via a runtime guard (`Closure_Object.owner_class`, checked against the receiver's actual class) rather than compile-time slot-table propagation, so each class's table can be discovered fully independently — see `ROADMAP.md`'s Phase 7k.
 - **String interning** (strings ≤40 bytes — identifiers, small values) with pointer-identity equality for fast method, property, and global lookup; longer strings are ordinary garbage-collected values instead of growing the intern table forever.
-- **Peephole superinstructions** — `Get_Local, Get_Local, Add` collapses to a single `Add_Nn` superinstruction, runtime-specialized to `Add_Ii`/`Add_Ff` on first execution (a minimal inline cache that patches the opcode byte in place); a matching optimisation handles `local = local + constant` via `Incr_Const_I`/`Incr_Const_F`. `++` (vector add) gets the same treatment (`Add_Vv` → `Add_V2`/`Add_V3`/`Add_V4`), with one difference: the specialized vector opcodes re-check operand types on every execution rather than trusting the patch forever, since (unlike int/float) a mismatched vector arity is a genuine Lox-level error a dynamically-typed call site can still legally trigger later on the same bytecode site — see `docs/plans/vec-op-peephole.md` and `ROADMAP.md`'s Phase 7j.
+- **Peephole superinstructions** — `Get_Local, Get_Local, Add` collapses to a single `Add_Nn` superinstruction, runtime-specialized to `Add_Ii`/`Add_Ff` on first execution (a minimal inline cache that patches the opcode byte in place); the same family covers `Subtract`/`Multiply`/`Divide` (`Sub_Nn`/`Mul_Nn`/`Div_Nn`) and `local = local + constant` via `Incr_Const_I`/`Incr_Const_F`. `++` (vector add) gets the same treatment (`Add_Vv` → `Add_V2`/`Add_V3`/`Add_V4`), with one difference: the specialized vector opcodes re-check operand types on every execution rather than trusting the patch forever, since (unlike int/float) a mismatched vector arity is a genuine Lox-level error a dynamically-typed call site can still legally trigger later on the same bytecode site — see `docs/plans/vec-op-peephole.md` and `ROADMAP.md`'s Phase 7j.
 - **Monomorphic inline cache** on `Get_Property`/`Invoke` — a same-class repeat access at a call site skips the method-table lookup entirely after the first hit.
 - **Call frames stored inline** in the VM's own fixed-size array, not heap-allocated, avoiding per-call GC pressure.
 - **Frame context hoisted** out of the dispatch loop's hot path and refreshed only at opcodes that actually change the active frame.

@@ -144,7 +144,12 @@ invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.
 	#partial switch receiver.obj_type {
 	case .Instance:
 		inst := core.as_instance(receiver)
-		if field_val, ok := inst.fields[name]; ok {
+		// core.instance_get_field, not a raw inst.fields[name] read: a
+		// field-slot-optimized class (compiler/resolve.odin's
+		// discover_field_slots) may hold a callable in inst.slots instead
+		// of inst.fields, and this check -- "a field holding a callable
+		// shadows a same-named method" -- must still see it.
+		if field_val, ok := core.instance_get_field(inst, name); ok {
 			vm.stack[vm.stack_top - arg_count - 1] = field_val
 			return call_value(vm, field_val, arg_count)
 		}

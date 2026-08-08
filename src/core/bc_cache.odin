@@ -26,10 +26,15 @@ import "core:strings"
 // explicit cap instead -- see BC_CACHE_MAX_PROPERTY_CACHES.
 
 BC_CACHE_MAGIC :: [4]u8{'O', 'L', 'X', 'C'}
-BC_CACHE_VERSION :: u16(2) // bumped: inlining Vec2/3/4 into Value added new Op_Code variants
+BC_CACHE_VERSION :: u16(3) // v2 -> v3: compile-time-baked instance field slots (TODO.md's Phase
+                           // 7 entry) added Get_Field_Slot/Set_Field_Slot mid-enum, and the
+                           // Subtract/Multiply/Divide peephole family (Sub_Nn etc.) before that
+                           // -- same shifted-numeric-value hazard the v1 -> v2 bump below
+                           // describes, not just a missed cache: any v2 cache would misdecode
+                           // under the new enum layout, not merely fail to be found.
+                           // v1 -> v2: inlining Vec2/3/4 into Value added new Op_Code variants
                            // mid-enum (Set_*_Vec_Field -- see docs/plans/inline-vec-value.md),
-                           // shifting every later opcode's numeric value -- a v1 cache would
-                           // misdecode, not just miss.
+                           // shifting every later opcode's numeric value the same way.
 
 // BC_CACHE_MAX_PROPERTY_CACHES: chunk_add_property_cache (chunk.odin)
 // returns a u8 index, so no real compiler output can ever produce more
@@ -126,6 +131,21 @@ bc_enc_chunk :: proc(e: ^Bc_Encoder, c: ^Chunk) -> bool {
 	// matters because Get_Property/Invoke index this array with a u8
 	// operand baked into the bytecode at compile time.
 	bc_enc_u32(e, u32(len(c.property_caches)))
+
+	// field_slot_tables, unlike property_caches above, is real required
+	// data (compiler/resolve.odin's discover_field_slots' actual output
+	// -- field *names*), not a cache resettable to a cold/empty state on
+	// load: Get_Field_Slot/Set_Field_Slot's baked-in slot indices and
+	// Instance_Object.slots' own sizing both depend on the exact names
+	// this chunk's Class opcodes were compiled against, same reasoning
+	// as global_names above (also owned data, also cloned on decode).
+	bc_enc_u32(e, u32(len(c.field_slot_tables)))
+	for table in c.field_slot_tables {
+		bc_enc_u32(e, u32(len(table)))
+		for name in table {
+			bc_enc_string(e, name)
+		}
+	}
 	return true
 }
 
@@ -254,6 +274,19 @@ bc_dec_string :: proc(d: ^Bc_Decoder) -> (s: string, ok: bool) {
 		return "", false
 	}
 	return string(b), true
+}
+
+// bc_free_field_slot_tables releases a partially- or fully-decoded
+// field_slot_tables tree on a decode failure -- each inner []string is
+// its own clone-backed allocation (see the decode loop's own comment on
+// why these are real clones, not slices into the input buffer), so both
+// levels need freeing, not just the outer [dynamic].
+@(private = "file")
+bc_free_field_slot_tables :: proc(tables: [dynamic][]string) {
+	for table in tables {
+		delete(table)
+	}
+	delete(tables)
 }
 
 @(private = "file")
@@ -434,6 +467,54 @@ bc_dec_chunk :: proc(d: ^Bc_Decoder) -> (c: ^Chunk, ok: bool) {
 		return nil, false
 	}
 
+	// field_slot_tables: real data (see bc_enc_chunk's own comment), not
+	// a resettable cache, so -- unlike property_caches just above -- the
+	// actual names must round-trip, not just a count. No explicit cap
+	// needed the way property_cache_count gets one: every entry here has
+	// real payload bytes behind it (an inner count, then that many real
+	// strings), so a garbage-huge count fails cleanly on the next
+	// out-of-range read once the buffer is exhausted, same as
+	// global_names above.
+	field_slot_table_count, fstc_ok := bc_dec_u32(d)
+	if !fstc_ok {
+		delete(lines)
+		delete(constants)
+		delete(global_names)
+		return nil, false
+	}
+	field_slot_tables: [dynamic][]string
+	for _ in 0 ..< field_slot_table_count {
+		names_count, nc_ok := bc_dec_u32(d)
+		if !nc_ok {
+			delete(lines)
+			delete(constants)
+			delete(global_names)
+			bc_free_field_slot_tables(field_slot_tables)
+			return nil, false
+		}
+		names: [dynamic]string
+		names_ok := true
+		for _ in 0 ..< names_count {
+			name, nok := bc_dec_string(d)
+			if !nok {
+				delete(names)
+				names_ok = false
+				break
+			}
+			// Same reasoning as global_names above: Chunk owns this
+			// string directly, so it must be a real clone.
+			append(&names, strings.clone(name))
+		}
+		if !names_ok {
+			delete(lines)
+			delete(constants)
+			delete(global_names)
+			bc_free_field_slot_tables(field_slot_tables)
+			return nil, false
+		}
+		append(&field_slot_tables, names[:])
+	}
+
 	c = new(Chunk)
 	c.filename = strings.clone(filename_raw) // see global_names' own note above
 	c.lines = lines
@@ -441,6 +522,7 @@ bc_dec_chunk :: proc(d: ^Bc_Decoder) -> (c: ^Chunk, ok: bool) {
 	c.global_count = int(global_count)
 	c.global_names = global_names
 	c.property_caches = make([dynamic]Property_Cache, int(property_cache_count))
+	c.field_slot_tables = field_slot_tables
 	append(&c.code, ..code_bytes)
 	return c, true
 }

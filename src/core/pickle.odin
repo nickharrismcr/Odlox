@@ -184,10 +184,31 @@ pickle_encode_object :: proc(e: ^Encoder, v: Value) -> (err: string, ok: bool) {
 
 		enc_byte(e, u8(Pickle_Tag.Instance))
 		enc_string(e, string_get(inst.class.name))
-		enc_u32(e, u32(len(inst.fields)))
+		// inst.slots (compile-time-baked field slots, obj_instance.odin)
+		// holds real field data too, for a slot-optimized class -- must be
+		// encoded alongside inst.fields or it's silently dropped from the
+		// pickle stream. Undefined entries are unset slots (a field never
+		// actually assigned on this instance) and correctly excluded.
+		set_slot_count := 0
+		for sv in inst.slots {
+			if sv.type != .Undefined {
+				set_slot_count += 1
+			}
+		}
+		enc_u32(e, u32(len(inst.fields) + set_slot_count))
 		for k, val in inst.fields {
 			enc_string(e, string_get(k))
 			ierr, iok := pickle_encode_value(e, val)
+			if !iok {
+				return ierr, false
+			}
+		}
+		for sv, i in inst.slots {
+			if sv.type == .Undefined {
+				continue
+			}
+			enc_string(e, inst.class.field_slot_names[i])
+			ierr, iok := pickle_encode_value(e, sv)
 			if !iok {
 				return ierr, false
 			}
@@ -445,6 +466,23 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			return NIL_VALUE, fmt.tprintf("cannot unpickle instance of unknown class %q", class_name), false
 		}
 		inst := make_instance_object(class)
+		// Move any decoded key that matches the resolved class's own
+		// field-slot table (compiler/resolve.odin's discover_field_slots)
+		// into inst.slots instead of leaving it in inst.fields -- keeps a
+		// decoded instance's storage consistent with one built by running
+		// compiled init, so a later write through the field-slot fast path
+		// (vm/run.odin's Get_Field_Slot/Set_Field_Slot) can't leave a
+		// stale copy sitting in inst.fields that a generic external read
+		// would find first (see core.instance_get_field's fields-first
+		// check) while the fast path itself moved on to inst.slots.
+		if len(class.field_slot_index) > 0 {
+			for key, idx in class.field_slot_index {
+				if val, has_val := fields[key]; has_val {
+					inst.slots[idx] = val
+					delete_key(&fields, key)
+				}
+			}
+		}
 		inst.fields = fields
 		return make_object_value(&inst.obj), "", true
 	}

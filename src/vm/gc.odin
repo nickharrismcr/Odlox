@@ -69,6 +69,9 @@ gc_adopt :: proc(vm: ^VM, v: core.Value) {
 			for _, val in inst.fields {
 				gc_adopt(vm, val)
 			}
+			for sv in inst.slots {
+				gc_adopt(vm, sv)
+			}
 		}
 	}
 }
@@ -203,6 +206,9 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 				mark_object(vm, &uv.obj)
 			}
 		}
+		if c.owner_class != nil {
+			mark_object(vm, &c.owner_class.obj)
+		}
 	case .Upvalue:
 		uv := cast(^core.Upvalue_Object)obj
 		mark_value(vm, uv.closed)
@@ -214,6 +220,9 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 		mark_object(vm, &inst.class.obj)
 		for _, v in inst.fields {
 			mark_value(vm, v)
+		}
+		for sv in inst.slots {
+			mark_value(vm, sv)
 		}
 	case .List:
 		l := cast(^core.List_Object)obj
@@ -317,6 +326,7 @@ free_object :: proc(obj: ^core.Obj) {
 	case .Instance:
 		inst := cast(^core.Instance_Object)obj
 		delete(inst.fields)
+		delete(inst.slots)
 		free(inst)
 	case .String:
 		// Only ever reached for a collectible (>STRING_INTERN_MAX_LEN)
@@ -354,7 +364,12 @@ object_size :: proc(obj: ^core.Obj) -> int {
 	case .Upvalue:
 		return size_of(core.Upvalue_Object)
 	case .Instance:
-		return size_of(core.Instance_Object)
+		// slots is eager allocation at construction (sized from the
+		// class's field-slot table), unlike the lazily-grown fields map --
+		// a real per-instance cost worth tracking accurately for the
+		// heap-growth heuristic, same reasoning as Float_Array below.
+		inst := cast(^core.Instance_Object)obj
+		return size_of(core.Instance_Object) + len(inst.slots) * size_of(core.Value)
 	case .List:
 		return size_of(core.List_Object)
 	case .Dict:

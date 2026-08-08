@@ -1,0 +1,40 @@
+// Pickle round-trip for a slot-optimized class -- regression test for a
+// real data-loss bug found while building compile-time-baked field
+// slots (core/pickle.odin's pickle_encode_value only ever enumerated
+// inst.fields, silently dropping any field that lived in inst.slots
+// instead). Also exercises the decode-side fix (pickle_decode_value
+// moves any decoded key matching the resolved class's own field-slot
+// table into inst.slots, keeping a decoded instance's storage
+// consistent with one built by running compiled init) by mutating the
+// decoded instance afterward through the field-slot fast path and
+// reading it back both externally and this-relatively.
+
+import pickle
+
+class Point {
+    init(x, y) {
+        this.x_val = x
+        this.y_val = y
+    }
+    sum() {
+        return this.x_val + this.y_val
+    }
+}
+
+p = Point(3, 4)
+data = pickle.dumps(p)
+p2 = pickle.loads(data)
+
+print p2.x_val
+print p2.y_val
+print p2.sum()
+
+// mutate the decoded instance through the field-slot fast path, then
+// confirm both a this-relative read (the fast path itself) and a plain
+// external read see the same, fresh value -- not a stale copy of
+// whatever pickle_decode_value left behind.
+p2.x_val = 100
+print p2.sum()
+print p2.x_val
+
+print "pickle_field_slots complete"

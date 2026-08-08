@@ -10,13 +10,23 @@ package core
 // slot, a closure's captured class reference, an instance's `.class`
 // field, etc.) keeps it around -- see docs/ARCHITECTURE.md's Garbage
 // collector section.
+// field_slot_names/field_slot_index back the compile-time-baked
+// field-slot fast path (see chunk.odin's Get_Field_Slot/Set_Field_Slot
+// doc comment and obj_instance.odin's Instance_Object.slots).
+// field_slot_names is a *borrowed* slice into the owning Chunk's own
+// field_slot_tables entry -- never freed via this Class_Object, see
+// gc.odin's free_object. field_slot_index (name -> index) exists only
+// for instance_get_field's cold-path compatibility lookup; nothing on
+// Get_Field_Slot/Set_Field_Slot's own hot path ever consults it.
 Class_Object :: struct {
-	using obj:      Obj,
-	name:           ^String_Object,
-	methods:        map[^String_Object]Value,
-	static_methods: map[^String_Object]Value,
-	statics:        map[^String_Object]Value,
-	super:          ^Class_Object,
+	using obj:        Obj,
+	name:             ^String_Object,
+	methods:          map[^String_Object]Value,
+	static_methods:   map[^String_Object]Value,
+	statics:          map[^String_Object]Value,
+	super:            ^Class_Object,
+	field_slot_names: []string,
+	field_slot_index: map[^String_Object]int,
 }
 
 make_class_object :: proc(name: string) -> ^Class_Object {

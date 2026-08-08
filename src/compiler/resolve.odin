@@ -50,9 +50,152 @@ Upvalue :: struct {
 	is_local: bool,
 }
 
+// field_slots/field_slot_names back the compile-time-baked field-slot
+// fast path (see core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc
+// comment) -- populated once, by discover_field_slots, before this
+// class's members are resolved, so every `this.name` reference anywhere
+// in the class body (including textually before init) resolves against
+// the finished table. field_slots is name -> index; field_slot_names is
+// the same table in index -> name form, copied onto Stmt_Class_Decl at
+// the end of resolve_class_decl for the Emitter to register with the
+// Chunk.
 Class_Compiler :: struct {
-	enclosing:      ^Class_Compiler,
-	has_superclass: bool,
+	enclosing:        ^Class_Compiler,
+	has_superclass:   bool,
+	field_slots:      map[string]int,
+	field_slot_names: [dynamic]string,
+}
+
+// discover_field_slots scans v's own `init` method (Function_Type.
+// Initializer -- see stmt.odin's method(), which already sets this
+// exactly when the method is named "init") for top-level, unconditional,
+// plain-assignment `this.name = value` statements -- direct elements of
+// init's body, not recursed into any if/while/for/nested block, which is
+// what "top level" means here, and specifically Property_Kind.Set, not
+// Compound_Set (`this.x += 1` reads before writing, so it can never be
+// treated as *defining* the field). This mirrors the real-world
+// convention already observed in every sampled fixture (a class's full
+// field set assigned unconditionally in init) without the compiler ever
+// enforcing it: a field assigned any other way (conditionally, in a
+// non-init method, later) simply never enters this table and keeps
+// compiling through the ordinary Get_Property/Set_Property path,
+// unchanged and always correct.
+//
+// A field name that could also be a vec2/3/4 swizzle component
+// (is_swizzle_field_name, emit_expr.odin) is deliberately excluded --
+// `this.x = ...` inside init must still be eligible for swizzle
+// write-back if `this` turns out to hold something swizzle-relevant at
+// runtime (it never does for an Instance, but the compiler can't know
+// that here -- see emit_swizzle_set's own doc comment), so it stays on
+// the existing path entirely.
+@(private = "file")
+discover_field_slots :: proc(class_ctx: ^Class_Compiler, members: []Class_Member) {
+	init_method: ^Method
+	for member in members {
+		if m, ok := member.(^Method); ok && m.decl.fn_type == .Initializer {
+			init_method = m
+			break
+		}
+	}
+	if init_method == nil {
+		return
+	}
+	for stmt in init_method.decl.body {
+		discover_field_slots_stmt(class_ctx, stmt)
+	}
+}
+
+// discover_field_slots_stmt handles one top-level statement of init's
+// body: a plain `this.name = value` assignment (the common case), or an
+// if/else whose *both* branches unconditionally assign the same field
+// name -- e.g. `if (cond) { this.left = X } else { this.left = nil }`,
+// exactly benchmarks/lox/binary_trees.lox's own shape (found while
+// benchmarking: without this, binary_trees' hottest fields, left/right,
+// never qualified at all, since each is only ever assigned inside one
+// if/else branch or the other, never as a bare top-level statement --
+// trees.lox's own conditional fields, by contrast, are genuinely only
+// assigned in the if-with-no-else branch and correctly stay unslotted).
+// Only one level of if/else is walked this way (each branch's own
+// top-level statements, not recursively into further nesting) --
+// deliberately bounded, not a general reachability/CFG analysis;
+// anything outside this shape simply isn't discovered, same as any
+// other unhandled statement kind, and keeps compiling through the
+// ordinary Get_Property/Set_Property path, unchanged and always correct.
+@(private = "file")
+discover_field_slots_stmt :: proc(class_ctx: ^Class_Compiler, stmt: Stmt) {
+	#partial switch s in stmt {
+	case ^Stmt_Expression:
+		if name, ok := top_level_field_assign_name(s); ok {
+			add_discovered_field_slot(class_ctx, name)
+		}
+	case ^Stmt_If:
+		if s.else_branch == nil {
+			return
+		}
+		then_names := field_slot_names_of_branch(s.then_branch)
+		defer delete(then_names)
+		else_names := field_slot_names_of_branch(s.else_branch)
+		defer delete(else_names)
+		for name in then_names {
+			if _, in_else := else_names[name]; in_else {
+				add_discovered_field_slot(class_ctx, name)
+			}
+		}
+	}
+}
+
+@(private = "file")
+add_discovered_field_slot :: proc(class_ctx: ^Class_Compiler, name: string) {
+	if is_swizzle_field_name(name) {
+		return
+	}
+	if _, already := class_ctx.field_slots[name]; already {
+		return
+	}
+	class_ctx.field_slots[name] = len(class_ctx.field_slot_names)
+	append(&class_ctx.field_slot_names, name)
+}
+
+// top_level_field_assign_name reports the field name a bare
+// `this.name = value` expression-statement assigns, if that's what stmt
+// actually is (a plain .Set, not .Compound_Set -- see
+// discover_field_slots_stmt's own doc comment on why a compound
+// assignment can never count).
+@(private = "file")
+top_level_field_assign_name :: proc(stmt: ^Stmt_Expression) -> (name: string, ok: bool) {
+	prop, is_prop := stmt.expr.(^Expr_Property)
+	if !is_prop || prop.kind != .Set {
+		return "", false
+	}
+	if _, is_this := prop.object.(^Expr_This); !is_this {
+		return "", false
+	}
+	return lexeme(prop.name), true
+}
+
+// field_slot_names_of_branch collects the set of `this.name = value`
+// plain-assignment field names appearing as direct top-level statements
+// of one if/else branch (a block's own .stmts, or the single statement
+// itself if the branch isn't braced) -- used only to intersect against
+// the other branch in discover_field_slots_stmt, so the caller owns and
+// deletes the returned map.
+@(private = "file")
+field_slot_names_of_branch :: proc(branch: Stmt) -> map[string]bool {
+	names: map[string]bool
+	if block, ok := branch.(^Stmt_Block); ok {
+		for stmt in block.stmts {
+			if expr_stmt, is_expr_stmt := stmt.(^Stmt_Expression); is_expr_stmt {
+				if name, name_ok := top_level_field_assign_name(expr_stmt); name_ok {
+					names[name] = true
+				}
+			}
+		}
+	} else if expr_stmt, is_expr_stmt := branch.(^Stmt_Expression); is_expr_stmt {
+		if name, name_ok := top_level_field_assign_name(expr_stmt); name_ok {
+			names[name] = true
+		}
+	}
+	return names
 }
 
 // Resolve_Loop tracks one enclosing loop -- just scope_depth (the depth
@@ -903,6 +1046,7 @@ resolve_class_decl :: proc(rs: ^Resolver, v: ^Stmt_Class_Decl) {
 	class_ctx := new(Class_Compiler)
 	class_ctx.enclosing = rs.current_class
 	rs.current_class = class_ctx
+	discover_field_slots(class_ctx, v.members)
 
 	// Self-inheritance is already checked at parse time (pure lexeme
 	// comparison -- see class_declaration_ast); only the superclass
@@ -932,6 +1076,7 @@ resolve_class_decl :: proc(rs: ^Resolver, v: ^Stmt_Class_Decl) {
 		}
 	}
 
+	v.field_slot_names = class_ctx.field_slot_names[:]
 	rs.current_class = class_ctx.enclosing
 }
 
@@ -1013,6 +1158,23 @@ resolve_expr :: proc(rs: ^Resolver, e: Expr) {
 		resolve_expr(rs, v.value)
 		for a in v.args {
 			resolve_expr(rs, a)
+		}
+		// .Invoke deliberately never gets a field_slot, even when the name
+		// matches a discovered slot (e.g. a callback stored in `this.cb =
+		// fn` in init, later called as `this.cb()`): Get_Field_Slot/
+		// Set_Field_Slot only exist for the .Get/.Set/.Compound_Set shapes
+		// emit_field_slot_access handles -- see chunk.odin's opcode doc
+		// comment. this.field(...) keeps compiling through the ordinary
+		// Invoke path unconditionally; its correctness for a slotted field
+		// is handled at the vm/call.odin invoke level instead (see
+		// core.instance_get_field).
+		v.field_slot = -1
+		if v.kind != .Invoke {
+			if _, is_this := v.object.(^Expr_This); is_this && rs.current_class != nil {
+				if slot, found := rs.current_class.field_slots[lexeme(v.name)]; found {
+					v.field_slot = slot
+				}
+			}
 		}
 	case ^Expr_Subscript:
 		resolve_expr(rs, v.object)

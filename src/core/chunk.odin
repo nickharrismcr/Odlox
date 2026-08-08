@@ -93,6 +93,17 @@ Op_Code :: enum u8 {
 	Static_Method,
 	Class_Var,
 
+	// Compile-time-baked instance field-slot fast path -- see
+	// Property_Cache's own doc comment for why the general case can't be
+	// cached this way, and chunk_add_field_slot_table's doc comment below
+	// for the mechanism that makes this narrower case safe. Only ever emitted for
+	// `this.name` access inside the declaring class's own methods
+	// (compiler/emit_expr.odin's emit_field_slot_access); every other
+	// property access keeps compiling to Get_Property/Set_Property
+	// unchanged.
+	Get_Field_Slot,
+	Set_Field_Slot,
+
 	// Swizzle-component assignment (`v.x = expr`) write-back family --
 	// see vm/properties.odin's swizzle_assign doc comment for why these
 	// exist: a vec2/3/4 Value is an inline copy (see value.odin), so
@@ -194,14 +205,15 @@ Local_Var_Info :: struct {
 // resolve global names/slots through that shared Environment rather than
 // carrying their own copy (see environment.odin).
 Chunk :: struct {
-	code:            [dynamic]u8,
-	constants:       [dynamic]Value,
-	lines:           [dynamic]int, // parallel to code: one entry per byte
-	filename:        string,
-	local_vars:      [dynamic]Local_Var_Info, // debug info
-	global_count:    int,
-	global_names:    [dynamic]string,
-	property_caches: [dynamic]Property_Cache,
+	code:               [dynamic]u8,
+	constants:          [dynamic]Value,
+	lines:              [dynamic]int, // parallel to code: one entry per byte
+	filename:           string,
+	local_vars:         [dynamic]Local_Var_Info, // debug info
+	global_count:       int,
+	global_names:       [dynamic]string,
+	property_caches:    [dynamic]Property_Cache,
+	field_slot_tables:  [dynamic][]string, // see chunk_add_field_slot_table's doc comment
 }
 
 // Property_Cache backs the monomorphic inline cache on Get_Property and
@@ -242,6 +254,32 @@ new_chunk :: proc(filename: string) -> ^Chunk {
 chunk_add_property_cache :: proc(c: ^Chunk) -> u8 {
 	append(&c.property_caches, Property_Cache{})
 	return u8(len(c.property_caches) - 1)
+}
+
+// chunk_add_field_slot_table registers one class declaration's discovered
+// field-slot names (compiler/resolve.odin's discover_field_slots -- index
+// -> name, in discovery order) and returns its index into
+// Chunk.field_slot_tables, emitted as the Class opcode's second operand
+// (vm/run.odin's .Class case reads it and hands the slice to
+// vm/properties.odin's do_class, which stores it on the new Class_Object
+// and builds field_slot_index from it). Called once per class
+// declaration, even for a class with zero discovered fields (an empty
+// slice), so there's no "does a table exist" branch anywhere downstream.
+//
+// This table only ever answers "what does slot i mean for this class",
+// used at class-construction time (Instance_Object.slots sizing) and by
+// the disassembler/instance_get_field's cold compatibility path -- never
+// on Get_Field_Slot/Set_Field_Slot's own hot path, which only ever reads
+// a literal slot index baked into the bytecode operand. This is the
+// distinction that keeps this design from repeating glox's own reverted
+// "runtime slot table" attempt (see chunk.odin's Get_Field_Slot/
+// Set_Field_Slot doc comment): that attempt moved the per-access lookup
+// from a per-instance map to a per-class map and was a net regression
+// because it was still a lookup, just a smaller one. Nothing here is
+// consulted per access on a hit.
+chunk_add_field_slot_table :: proc(c: ^Chunk, names: []string) -> u8 {
+	append(&c.field_slot_tables, names)
+	return u8(len(c.field_slot_tables) - 1)
 }
 
 chunk_write_op :: proc(c: ^Chunk, op: Op_Code, line: int) {

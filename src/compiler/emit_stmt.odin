@@ -510,7 +510,9 @@ emit_try :: proc(em: ^Emitter, v: ^Stmt_Try) {
 emit_class_decl :: proc(em: ^Emitter, v: ^Stmt_Class_Decl) {
 	line := v.token.line
 	name_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(v.name)))
+	field_slot_table_idx := core.chunk_add_field_slot_table(current_chunk(em), v.field_slot_names)
 	emit_op_byte(em, .Class, name_const, line)
+	emit_byte(em, field_slot_table_idx, line)
 
 	if v.is_local {
 		open_local_debug(em, lexeme(v.name), v.declared_slot)

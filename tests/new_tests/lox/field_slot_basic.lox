@@ -1,0 +1,167 @@
+// Compile-time-baked instance field slots (compiler/resolve.odin's
+// discover_field_slots, core/chunk.odin's Get_Field_Slot/Set_Field_Slot
+// doc comment) -- TODO.md's Phase 7 entry. End-to-end coverage of the
+// real binary, complementing the Odin-level unit tests in
+// src/compiler/field_slot_test.odin/src/vm/field_slot_test.odin.
+
+// --- basic fast path: get/set/compound-set on this.field ---
+class Point {
+    init(x, y) {
+        this.x_val = x
+        this.y_val = y
+    }
+    sum() {
+        return this.x_val + this.y_val
+    }
+    move(dx, dy) {
+        this.x_val = this.x_val + dx
+        this.y_val += dy
+    }
+}
+p = Point(3, 4)
+print p.sum()
+p.move(1, 1)
+print p.sum()
+
+// external access (a real bug found and fixed while building this
+// feature: get_property/set_obj_field originally checked only the
+// fields map, never the new slots array)
+print p.x_val
+p.x_val = 100
+print p.x_val
+print p.sum()
+
+// --- read before assignment inside init still raises the ordinary
+// "Undefined property" error, not a silently-wrong nil ---
+class Bad {
+    init() {
+        try {
+            print this.never_set
+        } except RunTimeError as e {
+            print "caught: " & e.msg
+        }
+        this.never_set = 99
+    }
+}
+b = Bad()
+print b.never_set
+
+// --- a field assigned only conditionally in init never gets a slot,
+// and keeps the exact map-based fallback behavior ---
+class Cond {
+    init(flag) {
+        if (flag) {
+            this.maybe = "yes"
+        }
+    }
+}
+c1 = Cond(true)
+print c1.maybe
+c2 = Cond(false)
+try {
+    print c2.maybe
+} except RunTimeError as e {
+    print "caught: " & e.msg
+}
+
+// --- inheritance: super.init() plus the subclass's own fields, and a
+// subclass with no init of its own at all ---
+class Animal {
+    init(name) {
+        this.name = name
+    }
+    describe() {
+        return "Animal: " & this.name
+    }
+}
+class Dog < Animal {
+    init(name, breed) {
+        super.init(name)
+        this.breed = breed
+    }
+    describe() {
+        return "Dog: " & this.name & " (" & this.breed & ")"
+    }
+}
+d = Dog("Rex", "Labrador")
+print d.describe()
+print d.name
+print d.breed
+
+class Cat < Animal {
+    meow() {
+        return this.name & " says meow"
+    }
+}
+cat = Cat("Tom")
+print cat.meow()
+print cat.describe()
+
+// --- the exact method_call.lox Toggle/NthToggle shape: a base-class
+// method called polymorphically against a subclass instance whose own
+// field-slot table doesn't match the base class's ---
+class Toggle {
+    init(startState) {
+        this.state = startState
+    }
+    value() {
+        return this.state
+    }
+    activate() {
+        this.state = !this.state
+        return this
+    }
+}
+class NthToggle < Toggle {
+    init(startState, maxCounter) {
+        super.init(startState)
+        this.countMax = maxCounter
+        this.count = 0
+    }
+    activate() {
+        this.count = this.count + 1
+        if (this.count >= this.countMax) {
+            this.state = !this.state
+            this.count = 0
+        }
+        return this
+    }
+}
+nt = NthToggle(true, 3)
+print nt.value()
+nt.activate()
+nt.activate()
+nt.activate()
+print nt.value()
+
+// --- a closure stored in a slot-optimized field, called via
+// this.field()/other.field() -- regression test for vm/call.odin's
+// invoke, which must still find it via the field-shadow check ---
+class Holder {
+    init(fn) {
+        this.cb = fn
+    }
+    run() {
+        return this.cb()
+    }
+}
+h = Holder(func() { return "called!" })
+print h.run()
+print h.cb()
+
+// --- a custom exception whose init sets msg/name at the top level,
+// exactly the shape discover_field_slots optimizes -- regression test
+// for vm/exceptions.odin's format_uncaught_exception ---
+class MyError < Exception {
+    init(m) {
+        this.msg = m
+        this.name = "MyError"
+    }
+}
+try {
+    raise MyError("custom failure")
+} except MyError as e {
+    print "exception caught: " & e.msg
+}
+
+print "field_slot_basic complete"

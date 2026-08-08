@@ -3810,6 +3810,115 @@ type/non-vector error paths, and the polymorphic-call-site case run directly aga
 all produced the expected output/errors. Re-run `odin test` properly once the hang is separately
 diagnosed, to get the new tests' own pass/fail signal on record.
 
+### Phase 7k: compile-time-baked instance field slots
+
+The last item Phase 7 left parked: `inst.fields[name]` (a per-instance map) is the one cost the
+monomorphic inline cache (Phase 7e) structurally cannot touch, since it caches `class -> method`
+(one table shared by every instance) and instance fields have no such class-level invariant to key
+off — two instances of one class can hold different field sets. `trees`/`binary_trees` were the only
+two loxcraft benchmarks still losing to glox at this point (1.09x/1.24x).
+
+**Design, and why it doesn't repeat glox's own reverted attempt**: glox's roadmap documents trying a
+"runtime-only slot table" — moving the lookup from a per-instance map to a smaller per-class map,
+with no compiler involvement — and finding it a net regression (+3-16% on access-heavy benchmarks):
+it was still a map lookup, just a smaller one, plus new bounds/index overhead on top. This phase
+instead does real compile-time slot resolution, mirroring how local variables already get
+compile-time stack slots: `compiler/resolve.odin`'s `discover_field_slots` scans a class's own
+`init` for `this.name = value` statements provably always executed (top-level and unconditional, or
+present in *both* branches of a top-level if/else — see below), assigns each a slot index, and
+`this.name` access to a discovered name inside that class's own methods compiles to
+`Get_Field_Slot`/`Set_Field_Slot` (a literal slot operand) instead of `Get_Property`/`Set_Property`
+(a constant-pool name lookup) — zero runtime name lookup on a hit, the property glox's own
+postmortem identified as load-bearing.
+
+**Inheritance safety** was the central open design question: `do_inherit` copies method closures
+verbatim into a subclass's method table, so a superclass method compiled with a baked-in slot index
+can run against a subclass instance whose field-slot table (discovered independently, from its own
+`init`) doesn't reserve the same index for the same field. Solved with a runtime guard, not
+compile-time slot-table splicing: `Closure_Object` gained `owner_class` (the class a method was
+textually declared in, set once in `do_method`), and `Get_Field_Slot`/`Set_Field_Slot` only trust
+the baked-in index when `inst.class == closure.owner_class` (a pointer comparison already in hand),
+falling back to the exact unfused `get_property`/`set_obj_field` path otherwise. This makes every
+class's field-slot table fully independent of its superclass/subclasses, with no compile-time
+propagation logic anywhere — verified directly against `benchmarks/lox/method_call.lox`'s
+`Toggle`/`NthToggle` (`super.init(...)`, then its own additional fields).
+
+**Real bugs found while building this, both would have shipped broken without direct testing against
+the real binary, not just the new unit tests**:
+- `get_property`/`set_obj_field`'s `Instance` case originally checked only `inst.fields`, never the
+  new `inst.slots` — breaking the single most basic case, reading a slot-optimized field from
+  *outside* the declaring class (`p.x_val` from top-level code). Every property-access path that
+  doesn't know at compile time whether a name is slotted (external reads/writes, `vm/call.odin`'s
+  `invoke` field-shadow check, `vm/exceptions.odin`'s uncaught-message formatting, pickle
+  encode/decode) now goes through `core.instance_get_field`/`instance_set_field`, which check
+  `fields` first (so anything a bypass path — native exception construction, pickle decode — already
+  put there stays authoritative) then fall back to the class's slot table.
+- Inserting `Get_Field_Slot`/`Set_Field_Slot` mid-`Op_Code`-enum (needed, since the family belongs
+  next to `Get_Property`/`Set_Property`) shifts the numeric value of every later opcode — the exact
+  hazard `BC_CACHE_VERSION`'s own v1->v2 bump comment already documents from the Vec2/3/4-inlining
+  phase. Missed initially: a stale `__loxcache__/*.lxc` built by the pre-Phase-7k binary decoded
+  clean (same schema) but every opcode byte after the insertion point now meant something different,
+  producing an out-of-bounds panic (`run.odin`'s new `.Class` case reading a garbage
+  `field_slot_table_idx`) instead of a clean version-mismatch rejection. Fixed two ways: bumped
+  `BC_CACHE_VERSION` to 3 (so a v2 cache is now rejected and transparently recompiled, the existing
+  self-heal path already built for exactly this), and separately discovered `bc_enc_chunk`/
+  `bc_dec_chunk` never serialized the new `Chunk.field_slot_tables` field at all — unlike
+  `property_caches` (correctly serialized as a bare count, since it's a cache resettable to cold on
+  load), field-slot tables are real required data (the actual discovered field *names*), so even a
+  freshly-written v3 cache lost them without this fix. Both bugs were caught by running the full
+  `pytest` suite, not the new feature's own targeted tests, which never exercised a cached module.
+
+**Benchmark-driven scope extension**: the initial v1 (top-level-unconditional-only discovery)
+measured as a mixed result -- `trees` improved sharply (30.64s -> 19.40s, -37%) but `binary_trees`
+*regressed* slightly (29.19s -> 31.02s, +6%). Root cause, found by reading the benchmark source
+directly rather than assumed: `binary_trees.lox`'s hottest fields (`left`/`right`, traversed on
+every recursive call) are assigned in *both* branches of a top-level if/else
+(`this.left = Tree(...)` / `this.left = nil`), never as a bare top-level statement, so v1's
+conservative scan never discovered them at all — only `item`/`depth` qualified, missing the actual
+hot path, while still paying a small fixed per-class overhead. `trees.lox`'s own conditional fields
+(`this.a`..`this.e`, inside an if-with-no-else) are correctly and permanently excluded by contrast
+(no else branch to prove the assignment always happens), and its win came from `depth`, which *is*
+top-level-unconditional. Extended `discover_field_slots` with one bounded case: a field assigned
+identically (same name) in both branches of a top-level if/else is provably always set, added via
+`discover_field_slots_stmt`/`field_slot_names_of_branch` (one level of if/else only, not recursive
+into further nesting -- deliberately bounded, not a general reachability analysis).
+
+**Measured** (release build, `bin/benchmarks.sh 3`, before = pre-Phase-7k `master`, same machine/session):
+
+| benchmark | before | after | delta | odlox/glox before | after |
+|---|---|---|---|---|---|
+| trees | 30.64s | 19.40s | -36.7% | 1.33x | **0.84x** |
+| binary_trees | 29.19s | 15.55s | -46.7% | 1.61x | **0.87x** |
+| method_call | 11.85s | 11.71s | -1.2% | 0.58x | 0.58x |
+| instantiation | 32.10s | 32.98s | +2.8% | 0.81x | 0.85x |
+| properties | 10.87s | 10.76s | -1.0% | 0.61x | 0.61x |
+
+(Baseline `odlox/glox` ratios read higher here than the 1.09x/1.24x Phase 7f figure — machine/session
+variance against this run's own glox binary, not a regression; the controlled same-session
+before/after comparison above is what matters.) All 13 benchmarks now beat or tie glox; the small
+`instantiation` regression (eager `Instance_Object.slots` allocation at construction, vs. the
+lazily-grown map it replaces for slotted fields) is the anticipated, accepted cost, far outweighed by
+`trees`/`binary_trees`'s wins. Remaining full suite (`equality`, `fib`, `collections`, `invocation`,
+`loop`, `string_equality`, `vec_ops`, `zoo`, `zoo_batch`) unchanged within noise.
+
+**Scope explicitly deferred, not silently dropped** (see `TODO.md`'s Phase 7 section): extending
+`Property_Cache` to also cache a field-slot index for general `expr.field` access from outside the
+declaring class; a `this.field(...)` fast path (only correctness under dual storage is handled, via
+`instance_get_field`); superclass-slot-table splicing so an inherited-but-unoverridden method also
+hits the fast path against a subclass instance (the `owner_class` guard design makes this safe to
+add later without revisiting anything here). None of these gate `trees`/`binary_trees`/`method_call`,
+which already fully benefit.
+
+**Verified**: clean `odin build src -debug -vet -strict-style` and `-o:speed -disable-assert
+-no-bounds-check`; `bin/test_odin.sh` (`core`/`compiler`/`debug` OK, `vm` 85/85 OK, zero hangs); full
+`pytest` (254 passed, 26 skipped, up from 252 baseline — two new fixtures, `field_slot_basic.lox` and
+a dedicated pickle round-trip regression test for the encode-side data-loss bug above); new Odin unit
+tests in `compiler/field_slot_test.odin` (discovery-shape cases, including the if/else extension) and
+`vm/field_slot_test.odin` (end-to-end: read-before-assignment-in-init still errors, external access,
+external-write-then-fast-path-read consistency, the `Toggle`/`NthToggle` inheritance shape, a
+subclass with no `init` of its own, a closure in a slotted field found via `invoke`, a custom
+exception's message).
+
 ## Phase 8 — Bytecode cache
 
 Shipped, not as a performance optimization (module-recompilation time was never measured to matter) but for

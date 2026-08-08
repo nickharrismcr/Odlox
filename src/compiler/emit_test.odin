@@ -33,14 +33,14 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		     .Get_Global, .Set_Global, .Define_Global, .Define_Global_Const,
 		     .Get_Upvalue, .Set_Upvalue, .Call, .Create_List, .Create_Dict,
 		     .Create_Tuple, .Unpack, .Set_Property, .Method,
-		     .Static_Method, .Class_Var, .Get_Super, .Class:
+		     .Static_Method, .Class_Var, .Get_Super:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
 		     .Incr_Const_N, .Add_Vv, .Sub_Nn, .Decr_Const_N, .Mul_Nn,
 		     .Mul_Const_N, .Div_Nn, .Div_Const_N, .Super_Invoke, .Import,
-		     .Get_Property:
+		     .Get_Property, .Class, .Set_Field_Slot:
 			n = 2
-		case .Invoke:
+		case .Invoke, .Get_Field_Slot:
 			n = 3
 		case .Except:
 			n = 3

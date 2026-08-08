@@ -204,7 +204,11 @@ emit_super :: proc(em: ^Emitter, v: ^Expr_Super) {
 // lexical check on the field name token, since the compiler can't know
 // at compile time whether a given property target actually holds a
 // vector -- see emit_swizzle_set's own doc comment for why that's fine.
-@(private = "file")
+// Package-private (not file-private): resolve.odin's discover_field_slots
+// needs the identical exclusion, so a `this.x = ...` inside init never
+// gets baked into a field slot -- swizzle write-back must still run for
+// it, exactly as if this feature didn't exist.
+@(private)
 is_swizzle_field_name :: proc(name: string) -> bool {
 	switch name {
 	case "x", "y", "z", "w", "r", "g", "b", "a":
@@ -218,6 +222,18 @@ is_swizzle_field_name :: proc(name: string) -> bool {
 // write, and `.name(args)` invoke. A `.Set`/`.Compound_Set` whose field
 // name could be a vec swizzle component is routed to emit_swizzle_set
 // instead -- see its own doc comment.
+//
+// v.field_slot >= 0 (Resolver-populated, resolve.odin's
+// discover_field_slots) means this is a `this.name` access the compiler
+// proved reads/writes one of the enclosing class's own compile-time-
+// discovered field slots -- emit Get_Field_Slot/Set_Field_Slot (a
+// literal slot operand, core/chunk.odin) instead of Get_Property/
+// Set_Property (a constant-pool name lookup) for that one op. Never true
+// for .Invoke (resolve.odin never sets it there) -- this.field(...) always
+// keeps the ordinary Invoke shape. emit_expr(em, v.object) below already
+// emits the correct Get_Local/Get_Upvalue for `this` on its own (see the
+// Expr_This case above) whether or not field_slot applies, so no special
+// receiver-emission path is needed here.
 @(private = "file")
 emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 	line := v.token.line
@@ -235,17 +251,33 @@ emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 	switch v.kind {
 	case .Set:
 		emit_expr(em, v.value)
-		emit_op_byte(em, .Set_Property, name_const, line)
+		if v.field_slot >= 0 {
+			emit_op_byte(em, .Set_Field_Slot, u8(v.field_slot), line)
+			emit_byte(em, name_const, line)
+		} else {
+			emit_op_byte(em, .Set_Property, name_const, line)
+		}
 	case .Compound_Set:
-		// Get_Property consumes the object reference on top of the stack,
-		// but Set_Property needs it again afterward -- Dup keeps a copy
-		// around for that second use, same as dot() today.
+		// Get_Property/Get_Field_Slot consumes the object reference on top
+		// of the stack, but Set_Property/Set_Field_Slot needs it again
+		// afterward -- Dup keeps a copy around for that second use, same as
+		// dot() today.
 		emit_op(em, .Dup, line)
-		emit_op_byte(em, .Get_Property, name_const, line)
+		if v.field_slot >= 0 {
+			emit_op_byte(em, .Get_Field_Slot, u8(v.field_slot), line)
+			emit_byte(em, name_const, line)
+		} else {
+			emit_op_byte(em, .Get_Property, name_const, line)
+		}
 		emit_property_cache(em, line)
 		emit_expr(em, v.value)
 		emit_op(em, compound_op_code(v.compound_op), line)
-		emit_op_byte(em, .Set_Property, name_const, line)
+		if v.field_slot >= 0 {
+			emit_op_byte(em, .Set_Field_Slot, u8(v.field_slot), line)
+			emit_byte(em, name_const, line)
+		} else {
+			emit_op_byte(em, .Set_Property, name_const, line)
+		}
 	case .Invoke:
 		for a in v.args {
 			emit_expr(em, a)
@@ -254,7 +286,12 @@ emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 		emit_byte(em, u8(len(v.args)), line)
 		emit_property_cache(em, line)
 	case .Get:
-		emit_op_byte(em, .Get_Property, name_const, line)
+		if v.field_slot >= 0 {
+			emit_op_byte(em, .Get_Field_Slot, u8(v.field_slot), line)
+			emit_byte(em, name_const, line)
+		} else {
+			emit_op_byte(em, .Get_Property, name_const, line)
+		}
 		emit_property_cache(em, line)
 	}
 }

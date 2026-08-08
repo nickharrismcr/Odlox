@@ -63,10 +63,18 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
 
 ## Phase 7 — Performance pass
 
-**Parked** after Phase 7f — 11 of 13 loxcraft benchmarks beat or tie glox, the remaining two (`trees`/
-`binary_trees`) are within 9-28% instead of 45%; good enough to stop for now and pick up Phase 6b (raylib
-bindings, `gfx`/`physics_world`) instead. Resume from here, not from scratch — every item below is exactly
-where Phase 7 left off.
+**Parked** after Phase 7k (compile-time-baked instance field slots) — all 13 loxcraft benchmarks now beat or
+tie glox, including `trees`/`binary_trees` (previously the only two odlox lost on, at 1.09x/1.24x; now 0.84x/
+0.87x). Resume from here, not from scratch — every item below is exactly where Phase 7 left off.
+
+- [ ] Field-slot follow-ups explicitly deferred from Phase 7k's v1 scope (`ROADMAP.md`'s Phase 7k section has
+      the full design rationale): extending `Property_Cache` to also cache a field-slot index for general
+      `expr.field` access from outside the declaring class (today only `this.field` inside the declaring
+      class's own methods gets the fast path); a `this.field(...)` (`Invoke`) fast path (only its correctness
+      under dual storage is handled today, via `core.instance_get_field`); superclass-slot-table splicing so
+      an inherited-but-unoverridden method also hits the fast path against a subclass instance (safe to add
+      later without revisiting anything already built, per the `owner_class` guard's own design). None of
+      these are required for `trees`/`binary_trees`/`method_call`, which already fully benefit.
 
 Only after Phases 1–6 are correct and green against the test suite.
 
@@ -76,18 +84,6 @@ Only after Phases 1–6 are correct and green against the test suite.
       would only help the handful of opcodes handled inline in the switch and need a sync before every
       called-out proc otherwise — much smaller payoff than `ip` got for meaningfully more risk. Revisit only
       if profiling specifically implicates it.
-- [ ] Object-model cost (map-backed instance fields/methods, `core/obj_instance.odin`'s
-      `fields: map[^String_Object]Value`, `core/obj_class.odin`'s `methods`/`statics` maps) is odlox's last
-      remaining relative weak spot. After the redundant-intern fix (Phase 7c) and the monomorphic inline
-      cache on `Get_Property`/`Invoke` (Phase 7e), `trees`/`binary_trees` improved from 1.45x/1.44x to
-      1.09x/1.24x but remain the only two benchmarks where odlox loses to glox — what's left is the
-      **instance-fields lookup itself** (`inst.fields[name]`), which the inline cache structurally cannot
-      touch (Lox instances have no fixed shape, so field access can't be cached at the class level the way
-      method dispatch can — see core/chunk.odin's `Property_Cache` doc comment), plus whatever allocation
-      cost is specific to deep tree construction (`instantiation.lox`, pure allocation with little access,
-      already favors odlox at ~0.8x, so it's the access pattern, not raw allocation). Attempt compile-time-
-      baked instance field slots (`OP_GET_FIELD_SLOT`/`OP_SET_FIELD_SLOT`) — do it properly or skip it; a
-      runtime-only slot table was a net regression in glox's own roadmap, so don't repeat that shortcut.
 - [ ] `Dict_Object.keys()` (`core/obj_dict.odin`'s `dict_keys`) allocates a fresh `List_Object` on every call,
       even for a dict that hasn't changed since the last call — found via the Phase 7f investigation into why
       `collections.lox`'s `dict` phase still trails CPython after fixing the redundant-intern cost there

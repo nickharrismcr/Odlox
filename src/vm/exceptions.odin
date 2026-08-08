@@ -173,7 +173,12 @@ resolve_class_by_name :: proc(vm: ^VM, name: string) -> (^core.Class_Object, boo
 format_uncaught_exception :: proc(err: core.Value) -> string {
 	inst := core.as_instance(err)
 	class_str := core.value_to_string(core.make_object_value(&inst.class.obj))
-	msg, has_msg := inst.fields[core.intern_string("msg")]
+	// core.instance_get_field, not a raw inst.fields[...] read: built-in
+	// exception classes' init bodies set `this.msg` unconditionally at
+	// the top level (see EXCEPTION_SOURCE below), exactly the shape
+	// compiler/resolve.odin's discover_field_slots slot-optimizes, so
+	// `msg` may live in inst.slots instead of inst.fields.
+	msg, has_msg := core.instance_get_field(inst, core.intern_string("msg"))
 	msg_str := core.value_to_string(msg) if has_msg else "\"\""
 	return fmt.aprintf("Uncaught exception: %s : %s ", class_str, msg_str)
 }

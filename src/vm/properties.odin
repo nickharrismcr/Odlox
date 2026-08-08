@@ -40,7 +40,15 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 		#partial switch receiver.obj_type {
 		case .Instance:
 			inst := core.as_instance(receiver)
-			if v, ok := inst.fields[name]; ok {
+			// core.instance_get_field, not a raw inst.fields[name] read:
+			// this is the canonical field-lookup path Get_Field_Slot's own
+			// guard-miss fallback reuses (see run.odin), so it must see a
+			// field regardless of whether the compiler put it in
+			// inst.fields or inst.slots (compiler/resolve.odin's
+			// discover_field_slots) -- an ordinary `some_instance.field`
+			// access from outside the declaring class never goes through
+			// Get_Field_Slot at all, only ever this path.
+			if v, ok := core.instance_get_field(inst, name); ok {
 				pop(vm)
 				push(vm, v)
 				return true
@@ -235,7 +243,12 @@ set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, valu
 	if recv.type == .Obj {
 		#partial switch recv.obj_type {
 		case .Instance:
-			core.as_instance(recv).fields[name] = value
+			// core.instance_set_field, not a raw inst.fields[name]=value
+			// write: keeps a generic external `some_expr.name = value`
+			// write targeting the same storage (slots or fields) that
+			// core.instance_get_field/Get_Field_Slot's fallback would find
+			// it in -- see that helper's own doc comment.
+			core.instance_set_field(core.as_instance(recv), name, value)
 			return true
 		case .Class:
 			core.as_class(recv).statics[name] = value
@@ -304,8 +317,19 @@ swizzle_assign :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, val
 // -----------------------------------------------------------------------
 // Classes
 
-do_class :: proc(vm: ^VM, name: string) {
+// field_names is the class's own compile-time-discovered field-slot
+// table (compiler/resolve.odin's discover_field_slots, index -> name;
+// possibly empty) -- a borrowed slice into the Chunk's own
+// field_slot_tables entry, never freed via this Class_Object (see
+// gc.odin's free_object). field_slot_index (name -> index) is built here
+// once, for instance_get_field's cold-path compatibility lookup only --
+// never consulted by Get_Field_Slot/Set_Field_Slot's own hot path.
+do_class :: proc(vm: ^VM, name: string, field_names: []string) {
 	class := core.make_class_object(name)
+	class.field_slot_names = field_names
+	for field_name, i in field_names {
+		class.field_slot_index[core.intern_string(field_name)] = i
+	}
 	gc_track(vm, &class.obj)
 	push(vm, core.make_object_value(&class.obj))
 }
@@ -339,6 +363,13 @@ do_method :: proc(vm: ^VM, name: string, is_static: bool) {
 	if is_static {
 		class.static_methods[key] = method_val
 	} else {
+		// owner_class records which class this method was textually
+		// declared in -- the guard Get_Field_Slot/Set_Field_Slot's VM
+		// dispatch (run.odin) checks before trusting a baked-in field-slot
+		// index, since do_inherit below copies this same closure verbatim
+		// into any subclass's method table too. Irrelevant for statics
+		// (`this` doesn't exist there), left nil.
+		core.as_closure(method_val).owner_class = class
 		class.methods[key] = method_val
 	}
 	pop(vm)
