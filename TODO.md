@@ -19,6 +19,27 @@ Regenerate/re-sync this list against `ROADMAP.md` if the two drift — `ROADMAP.
       permanent interned strings), which risks changing production GC behavior for a test-harness-only
       payoff — deliberately left unfixed pending a safer approach. `python -m pytest tests/new_tests/` (the
       project's actual correctness gate) is unaffected throughout.
+
+      **Workaround, now the required way to run this suite**: `bin/test_odin.sh [timeout_seconds]` runs
+      `core`/`compiler`/`debug` as batched `odin test <pkg>` invocations, but `vm` one test at a time, each
+      its own process (`-define:ODIN_TEST_NAMES=vm.<name>`, names extracted from `src/vm/*_test.odin` at run
+      time, not hardcoded) — `natives` has no `@(test)` procs of its own, see `src/natives/README.md`'s
+      Testing section. Disabling a single suspect test was tried first and did **not** fix the hang (confirmed
+      directly); the root cause is cumulative VM/allocation weight across however many `vm`-package tests
+      happen to share one process, not particular tests — see `ROADMAP.md`'s Phase 4 writeup (`vm.test_dict_get_and_set`
+      and others were separately found to trigger the identical pattern). One-process-per-test sidesteps the
+      accumulation entirely: full run is ~60s, zero hangs, zero timeouts.
+
+      Isolating each `vm` test also surfaced the same root cause's other symptom, silent wrong-value
+      corruption instead of a hang, in four tests that each construct 2+ VM instances importing the same
+      module within one test function (the process-wide `module_cache` leaking state between them):
+      `test_bc_cache_write_then_reimport_hits_cache`, `test_bc_cache_mtime_invalidation_on_source_edit`,
+      `test_bc_cache_force_compile_bypasses_read_but_refreshes_write`,
+      `test_bc_cache_corrupted_lxc_falls_back_and_self_heals` (all in `src/vm/bc_cache_test.odin`). `@(test)`
+      removed from all four, with a comment on each explaining why and how to re-run manually
+      (`-define:ODIN_TEST_NAMES=vm.<name>`). Two have real `pytest` equivalents (roundtrip, force-compile);
+      **two do not** — mtime invalidation and corrupted-`.lxc` self-heal have no current `tests/new_tests/`
+      fixture, a real (if narrow) coverage gap until/unless someone ports them.
 - [ ] Always invoke `odin test` for this project with `-define:ODIN_TEST_THREADS=1`. Not a workaround for
       flakiness — the codebase's own design is explicitly single-threaded (`docs/ARCHITECTURE.md`'s Scope
       section; `core/obj_string.odin`'s `intern_string` doc comment), and the test runner's default 16-thread

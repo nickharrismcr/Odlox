@@ -90,6 +90,32 @@ habit doesn't carry over to Lox function calls/parameter lists. When writing a m
 `some_call(\n    a,\n    b,\n)`-shaped call or `func f(\n    a,\n    b,\n)`-shaped definition,
 drop the comma after the last argument/parameter.
 
+## Running the Odin unit test suite
+
+`odin test src -all-packages` (even with `-define:ODIN_TEST_THREADS=1`) hangs unpredictably -- a real,
+unresolved `odin test` toolchain issue, not a bug in odlox itself (`TODO.md`'s Phase 0 entry and
+`ROADMAP.md`'s Phase 4 writeup have the full history: cumulative VM/allocation weight across however many
+tests happen to share one process eventually trips it).
+
+Use `bin/test_odin.sh [timeout_seconds]` instead of invoking `odin test` directly. It runs
+`core`/`compiler`/`debug` as batched `odin test <pkg>` calls, but `vm` one test per process
+(`-define:ODIN_TEST_NAMES=vm.<name>`, extracted from `src/vm/*_test.odin` at run time) -- `vm`'s own tests
+construct enough VMs per test that even a same-package batch isn't safe. `natives` has no `@(test)` procs of
+its own (`pytest` against the built binary is the real gate for native dispatch, see
+`src/natives/README.md`'s Testing section). Full run is ~60s, zero hangs.
+
+Four `vm`-package tests in `src/vm/bc_cache_test.odin` are permanently `@(test)`-disabled (each constructs 2+
+VM instances importing the same module within one test function, which leaks state between them through the
+process-wide `module_cache` under `odin test`'s allocator recycling -- the same root cause above, surfacing
+as silent wrong-value corruption instead of a hang once per-test isolation removed the accumulation). See the
+comment above each disabled test for which `pytest` fixture covers the same behavior (two do; two --
+mtime invalidation, corrupted-`.lxc` self-heal -- currently don't) and how to re-run it manually
+(`-define:ODIN_TEST_NAMES=vm.<name>`) if `bc_cache.odin`/`module.odin` change.
+
+`bin/run_tests.sh` runs the actual correctness gate for any change under `src/` -- the ported `pytest` suite
+against a freshly built `bin/odlox.exe` -- not `odin test`/`odin check`, which don't exercise native dispatch
+or real end-to-end behavior at all (`src/natives/README.md`'s Testing section).
+
 ## Performance: avoid per-frame/per-cell allocation in graphics scripts targeting 60fps
 
 odlox's GC is mark-sweep. Allocating inside a loop that runs every frame (or every cell, every
