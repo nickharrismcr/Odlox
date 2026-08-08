@@ -1,0 +1,132 @@
+// Peephole fusion for Subtract/Multiply/Divide (compiler/emit.odin's
+// numeric_fuse_families) and the Inc_Local `x += 1` shortcut. The
+// interesting risk isn't the plain numeric case -- it's that Subtract
+// and Multiply are *not* purely numeric operators (vector subtraction,
+// string repetition -- see vm/arithmetic.odin's numeric_binop), so the
+// fused Sub_Nn/Sub_Ii and Mul_Nn/Mul_Ii opcodes must fall back to the
+// exact unfused behavior for those cases rather than corrupting them,
+// including a call site that starts numeric (patching to the Int/Float
+// leaf) and later sees a vector.
+
+// --- Subtract ---
+func sub_local_local() {
+    a = 10
+    b = 3
+    a -= b
+    return a
+}
+print sub_local_local()
+
+func sub_const() {
+    a = 10.5
+    a -= 0.5
+    return a
+}
+print sub_const()
+
+// Vector subtraction through the *same* bytecode shape as
+// sub_local_local (local -= local) -- must not corrupt into a float.
+func sub_vec() {
+    p = vec3(5, 5, 5)
+    v = vec3(1, 2, 3)
+    p -= v
+    return p
+}
+r = sub_vec()
+print r.x
+print r.y
+print r.z
+
+// Polymorphic call site: numeric first (patches to Sub_Ii), then a
+// vector on a later call -- Sub_Ii's re-check-and-fallback must still
+// produce the correct vector result, not silently zero it out.
+func sub_poly(x, y) {
+    a = x
+    b = y
+    a -= b
+    return a
+}
+print sub_poly(10, 3)
+r2 = sub_poly(vec2(5, 5), vec2(1, 1))
+print r2.x
+print r2.y
+
+// --- Multiply ---
+func mul_local_local() {
+    a = 6
+    b = 7
+    a *= b
+    return a
+}
+print mul_local_local()
+
+func mul_const() {
+    a = 2.5
+    a *= 4.0
+    return a
+}
+print mul_const()
+
+// String repetition through the same bytecode shape as mul_local_local.
+func mul_str() {
+    s = "ab"
+    n = 3
+    s *= n
+    return s
+}
+print mul_str()
+
+// --- Divide ---
+func div_local_local() {
+    a = 20
+    b = 4
+    a /= b
+    return a
+}
+print div_local_local()
+
+func div_const() {
+    a = 9.0
+    a /= 2.0
+    return a
+}
+print div_const()
+
+// Int division by zero must still raise through the fused shape.
+func div_zero() {
+    a = 5
+    b = 0
+    a /= b
+    return a
+}
+try {
+    div_zero()
+    print "no error!"
+} except RunTimeError as e {
+    print "caught: " & e.msg
+}
+
+// --- Inc_Local (`x += 1`, the Incr_Const_N -> Inc_Local shortcut) ---
+func inc_local() {
+    i = 0
+    i += 1
+    i += 1
+    i += 1
+    return i
+}
+print inc_local()
+
+// A common loop-counter shape: the accumulator hits Add_Nn/Add_Ii, the
+// counter hits Inc_Local, in the same loop.
+func loop_sum() {
+    total = 0
+    i = 0
+    while (i < 5) {
+        total += i
+        i += 1
+    }
+    return total
+}
+print loop_sum()
+
+print "peephole_sub_mul_div complete"

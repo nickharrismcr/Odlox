@@ -201,6 +201,22 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	case .Add_Vv, .Add_V2, .Add_V3, .Add_V4:
 		return two_byte_instruction(op, c, offset)
 
+	// --- Self-specializing subtract/multiply/divide families: same
+	// [slot_a][operand_b] shape as the Add family above -- see
+	// core/chunk.odin's Op_Code doc comment. ---
+	case .Sub_Nn, .Sub_Ii, .Sub_Ff:
+		return two_byte_instruction(op, c, offset)
+	case .Decr_Const_N, .Decr_Const_I, .Decr_Const_F:
+		return incr_const_instruction(op, c, offset)
+	case .Mul_Nn, .Mul_Ii, .Mul_Ff:
+		return two_byte_instruction(op, c, offset)
+	case .Mul_Const_N, .Mul_Const_I, .Mul_Const_F:
+		return incr_const_instruction(op, c, offset)
+	case .Div_Nn, .Div_Ii, .Div_Ff:
+		return two_byte_instruction(op, c, offset)
+	case .Div_Const_N, .Div_Const_I, .Div_Const_F:
+		return incr_const_instruction(op, c, offset)
+
 	case:
 		fmt.printfln("Unknown opcode %d", op)
 		return offset + 1

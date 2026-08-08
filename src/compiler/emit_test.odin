@@ -36,7 +36,9 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		     .Static_Method, .Class_Var, .Get_Super, .Class:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
-		     .Incr_Const_N, .Add_Vv, .Super_Invoke, .Import, .Get_Property:
+		     .Incr_Const_N, .Add_Vv, .Sub_Nn, .Decr_Const_N, .Mul_Nn,
+		     .Mul_Const_N, .Div_Nn, .Div_Const_N, .Super_Invoke, .Import,
+		     .Get_Property:
 			n = 2
 		case .Invoke:
 			n = 3

@@ -145,6 +145,39 @@ Op_Code :: enum u8 {
 	Add_V2,
 	Add_V3,
 	Add_V4,
+
+	// Self-specializing subtract/multiply/divide families -- the same
+	// peephole-fusion shape as Add_Nn/Incr_Const_N, generalized to the
+	// other three arithmetic operators. Subtract/Multiply, unlike Add,
+	// have alternate operand-type semantics of their own (vector
+	// subtraction, string repetition -- see vm/arithmetic.odin's
+	// numeric_binop) that a later call at a given site can still hit
+	// after an earlier Int/Int or Float/Float call patched it, so their
+	// _Ii/_Ff children keep a type guard on every execution and fall
+	// back to the exact unfused behavior on a miss, the same discipline
+	// Add_V2/V3/V4 use for vectors -- not Add_Ii/Add_Ff's "trust the
+	// first patch forever". Divide has no such alternate-type hazard,
+	// but keeps the same shape for uniformity; its zero-divisor check
+	// already has to run on every execution regardless, since the
+	// *type* staying Int says nothing about the *value* staying nonzero.
+	Sub_Nn,
+	Sub_Ii,
+	Sub_Ff,
+	Decr_Const_N,
+	Decr_Const_I,
+	Decr_Const_F,
+	Mul_Nn,
+	Mul_Ii,
+	Mul_Ff,
+	Mul_Const_N,
+	Mul_Const_I,
+	Mul_Const_F,
+	Div_Nn,
+	Div_Ii,
+	Div_Ff,
+	Div_Const_N,
+	Div_Const_I,
+	Div_Const_F,
 }
 
 Local_Var_Info :: struct {

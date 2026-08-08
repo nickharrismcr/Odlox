@@ -392,6 +392,29 @@ DebugSkipPeephole := false
 // regardless of how it was generated, so it's unaffected by the parse/
 // resolve/emit split.
 
+// Numeric_Fuse_Family: one row per arithmetic operator this pass fuses --
+// the plain source opcode Get_Local/Get_Local(or Constant)/<source_op>/
+// Set_Local/Pop compiles to, and the two fused opcodes (local-local,
+// local-constant) it collapses into. Subtract/Multiply/Divide are
+// generalizations of the original Add_Numeric/Add_Nn/Incr_Const_N case;
+// see chunk.odin's Op_Code doc comment for why their _Ii/_Ff children
+// still re-check types every execution instead of trusting the first
+// patch the way Add_Ii/Add_Ff do.
+@(private = "file")
+Numeric_Fuse_Family :: struct {
+	source_op:      core.Op_Code,
+	local_local_op: core.Op_Code,
+	local_const_op: core.Op_Code,
+}
+
+@(private = "file")
+numeric_fuse_families := [4]Numeric_Fuse_Family {
+	{.Add_Numeric, .Add_Nn, .Incr_Const_N},
+	{.Subtract, .Sub_Nn, .Decr_Const_N},
+	{.Multiply, .Mul_Nn, .Mul_Const_N},
+	{.Divide, .Div_Nn, .Div_Const_N},
+}
+
 @(private = "file")
 peephole_optimise :: proc(c: ^core.Chunk) {
 	code := c.code
@@ -402,17 +425,36 @@ peephole_optimise :: proc(c: ^core.Chunk) {
 			code[i + 5] == u8(core.Op_Code.Set_Local) &&
 			code[i + 6] == code[i + 1] &&
 			code[i + 7] == u8(core.Op_Code.Pop)
-		set_matches := tail_matches && code[i + 4] == u8(core.Op_Code.Add_Numeric)
 
-		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Get_Local) {
-			fuse(code, i, .Add_Nn, code[i + 1], code[i + 3])
-			i += 8
-			continue
-		}
-		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Constant) {
-			fuse(code, i, .Incr_Const_N, code[i + 1], code[i + 3])
-			i += 8
-			continue
+		if is_get_local && tail_matches {
+			matched := false
+			for family in numeric_fuse_families {
+				if code[i + 4] != u8(family.source_op) {
+					continue
+				}
+				if code[i + 2] == u8(core.Op_Code.Get_Local) {
+					fuse(code, i, family.local_local_op, code[i + 1], code[i + 3])
+					matched = true
+				} else if code[i + 2] == u8(core.Op_Code.Constant) {
+					// `x += 1` (and only `+=` -- Subtract/Multiply/Divide
+					// have no equivalent "by exactly one" shortcut worth
+					// its own opcode) collapses one step further: Inc_Local
+					// hardcodes +1 with no constant-pool lookup at all, a
+					// strictly smaller instruction than Incr_Const_N/I/F
+					// for the single most common loop-counter shape.
+					if family.source_op == .Add_Numeric && constant_is_one(c, code[i + 3]) {
+						fuse_one_operand(code, i, .Inc_Local, code[i + 1])
+					} else {
+						fuse(code, i, family.local_const_op, code[i + 1], code[i + 3])
+					}
+					matched = true
+				}
+				break
+			}
+			if matched {
+				i += 8
+				continue
+			}
 		}
 		// `++` (Add_Vector) has no Constant-operand sibling: a vector is
 		// always produced by a vec2/3/4() call or another Add_Vector/
@@ -428,11 +470,34 @@ peephole_optimise :: proc(c: ^core.Chunk) {
 }
 
 @(private = "file")
+constant_is_one :: proc(c: ^core.Chunk, const_idx: u8) -> bool {
+	v := c.constants[const_idx]
+	if core.is_int(v) {
+		return core.as_int(v) == 1
+	}
+	if core.is_float(v) {
+		return core.as_float(v) == 1
+	}
+	return false
+}
+
+@(private = "file")
 fuse :: proc(code: [dynamic]u8, i: int, op: core.Op_Code, a, b: u8) {
 	code[i] = u8(op)
 	code[i + 1] = a
 	code[i + 2] = b
 	for k in i + 3 ..= i + 7 {
+		code[k] = u8(core.Op_Code.Noop)
+	}
+}
+
+// fuse_one_operand is fuse's single-operand sibling, for Inc_Local (just
+// a slot, no second operand byte at all -- see vm/run.odin's dispatch).
+@(private = "file")
+fuse_one_operand :: proc(code: [dynamic]u8, i: int, op: core.Op_Code, a: u8) {
+	code[i] = u8(op)
+	code[i + 1] = a
+	for k in i + 2 ..= i + 7 {
 		code[k] = u8(core.Op_Code.Noop)
 	}
 }

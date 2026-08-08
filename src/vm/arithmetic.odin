@@ -215,6 +215,29 @@ numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 	return true
 }
 
+// numeric_binop_into_slot: the safety net every Sub_Nn/Sub_Ii/Sub_Ff
+// (and the Mul_*/Div_* families alongside them, see run.odin) falls
+// into whenever its own fast Int/Int or Float/Float check misses --
+// pushes a/b and delegates to the exact same numeric_binop the unfused
+// Subtract/Multiply/Divide opcode would have run (preserving vector-
+// subtraction/string-repetition/type-error semantics, including the
+// divide-by-zero check, exactly), then writes the result into the
+// target local slot instead of leaving it on the stack. On failure,
+// numeric_binop has already raised (vm.error_msg set) and left the
+// stack balanced at its own -2 without pushing anything, so there's
+// nothing left to do here -- the shared error tail at the bottom of
+// run()'s dispatch loop takes it from there. Mirrors vec_add_dispatch's
+// role for the Add_Vv/V2/V3/V4 family: one shared "recompute the
+// general case correctly" tail instead of a second copy of
+// numeric_binop's own logic at every call site.
+numeric_binop_into_slot :: proc(vm: ^VM, op: core.Op_Code, slot_index: int, a, b: core.Value) {
+	push(vm, a)
+	push(vm, b)
+	if numeric_binop(vm, op) {
+		vm.stack[slot_index] = pop(vm)
+	}
+}
+
 negate :: proc(vm: ^VM) -> bool {
 	v := pop(vm)
 	#partial switch v.type {

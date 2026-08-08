@@ -176,7 +176,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Int && b.type == .Int {
@@ -189,16 +189,18 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
 		case .Add_Ii:
+			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) + core.as_int(b))
 		case .Add_Ff:
+			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) + core.as_float(b))
@@ -206,7 +208,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot := fl.code[ip]
 			const_idx := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			if a.type == .Int && b.type == .Int {
@@ -219,16 +221,18 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 			}
 		case .Incr_Const_I:
+			op_ip := ip - 1
 			slot := fl.code[ip]
 			const_idx := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) + core.as_int(b))
 		case .Incr_Const_F:
+			op_ip := ip - 1
 			slot := fl.code[ip]
 			const_idx := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
@@ -248,7 +252,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			result, specialize_to, ok := vec_add_dispatch(vm, a, b)
@@ -260,7 +264,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Vec2 && b.type == .Vec2 {
@@ -277,7 +281,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Vec3 && b.type == .Vec3 {
@@ -294,7 +298,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
 			slot_b := fl.code[ip + 1]
-			ip += 2
+			ip = op_ip + 8
 			a := vm.stack[fl.f.slots + int(slot_a)]
 			b := vm.stack[fl.f.slots + int(slot_b)]
 			if a.type == .Vec4 && b.type == .Vec4 {
@@ -307,13 +311,308 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 					vm.stack[fl.f.slots + int(slot_a)] = result
 				}
 			}
-		case .Inc_Local:
-			// Not currently emitted by the compiler (see
-			// compiler/rules.odin's note on Plus_Plus meaning vector
-			// add, not increment) -- implemented for completeness
-			// since the opcode exists, unreachable from real programs.
+
+		// --- self-specializing subtract/multiply/divide families ---
+		// Same peephole-fusion-plus-runtime-specialization shape as
+		// Add_Nn, generalized to Subtract/Multiply/Divide -- see
+		// chunk.odin's Op_Code doc comment for why the Sub/Mul/Div _Ii/
+		// _Ff leaves re-check their type on every execution (falling
+		// back to numeric_binop_into_slot, arithmetic.odin, on a miss)
+		// instead of trusting the first patch the way Add_Ii/Add_Ff do,
+		// and repatch back to the unspecialized _Nn/_Const_N opcode on a
+		// miss so a call site that durably changes type re-settles to
+		// the right specialization within one call, rather than falling
+		// into the (still correct, just slower) fallback path forever.
+		case .Sub_Nn:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Sub_Ii)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) - core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Sub_Ff)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) - core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Sub_Ii:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) - core.as_int(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Sub_Nn)
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Sub_Ff:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) - core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Sub_Nn)
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Decr_Const_N:
+			op_ip := ip - 1
 			slot := fl.code[ip]
-			ip += 1
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Decr_Const_I)
+				vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) - core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Decr_Const_F)
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) - core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot), a, b)
+			}
+		case .Decr_Const_I:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) - core.as_int(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Decr_Const_N)
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot), a, b)
+			}
+		case .Decr_Const_F:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) - core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Decr_Const_N)
+				numeric_binop_into_slot(vm, .Subtract, fl.f.slots + int(slot), a, b)
+			}
+
+		case .Mul_Nn:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Ii)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) * core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Ff)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) * core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Mul_Ii:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) * core.as_int(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Nn)
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Mul_Ff:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) * core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Nn)
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Mul_Const_N:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Const_I)
+				vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) * core.as_int(b))
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Const_F)
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) * core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot), a, b)
+			}
+		case .Mul_Const_I:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) * core.as_int(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Const_N)
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot), a, b)
+			}
+		case .Mul_Const_F:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) * core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Mul_Const_N)
+				numeric_binop_into_slot(vm, .Multiply, fl.f.slots + int(slot), a, b)
+			}
+
+		// Div_Ii's int branch checks the divisor every execution
+		// (bi == 0) regardless of the type-guard discipline above --
+		// see chunk.odin's Op_Code doc comment: staying Int says nothing
+		// about staying nonzero. Div_Ff has no such check, matching
+		// numeric_binop's own float path (float division by zero is
+		// ordinary IEEE inf/-inf/nan, not a raised error).
+		case .Div_Nn:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Ii)
+				bi := core.as_int(b)
+				if bi == 0 {
+					runtime_error(vm, "Division by zero.")
+				} else {
+					vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) / bi)
+				}
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Ff)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) / core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Div_Ii:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Int && b.type == .Int {
+				bi := core.as_int(b)
+				if bi == 0 {
+					runtime_error(vm, "Division by zero.")
+				} else {
+					vm.stack[fl.f.slots + int(slot_a)] = core.make_int_value(core.as_int(a) / bi)
+				}
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Nn)
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Div_Ff:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_float_value(core.as_float(a) / core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Nn)
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot_a), a, b)
+			}
+		case .Div_Const_N:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Const_I)
+				bi := core.as_int(b)
+				if bi == 0 {
+					runtime_error(vm, "Division by zero.")
+				} else {
+					vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) / bi)
+				}
+			} else if a.type == .Float && b.type == .Float {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Const_F)
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) / core.as_float(b))
+			} else {
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot), a, b)
+			}
+		case .Div_Const_I:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Int && b.type == .Int {
+				bi := core.as_int(b)
+				if bi == 0 {
+					runtime_error(vm, "Division by zero.")
+				} else {
+					vm.stack[fl.f.slots + int(slot)] = core.make_int_value(core.as_int(a) / bi)
+				}
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Const_N)
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot), a, b)
+			}
+		case .Div_Const_F:
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			const_idx := fl.code[ip + 1]
+			ip = op_ip + 8
+			a := vm.stack[fl.f.slots + int(slot)]
+			b := fl.constants[const_idx]
+			if a.type == .Float && b.type == .Float {
+				vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) / core.as_float(b))
+			} else {
+				fl.code[op_ip] = u8(core.Op_Code.Div_Const_N)
+				numeric_binop_into_slot(vm, .Divide, fl.f.slots + int(slot), a, b)
+			}
+
+		case .Inc_Local:
+			// x += 1 as a full statement now compiles to this directly
+			// (compiler/emit.odin's peephole_optimise, when the Add_Nn/
+			// Incr_Const_N shape's constant operand is exactly 1) --
+			// hardcodes +1 with no constant-pool lookup at all, the
+			// smallest instruction the increment-by-one shape can reach.
+			op_ip := ip - 1
+			slot := fl.code[ip]
+			ip = op_ip + 8
 			v := vm.stack[fl.f.slots + int(slot)]
 			#partial switch v.type {
 			case .Int:
