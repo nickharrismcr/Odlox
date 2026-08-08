@@ -398,11 +398,11 @@ peephole_optimise :: proc(c: ^core.Chunk) {
 	i := 0
 	for i + 7 < len(code) {
 		is_get_local := code[i] == u8(core.Op_Code.Get_Local)
-		set_matches :=
+		tail_matches :=
 			code[i + 5] == u8(core.Op_Code.Set_Local) &&
 			code[i + 6] == code[i + 1] &&
-			code[i + 7] == u8(core.Op_Code.Pop) &&
-			code[i + 4] == u8(core.Op_Code.Add_Numeric)
+			code[i + 7] == u8(core.Op_Code.Pop)
+		set_matches := tail_matches && code[i + 4] == u8(core.Op_Code.Add_Numeric)
 
 		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Get_Local) {
 			fuse(code, i, .Add_Nn, code[i + 1], code[i + 3])
@@ -411,6 +411,15 @@ peephole_optimise :: proc(c: ^core.Chunk) {
 		}
 		if is_get_local && set_matches && code[i + 2] == u8(core.Op_Code.Constant) {
 			fuse(code, i, .Incr_Const_N, code[i + 1], code[i + 3])
+			i += 8
+			continue
+		}
+		// `++` (Add_Vector) has no Constant-operand sibling: a vector is
+		// always produced by a vec2/3/4() call or another Add_Vector/
+		// property read, never the compile-time constant pool -- see
+		// docs/plans/vec-op-peephole.md's Scope section.
+		if is_get_local && tail_matches && code[i + 4] == u8(core.Op_Code.Add_Vector) && code[i + 2] == u8(core.Op_Code.Get_Local) {
+			fuse(code, i, .Add_Vv, code[i + 1], code[i + 3])
 			i += 8
 			continue
 		}

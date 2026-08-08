@@ -1,0 +1,27 @@
+import sys
+
+// Tight loop benchmark targeting the vec-add peephole/self-specialization
+// (docs/plans/vec-op-peephole.md). All operands are function-locals so the
+// compiler emits Add_Vv, self-specializing per call site to Add_V2/Add_V3/
+// Add_V4 once implemented -- Add_Vector (unfused) today.
+
+func tight(n) {
+  var a2 = vec2(1, 1);
+  var b2 = vec2(2, 2);
+  var a3 = vec3(1, 1, 1);
+  var b3 = vec3(2, 2, 2);
+  var a4 = vec4(1, 1, 1, 1);
+  var b4 = vec4(2, 2, 2, 2);
+  var i = 0;
+  while (i < n) {
+    a2 = a2 ++ b2;
+    a3 = a3 ++ b3;
+    a4 = a4 ++ b4;
+    i = i + 1;
+  }
+  return a2.x + a3.x + a4.x;
+}
+
+var start = sys.clock();
+print tight(5000000);
+print sys.clock() - start;

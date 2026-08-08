@@ -232,6 +232,81 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			a := vm.stack[fl.f.slots + int(slot)]
 			b := fl.constants[const_idx]
 			vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
+
+		// --- self-specializing vector-add family ---
+		// Same peephole-fusion-plus-runtime-specialization shape as
+		// Add_Nn above, with one deliberate divergence: Add_V2/V3/V4
+		// re-check their operand types on every execution (arithmetic.odin's
+		// vec_add_dispatch) instead of trusting the first patch forever.
+		// A mismatched-type or non-vector operand is always a genuine Lox
+		// bug (add_vector already raises on it, unfused) -- unlike
+		// Add_Ii/Add_Ff, where int/float coercion has no failure mode to
+		// guard against, a dynamically-typed call site that's all-Vec2 on
+		// one call and all-Vec3 on a later call must not silently run the
+		// wrong arity's lane math. See docs/plans/vec-op-peephole.md.
+		case .Add_Vv:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			result, specialize_to, ok := vec_add_dispatch(vm, a, b)
+			if ok {
+				fl.code[op_ip] = u8(specialize_to)
+				vm.stack[fl.f.slots + int(slot_a)] = result
+			}
+		case .Add_V2:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Vec2 && b.type == .Vec2 {
+				av, bv := core.as_vec2(a), core.as_vec2(b)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_vec2_value(av.x + bv.x, av.y + bv.y)
+			} else {
+				result, specialize_to, ok := vec_add_dispatch(vm, a, b)
+				if ok {
+					fl.code[op_ip] = u8(specialize_to)
+					vm.stack[fl.f.slots + int(slot_a)] = result
+				}
+			}
+		case .Add_V3:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Vec3 && b.type == .Vec3 {
+				av, bv := core.as_vec3(a), core.as_vec3(b)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_vec3_value(av.x + bv.x, av.y + bv.y, av.z + bv.z)
+			} else {
+				result, specialize_to, ok := vec_add_dispatch(vm, a, b)
+				if ok {
+					fl.code[op_ip] = u8(specialize_to)
+					vm.stack[fl.f.slots + int(slot_a)] = result
+				}
+			}
+		case .Add_V4:
+			op_ip := ip - 1
+			slot_a := fl.code[ip]
+			slot_b := fl.code[ip + 1]
+			ip += 2
+			a := vm.stack[fl.f.slots + int(slot_a)]
+			b := vm.stack[fl.f.slots + int(slot_b)]
+			if a.type == .Vec4 && b.type == .Vec4 {
+				av, bv := core.as_vec4(a), core.as_vec4(b)
+				vm.stack[fl.f.slots + int(slot_a)] = core.make_vec4_value(av.x + bv.x, av.y + bv.y, av.z + bv.z, av.w + bv.w)
+			} else {
+				result, specialize_to, ok := vec_add_dispatch(vm, a, b)
+				if ok {
+					fl.code[op_ip] = u8(specialize_to)
+					vm.stack[fl.f.slots + int(slot_a)] = result
+				}
+			}
 		case .Inc_Local:
 			// Not currently emitted by the compiler (see
 			// compiler/rules.odin's note on Plus_Plus meaning vector

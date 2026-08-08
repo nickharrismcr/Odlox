@@ -73,6 +73,36 @@ add_vector :: proc(vm: ^VM) -> bool {
 	return true
 }
 
+// vec_add_dispatch is the shared type-check-and-compute core both
+// Add_Vv's first-hit path and Add_V2/V3/V4's guard-miss path call (see
+// docs/plans/vec-op-peephole.md's Risks section on why this needs to be
+// one shared proc rather than copy-pasted three times) -- re-derives
+// which vector arity `a`/`b` actually are, returns the summed Value plus
+// which specialized opcode a call site can safely patch to next time, or
+// raises the exact same errors add_vector's push/pop-based version does
+// (mismatched types, or a same-type-but-non-vector pair) and reports
+// !ok so the caller knows not to patch or write a result.
+vec_add_dispatch :: proc(vm: ^VM, a, b: core.Value) -> (result: core.Value, specialize_to: core.Op_Code, ok: bool) {
+	if a.type != b.type {
+		runtime_error(vm, "Vector operands must be the same type.")
+		return {}, .Noop, false
+	}
+	#partial switch a.type {
+	case .Vec2:
+		av, bv := core.as_vec2(a), core.as_vec2(b)
+		return core.make_vec2_value(av.x + bv.x, av.y + bv.y), .Add_V2, true
+	case .Vec3:
+		av, bv := core.as_vec3(a), core.as_vec3(b)
+		return core.make_vec3_value(av.x + bv.x, av.y + bv.y, av.z + bv.z), .Add_V3, true
+	case .Vec4:
+		av, bv := core.as_vec4(a), core.as_vec4(b)
+		return core.make_vec4_value(av.x + bv.x, av.y + bv.y, av.z + bv.z, av.w + bv.w), .Add_V4, true
+	case:
+		runtime_error(vm, "Operands must be vectors.")
+		return {}, .Noop, false
+	}
+}
+
 push_vec2 :: proc(vm: ^VM, x, y: f64) {
 	push(vm, core.make_vec2_value(x, y))
 }

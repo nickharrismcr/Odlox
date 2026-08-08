@@ -4,7 +4,7 @@ package core
 // namespaced under the type (`.Constant` reads fine at a use site), so
 // no prefix is needed to avoid collisions.
 //
-// Two families are worth knowing about up front, both fully explained
+// Three families are worth knowing about up front, all fully explained
 // where the compiler/VM actually implement them:
 //
 //   - Add_Nn/Add_Ii/Add_Ff and Incr_Const_N/Incr_Const_I/Incr_Const_F are
@@ -12,6 +12,15 @@ package core
 //     then further specializes at runtime via in-place opcode-byte
 //     patching on first execution (a minimal inline cache) into the
 //     type-specific Ii/Ff variants.
+//   - Add_Vv/Add_V2/Add_V3/Add_V4 are the same peephole-fusion-plus-
+//     runtime-specialization idea applied to `++` (vector add), with one
+//     deliberate divergence from Add_Nn's family: Add_V2/V3/V4 re-check
+//     their operand types on every execution instead of trusting the
+//     first patch forever, since a mismatched or non-vector operand is a
+//     genuine Lox-level error (unlike int/float, which always produces
+//     *some* correct-shaped number either way) -- see
+//     docs/plans/vec-op-peephole.md / docs/ARCHITECTURE.md for the full
+//     reasoning.
 //   - Try/End_Try/Except/End_Except/Finally/Raise implement
 //     try/except/finally -- the bytecode shape and VM-side matching loop
 //     are involved enough to read directly in src/vm/exceptions.odin
@@ -128,6 +137,14 @@ Op_Code :: enum u8 {
 	Incr_Const_N,
 	Incr_Const_I,
 	Incr_Const_F,
+
+	// Self-specializing vector-add family; see the doc comment above.
+	// Unlike Add_Nn's Ii/Ff children, Add_V2/V3/V4 keep a type guard on
+	// every execution rather than trusting the first patch forever.
+	Add_Vv,
+	Add_V2,
+	Add_V3,
+	Add_V4,
 }
 
 Local_Var_Info :: struct {

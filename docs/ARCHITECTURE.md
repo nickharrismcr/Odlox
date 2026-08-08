@@ -725,6 +725,14 @@ their own sections below:
   peephole pass, then further specialized by the VM at *runtime* via
   in-place opcode-byte patching on first execution (a minimal inline cache).
   See [VM dispatch loop](#vm-dispatch-loop--calling-convention).
+- The **self-specializing vector-add family** (`Add_Vv`/`Add_V2`/`Add_V3`/
+  `Add_V4`, not part of the original glox port — added later, see
+  `docs/plans/vec-op-peephole.md`) — the same two-stage idea applied to
+  `++`, with one deliberate divergence: `Add_V2`/`_V3`/`_V4` re-check their
+  operand types on *every* execution instead of trusting the first patch
+  forever, since a mismatched-arity `++` is a genuine Lox-level error
+  (unlike int/float, which always produces *some* correct-shaped number
+  regardless of which of `Add_Ii`/`Add_Ff` ends up handling it).
 - The **exception-handling opcodes** (`OP_TRY`/`OP_END_TRY`/`OP_EXCEPT`/
   `OP_END_EXCEPT`/`OP_FINALLY`/`OP_RAISE`) — see [Exceptions](#exceptions).
 
@@ -869,6 +877,15 @@ compile-time and type-agnostic; the runtime type-specialization half of the
 same optimization (`ADD_NN` → `ADD_II`/`ADD_FF` on first execution) belongs
 to the VM — see next section.
 
+A later addition (`docs/plans/vec-op-peephole.md`, not part of the
+original glox port) extends this same byte-level rewrite to `++`
+(`Add_Vector`): the identical `GET_LOCAL x, GET_LOCAL y, <op>, SET_LOCAL
+x, POP` shape, keyed on `Add_Vector` instead of `Add_Numeric`, fuses to
+`Add_Vv x y`. No `Constant`-operand sibling exists for it (unlike
+`Add_Nn`'s `Incr_Const_N`) — a vector value is never produced by the
+compile-time constant pool, only by a `vec2/3/4()` call or another vector
+expression.
+
 ### Control-flow headers: parens optional, not mandatory like glox's
 
 `if`/`while`/`for`/`foreach` all wrap their header in `(...)` in glox's
@@ -994,6 +1011,22 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
   patch if types don't match, just compute generically" fallback (keeps the
   generic form available for a call site that later sees a different type
   combination).
+- **Self-specializing vector add** (`Add_Vv` and its `Add_V2`/`_V3`/`_V4`
+  children, added later — see `docs/plans/vec-op-peephole.md`): same
+  patch-on-first-execution idea, but `Add_V2`/`_V3`/`_V4` do **not** skip
+  their type check the way `Add_Ii`/`Add_Ff` do — they re-verify both
+  operands are still the patched arity on every execution. Reason: a Lox
+  function's `++` call site is not guaranteed monomorphic the way
+  `Add_Nn`'s int/float coercion always produces *some* valid number
+  regardless of which type patched first — `func f(a,b){return a++b}`
+  called once with two `Vec2`s and later with two `Vec3`s through the
+  *same* bytecode site would, under an unconditional-trust patch, run
+  `Add_V2`'s 2-lane math against `Vec3` operands with no error at all
+  (silent wrong-shaped result) instead of `add_vector`'s own "Vector
+  operands must be the same type" error. A guard hit stays on the fast
+  inline-lane-add path; a guard miss falls through to
+  `arithmetic.odin`'s `vec_add_dispatch` (shared with `Add_Vv`'s own
+  first-hit path) to re-derive the correct opcode or raise.
 - **Call mechanism** (`call_value` → `call`): arity/default/variadic
   shaping exactly as documented in glox's own
   `docs/plans/default-variadic-params.md` (implemented, not just planned,

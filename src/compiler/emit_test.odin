@@ -36,7 +36,7 @@ decode :: proc(c: ^core.Chunk) -> [dynamic]Decoded {
 		     .Static_Method, .Class_Var, .Get_Super, .Class:
 			n = 1
 		case .Jump_If_False, .Jump, .Loop, .Try, .End_Try, .Add_Nn,
-		     .Incr_Const_N, .Super_Invoke, .Import, .Get_Property:
+		     .Incr_Const_N, .Add_Vv, .Super_Invoke, .Import, .Get_Property:
 			n = 2
 		case .Invoke:
 			n = 3
@@ -584,6 +584,26 @@ test_emit_peephole_fuses_local_increment :: proc(t: ^testing.T) {
 	fn_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(fn_chunk, .Add_Nn))
 	testing.expect(t, !contains_op(fn_chunk, .Add_Numeric))
+}
+
+// docs/plans/vec-op-peephole.md's compiler-side coverage: `++` (Add_Vector)
+// fuses into Add_Vv under the identical local-local-Set_Local-Pop shape
+// Add_Nn already matches on, and (the negative case, which the numeric
+// fusion has no equivalent test for today) leaves a non-local-operand
+// `++` alone.
+@(test)
+test_emit_peephole_fuses_local_vector_add :: proc(t: ^testing.T) {
+	c := compile_ok(t, "func f() {\nvar a = vec2(1, 1)\nvar b = vec2(2, 2)\na = a ++ b\nreturn a\n}\n")
+	fn_chunk := inner_function_chunk(t, c)
+	testing.expect(t, contains_op(fn_chunk, .Add_Vv))
+	testing.expect(t, !contains_op(fn_chunk, .Add_Vector))
+}
+
+@(test)
+test_emit_peephole_leaves_non_local_vector_add_unfused :: proc(t: ^testing.T) {
+	c := compile_ok(t, "var a = vec2(1, 1)\nvar b = vec2(2, 2)\na = a ++ b\n")
+	testing.expect(t, contains_op(c, .Add_Vector))
+	testing.expect(t, !contains_op(c, .Add_Vv))
 }
 
 // -----------------------------------------------------------------------

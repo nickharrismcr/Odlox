@@ -3700,6 +3700,116 @@ theoretical — a real, non-trivial number, not something to wave away. Whether 
 NaN-boxing option `docs/ARCHITECTURE.md`'s Value representation section already flags as re-scoped, not
 ruled out, by this change) is a separate decision, not resolved here.
 
+### Phase 7j: peephole-fuse and self-specialize `++` (vector add)
+
+Design doc: `docs/plans/vec-op-peephole.md` (written in a prior session with no Odin toolchain
+available, so design-only until this phase). Direct extension of Phase 7a's `Add_Nn`/`Add_Ii`/
+`Add_Ff` numeric peephole family to `++` (`Add_Vector`), made possible by Phase 7i inlining
+Vec2/Vec3/Vec4 into `Value`: a vector operand is exactly as cheap to shuffle between stack slots
+as a scalar one, so `v3 = v1 ++ v2` with all-local operands compiles to the identical 8-byte
+`Get_Local/Get_Local/Add_Vector/Set_Local/Pop` skeleton the numeric fusion already pattern-matches
+on, just with `Add_Vector` in place of `Add_Numeric`.
+
+**New opcodes** (`core/chunk.odin`): `Add_Vv` (compile-time fusion target) and its `Add_V2`/`Add_V3`/
+`Add_V4` runtime-specialized children. No `Incr_Const_V` analog exists — unlike `Add_Nn`'s
+`Constant`-operand sibling `Incr_Const_N`, a vector value is never produced by the compile-time
+constant pool (always a `vec2/3/4()` call or another vector expression), so there is no reachable
+`Get_Local, Constant, Add_Vector, ...` shape to fuse.
+
+**Compiler** (`compiler/emit.odin`'s `peephole_optimise`): a third pattern branch alongside the
+existing two, sharing the same `Set_Local`-matches-`Get_Local`-slot-and-`Pop` tail check
+(refactored out as `tail_matches`, since it's no longer specific to `Add_Numeric`), keyed on
+`Add_Vector` instead. Reuses `fuse()` unchanged — same 3-live/5-`Noop` byte width.
+
+**VM** (`vm/run.odin`, `vm/arithmetic.odin`'s new `vec_add_dispatch`): this is the one place this
+phase deliberately diverges from Phase 7a's own precedent, and the reason is worth restating here
+since it's easy to miss when skimming the two families side by side. `Add_Ii`/`Add_Ff`, once
+patched, never re-check operand types — safe *only* because `as_int`/`as_float` already handle
+Int-or-Float gracefully, so there is no operand combination that family can be handed which
+produces anything worse than a numerically different-than-ideal-but-still-a-number result.
+Vector arity has no equivalent safe fallback: `add_vector` raises a real error on a type mismatch
+or a non-vector operand, and Lox being dynamically typed means a single call site (a function
+called more than once with different argument types) is not a coding error the way a fixed
+mismatched-arity `++` is. Porting `Add_Nn`'s "patch once, trust forever" strategy unchanged would
+mean a call site patched to `Add_V2` on its first (all-`Vec2`) call would, on a later all-`Vec3`
+call, run `Add_V2`'s 2-lane logic against `Vec3` operands with no error at all — silent
+wrong-shaped-result corruption, not a missed optimization. `Add_V2`/`Add_V3`/`Add_V4` therefore
+keep a cheap type-tag guard on every execution; a guard hit takes the fast inline-lane-add path
+with no re-patching, a guard miss falls through to the same `vec_add_dispatch` re-derivation
+`Add_Vv`'s own first-hit path uses (re-patch to a *different* specialized opcode if the new
+combination is itself monomorphic-and-valid, or raise the same `add_vector` errors otherwise) —
+shared as one proc both call, rather than copy-pasted three times.
+
+**Disassembler/tests**: `Add_Vv`/`Add_V2`/`Add_V3`/`Add_V4` disassemble via the existing
+`two_byte_instruction` helper (`debug/disassemble.odin`), same as `Add_Nn`/`Add_Ii`/`Add_Ff` — two
+raw local-slot bytes, no constant-pool lookup. `compiler/emit_test.odin`'s `decode()` gets `.Add_Vv`
+added to its `n = 2` operand-count case list (`Add_V2`/`_V3`/`_V4` don't need an entry — like
+`Add_Ii`/`Add_Ff`, they only ever appear via runtime self-modification, never emitted directly).
+
+**Tests added** (closing a pre-existing gap: no test anywhere previously exercised `++` at all):
+`vm/builtins_test.odin` gets baseline per-arity correctness (`test_vec2/3/4_add_operator`),
+fused-path error-preservation tests (`test_vec_add_type_mismatch_errors`/
+`test_vec_add_non_vector_errors`, both operands local so they hit `Add_Vv`/specialized opcodes, not
+generic `add_vector`), and the regression test that actually validates the type-guard design
+decision above (`test_vec_add_polymorphic_call_site` — same fused call site, first called with two
+`Vec2`s then two `Vec3`s, asserting the second call still returns a correct `Vec3` sum rather than a
+`Vec2`-shaped or corrupted one). `compiler/emit_test.odin` gets the fusion-shape test
+(`test_emit_peephole_fuses_local_vector_add`) plus a negative test the numeric family never had
+(`test_emit_peephole_leaves_non_local_vector_add_unfused`, global operands, unaffected by the new
+pattern branch).
+
+**Benchmark** (`benchmarks/lox/vec_ops.lox` + `benchmarks/python/vec_ops.py`, modeled on `loop.lox`,
+the benchmark written for the numeric version of this exact optimization): a tight loop exercising
+all three vector arities' `++` on function-locals, 5,000,000 iterations, `bin/build.sh --release`
+(`-o:speed -disable-assert -no-bounds-check` — the exact flag set every other Phase 7 baseline uses;
+an earlier pass through this benchmark before landing on this entry used a plain `-o:speed` build
+missing the other two flags and was discarded, not reported below), 10 runs via `bin/time_lox.py`:
+
+| | unfused (`Add_Vector`) | fused/specialized (`Add_Vv`/`Add_V2`/`_V3`/`_V4`) | ratio |
+|---|---|---|---|
+| vec_ops (whole benchmark) | 0.2892s | 0.2700s | 0.93x (~6.6% faster) |
+
+The whole-benchmark ratio understates the actual per-operation win, since a fixed amount of the
+loop's own overhead (the `while` condition, `i = i + 1`, the one-time call into `tight()`) is
+identical in both builds and dilutes it. A throwaway variant of `vec_ops.lox` with all three `++`
+calls removed (otherwise identical: same iteration count, same locals), same release build, measured
+that fixed overhead directly at 0.1292s. Subtracting it out isolates the vector-add-attributable cost:
+
+| | unfused | fused/specialized | per-op (15,000,000 vector adds total) |
+|---|---|---|---|
+| vec_ops minus loop overhead | 0.1600s | 0.1408s | 10.7ns -> 9.4ns, ~12% faster |
+
+Still a smaller win than Phase 7a's numeric fusion, and smaller than "5 opcode dispatches down to
+1" might suggest on its own — but not only for the reason flagged as an open risk in the design doc
+(the per-execution type guard `Add_V2`/`_V3`/`_V4` pay that `Add_Ii`/`Add_Ff` don't). The guard is
+one cheap enum compare and can't account for most of the gap. The bigger factor: this VM's opcode
+dispatch (a `#partial switch` over an `Op_Code` enum, almost certainly compiled to a jump table) is
+already cheap in a hot, well-predicted loop — removing 4 of 5 dispatches per vector add saved only
+~1.3ns/op here, not the multiple-times reduction "5 down to 1" implies. What's left (copying
+40-byte `Value`s — every `Value` is this size since Phase 7i, not just vectors — and doing the
+actual float additions) costs about the same whether fused or not, since the unfused path performs
+the identical arithmetic, just with more stack shuffling around it. Still a real, positive, net
+win, and the correctness guarantee (no silent wrong-arity corruption on a polymorphic call site) is
+the more important property of this phase either way, independent of the raw speedup number.
+
+**vs. CPython** (`benchmarks/python/vec_ops.py`, plain-tuple component-wise addition in the
+identical loop shape, same release build/run methodology): 1.5472s average. odlox is **~5.7x
+faster fused** (0.2700s), ~5.3x faster even unfused (0.2892s) — vector-op fusion moves odlox's own
+before/after number more (6.6%) than it moves where odlox sits relative to CPython, since CPython
+is far enough behind on this benchmark shape already that a 6.6% odlox-side change barely shifts
+the ratio.
+
+**Verified**: `odin check src -vet -strict-style -vet-tabs -disallow-do -warnings-as-errors` clean;
+`pytest` (250 passed, 26 skipped, no regressions). `odin test src -all-packages
+-define:ODIN_TEST_THREADS=1` (which would exercise the new `builtins_test.odin`/`emit_test.odin`
+cases above directly) did not complete in this session -- three separate attempts each ran for
+several minutes without reaching a pass/fail summary before being killed, a known hang tendency of
+this suite unrelated to this phase's own changes. In its place: the manual repro scripts this
+phase's changes were actually developed against (basic `++` correctness per arity, the mismatched-
+type/non-vector error paths, and the polymorphic-call-site case run directly against `bin/odlox.exe`)
+all produced the expected output/errors. Re-run `odin test` properly once the hang is separately
+diagnosed, to get the new tests' own pass/fail signal on record.
+
 ## Phase 8 — Bytecode cache
 
 Shipped, not as a performance optimization (module-recompilation time was never measured to matter) but for

@@ -194,6 +194,13 @@ disassemble_instruction :: proc(c: ^core.Chunk, offset: int) -> int {
 	case .Incr_Const_N, .Incr_Const_I, .Incr_Const_F:
 		return incr_const_instruction(op, c, offset)
 
+	// --- Self-specializing vector-add family: [slot_a][slot_b], always
+	// two raw local slots -- unlike Add_Nn, this family has no
+	// Constant-operand sibling (see docs/plans/vec-op-peephole.md's
+	// Scope section), so every member uses the same two-slot form. ---
+	case .Add_Vv, .Add_V2, .Add_V3, .Add_V4:
+		return two_byte_instruction(op, c, offset)
+
 	case:
 		fmt.printfln("Unknown opcode %d", op)
 		return offset + 1

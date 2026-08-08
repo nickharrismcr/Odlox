@@ -33,6 +33,19 @@ run_builtins :: proc(t: ^testing.T, source: string, var_name: string) -> core.Va
 	return vm_instance.environment.globals[slot]
 }
 
+// expect_builtins_runtime_error mirrors vm_test.odin's own file-private
+// expect_runtime_error (that one can't be reused directly -- `private =
+// "file"` blocks cross-file access even within the same package) --
+// needed here rather than there since vec2/3/4 are builtins (define_builtins
+// must run first), unlike the plain-language features vm_test.odin covers.
+@(private = "file")
+expect_builtins_runtime_error :: proc(t: ^testing.T, source: string) {
+	vm_instance := new_vm("test")
+	define_builtins(vm_instance)
+	status, _ := interpret(vm_instance, source)
+	testing.expectf(t, status == .Runtime_Error, "expected %q to raise a runtime error, got %v", source, status)
+}
+
 // -----------------------------------------------------------------------
 // Core free functions
 
@@ -198,6 +211,103 @@ test_vec_assignment_is_a_copy_not_an_alias :: proc(t: ^testing.T) {
 test_vec_field_assignment_expression_value_is_the_scalar :: proc(t: ^testing.T) {
 	v := run_builtins(t, "var v = vec2(1, 2)\nvar result = (v.x = 5)\n", "result")
 	testing.expect_value(t, core.as_float(v), 5.0)
+}
+
+// -----------------------------------------------------------------------
+// `++` (vector add, Op_Add_Vector / Add_Vv / Add_V2/V3/V4) -- baseline
+// correctness first (no existing test anywhere exercised `++` at all
+// before this), then the peephole-fusion/self-specialization-specific
+// cases from docs/plans/vec-op-peephole.md below.
+
+@(test)
+test_vec2_add_operator :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var result = vec2(1, 2) ++ vec2(3, 4)\n", "result")
+	vv := core.as_vec2(v)
+	testing.expect_value(t, vv.x, 4.0)
+	testing.expect_value(t, vv.y, 6.0)
+}
+
+@(test)
+test_vec3_add_operator :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var result = vec3(1, 2, 3) ++ vec3(4, 5, 6)\n", "result")
+	vv := core.as_vec3(v)
+	testing.expect_value(t, vv.x, 5.0)
+	testing.expect_value(t, vv.y, 7.0)
+	testing.expect_value(t, vv.z, 9.0)
+}
+
+@(test)
+test_vec4_add_operator :: proc(t: ^testing.T) {
+	v := run_builtins(t, "var result = vec4(1, 2, 3, 4) ++ vec4(5, 6, 7, 8)\n", "result")
+	vv := core.as_vec4(v)
+	testing.expect_value(t, vv.x, 6.0)
+	testing.expect_value(t, vv.y, 8.0)
+	testing.expect_value(t, vv.z, 10.0)
+	testing.expect_value(t, vv.w, 12.0)
+}
+
+// Both operands local (a function's own locals), so these hit the fused/
+// specialized path (Add_Vv, self-specializing to Add_V2 on first
+// execution) rather than the generic unfused add_vector -- the whole
+// point being that the fused path preserves add_vector's own error
+// behavior exactly, not a looser or stricter version of it.
+@(test)
+test_vec_add_type_mismatch_errors :: proc(t: ^testing.T) {
+	expect_builtins_runtime_error(t, `
+func f() {
+	var a = vec2(1, 2)
+	var b = vec3(1, 2, 3)
+	a = a ++ b
+	return a
+}
+f()
+`)
+}
+
+@(test)
+test_vec_add_non_vector_errors :: proc(t: ^testing.T) {
+	expect_builtins_runtime_error(t, `
+func f() {
+	var a = 1
+	var b = 2
+	a = a ++ b
+	return a
+}
+f()
+`)
+}
+
+// The central regression case this plan's Design decision section exists
+// for: a dynamically-typed call site is not a coding error the way a
+// fixed mismatched-arity `++` is. `add`'s body does a local-local `++`,
+// so its call site gets peephole-fused to Add_Vv and then self-specializes
+// -- on the first call (Vec2, Vec2) it patches to Add_V2. The second call
+// passes Vec3 arguments through that *same* bytecode site. Add_Ii/Add_Ff
+// would have no equivalent hazard here (see chunk.odin's Op_Code doc
+// comment) -- an Add_V2-patched site blindly trusting its patch the way
+// Add_Ii does would run 2-lane math against Vec3 operands with no error
+// at all, silently producing a wrong or corrupted result instead of the
+// same "Vector operands must be the same type" family of error the
+// mismatched-type test above expects. Add_V2/V3/V4's per-execution type
+// guard (see arithmetic.odin's vec_add_dispatch) is what this test
+// actually verifies still holds.
+@(test)
+test_vec_add_polymorphic_call_site :: proc(t: ^testing.T) {
+	v := run_builtins(t, `
+func add(a, b) {
+	var x = a
+	var y = b
+	x = x ++ y
+	return x
+}
+var first = add(vec2(1, 1), vec2(1, 1))
+var result = add(vec3(1, 1, 1), vec3(1, 1, 1))
+`, "result")
+	testing.expect(t, core.is_vec3(v))
+	vv := core.as_vec3(v)
+	testing.expect_value(t, vv.x, 2.0)
+	testing.expect_value(t, vv.y, 2.0)
+	testing.expect_value(t, vv.z, 2.0)
 }
 
 // -----------------------------------------------------------------------
