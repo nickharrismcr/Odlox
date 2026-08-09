@@ -34,6 +34,7 @@ register_gfx :: proc(v: ^vm.VM) {
 	vm.define_builtin(v, "gfx", "shader", gfx_shader)
 	vm.define_builtin(v, "gfx", "camera", gfx_camera)
 	vm.define_builtin(v, "gfx", "batch", gfx_batch)
+	vm.define_builtin(v, "gfx", "batch2d", gfx_batch_2d)
 	vm.define_builtin(v, "gfx", "batch_instanced", gfx_batch_instanced)
 	vm.define_builtin(v, "gfx", "instanced_light", gfx_instanced_light)
 	vm.define_builtin(v, "gfx", "instanced_ambient", gfx_instanced_ambient)

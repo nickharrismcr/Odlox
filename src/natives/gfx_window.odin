@@ -1193,6 +1193,12 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "BATCH_SPHERE": return core.make_int_value(int(Batch_Primitive.Sphere), true), true
 	case "BATCH_TRIANGLE3": return core.make_int_value(int(Batch_Primitive.Triangle3), true), true
 	case "BATCH_CIRCLE3": return core.make_int_value(int(Batch_Primitive.Circle3), true), true
+	// Ordinal values match Batch2D_Primitive exactly (Circle=0, Rect=1,
+	// Triangle=2, Line=3).
+	case "BATCH2D_CIRCLE": return core.make_int_value(int(Batch2D_Primitive.Circle), true), true
+	case "BATCH2D_RECT": return core.make_int_value(int(Batch2D_Primitive.Rect), true), true
+	case "BATCH2D_TRIANGLE": return core.make_int_value(int(Batch2D_Primitive.Triangle), true), true
+	case "BATCH2D_LINE": return core.make_int_value(int(Batch2D_Primitive.Line), true), true
 	case "MOUSE_LEFT": return core.make_int_value(int(rl.MouseButton.LEFT), true), true
 	case "MOUSE_RIGHT": return core.make_int_value(int(rl.MouseButton.RIGHT), true), true
 	case "MOUSE_MIDDLE": return core.make_int_value(int(rl.MouseButton.MIDDLE), true), true
