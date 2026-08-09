@@ -135,7 +135,7 @@ compile_ok :: proc(t: ^testing.T, source: string) -> ^core.Chunk {
 test_kitchen_sink_program_compiles :: proc(t: ^testing.T) {
 	compile_ok(t, `
 class Animal {
-	init(name) {
+	__init__(name) {
 		this.name = name
 	}
 	speak() {
@@ -187,9 +187,9 @@ from math import sqrt, pow
 }
 
 // Regression test: print_statement must emit Op_Str before Op_Print --
-// Op_Str is also the toString() dispatch point (run.odin's Op_Str
+// Op_Str is also the __str__() dispatch point (run.odin's Op_Str
 // case), so skipping it (an earlier version did) meant `print instance`
-// never picked up a class's own toString() even after toString
+// never picked up a class's own __str__() even after __str__
 // dispatch was wired up in Op_Str itself, since print never routed
 // through that opcode at all. str(x) (expr.odin's str_call, a
 // different call site) already emitted Op_Str correctly, which is
@@ -626,7 +626,7 @@ test_lambda_expression_compiles :: proc(t: ^testing.T) {
 test_class_declaration_shape :: proc(t: ^testing.T) {
 	c := compile_ok(t, `
 class Point {
-	init(x, y) {
+	__init__(x, y) {
 		this.x = x
 		this.y = y
 	}
@@ -639,7 +639,7 @@ class Point {
 }
 
 // Regression test for a real bug found via the ported pytest suite
-// (tests/new_tests/lox/str_class_toString.lox writes exactly this
+// (tests/new_tests/lox/str_class_dunder_str.lox writes exactly this
 // shape): the reference implementation's own parser explicitly tolerates an Eol between a
 // method's `)` and its `{` (compile.go: `p.match(TOKEN_EOL) // allow
 // EOL after parameters`) -- this port initially didn't, so any method
@@ -795,7 +795,7 @@ test_peephole_enabled_by_default_and_disabled_by_flag :: proc(t: ^testing.T) {
 
 @(test)
 test_field_slot_get_set_compiles :: proc(t: ^testing.T) {
-	c := compile_ok(t, "class P {\ninit(count) {\nthis.count = count\n}\nbump() {\nthis.count = this.count + 1\n}\n}\n")
+	c := compile_ok(t, "class P {\n__init__(count) {\nthis.count = count\n}\nbump() {\nthis.count = this.count + 1\n}\n}\n")
 	init_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(init_chunk, .Set_Field_Slot), "expected this.count = count in init to compile to Set_Field_Slot")
 	testing.expect(t, !contains_op(init_chunk, .Set_Property), "unslotted Set_Property must not also appear for the same assignment")
@@ -815,7 +815,7 @@ test_field_slot_get_set_compiles :: proc(t: ^testing.T) {
 
 @(test)
 test_field_slot_conditional_field_keeps_ordinary_property_ops :: proc(t: ^testing.T) {
-	c := compile_ok(t, "class P {\ninit(flag) {\nif (flag) {\nthis.maybe = 1\n}\n}\n}\n")
+	c := compile_ok(t, "class P {\n__init__(flag) {\nif (flag) {\nthis.maybe = 1\n}\n}\n}\n")
 	init_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(init_chunk, .Set_Property), "a conditionally-assigned field must keep compiling through the ordinary Set_Property path")
 	testing.expect(t, !contains_op(init_chunk, .Set_Field_Slot))
@@ -823,7 +823,7 @@ test_field_slot_conditional_field_keeps_ordinary_property_ops :: proc(t: ^testin
 
 @(test)
 test_field_slot_this_invoke_keeps_ordinary_invoke_op :: proc(t: ^testing.T) {
-	c := compile_ok(t, "class P {\ninit(fn) {\nthis.cb = fn\n}\nrun() {\nreturn this.cb()\n}\n}\n")
+	c := compile_ok(t, "class P {\n__init__(fn) {\nthis.cb = fn\n}\nrun() {\nreturn this.cb()\n}\n}\n")
 	init_chunk := inner_function_chunk(t, c)
 	testing.expect(t, contains_op(init_chunk, .Set_Field_Slot), "\"cb\" should still be discovered and slot-optimized for its own assignment")
 

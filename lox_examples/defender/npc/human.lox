@@ -20,8 +20,8 @@ from sprite import Sprite
 
 class Human < Sprite {
 
-    init(pos,img, frames, start_frame, end_frame) {
-        super.init(pos, img, frames, start_frame, end_frame)
+    __init__(pos,img, frames, start_frame, end_frame) {
+        super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "human"
         this.img = img
         this.state = "walking"

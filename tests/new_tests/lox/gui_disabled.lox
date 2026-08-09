@@ -4,7 +4,7 @@
 import gui
 
 class Fake_Win {
-    init(pos, left_pressed) {
+    __init__(pos, left_pressed) {
         this.MOUSE_LEFT = 0
         this.MOUSE_RIGHT = 1
         this.pos = pos

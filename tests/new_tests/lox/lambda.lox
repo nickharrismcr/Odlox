@@ -23,7 +23,7 @@ print d["sq"](9)                             // 81
 
 // lambda inside a method capturing `this`
 class Box {
-  init(v) { this.v = v }
+  __init__(v) { this.v = v }
   makeGetter() { return func () { return this.v } }
 }
 var b = Box(99)

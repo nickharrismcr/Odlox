@@ -54,7 +54,7 @@ Upvalue :: struct {
 // fast path (see core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc
 // comment) -- populated once, by discover_field_slots, before this
 // class's members are resolved, so every `this.name` reference anywhere
-// in the class body (including textually before init) resolves against
+// in the class body (including textually before __init__) resolves against
 // the finished table. field_slots is name -> index; field_slot_names is
 // the same table in index -> name form, copied onto Stmt_Class_Decl at
 // the end of resolve_class_decl for the Emitter to register with the
@@ -66,18 +66,18 @@ Class_Compiler :: struct {
 	field_slot_names: [dynamic]string,
 }
 
-// discover_field_slots scans v's own `init` method (Function_Type.
+// discover_field_slots scans v's own `__init__` method (Function_Type.
 // Initializer -- see stmt.odin's method(), which already sets this
-// exactly when the method is named "init") for top-level, unconditional,
+// exactly when the method is named "__init__") for top-level, unconditional,
 // plain-assignment `this.name = value` statements -- direct elements of
-// init's body, not recursed into any if/while/for/nested block, which is
+// __init__'s body, not recursed into any if/while/for/nested block, which is
 // what "top level" means here, and specifically Property_Kind.Set, not
 // Compound_Set (`this.x += 1` reads before writing, so it can never be
 // treated as *defining* the field). This mirrors the real-world
 // convention already observed in every sampled fixture (a class's full
-// field set assigned unconditionally in init) without the compiler ever
+// field set assigned unconditionally in __init__) without the compiler ever
 // enforcing it: a field assigned any other way (conditionally, in a
-// non-init method, later) simply never enters this table and keeps
+// non-__init__ method, later) simply never enters this table and keeps
 // compiling through the ordinary Get_Property/Set_Property path,
 // unchanged and always correct.
 //

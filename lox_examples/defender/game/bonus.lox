@@ -7,7 +7,7 @@ import colour
 // whole life.
 
 class Bonus {
-    init(tex, dy, life) {
+    __init__(tex, dy, life) {
         this.tex = tex
         this.dy = dy          // vertical offset above the player; staggers stacked popups
         this.life = life
@@ -31,7 +31,7 @@ class Bonus {
 }
 
 class BonusDisplay {
-    init(img250, img500, life) {
+    __init__(img250, img500, life) {
         this.tex250 = texture(img250, 3, 1, 3)
         this.tex500 = texture(img500, 3, 1, 3)
         this.tex250.animate(6)

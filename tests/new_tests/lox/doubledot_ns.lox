@@ -1,5 +1,5 @@
 class A {
-    init() {
+    __init__() {
         this.Afield="Avalue"
     }
     getA() {
@@ -9,7 +9,7 @@ class A {
 
 
 class B {
-    init() {
+    __init__() {
         this.Aclass = A()
     }
     getAclass() {

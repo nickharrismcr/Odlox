@@ -3,7 +3,7 @@
 // method named `field`. Previously this raised "Undefined method 'fn'".
 
 class Runner {
-    init(fn) {
+    __init__(fn) {
         this.fn = fn;
     }
     do(x) {

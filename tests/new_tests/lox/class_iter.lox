@@ -7,7 +7,7 @@ func get_list(lst) {
 }
 
 class Iterable {
-  init(lst) {
+  __init__(lst) {
     this.items = get_list(lst)
     this.index = 0
   }

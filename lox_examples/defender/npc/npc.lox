@@ -14,7 +14,7 @@ import colour
 // Naming convention (see also lander.lox, human.lox, player.lox): every state
 // has a per-frame update function named `state_<state>` (e.g. `state_die`),
 // and any transition INTO that state -- other than the initial state, set
-// directly in init() -- goes through a matching `enter_<state>(e)` function
+// directly in __init__() -- goes through a matching `enter_<state>(e)` function
 // that performs the one-off setup (flags, event emits, etc.) before
 // installing it as `update_func`. Callers trigger a transition by calling
 // `enter_<state>`, never by poking `update_func` directly.
@@ -24,8 +24,8 @@ import colour
 
 class NPC < Sprite {
 
-    init(pos, img, frames, start_frame, end_frame, type) {
-        super.init(pos, img, frames, start_frame, end_frame)
+    __init__(pos, img, frames, start_frame, end_frame, type) {
+        super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = type
         this.width = this.texture.frame_width()
         this.height = this.texture.height()

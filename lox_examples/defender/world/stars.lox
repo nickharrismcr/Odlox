@@ -4,7 +4,7 @@ import colour
 import math
 
 class Star {
-    init(pos,col){
+    __init__(pos,col){
         this.pos = pos
         this.col = col
     }
@@ -14,7 +14,7 @@ class Star {
 }
 
 class Stars { 
-    init(width,height,num_stars) {
+    __init__(width,height,num_stars) {
         this.width = width
         this.height = height
         this.num_stars = num_stars

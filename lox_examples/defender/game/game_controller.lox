@@ -62,7 +62,7 @@ const INTRO_CONTROLS_TEXT = "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE B
 const INTRO_CONTROLS_MARGIN = 40  // horizontal breathing room so the line never touches the screen edges
 
 class GameController {
-    init(cfg, entities, ship, ship_img, smartbomb_img) {
+    __init__(cfg, entities, ship, ship_img, smartbomb_img) {
         this.cfg = cfg
         this.entities = entities
         this.ship = ship

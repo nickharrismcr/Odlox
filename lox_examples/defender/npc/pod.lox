@@ -5,8 +5,8 @@ from npc import NPC
 
 class Pod < NPC {
 
-    init(pos, img) {
-        super.init(pos, img, 2, 1, 2, "pod")   // pod.png = 2 frames of 28x28
+    __init__(pos, img) {
+        super.__init__(pos, img, 2, 1, 2, "pod")   // pod.png = 2 frames of 28x28
         this.animate(20)
         this.radar = vec4(255, 0, 255, 255)
         this.update_func = state_drift

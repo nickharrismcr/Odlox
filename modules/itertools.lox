@@ -67,7 +67,7 @@ func sort(list, cmp) {
  
 
 class Bouncer {
-    init(min,max,dx) {
+    __init__(min,max,dx) {
         this.x= random.integer(min, max)
         this.dx = dx
         this.min=min

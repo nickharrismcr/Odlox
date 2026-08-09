@@ -209,13 +209,13 @@ test_ast_lambda_shape :: proc(t: ^testing.T) {
 
 @(test)
 test_ast_class_declaration_shape :: proc(t: ^testing.T) {
-	s := parse_one(t, "class Dog < Animal {\ninit(name) { this.name = name }\nstatic count = 0\nbark() { print \"woof\" }\n}")
+	s := parse_one(t, "class Dog < Animal {\n__init__(name) { this.name = name }\nstatic count = 0\nbark() { print \"woof\" }\n}")
 	cd, ok := s.(^Stmt_Class_Decl)
 	testing.expect(t, ok, "expected Stmt_Class_Decl")
 	testing.expect(t, lexeme(cd.name) == "Dog")
 	testing.expect(t, cd.has_superclass)
 	testing.expect(t, lexeme(cd.superclass) == "Animal")
-	testing.expect(t, len(cd.members) == 3, "expected init, count, bark as members in source order")
+	testing.expect(t, len(cd.members) == 3, "expected __init__, count, bark as members in source order")
 
 	init_method, init_ok := cd.members[0].(^Method)
 	testing.expect(t, init_ok, "expected first member to be a Method")
@@ -303,7 +303,7 @@ test_ast_from_import_shape :: proc(t: ^testing.T) {
 test_ast_kitchen_sink_program_parses :: proc(t: ^testing.T) {
 	source := `
 class Animal {
-	init(name) {
+	__init__(name) {
 		this.name = name
 	}
 	speak() {

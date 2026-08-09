@@ -483,9 +483,9 @@ print (func () { return 7 })()        // 7</code></pre>
 
 <!-- ==================== CLASSES ==================== -->
 <h2 class="section" id="classes">Classes</h2>
-<p>Classes support single inheritance, an <code>init</code> constructor, instance methods, <code>this</code>, <code>super</code>, and <code>static</code> methods and class variables.</p>
+<p>Classes support single inheritance, an <code>__init__</code> constructor, instance methods, <code>this</code>, <code>super</code>, and <code>static</code> methods and class variables.</p>
 <pre><code class="lox">class Animal {
-    init(name) {
+    __init__(name) {
         this.name = name
     }
     speak() {
@@ -494,8 +494,8 @@ print (func () { return 7 })()        // 7</code></pre>
 }
 
 class Dog < Animal {          // Dog inherits from Animal
-    init(name) {
-        super.init(name)       // call parent constructor
+    __init__(name) {
+        super.__init__(name)       // call parent constructor
     }
     speak() {
         return this.name & " barks"
@@ -518,7 +518,7 @@ print MathHelper.square(5)   // 25</code></pre>
 <pre><code class="lox">class Animal {
     static count = 0
 
-    init(name) {
+    __init__(name) {
         this.name = name
         Animal.count = Animal.count + 1
     }
@@ -533,21 +533,21 @@ print Dog.count      // 2, shared read via the superclass chain
 
 Dog.count = 99        // shadows Animal.count, only for Dog
 print Animal.count    // still 2</code></pre>
-<h3 id="tostring">toString magic method</h3>
-<p>If a class defines <code>toString()</code> returning a string, it is used whenever an instance is printed or passed to <code>str()</code>.</p>
+<h3 id="tostring">__str__ magic method</h3>
+<p>If a class defines <code>__str__()</code> returning a string, it is used whenever an instance is printed or passed to <code>str()</code>.</p>
 <pre><code class="lox">class Point {
-    init(x, y) { this.x = x; this.y = y }
-    toString() { return "Point(" & str(this.x) & ", " & str(this.y) & ")" }
+    __init__(x, y) { this.x = x; this.y = y }
+    __str__() { return "Point(" & str(this.x) & ", " & str(this.y) & ")" }
 }
 print Point(3, 4)   // Point(3, 4)</code></pre>
 <h3>Iterator protocol</h3>
 <p>A class becomes <code>foreach</code>-iterable by implementing <code>__iter__</code> (returning an iterator object) and that iterator implementing <code>__next__</code>, which returns successive values and <code>nil</code> to signal the end.</p>
 <pre><code class="lox">class Range2 {
-    init(n) { this.n = n }
+    __init__(n) { this.n = n }
     __iter__() { return Range2Iter(this.n) }
 }
 class Range2Iter {
-    init(n) { this.n = n; this.i = 0 }
+    __init__(n) { this.n = n; this.i = 0 }
     __next__() {
         if (this.i >= this.n) return nil
         v = this.i
@@ -561,8 +561,8 @@ foreach (x in Range2(3)) { print x }   // 0, 1, 2</code></pre>
 <h2 class="section" id="exceptions">Exceptions</h2>
 <p>odlox provides <code>try</code>/<code>except</code>/<code>finally</code> exception handling. A built-in <code>Exception</code> base class is available; subclass it for custom exceptions. Handlers bind the caught instance with <code>as</code>.</p>
 <pre><code class="lox">class MyError < Exception {
-    init(msg) {
-        super.init(msg)
+    __init__(msg) {
+        super.__init__(msg)
         this.name = "MyError"
     }
 }
@@ -598,7 +598,7 @@ try {
 <table>
 <thead><tr><th>Class</th><th>Raised when</th></tr></thead>
 <tbody>
-<tr><td><code>Exception</code></td><td>Base class for all exceptions; has <code>msg</code>, <code>name</code>, <code>toString()</code></td></tr>
+<tr><td><code>Exception</code></td><td>Base class for all exceptions; has <code>msg</code>, <code>name</code>, <code>__str__()</code></td></tr>
 <tr><td><code>RunTimeError</code></td><td>A runtime fault (bad argument, invalid operation, index error…)</td></tr>
 <tr><td><code>EOFError</code></td><td><a href="#mod-os"><code>os.readln()</code></a> reaches end of file</td></tr>
 <tr><td><code>PickleError</code></td><td><a href="#mod-pickle"><code>pickle.dumps()</code></a> is given a value it can't serialise (e.g. a function, a class itself, or a cyclic structure), or <a href="#mod-pickle"><code>pickle.loads()</code></a> is given malformed data or an encoded instance whose class can't be resolved</td></tr>
@@ -644,7 +644,7 @@ print s[1:3]          // "el"   (slice)
 print "ell" in s      // true   (substring test)
 foreach (c in s) { print c }   // iterate characters</code></pre>
 <h3>String interpolation</h3>
-<p>Any <code>${ <em>expression</em> }</code> inside a string literal is evaluated and spliced into the result. It works in both <code>"…"</code> and <code>'…'</code> literals, and the embedded expression may be arbitrary (arithmetic, calls, indexing, method calls, even nested strings). Each value is stringified via the same path as <a href="#builtins"><code>str()</code></a> / <code>print</code>, so ints, floats, bools, <code>nil</code>, and class instances (through their <a href="#tostring"><code>toString</code></a> method) all format correctly.</p>
+<p>Any <code>${ <em>expression</em> }</code> inside a string literal is evaluated and spliced into the result. It works in both <code>"…"</code> and <code>'…'</code> literals, and the embedded expression may be arbitrary (arithmetic, calls, indexing, method calls, even nested strings). Each value is stringified via the same path as <a href="#builtins"><code>str()</code></a> / <code>print</code>, so ints, floats, bools, <code>nil</code>, and class instances (through their <a href="#tostring"><code>__str__</code></a> method) all format correctly.</p>
 <pre><code class="lox">count = 3;
 pct = 42.5;
 print "total: ${count} (${pct}%)"   // total: 3 (42.5%)
@@ -759,7 +759,7 @@ sum = vec3(1, 2, 3) ++ vec3(10, 10, 10)   // vec3(11, 12, 13)</code></pre>
 pos.x = 10          // pos becomes vec2(10, 0)
 
 class Entity {
-    init() { this.pos = vec3(0, 0, 0) }
+    __init__() { this.pos = vec3(0, 0, 0) }
     move(dx) { this.pos.x = this.pos.x + dx }   // one level of property access -- supported
 }</code></pre>
 <p>Since vectors are values, not references, there's no aliasing to reason about here the way there would be for a mutable object: <code>other = pos</code> then later mutating <code>pos</code> never affects <code>other</code>, regardless of whether the mutation goes through a component assignment or a whole-value reassignment.</p>
@@ -772,7 +772,7 @@ class Entity {
 <div class="sig"><span class="nm">type</span>(<em>value</em>) <span class="pill">→ string</span></div>
 <p>Returns the type of <code>value</code> as a string (see <a href="#types">Values &amp; types</a>).</p>
 <div class="sig"><span class="nm">str</span>(<em>value</em>) <span class="pill">→ string</span></div>
-<p>Converts any value to its string representation. Uses a class's <code>toString()</code> if defined. (<code>str</code> is a language keyword-operator, always written <code>str(expr)</code>.)</p>
+<p>Converts any value to its string representation. Uses a class's <code>__str__()</code> if defined. (<code>str</code> is a language keyword-operator, always written <code>str(expr)</code>.)</p>
 <div class="sig"><span class="nm">int</span>(<em>value</em>) <span class="pill">→ int</span></div>
 <p>Converts a float or numeric string to an integer (truncating floats).</p>
 <div class="sig"><span class="nm">float</span>(<em>value</em>) <span class="pill">→ float</span></div>
@@ -1828,7 +1828,7 @@ try {
 }
 
 class Point {
-    init(x, y) {
+    __init__(x, y) {
         this.x = x
         this.y = y
     }

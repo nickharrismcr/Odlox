@@ -4,7 +4,7 @@ import random
 import bullet
 
 class BulletPool {
-    init(size) {
+    __init__(size) {
         img = image("pngs/bullet.png")
         this.bullets = []
         for (i = 0; i < size; i=i+1) {

@@ -205,6 +205,6 @@ documented allocator-lifetime reason).
 3. `Create_List`'s existing 255-element `u8` operand cap applies only to *literal* lists (`list_literal`'s
    `count > 255` check) — a comprehension emits `Create_List 0` and grows at runtime via `append`, so no
    equivalent cap applies or is needed; don't let a future reader "fix" this as if it were an oversight.
-4. Verify the exact list `print`/`toString` formatting string before writing test assertions (mentioned
+4. Verify the exact list `print`/`__str__` formatting string before writing test assertions (mentioned
    under Tests above) — the most likely source of a spurious first-draft test failure is a mismatched
    literal string, not a real bug.

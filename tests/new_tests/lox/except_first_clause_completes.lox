@@ -1,8 +1,8 @@
 class FooError < Exception {
-    init(msg) { this.msg = msg; this.name = "FooError"; }
+    __init__(msg) { this.msg = msg; this.name = "FooError"; }
 }
 class BarError < Exception {
-    init(msg) { this.msg = msg; this.name = "BarError"; }
+    __init__(msg) { this.msg = msg; this.name = "BarError"; }
 }
 
 // Regression: once the "OP_TRY always points at the last clause" bug (see

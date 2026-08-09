@@ -61,7 +61,7 @@ make_user_iterator :: proc(vm: ^VM, val: core.Value) -> (core.Value, bool) {
 // to a Closure_Object -- both __iter__ and __next__ always are, being
 // entries out of Class.methods) with its receiver/args already pushed,
 // via a nested run(vm, .Current_Function). Unlike run.odin's Op_Str
-// (toString dispatch), which can just push a frame and let the *outer*
+// (__str__ dispatch), which can just push a frame and let the *outer*
 // dispatch loop carry on since its call is the very last thing that
 // opcode does, iterator_next below needs the call's result back
 // immediately, mid-opcode, to decide what happens next (nil means

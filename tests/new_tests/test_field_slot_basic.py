@@ -6,12 +6,12 @@ def test_field_slot_basic():
     discover_field_slots, core/chunk.odin's Get_Field_Slot/Set_Field_Slot
     doc comment). Covers the basic fast path, external field access (a
     real bug found and fixed while building this feature), the
-    read-before-assignment-inside-init edge case, a conditionally-
-    assigned field's map fallback, inheritance (super.init(), a subclass
-    with no init of its own, and the exact Toggle/NthToggle shape from
+    read-before-assignment-inside-__init__ edge case, a conditionally-
+    assigned field's map fallback, inheritance (super.__init__(), a subclass
+    with no __init__ of its own, and the exact Toggle/NthToggle shape from
     benchmarks/lox/method_call.lox), a closure stored in a slot-optimized
     field called via this.field()/other.field(), and a custom exception
-    class whose init sets msg/name at the top level."""
+    class whose __init__ sets msg/name at the top level."""
     lines = run_lox("field_slot_basic.lox")
     assert lines == [
         "7",  # p.sum(): 3 + 4
@@ -26,7 +26,7 @@ def test_field_slot_basic():
         "Dog: Rex (Labrador)",
         "Rex",  # d.name (external read of an Animal-slotted, Dog-fallback field)
         "Labrador",  # d.breed
-        "Tom says meow",  # cat.meow() -- Cat has no init of its own
+        "Tom says meow",  # cat.meow() -- Cat has no __init__ of its own
         "Animal: Tom",  # cat.describe() -- inherited, unoverridden
         "true",  # nt.value() before any activate()
         "false",  # nt.value() after 3 activate() calls (wraps at countMax=3)

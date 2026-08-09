@@ -44,7 +44,7 @@ func _release(p) {
 }
 
 class Particle {
-    init(pos,init_function, update_function) {
+    __init__(pos,init_function, update_function) {
         this.reset(pos, init_function, update_function);
     }
     // reset re-initialises a (possibly recycled) particle in place. Every field
@@ -71,13 +71,13 @@ class Particle {
         return true; // Particle is still alive
     }
 
-    toString() {
+    __str__() {
         return "Particle(pos=" & str(this.pos) & ", dpos=" & str(this.dpos) & ", life=" & str(this.life) & ")";
     }   
 }
 
 class Emitter {
-    init(pos,init_function, update_function) {
+    __init__(pos,init_function, update_function) {
         this.pos = pos; // Position of the emitter
         this.init_function = init_function;
         this.update_function = update_function;
@@ -123,7 +123,7 @@ class Emitter {
 }
 
 class Emitters {
-    init() {
+    __init__() {
         // NOTE: this list must not be named `queue` -- a field shadows a method of
         // the same name, so it would make the queue() method below unreachable
         // (emitters.queue(...) would try to call the list).

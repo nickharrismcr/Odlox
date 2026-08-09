@@ -19,7 +19,7 @@ const SCORES = {
 
 class Score {
 
-    init(font, x, y) {
+    __init__(font, x, y) {
         this.value = 0
         this.font = font
         this.x = x

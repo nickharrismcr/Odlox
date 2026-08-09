@@ -13,7 +13,7 @@ import random
 const NUM_GAPS = 10
 
 class Laser {
-    init() {
+    __init__() {
         this.active = false
         this.pos = vec2(0, 0)
         this.dir = 1
@@ -106,7 +106,7 @@ class Laser {
 }
 
 class LaserPool {
-    init(size) {
+    __init__(size) {
         this.lasers = []
         this.colors = [colour.YELLOW, colour.CYAN, colour.GREEN, colour.BLUE]
         this.ci = 0

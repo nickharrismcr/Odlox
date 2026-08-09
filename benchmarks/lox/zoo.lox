@@ -1,6 +1,6 @@
 import sys
 class Zoo {
-  init() {
+  __init__() {
     this.aarvark  = 1;
     this.baboon   = 1;
     this.cat      = 1;

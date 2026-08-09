@@ -16,7 +16,7 @@ const INK_H   = 30    // glyph height
 const ADVANCE = 25    // pen advance per character
 
 class Font {
-    init(img) {
+    __init__(img) {
         this.tex = texture(img, 1, 1, 1)   // sliced manually, so a single frame
         this.index = {}
         i = 0
@@ -56,7 +56,7 @@ class Font {
 
 // Smoothly cycles a colour through a palette, taking `steps` frames per leg.
 class ColourCycle {
-    init(palette, steps) {
+    __init__(palette, steps) {
         this.palette = palette
         this.steps = steps
         this.i = 0

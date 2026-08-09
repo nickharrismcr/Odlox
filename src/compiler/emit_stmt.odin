@@ -33,7 +33,7 @@ emit_stmt :: proc(em: ^Emitter, s: Stmt) {
 		emit_op(em, .Pop, v.token.line)
 	case ^Stmt_Print:
 		emit_expr(em, v.expr)
-		// Op_Str first: also the toString() dispatch point, not just
+		// Op_Str first: also the __str__() dispatch point, not just
 		// generic string conversion -- matches print_statement exactly.
 		emit_op(em, .Str, v.token.line)
 		emit_op(em, .Print, v.token.line)

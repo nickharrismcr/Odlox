@@ -1,5 +1,5 @@
 class FooError < Exception {
-    init(msg) { this.msg = msg; this.name = "FooError"; }
+    __init__(msg) { this.msg = msg; this.name = "FooError"; }
 }
 
 // An exception matches an except clause -- finally must still run exactly

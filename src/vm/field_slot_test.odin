@@ -26,7 +26,7 @@ run_field_slot_test :: proc(t: ^testing.T, source: string, var_name: string) -> 
 	return vm_instance.environment.globals[slot]
 }
 
-// test_field_slot_read_before_assignment_still_errors: within init
+// test_field_slot_read_before_assignment_still_errors: within __init__
 // itself, code preceding a field's own assignment line must still raise
 // the same "Undefined property" error the map-based path always has --
 // a naive zero-initialized slots array would instead silently return
@@ -37,7 +37,7 @@ run_field_slot_test :: proc(t: ^testing.T, source: string, var_name: string) -> 
 test_field_slot_read_before_assignment_still_errors :: proc(t: ^testing.T) {
 	source := `
 class Bad {
-	init() {
+	__init__() {
 		try {
 			this.caught = "no"
 			print this.never_set
@@ -69,7 +69,7 @@ var result = b.caught
 test_field_slot_external_access_works :: proc(t: ^testing.T) {
 	source := `
 class Point {
-	init(x) {
+	__init__(x) {
 		this.x_val = x
 	}
 }
@@ -89,7 +89,7 @@ var result = p.x_val
 test_field_slot_external_write_then_fast_path_read :: proc(t: ^testing.T) {
 	source := `
 class Point {
-	init(x) {
+	__init__(x) {
 		this.x_val = x
 	}
 	get_x() {
@@ -106,7 +106,7 @@ var result = p.get_x()
 
 // test_field_slot_inheritance_toggle_shape reproduces
 // benchmarks/lox/method_call.lox's Toggle/NthToggle shape directly: a
-// subclass whose own init calls super.init(...) and then assigns its own
+// subclass whose own __init__ calls super.__init__(...) and then assigns its own
 // additional fields. Exercises the owner_class guard (Closure_Object,
 // vm/properties.odin's do_method) that makes each class's field-slot
 // table safe to use independently of its superclass/subclasses -- see
@@ -115,7 +115,7 @@ var result = p.get_x()
 test_field_slot_inheritance_toggle_shape :: proc(t: ^testing.T) {
 	source := `
 class Toggle {
-	init(startState) {
+	__init__(startState) {
 		this.state = startState
 	}
 	value() {
@@ -127,8 +127,8 @@ class Toggle {
 	}
 }
 class NthToggle < Toggle {
-	init(startState, maxCounter) {
-		super.init(startState)
+	__init__(startState, maxCounter) {
+		super.__init__(startState)
 		this.countMax = maxCounter
 		this.count = 0
 	}
@@ -151,8 +151,8 @@ var result = nt.value()
 	testing.expect_value(t, core.as_bool(v), false)
 }
 
-// test_field_slot_subclass_with_no_own_init: a subclass with no init of
-// its own at all reuses the superclass's compiled init closure directly
+// test_field_slot_subclass_with_no_own_init: a subclass with no __init__ of
+// its own at all reuses the superclass's compiled __init__ closure directly
 // (do_inherit copies it into the subclass's own method table) -- its
 // owner_class stays the superclass, so field-slot access inside it
 // always takes the guard-miss fallback for a subclass instance, correct
@@ -161,7 +161,7 @@ var result = nt.value()
 test_field_slot_subclass_with_no_own_init :: proc(t: ^testing.T) {
 	source := `
 class Animal {
-	init(name) {
+	__init__(name) {
 		this.name = name
 	}
 	greet() {
@@ -187,7 +187,7 @@ var result = c.greet()
 test_field_slot_callable_found_via_invoke :: proc(t: ^testing.T) {
 	source := `
 class Holder {
-	init(fn) {
+	__init__(fn) {
 		this.cb = fn
 	}
 	run() {
@@ -204,7 +204,7 @@ var result = h.run()
 // test_field_slot_custom_exception_message_formats_correctly is a
 // regression test for vm/exceptions.odin's format_uncaught_exception,
 // which used to read inst.fields["msg"] directly -- a custom exception
-// class's init (this.msg = m at the top level) is exactly the shape
+// class's __init__ (this.msg = m at the top level) is exactly the shape
 // discover_field_slots slot-optimizes, so "msg" can live in inst.slots
 // instead. Fixed via core.instance_get_field. Checks the *caught* path
 // (e.msg, an external/generic read) rather than the uncaught-formatting
@@ -214,7 +214,7 @@ var result = h.run()
 test_field_slot_custom_exception_message_formats_correctly :: proc(t: ^testing.T) {
 	source := `
 class MyError < Exception {
-	init(m) {
+	__init__(m) {
 		this.msg = m
 		this.name = "MyError"
 	}
@@ -231,7 +231,7 @@ try {
 }
 
 // test_field_slot_conditional_field_falls_back_to_map: a field assigned
-// only inside a conditional in init never gets a slot at all (compiler/
+// only inside a conditional in __init__ never gets a slot at all (compiler/
 // resolve.odin's discover_field_slots only looks at unconditional,
 // top-level assignments) -- must still behave exactly like ordinary
 // map-backed field access, including raising "Undefined property" when
@@ -240,7 +240,7 @@ try {
 test_field_slot_conditional_field_falls_back_to_map :: proc(t: ^testing.T) {
 	source := `
 class Cond {
-	init(flag) {
+	__init__(flag) {
 		if (flag) {
 			this.maybe = "yes"
 		}

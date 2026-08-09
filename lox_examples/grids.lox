@@ -7,7 +7,7 @@ import colour
 import math; 
 
 class Siner {
-    init(min,max,rate) {
+    __init__(min,max,rate) {
         this.x = 0
         this.rate = rate
         this.min = min
@@ -27,7 +27,7 @@ class Siner {
 }
 
 class Bouncer {
-    init(min,max,dx) {
+    __init__(min,max,dx) {
         this.x= random.integer(min, max)
         this.dx = dx
         this.min=min
@@ -56,7 +56,7 @@ class Bouncer {
 }
 
 class ColourShift {
-    init() {
+    __init__() {
         this.r = Bouncer(0, 255,1)
         this.g = Bouncer(0, 255,2)
         this.b = Bouncer(0, 255,3)
@@ -82,7 +82,7 @@ win.init()
 win.toggle_fullscreen()
 
 class Grid {
-    init(cx, cy, size, cells, angle, col,speed) {
+    __init__(cx, cy, size, cells, angle, col,speed) {
         this.cx = cx
         this.cy = cy
         this.size = size

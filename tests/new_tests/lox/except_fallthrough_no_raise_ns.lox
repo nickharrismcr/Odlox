@@ -1,5 +1,5 @@
 class MyException < Exception {
-    init(msg) { this.msg = msg; this.name = "MyException" }
+    __init__(msg) { this.msg = msg; this.name = "MyException" }
 }
 
 // Same as except_fallthrough_no_raise.lox, exercised with the

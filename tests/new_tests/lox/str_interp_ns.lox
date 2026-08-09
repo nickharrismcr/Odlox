@@ -14,11 +14,11 @@ print "nested ${ "x".replace("x", "y") }"
 print "sum=${a + count * c}"
 
 class Pt {
-  init(x, y) {
+  __init__(x, y) {
     this.x = x
     this.y = y
   }
-  toString() {
+  __str__() {
     return "Pt(" & str(this.x) & "," & str(this.y) & ")"
   }
 }

@@ -542,10 +542,10 @@ method :: proc(p: ^Parser) -> Class_Member {
 	}
 
 	name_str := lexeme(name)
-	if is_static && name_str == "init" {
-		error(p, "'init' cannot be static.")
+	if is_static && name_str == "__init__" {
+		error(p, "'__init__' cannot be static.")
 	}
-	fn_type := Function_Type.Initializer if name_str == "init" else Function_Type.Method
+	fn_type := Function_Type.Initializer if name_str == "__init__" else Function_Type.Method
 
 	decl := parse_function_decl(p, fn_type, name)
 	return new_clone(Method{name = name, is_static = is_static, decl = decl})

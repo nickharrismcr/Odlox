@@ -4,7 +4,7 @@ from lox_helper import run_lox
 def test_inspect_dump():
     lines = run_lox("inspect_dump.lox")
     assert lines[0] == "2"
-    assert "Frame: init" in lines[2]
+    assert "Frame: __init__" in lines[2]
     assert "Frame: out" in "\n".join(lines)
     assert lines[-2] == "10"
     assert lines[-1] == "nil"

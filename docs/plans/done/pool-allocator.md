@@ -217,7 +217,7 @@ what's actually been measured:
 - **Upvalues** (`core.make_upvalue_object`, `vm/upvalue.odin:12`'s `capture_upvalue`) already dedupe against
   `vm.open_upvalues` before allocating — one allocation per *distinct captured stack slot*, not one per
   closure blindly. Churn is tied to how often new closures over new locals get created (e.g.
-  `particle_sys.lox`'s `init(col1, col2)` returning one closure per emitter), which is real but nowhere near
+  `particle_sys.lox`'s `__init__(col1, col2)` returning one closure per emitter), which is real but nowhere near
   the per-frame, per-vector-op rate vec allocation runs at.
 - **Bound methods** (`core.make_bound_method_object`, via `bind_method_cached`) only get created when a
   script reads `instance.method` *without* immediately calling it (storing a method reference/callback) —

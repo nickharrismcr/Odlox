@@ -4171,7 +4171,7 @@ odlox's own directory, partway through this phase. Once wired, the very
 first full run (`python -m pytest tests/new_tests/ -q`) **hung
 indefinitely** rather than reporting pass/fail counts — not slow, an
 actual non-terminating loop, confirmed by running the specific offending
-fixture (`lox/str_class_toString.lox`) directly against `bin/odlox.exe`
+fixture (`lox/str_class_dunder_str.lox`, named `lox/str_class_toString.lox` at the time) directly against `bin/odlox.exe`
 under a hard timeout.
 
 Root cause, found by bisecting to the exact hanging test and reproducing

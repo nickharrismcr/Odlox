@@ -13,4 +13,4 @@ def test_str_interp(script):
     assert lines[5] == "3-3"                 # single-quoted interpolation
     assert lines[6] == "nested y"            # nested string literal in expr
     assert lines[7] == "sum=7"               # embedded arithmetic (1 + 3*2)
-    assert lines[8] == "point Pt(1,2)"       # class instance via toString
+    assert lines[8] == "point Pt(1,2)"       # class instance via __str__

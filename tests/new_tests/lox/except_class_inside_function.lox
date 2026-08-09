@@ -1,5 +1,5 @@
 class FooError < Exception {
-    init(msg) { this.msg = msg; this.name = "FooError"; }
+    __init__(msg) { this.msg = msg; this.name = "FooError"; }
 }
 
 // Regression: a try/except for a user-defined exception class used to fail

@@ -52,7 +52,7 @@ print nested2[1][1][1];
 // aren't serialised at all -- the decoding side resolves the class by name
 // and reattaches the instance's data to that live class)
 class Point {
-    init(x, y) {
+    __init__(x, y) {
         this.x = x;
         this.y = y;
     }
@@ -66,10 +66,10 @@ print p.y;
 print p.sum();
 
 // exception instance: a user-defined Exception subclass, pickled after
-// being caught, round-trips its fields and its class's overridden toString
+// being caught, round-trips its fields and its class's overridden __str__
 class MyError < Exception {
-    init(msg) {
-        super.init(msg);
+    __init__(msg) {
+        super.__init__(msg);
         this.name = "MyError";
     }
 }
@@ -86,7 +86,7 @@ except Exception as caught
 
 // error path: cyclic instance (a field pointing back at its own instance)
 class Node {
-    init() {
+    __init__() {
         this.next = nil;
     }
 }

@@ -1,8 +1,8 @@
 class FooError < Exception {
-    init(msg) { this.msg = msg; this.name = "FooError"; }
+    __init__(msg) { this.msg = msg; this.name = "FooError"; }
 }
 class BarError < Exception {
-    init(msg) { this.msg = msg; this.name = "BarError"; }
+    __init__(msg) { this.msg = msg; this.name = "BarError"; }
 }
 
 // Regression: OP_TRY's operand used to be patched once per except clause

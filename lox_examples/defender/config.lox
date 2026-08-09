@@ -3,7 +3,7 @@
 // npc_bullet_time, max_baiters) at the start of each level; see levels.lox.
 
 class Config {
-    init() {
+    __init__() {
         // --- display / world ---
         this.width       = 1300     // play area width in pixels (logical, not the OS window)
         this.height      = 1000      // play area height in pixels (logical, not the OS window)

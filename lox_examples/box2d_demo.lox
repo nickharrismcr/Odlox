@@ -45,7 +45,7 @@ const SCENE1_COUNT = 500
 const SCENE1_KILLER_COUNT = 40
 
 class Scene1 {
-    init() {
+    __init__() {
         this.world = box2d.world(vec2(0.0, 0.0))
         this.ids = []
         this.colours = []
@@ -163,7 +163,7 @@ const SCENE2_BALL_RADIUS_MAX = 10.0 / SCALE
 const KILL_Y = -2.0
 
 class Scene2 {
-    init() {
+    __init__() {
         this.world = box2d.world(vec2(0.0, -10.0))
         this.ids = []
         this.colours = []

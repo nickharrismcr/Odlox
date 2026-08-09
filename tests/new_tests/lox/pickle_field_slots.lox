@@ -12,7 +12,7 @@
 import pickle
 
 class Point {
-    init(x, y) {
+    __init__(x, y) {
         this.x_val = x
         this.y_val = y
     }

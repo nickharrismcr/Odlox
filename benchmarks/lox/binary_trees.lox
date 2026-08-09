@@ -1,6 +1,6 @@
 import sys
 class Tree {
-  init(item, depth) {
+  __init__(item, depth) {
     this.item = item;
     this.depth = depth;
     if (depth > 0) {

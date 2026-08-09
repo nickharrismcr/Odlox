@@ -107,10 +107,10 @@ test_resolve_return_validity :: proc(t: ^testing.T) {
 	_, _, in_func := parse_and_resolve(t, "func f() {\nreturn 1\n}")
 	testing.expect(t, !in_func)
 
-	_, _, value_in_init := parse_and_resolve(t, "class A {\ninit() {\nreturn 1\n}\n}")
+	_, _, value_in_init := parse_and_resolve(t, "class A {\n__init__() {\nreturn 1\n}\n}")
 	testing.expect(t, value_in_init, "expected returning a value from an initializer to error")
 
-	_, _, bare_in_init := parse_and_resolve(t, "class A {\ninit() {\nreturn\n}\n}")
+	_, _, bare_in_init := parse_and_resolve(t, "class A {\n__init__() {\nreturn\n}\n}")
 	testing.expect(t, !bare_in_init, "bare return should be fine in an initializer")
 }
 

@@ -813,7 +813,7 @@ func quadlife_colour(state) {
 // not class methods, so calling them (`strategy.step(grid, next)`) just
 // invokes the stored function directly -- no implicit `this` involved.
 class Strategy {
-    init(name, step_fn, colour_fn, randomise_fn) {
+    __init__(name, step_fn, colour_fn, randomise_fn) {
         this.name = name
         this.step = step_fn
         this.colour = colour_fn

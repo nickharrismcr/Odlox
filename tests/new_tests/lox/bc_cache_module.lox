@@ -33,7 +33,7 @@ func greeting(name) {
 }
 
 class Adder {
-	init() {
+	__init__() {
 		this.total = 0
 	}
 	add(n) {

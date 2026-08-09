@@ -1,10 +1,10 @@
 class A { 
-    init() { 
+    __init__() { 
         this.mystring="hello"; 
     } 
-    toString()
+    __str__()
     { 
-        return "A toString = "&this.mystring; 
+        return "A __str__ = "&this.mystring;
     } 
 }
 print A;

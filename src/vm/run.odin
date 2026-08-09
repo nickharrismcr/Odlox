@@ -5,7 +5,7 @@ import "core:fmt"
 
 // The main opcode dispatch loop. Run_Mode.Current_Function backs the
 // nested, re-entrant call used by the user-level foreach iterator
-// protocol and instance toString dispatch -- see foreach.odin and this
+// protocol and instance __str__ dispatch -- see foreach.odin and this
 // file's Op_Str case.
 Run_Mode :: enum {
 	To_Completion,
@@ -637,7 +637,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Print:
 			print_value(pop(vm))
 		case .Str:
-			// Dispatches to a user-defined toString() method on an
+			// Dispatches to a user-defined __str__() method on an
 			// Instance receiver, if one exists. Deliberately does *not*
 			// use a nested run(vm, .Current_Function) call the way
 			// Op_Foreach/Op_Next do (see foreach.odin) -- unlike those,
@@ -647,7 +647,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			// (never popping) the receiver, then just calling
 			// call_value + refresh_frame and falling out of the switch
 			// normally, pushes a new frame and lets the *outer* dispatch
-			// loop run it -- when toString's own Op_Return eventually
+			// loop run it -- when __str__'s own Op_Return eventually
 			// fires, its ordinary return handling (pop back to
 			// fl.f.slots, push the result) leaves exactly the string
 			// result sitting where the original receiver was, which is
@@ -659,7 +659,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				// already a string; nothing to do
 			} else if v.type == .Obj && v.obj_type == .Instance {
 				inst := core.as_instance(v)
-				if method_val, ok := inst.class.methods[core.intern_string("toString")]; ok {
+				if method_val, ok := inst.class.methods[core.intern_string("__str__")]; ok {
 					fl.f.ip = ip
 					if call_value(vm, method_val, 0) {
 						fl = refresh_frame(vm)

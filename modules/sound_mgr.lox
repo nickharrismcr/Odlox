@@ -10,7 +10,7 @@ class SoundManager {
 	// so every other method checks no_sound first too.
 	static no_sound = false
 
-	init() {
+	__init__() {
 		this.sounds = {}   // name -> Sound object
 		this.groups = {}   // name -> group id (absent = no exclusivity)
 		this.music = {}    // key -> Music object

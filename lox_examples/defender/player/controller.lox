@@ -3,7 +3,7 @@
 // the resulting flags rather than calling win.key_down/key_pressed itself.
 
 class Controller {
-    init() {
+    __init__() {
         this.thrust = false        // held: accelerate in the facing direction
         this.reverse = false       // edge-triggered: flip facing, zero speed
         this.up = false            // held: move up

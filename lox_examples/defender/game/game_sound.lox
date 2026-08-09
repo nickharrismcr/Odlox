@@ -70,7 +70,7 @@ const SOUND_PATHS = {
 // imported sound_mgr, since each module import gets its own independent
 // copy -- setting the flag on a different file's copy wouldn't reach it.
 class GameSound {
-    init(mute) {
+    __init__(mute) {
         sound_mgr.SoundManager.no_sound = mute
         this.mgr = sound_mgr.SoundManager()
         foreach (var name in SOUND_PATHS.keys()) {

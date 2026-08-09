@@ -28,7 +28,7 @@ parse_and_resolve :: proc(t: ^testing.T, source: string) -> (stmts: []Stmt, glob
 // discover_field_slots) -- TODO.md's Phase 7 "compile-time-baked
 // instance field slots" item. discover_field_slots only ever looks at
 // top-level, unconditional, plain-assignment `this.name = value`
-// statements inside a class's own init -- these tests pin down exactly
+// statements inside a class's own __init__ -- these tests pin down exactly
 // which shapes qualify and which fall back to the ordinary map path
 // unchanged.
 
@@ -37,7 +37,7 @@ test_resolve_class_init_top_level_fields_get_slots :: proc(t: ^testing.T) {
 	// count/total, not a/b -- a and b are themselves swizzle-component
 	// names (r/g/b/a), which must never get a slot; see
 	// test_resolve_swizzle_named_field_never_gets_a_slot below.
-	stmts, _, had_error := parse_and_resolve(t, "class P {\ninit(count, total) {\nthis.count = count\nthis.total = total\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class P {\n__init__(count, total) {\nthis.count = count\nthis.total = total\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 2, "expected 2 discovered slots, got %d", len(class.field_slot_names))
@@ -57,7 +57,7 @@ test_resolve_class_init_top_level_fields_get_slots :: proc(t: ^testing.T) {
 test_resolve_conditional_field_assignment_gets_no_slot :: proc(t: ^testing.T) {
 	// "flag", not a swizzle-component name, so this genuinely tests the
 	// conditional-assignment exclusion, not the separate swizzle one.
-	stmts, _, had_error := parse_and_resolve(t, "class P {\ninit(x) {\nif (x) {\nthis.flag = 1\n}\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class P {\n__init__(x) {\nif (x) {\nthis.flag = 1\n}\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots, got %d", len(class.field_slot_names))
@@ -73,11 +73,11 @@ test_resolve_conditional_field_assignment_gets_no_slot :: proc(t: ^testing.T) {
 @(test)
 test_resolve_field_assigned_in_non_init_method_gets_no_slot :: proc(t: ^testing.T) {
 	// Mirrors tests/new_tests/lox/class_this.lox's real shape: a field
-	// with no init at all, assigned only from an ordinary method.
+	// with no __init__ at all, assigned only from an ordinary method.
 	stmts, _, had_error := parse_and_resolve(t, "class P {\nmethod1(a) {\nthis.field1 = a\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
-	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots (no init at all), got %d", len(class.field_slot_names))
+	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots (no __init__ at all), got %d", len(class.field_slot_names))
 
 	method := class.members[0].(^Method)
 	set_field, ok := method.decl.body[0].(^Stmt_Expression).expr.(^Expr_Property)
@@ -89,9 +89,9 @@ test_resolve_field_assigned_in_non_init_method_gets_no_slot :: proc(t: ^testing.
 test_resolve_compound_set_at_top_level_gets_no_slot :: proc(t: ^testing.T) {
 	// this.count += 1 reads before writing -- can never be treated as
 	// unconditionally *defining* the field, even though it's textually
-	// at the top level of init. "count", not a swizzle-component name,
+	// at the top level of __init__. "count", not a swizzle-component name,
 	// so this genuinely tests the compound-set exclusion.
-	stmts, _, had_error := parse_and_resolve(t, "class P {\ninit() {\nthis.count += 1\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class P {\n__init__() {\nthis.count += 1\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots, got %d", len(class.field_slot_names))
@@ -105,12 +105,12 @@ test_resolve_compound_set_at_top_level_gets_no_slot :: proc(t: ^testing.T) {
 
 @(test)
 test_resolve_swizzle_named_field_never_gets_a_slot :: proc(t: ^testing.T) {
-	// this.x = x at the top level of init would otherwise qualify, but a
+	// this.x = x at the top level of __init__ would otherwise qualify, but a
 	// field literally named x/y/z/w/r/g/b/a must stay on the swizzle
 	// write-back path (emit_expr.odin's emit_swizzle_set) entirely, in
 	// case `this` ever turns out to hold a vector at runtime -- the
 	// compiler can't know that here.
-	stmts, _, had_error := parse_and_resolve(t, "class P {\ninit(x) {\nthis.x = x\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class P {\n__init__(x) {\nthis.x = x\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots for a swizzle-shaped field name, got %d", len(class.field_slot_names))
@@ -127,7 +127,7 @@ test_resolve_invoke_never_gets_a_field_slot :: proc(t: ^testing.T) {
 	// even when "cb" is itself a discovered slot name (a callable stored
 	// in a slot-optimized field, called later) -- Get_Field_Slot/
 	// Set_Field_Slot only exist for .Get/.Set/.Compound_Set.
-	stmts, _, had_error := parse_and_resolve(t, "class P {\ninit(fn) {\nthis.cb = fn\n}\nrun() {\nreturn this.cb()\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class P {\n__init__(fn) {\nthis.cb = fn\n}\nrun() {\nreturn this.cb()\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 1 && class.field_slot_names[0] == "cb", "expected exactly one discovered slot, \"cb\"")
@@ -146,7 +146,7 @@ test_resolve_if_else_both_branches_assigning_same_field_gets_a_slot :: proc(t: ^
 	// assigned in both branches of a top-level if/else is provably
 	// always set, so it qualifies even though no single top-level
 	// statement assigns it unconditionally.
-	stmts, _, had_error := parse_and_resolve(t, "class T {\ninit(d) {\nif (d) {\nthis.left = 1\n} else {\nthis.left = 2\n}\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class T {\n__init__(d) {\nif (d) {\nthis.left = 1\n} else {\nthis.left = 2\n}\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 1 && class.field_slot_names[0] == "left", "expected exactly one discovered slot, \"left\", got %v", class.field_slot_names)
@@ -156,7 +156,7 @@ test_resolve_if_else_both_branches_assigning_same_field_gets_a_slot :: proc(t: ^
 test_resolve_if_else_mismatched_branch_fields_get_no_slot :: proc(t: ^testing.T) {
 	// Each branch assigns a *different* field -- neither is provably
 	// always set (only one branch runs), so neither qualifies.
-	stmts, _, had_error := parse_and_resolve(t, "class T {\ninit(d) {\nif (d) {\nthis.left = 1\n} else {\nthis.right = 2\n}\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class T {\n__init__(d) {\nif (d) {\nthis.left = 1\n} else {\nthis.right = 2\n}\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots, got %v", class.field_slot_names)
@@ -167,7 +167,7 @@ test_resolve_if_with_no_else_still_gets_no_slot :: proc(t: ^testing.T) {
 	// A bare if (no else) can never prove a field is always set, even
 	// after the if/else extension -- trees.lox's own shape
 	// (`if (depth > 0) { this.a = ... }`, no else).
-	stmts, _, had_error := parse_and_resolve(t, "class T {\ninit(d) {\nif (d) {\nthis.a = 1\n}\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class T {\n__init__(d) {\nif (d) {\nthis.a = 1\n}\n}\n}")
 	testing.expect(t, !had_error)
 	class := stmts[0].(^Stmt_Class_Decl)
 	testing.expectf(t, len(class.field_slot_names) == 0, "expected no discovered slots, got %v", class.field_slot_names)
@@ -176,10 +176,10 @@ test_resolve_if_with_no_else_still_gets_no_slot :: proc(t: ^testing.T) {
 @(test)
 test_resolve_field_slot_names_independent_per_subclass :: proc(t: ^testing.T) {
 	// A subclass's own discovered slot table only ever reflects its own
-	// init -- no compile-time splicing of the superclass's table (see
+	// __init__ -- no compile-time splicing of the superclass's table (see
 	// vm/run.odin's Get_Field_Slot/Set_Field_Slot owner_class guard,
 	// which is what makes this safe under inheritance instead).
-	stmts, _, had_error := parse_and_resolve(t, "class Animal {\ninit(name) {\nthis.name = name\n}\n}\nclass Dog < Animal {\ninit(name, breed) {\nsuper.init(name)\nthis.breed = breed\n}\n}")
+	stmts, _, had_error := parse_and_resolve(t, "class Animal {\n__init__(name) {\nthis.name = name\n}\n}\nclass Dog < Animal {\n__init__(name, breed) {\nsuper.__init__(name)\nthis.breed = breed\n}\n}")
 	testing.expect(t, !had_error)
 	animal := stmts[0].(^Stmt_Class_Decl)
 	dog := stmts[1].(^Stmt_Class_Decl)

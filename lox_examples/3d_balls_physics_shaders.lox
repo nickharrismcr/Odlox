@@ -115,7 +115,7 @@ floor_flash_color = vec4(255, 255, 255, 255)
 // only tracks what physics_world doesn't: rendering data (size/color/shader),
 // explosion timer/state, and the position synced from the world each frame.
 class MovingObject {
-    init(id, size, color) {
+    __init__(id, size, color) {
         this.id = id                                        // Handle into physics_world
         this.pos = vec3(0, 0, 0)                            // Reassigned from world each frame (world.get_position(this.id))
         this.shadow_center = vec3(0, 0, 0)                  // Reused/mutated in add_shadow() instead of allocating a fresh vec3 every frame

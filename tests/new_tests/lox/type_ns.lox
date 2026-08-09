@@ -8,7 +8,7 @@ func test(s) {
 print type(test)
 
 class myclass {
-    init(){}
+    __init__(){}
 }
 print type(myclass)
 var c=myclass()

@@ -12,7 +12,7 @@ var internal2_var
 var internal2_var2 = "2mv2"
 
 class internal2_class {
-    init(a) {
+    __init__(a) {
         this.a=a
     }
     get(){

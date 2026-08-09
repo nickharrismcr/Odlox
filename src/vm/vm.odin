@@ -75,7 +75,7 @@ VM :: struct {
 	// exception_floor: raise_exception's unwind will not pop any frame
 	// at or below this index -- raised while running a nested
 	// re-entrant run() call (Run_Current_Function mode, used by
-	// Op_Foreach/Op_Next/Op_Str's toString dispatch) so an exception
+	// Op_Foreach/Op_Next/Op_Str's __str__ dispatch) so an exception
 	// inside that nested call can't escape past its own boundary into
 	// the real caller's frames.
 	exception_floor: int,

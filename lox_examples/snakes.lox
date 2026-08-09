@@ -160,7 +160,7 @@ func perpendicular_heading(heading) {
 // One sphere chasing its target at its own fixed speed. No persisted
 // velocity -- movement each frame is just speed applied toward target_pos.
 class Sphere {
-    init(pos, radius, color, speed) {
+    __init__(pos, radius, color, speed) {
         this.pos = pos
         this.radius = radius
         this.color = color
@@ -192,7 +192,7 @@ class Sphere {
 // of frames, then turns a genuine 90 degrees. Bounces (full reversal) off
 // the arena walls, distinct from the voluntary 90-degree turns.
 class Vanguard {
-    init(pos, heading, speed) {
+    __init__(pos, heading, speed) {
         this.pos = pos
         this.heading = heading
         this.speed = speed
@@ -243,7 +243,7 @@ class Vanguard {
 // One vanguard plus its own snake of SPHERES_PER_VANGUARD spheres, all
 // sharing one hue so which spheres belong to which vanguard is visible.
 class Swarm {
-    init(color) {
+    __init__(color) {
         start_bound = ARENA_SIZE * 0.5
         start_pos = vec3(
             random.float(-start_bound, start_bound),

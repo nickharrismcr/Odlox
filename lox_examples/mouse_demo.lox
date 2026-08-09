@@ -86,7 +86,7 @@ func to_screen(p) {
 var world = box2d.world(vec2(0.0, GRAVITY))
 
 class Line {
-    init(x1, y1, x2, y2, col) {
+    __init__(x1, y1, x2, y2, col) {
         this.x1 = x1
         this.y1 = y1
         this.x2 = x2
@@ -97,7 +97,7 @@ class Line {
 }
 
 class Handle_Hit {
-    init(line, which, index) {
+    __init__(line, which, index) {
         this.line = line
         this.which = which
         this.index = index
@@ -105,7 +105,7 @@ class Handle_Hit {
 }
 
 class Rect {
-    init(x, y, w, h) {
+    __init__(x, y, w, h) {
         this.x = x
         this.y = y
         this.w = w

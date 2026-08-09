@@ -240,7 +240,7 @@ create_dict :: proc(vm: ^VM, pair_count: int) -> bool {
 		// rejected -- an int-keyed dict literal like `{10: "DEBUG", 20:
 		// "INFO", ...}` is valid, and looked up later via `str(level)`.
 		// core.value_to_string is the same stringification Op_Str's own
-		// generic (non-toString) fallback uses, so a coerced key and its
+		// generic (non-__str__) fallback uses, so a coerced key and its
 		// later str() lookup always agree. dict_key shares this coercion
 		// with do_index/do_index_assign.
 		items[dict_key(key)] = value

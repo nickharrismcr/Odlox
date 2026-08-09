@@ -39,15 +39,15 @@ var _NL = format("%c", 10);
 var _CR = format("%c", 13);
 
 class JSONDecodeError < Exception {
-    init(msg) {
-        super.init(msg);
+    __init__(msg) {
+        super.__init__(msg);
         this.name = "JSONDecodeError";
     }
 }
 
 class JSONEncodeError < Exception {
-    init(msg) {
-        super.init(msg);
+    __init__(msg) {
+        super.__init__(msg);
         this.name = "JSONEncodeError";
     }
 }
@@ -55,7 +55,7 @@ class JSONEncodeError < Exception {
 var _NUMBER_RE = re.compile("-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?");
 
 class _Decoder {
-    init(s) {
+    __init__(s) {
         this.s = s;
         this.i = 0;
         this.n = len(s);

@@ -149,7 +149,7 @@ Data-driven (no hardcoded sound-ID enum), so any script can reuse it:
 import sound
 
 class SoundManager {
-	init() {
+	__init__() {
 		this.sounds = {}   // name -> Sound object
 		this.groups = {}   // name -> group id (0/absent = no exclusivity)
 		this.music = {}    // key -> Music object

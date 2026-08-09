@@ -1,6 +1,6 @@
 class MyException < Exception {
-    init(msg) {
-        super.init(msg);
+    __init__(msg) {
+        super.__init__(msg);
         this.name="MyException";
     }
 }

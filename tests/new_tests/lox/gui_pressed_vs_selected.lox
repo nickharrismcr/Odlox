@@ -8,7 +8,7 @@
 import gui
 
 class Fake_Win {
-    init(positions, left_pressed, left_down, released) {
+    __init__(positions, left_pressed, left_down, released) {
         this.MOUSE_LEFT = 0
         this.MOUSE_RIGHT = 1
         this.positions = positions

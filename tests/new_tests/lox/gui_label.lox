@@ -5,7 +5,7 @@ import gui
 import colour
 
 class Fake_Win {
-    init() { this.calls = [] }
+    __init__() { this.calls = [] }
     text(text, x, y, font_size, colour_value) {
         this.calls.append([text, x, y, font_size, colour_value])
     }

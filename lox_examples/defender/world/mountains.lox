@@ -11,7 +11,7 @@ const EXPLODE_COLLAPSE_CHANCE = 40     // 1-in-N chance per touched point of van
 const EXPLODE_COLLAPSE_HEIGHT = 100000 // sentinel: draws far off the top of the screen
 
 class Mountain {
-    init(width,max_height) {
+    __init__(width,max_height) {
         this.width = width
         this.max_height = max_height
         this.points = []

@@ -1,5 +1,5 @@
 class MyException < Exception {
-    init(msg) { this.msg = msg; this.name = "MyException"; }
+    __init__(msg) { this.msg = msg; this.name = "MyException"; }
 }
 
 // Regression: falling through a try body without raising, when an except

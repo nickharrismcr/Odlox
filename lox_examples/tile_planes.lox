@@ -15,7 +15,7 @@ func floor(x) {
 }
 
 class Line {
-    init(pos, col, width, height, angle, margin) {
+    __init__(pos, col, width, height, angle, margin) {
         this.margin = margin
         this.pos = vec2(margin + rn.integer(0, width - 2 * margin),margin + rn.integer(0, height - 2 * margin))
         this.dr=1.03 
@@ -70,7 +70,7 @@ class Line {
 }
 
 class Tile {
-    init(width, height, lines, margin) {
+    __init__(width, height, lines, margin) {
         this.width = width
         this.height = height
         this.rotation = 0.0
@@ -101,7 +101,7 @@ class Tile {
 }
 
 class Tiler {
-    init(scale, speed) {
+    __init__(scale, speed) {
         this.tile = nil
         this.offset = vec2(0, 0) // scrolling offset in pixels
         this.scale = scale

@@ -63,7 +63,7 @@ walk_chunk :: proc(t: ^testing.T, c: ^core.Chunk) {
 test_disassemble_walks_kitchen_sink_program :: proc(t: ^testing.T) {
 	c := compile_ok(t, `
 class Animal {
-	init(name) {
+	__init__(name) {
 		this.name = name
 	}
 	speak() {

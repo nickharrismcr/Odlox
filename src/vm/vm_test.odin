@@ -88,9 +88,9 @@ test_str_builtin_stringifies :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.string_get(core.as_string(v)), "42")
 }
 
-// toString() dispatch (run.odin's Op_Str case). str(instance) and
+// __str__() dispatch (run.odin's Op_Str case). str(instance) and
 // print instance both go through Op_Str, so both should pick up a
-// class's own toString() rather than falling back to the generic
+// class's own __str__() rather than falling back to the generic
 // "<instance ClassName>" -- print's own path was a real, separate bug
 // (print_statement never emitted Op_Str at all before this, only
 // str(x) did -- see stmt.odin's print_statement), covered by the
@@ -99,8 +99,8 @@ test_str_builtin_stringifies :: proc(t: ^testing.T) {
 test_to_string_dispatch_via_str_builtin :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `
 class Point {
-	init(x, y) { this.x = x; this.y = y }
-	toString() { return "(" & str(this.x) & ", " & str(this.y) & ")" }
+	__init__(x, y) { this.x = x; this.y = y }
+	__str__() { return "(" & str(this.x) & ", " & str(this.y) & ")" }
 }
 var result = str(Point(1, 2))
 `, "result")
@@ -111,7 +111,7 @@ var result = str(Point(1, 2))
 test_instance_without_to_string_uses_generic_fallback :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `
 class Plain {
-	init() { this.x = 1 }
+	__init__() { this.x = 1 }
 }
 var result = str(Plain())
 `, "result")
@@ -225,7 +225,7 @@ test_lambda_expression :: proc(t: ^testing.T) {
 test_instance_field_and_method :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `
 class Point {
-	init(x, y) {
+	__init__(x, y) {
 		this.x = x
 		this.y = y
 	}
@@ -312,7 +312,7 @@ test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
 // `{10: "DEBUG", 20: "INFO", ...}`, looked up later via `str(level)` --
 // so the coerced key and the lookup key need to agree, which they do
 // as long as both go through the same stringification
-// (core.value_to_string, also Op_Str's own non-toString fallback).
+// (core.value_to_string, also Op_Str's own non-__str__ fallback).
 @(test)
 test_dict_literal_with_int_key_is_coerced_to_string :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `var d = {10: "ten"}` + "\nvar result = d[10]\n", "result")
@@ -351,7 +351,7 @@ test_foreach_over_string_counts_chars :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // User-level iterator protocol (__iter__/__next__ -- foreach.odin).
 // Needs a nested run(vm, .Current_Function) call to invoke each method
-// synchronously mid-opcode (unlike Op_Str's toString dispatch, which
+// synchronously mid-opcode (unlike Op_Str's __str__ dispatch, which
 // doesn't -- see foreach.odin's call_closure_now doc comment for why
 // the two cases differ). Deferred out of Phase 4's scope originally;
 // picked up once the native iterable path (list/string/range, tested
@@ -361,11 +361,11 @@ test_foreach_over_string_counts_chars :: proc(t: ^testing.T) {
 test_foreach_over_class_with_iter_protocol :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `
 class Range {
-	init(n) { this.n = n }
+	__init__(n) { this.n = n }
 	__iter__() { return RangeIterator(this.n) }
 }
 class RangeIterator {
-	init(n) { this.n = n; this.i = 0 }
+	__init__(n) { this.n = n; this.i = 0 }
 	__next__() {
 		if this.i >= this.n { return nil }
 		var v = this.i
@@ -385,11 +385,11 @@ foreach x in Range(5) {
 test_foreach_over_class_iter_protocol_respects_break_and_continue :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `
 class Range {
-	init(n) { this.n = n }
+	__init__(n) { this.n = n }
 	__iter__() { return RangeIterator(this.n) }
 }
 class RangeIterator {
-	init(n) { this.n = n; this.i = 0 }
+	__init__(n) { this.n = n; this.i = 0 }
 	__next__() {
 		if this.i >= this.n { return nil }
 		var v = this.i
@@ -412,7 +412,7 @@ foreach y in Range(10) {
 test_foreach_over_instance_without_iter_is_runtime_error :: proc(t: ^testing.T) {
 	expect_runtime_error(t, `
 class NotIterable {
-	init() { this.x = 1 }
+	__init__() { this.x = 1 }
 }
 foreach z in NotIterable() {
 	print z
@@ -424,7 +424,7 @@ foreach z in NotIterable() {
 test_foreach_iter_result_without_next_is_runtime_error :: proc(t: ^testing.T) {
 	expect_runtime_error(t, `
 class BadIterator {
-	init() { this.x = 1 }
+	__init__() { this.x = 1 }
 }
 class BadIterable {
 	__iter__() { return BadIterator() }

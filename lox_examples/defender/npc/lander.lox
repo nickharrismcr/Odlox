@@ -8,8 +8,8 @@ from npc import aim_bullet_at, shortest_dx
 
 class Lander < Sprite {
 
-    init(pos, img, frames, start_frame, end_frame) { 
-        super.init(pos, img, frames, start_frame, end_frame)
+    __init__(pos, img, frames, start_frame, end_frame) { 
+        super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "lander"
         this.animate(10)
         this.update_func=state_materialize
@@ -80,7 +80,7 @@ class Lander < Sprite {
 }
 
 // State chain: materialize -> descend -> search -> grab -> abduct -> mutated -> die.
-// Every transition into a state (other than the initial one, set in init()) goes
+// Every transition into a state (other than the initial one, set in __init__()) goes
 // through a matching enter_<state>(e) function.
 
 func state_materialize(e, width, height) {

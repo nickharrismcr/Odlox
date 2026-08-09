@@ -26,7 +26,7 @@ const BOMB_FLASH_FRAMES = 8
 
 class EntityMgr {
 
-    init(config) {
+    __init__(config) {
         this.config = config
         this.worldwidth = config.worldwidth()
         this.height = config.height

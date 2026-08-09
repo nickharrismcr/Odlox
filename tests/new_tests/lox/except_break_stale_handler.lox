@@ -1,5 +1,5 @@
 class BoomError < Exception {
-    init(msg) { this.msg = msg; this.name = "BoomError"; }
+    __init__(msg) { this.msg = msg; this.name = "BoomError"; }
 }
 
 // Regression: break/continue used to never touch frame.Handlers, leaving a

@@ -52,7 +52,7 @@ func clamp(v, lo, hi) {
 // visibility/enabled state, hover/click callbacks, and hit-testing. Not
 // normally instantiated directly -- use Button or Draggable, or subclass it.
 class Widget {
-    init(x, y, w, h) {
+    __init__(x, y, w, h) {
         this.x = x
         this.y = y
         this.w = w
@@ -110,8 +110,8 @@ class Widget {
 // hover/pressed/selected art -- falls back to the base texture when those
 // aren't given.
 class Button < Widget {
-    init(x, y, w, h, texture, hover_texture=nil, pressed_texture=nil, selected_texture=nil, disabled_texture=nil) {
-        super.init(x, y, w, h)
+    __init__(x, y, w, h, texture, hover_texture=nil, pressed_texture=nil, selected_texture=nil, disabled_texture=nil) {
+        super.__init__(x, y, w, h)
         this.texture = texture
         this.hover_texture = hover_texture
         this.pressed_texture = pressed_texture
@@ -166,8 +166,8 @@ class Button < Widget {
 // so the inherited contains() never matches) -- pass explicit w/h if you
 // want a clickable text label.
 class Label < Widget {
-    init(x, y, text, font_size=16, text_colour=nil) {
-        super.init(x, y, 0, 0)
+    __init__(x, y, text, font_size=16, text_colour=nil) {
+        super.__init__(x, y, 0, 0)
         this.text = text
         this.font_size = font_size
         this.colour = text_colour
@@ -186,8 +186,8 @@ class Label < Widget {
 // a checkbox -- assign a different on_left_click for fully custom
 // behaviour, or leave it and use on_change to react to toggles instead.
 class Checkbox < Widget {
-    init(x, y, size, on_texture, off_texture) {
-        super.init(x, y, size, size)
+    __init__(x, y, size, on_texture, off_texture) {
+        super.__init__(x, y, size, size)
         this.on_texture = on_texture
         this.off_texture = off_texture
         this.checked = false
@@ -218,8 +218,8 @@ class Checkbox < Widget {
 // `texture` is optional -- a Draggable with no texture is a bare,
 // invisible drag handle.
 class Draggable < Widget {
-    init(x, y, w, h, texture=nil) {
-        super.init(x, y, w, h)
+    __init__(x, y, w, h, texture=nil) {
+        super.__init__(x, y, w, h)
         this.texture = texture
     }
 
@@ -240,8 +240,8 @@ class Draggable < Widget {
 // no changes to support it. Hit-testing (and so dragging) only responds
 // near the handle itself, not anywhere along the track.
 class Slider < Widget {
-    init(x, y, w, min_value, max_value, value=nil) {
-        super.init(x, y, w, 16) // h is just a generous hit-box height around the track
+    __init__(x, y, w, min_value, max_value, value=nil) {
+        super.__init__(x, y, w, 16) // h is just a generous hit-box height around the track
         this.min_value = min_value
         this.max_value = max_value
         if (value == nil) {
@@ -313,8 +313,8 @@ class Slider < Widget {
 class Segmented_Line < Widget {
     // points: a list of >= 2 vec2 vertices. handle_radius: hit-test/draw
     // radius, in pixels, for each vertex handle.
-    init(points, handle_radius=8) {
-        super.init(points[0].x, points[0].y, 0, 0) // x/y/w/h unused -- see contains()
+    __init__(points, handle_radius=8) {
+        super.__init__(points[0].x, points[0].y, 0, 0) // x/y/w/h unused -- see contains()
         this.points = points
         this.handle_radius = handle_radius
         this.colour = colour.WHITE
@@ -385,7 +385,7 @@ class Segmented_Line < Widget {
 // Marquee.end(), and generally useful for box-testing widgets/points
 // against a selection area.
 class Rect {
-    init(x, y, w, h) {
+    __init__(x, y, w, h) {
         this.x = x
         this.y = y
         this.w = w
@@ -405,7 +405,7 @@ class Rect {
 // tests its own list of objects and decides what to do with the ones
 // inside it. Generalizes lox_examples/mouse_demo.lox's box-select-delete.
 class Marquee {
-    init() {
+    __init__() {
         this.active = false
         this.start = nil
         this.current = nil
@@ -474,7 +474,7 @@ class Marquee {
 // lox_examples/gui_level_editor_demo.lox's select_tile()/set_mode()
 // before this existed).
 class Button_Group {
-    init() {
+    __init__() {
         this.buttons = []
         this.selected_index = -1 // -1 = nothing selected
         this.on_change = nil // (group, index) -> _, fired on selection change
@@ -520,7 +520,7 @@ class Button_Group {
 // wins hit-testing ties) and turns raw mouse polling into hover/click/drag
 // callbacks on them.
 class Screen {
-    init() {
+    __init__() {
         this.widgets = []
         this.dragging = nil // the widget currently being dragged, or nil
 

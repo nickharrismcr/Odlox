@@ -171,7 +171,7 @@ var result = make()
 test_vec_field_assignment_property :: proc(t: ^testing.T) {
 	v := run_builtins(t, `
 class C {
-	init() { this.pos = vec3(1, 2, 3) }
+	__init__() { this.pos = vec3(1, 2, 3) }
 	bump() { this.pos.x = 10 }
 }
 var c = C()

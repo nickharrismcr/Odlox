@@ -1054,12 +1054,12 @@ history for the exhaustive per-opcode mapping; the noteworthy families are:
   `OP_FOREACH`/`OP_NEXT` instance branches, including the "raise the
   exception floor for the nested call's duration" detail (`run()`
   already had this from Phase 4's original `Run_Mode` scaffolding — see
-  [Exceptions](#exceptions)). **`Op_Str`'s `toString()` dispatch does
+  [Exceptions](#exceptions)). **`Op_Str`'s `__str__()` dispatch does
   *not* use this mechanism**, worth calling out since it's easy to
   assume every "call a Lox method from inside an opcode" case needs the
   same nested-`run()` machinery: checked against glox's own `OP_STR`
   handling directly, and glox just pushes a new call frame for
-  `toString` and lets the *outer* dispatch loop carry on (`continue`
+  `toString` (odlox's `__str__`) and lets the *outer* dispatch loop carry on (`continue`
   after `vm.call(...)`/`refreshFrame()`) — no nested `run()` call at
   all, because `Op_Str`'s call is the very last thing that opcode does,
   unlike `Op_Foreach`/`Op_Next`, which need the call's result back
@@ -1663,7 +1663,7 @@ No high-level "call this Lox function by name and get a value back"
 wrapper exists yet, but the mechanism to build one already exists
 internally: `vm/foreach.odin:76-82`'s `call_closure_now`, used to invoke
 `__iter__`/`__next__` callbacks (`foreach.odin:44-48`) and native
-`toString` dispatch (`run.odin:268-280`). It works by pushing the
+`__str__` dispatch (`run.odin:268-280`). It works by pushing the
 callee and arguments, calling it, then re-entering the dispatch loop
 with `run(vm, .Current_Function)` (`vm/run.odin:77`) — a mode that runs
 until the specific frame just pushed returns (`run.odin:454`'s

@@ -1,8 +1,8 @@
 class OtherError < Exception {
-    init(msg) { this.msg = msg; this.name = "OtherError"; }
+    __init__(msg) { this.msg = msg; this.name = "OtherError"; }
 }
 class SomeError < Exception {
-    init(msg) { this.msg = msg; this.name = "SomeError"; }
+    __init__(msg) { this.msg = msg; this.name = "SomeError"; }
 }
 
 // Regression: raiseException used to check only the innermost try's own

@@ -118,7 +118,7 @@ func even(value) {
 }
 
 class Batches {
-    init() {
+    __init__() {
         this.batches = []
         this.sizes = []
         this.textures = createColoredTextures(MAX_COLOURS)  // Create textures for cubes
@@ -154,7 +154,7 @@ class Batches {
 
 // Cube class - represents a single textured cube instance
 class Cube {
-    init(position) {
+    __init__(position) {
         this.position = vec3(position.x, position.y, position.z)
     }
     add_to_batch(batch) {  
@@ -167,7 +167,7 @@ class Cube {
 
 // Stack class - a vertical stack of CompositeCubes
 class Stack {
-    init(gridX, gridZ, height, cubeBatches) {
+    __init__(gridX, gridZ, height, cubeBatches) {
         this.gridX = gridX
         this.gridZ = gridZ
         this.height = height
@@ -193,7 +193,7 @@ class Stack {
 
 // Grid class - manages the city layout with stacks and streets
 class Grid {
-    init(size, cubeBatch) {
+    __init__(size, cubeBatch) {
         this.size = size
         this.stacks = []
           // Create stacks only at odd grid positions (leaving even positions as streets)
@@ -233,7 +233,7 @@ class Grid {
 
 // Controller class - manages camera movement through the city
 class Controller {
-    init(grid) {
+    __init__(grid) {
         this.grid = grid
        
         this.direction = NORTH

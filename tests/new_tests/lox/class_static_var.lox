@@ -6,7 +6,7 @@ class Animal {
         return name & " is an animal";
     }
 
-    init(name) {
+    __init__(name) {
         this.name = name;
         Animal.count = Animal.count + 1;
     }

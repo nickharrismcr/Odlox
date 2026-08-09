@@ -59,12 +59,12 @@ const SAFE_START_FRAMES = 60   // 1s at 60fps
 
 class Player < Sprite {
 
-    init(pos, img, thrust_img, shipw_img, config) {
+    __init__(pos, img, thrust_img, shipw_img, config) {
         // ship.png is a 5-frame animation strip; thrust.png is a 2-frame flame;
         // shipw.png is an all-white ship silhouette (2 frames, same 60px frame
         // width as ship.png). Being pure white it can be tinted to any colour, so
         // the death flash draws it tinted alternately white and red.
-        super.init(pos, img, 5, 1, 5)
+        super.__init__(pos, img, 5, 1, 5)
         this.type = "player"
         this.animate(8)
         this.width = this.texture.frame_width()
@@ -241,7 +241,7 @@ class Player < Sprite {
 // --- states -------------------------------------------------------------------
 
 // Ship visible, input ignored, enemies hidden and frozen. Entered directly by
-// init() for the very first spawn, and by enter_safe_start() after every
+// __init__() for the very first spawn, and by enter_safe_start() after every
 // respawn. The player can already fly around during this window -- input is
 // skipped for exactly the first frame (see the e.timer check below), since
 // that's the one frame SPACE might still be registering as having just

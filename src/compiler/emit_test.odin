@@ -124,7 +124,7 @@ compile_ok :: proc(t: ^testing.T, source: string) -> ^core.Chunk {
 test_emit_kitchen_sink_program_compiles :: proc(t: ^testing.T) {
 	compile_ok(t, `
 class Animal {
-	init(name) {
+	__init__(name) {
 		this.name = name
 	}
 	speak() {
@@ -412,7 +412,7 @@ test_emit_lambda_expression_compiles :: proc(t: ^testing.T) {
 test_emit_class_declaration_shape :: proc(t: ^testing.T) {
 	c := compile_ok(t, `
 class Point {
-	init(x, y) {
+	__init__(x, y) {
 		this.x = x
 		this.y = y
 	}

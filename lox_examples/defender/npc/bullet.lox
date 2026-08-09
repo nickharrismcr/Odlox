@@ -4,8 +4,8 @@ import colour
  
 
 class Bullet < Sprite {
-    init(pos, img, frames, start_frame, end_frame) {
-        super.init(pos, img, frames, start_frame, end_frame)
+    __init__(pos, img, frames, start_frame, end_frame) {
+        super.__init__(pos, img, frames, start_frame, end_frame)
         this.animate(10)
         this.ticks_to_live = 0
         // use the per-frame size for collision, not the whole sprite sheet

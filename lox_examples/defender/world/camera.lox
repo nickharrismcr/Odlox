@@ -1,5 +1,5 @@
 class Camera {
-    init(screenwidth,width,pos ) {
+    __init__(screenwidth,width,pos ) {
         this.width = width
         this.x = pos
         this.screenwidth = screenwidth

@@ -30,7 +30,7 @@ call_value :: proc(vm: ^VM, callee: core.Value, arg_count: int) -> bool {
 		inst := core.make_instance_object(class)
 		gc_track(vm, &inst.obj)
 		vm.stack[vm.stack_top - arg_count - 1] = core.make_object_value(&inst.obj)
-		if init_val, ok := class.methods[core.intern_string("init")]; ok {
+		if init_val, ok := class.methods[core.intern_string("__init__")]; ok {
 			return call(vm, core.as_closure(init_val), arg_count)
 		}
 		if arg_count != 0 {

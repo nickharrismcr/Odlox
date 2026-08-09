@@ -23,47 +23,47 @@ import "core:path/filepath"
 // the resulting classes into vm.builtins (see docs/ARCHITECTURE.md's
 // Native/builtin functions section): far less code than hand-building
 // Class_Object graphs, and the hierarchy behaves exactly like any other
-// Lox class (inheritance, toString, ...) because it *is* one, compiled
-// by this same compiler. toString() returns the bare `this.msg`, with
+// Lox class (inheritance, __str__, ...) because it *is* one, compiled
+// by this same compiler. __str__() returns the bare `this.msg`, with
 // no class-name prefix, so `str(e)` on a caught exception yields just
 // the message.
 @(private = "file")
 EXCEPTION_SOURCE :: `
 class Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "Exception"
 	}
-	toString() {
+	__str__() {
 		return this.msg
 	}
 }
 class RunTimeError < Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "RunTimeError"
 	}
 }
 class EOFError < Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "EOFError"
 	}
 }
 class PickleError < Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "PickleError"
 	}
 }
 class ProcessError < Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "ProcessError"
 	}
 }
 class SocketError < Exception {
-	init(msg) {
+	__init__(msg) {
 		this.msg = msg
 		this.name = "SocketError"
 	}

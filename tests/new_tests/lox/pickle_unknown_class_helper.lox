@@ -1,7 +1,7 @@
 import pickle;
 
 class Widget {
-    init(x) { this.x = x; }
+    __init__(x) { this.x = x; }
 }
 
 func make() {
