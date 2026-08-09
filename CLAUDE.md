@@ -17,19 +17,26 @@ State the finding directly. "The object-heavy end of the suite is the honest bot
 "a difficult target to beat." The information content is identical; only the editorializing is
 removed.
 
-## Linting `.lox` scripts with the jslox LSP
+## Linting `.lox` scripts with the lox_lsp LSP
+
+**Run this after writing or editing any `.lox` script**, before considering the change done --
+it catches unused-variable/scope-style issues `--compile-only` doesn't (see command below).
+Treat any output outside the known false-positive class documented further down as a real bug
+to fix, not noise to ignore.
 
 There's no linter built into odlox itself (`--compile-only` only catches parse errors, not
-unused-variable/scope-style warnings). A separate reference project, **jslox**
-(`d:\go\glox\jslox`), implements a real Lox Language Server (Scanner -> Parser -> Resolver,
-`src/server/LoxDocument.ts`) and is the extension that produces live diagnostics when editing a
-`.lox` file in this editor. To batch-lint many files from the command line instead of opening each
-one, use `d:\go\glox\jslox\src\lint-cli.ts` (a small standalone driver added there that runs the
+unused-variable/scope-style warnings). A separate reference project, **lox_lsp**
+(`d:\odin\odlox\lox_lsp`, a fork of upstream **jslox** -- stripped of its tree-walking
+interpreter/CLI down to LSP-only tooling, see its own `ARCHITECTURE.md`), implements a real Lox
+Language Server (Scanner -> Parser -> Resolver, `src/server/LoxDocument.ts`) and is the
+extension that produces live diagnostics when editing a `.lox` file in this editor. To
+batch-lint many files from the command line instead of opening each one, use
+`d:\odin\odlox\lox_lsp\src\lint-cli.ts` (a small standalone driver added there that runs the
 same Scanner/Parser/Resolver pipeline `LoxDocument` runs per-file, printing `path:line: error:
 ...` / `path:line: warning: ...`):
 
 ```bash
-cd /d/go/glox/jslox
+cd /d/odin/odlox/lox_lsp
 npx ts-node src/lint-cli.ts <file1.lox> <file2.lox> ...
 ```
 

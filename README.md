@@ -100,12 +100,28 @@ Tests live in `tests/new_tests/` — one Python module per language feature, eac
 ### Odin unit tests
 
 ```bash
-odin test src -all-packages -define:ODIN_TEST_THREADS=1
+bin/test_odin.sh [timeout_seconds]
 ```
 
-`-define:ODIN_TEST_THREADS=1` is required, not optional — always include it. This codebase's global state (`core/obj_string.odin`'s string-interning table, `vm/module.odin`'s module caches) is deliberately single-threaded by design (see `docs/ARCHITECTURE.md`'s Scope section), and the test runner's default 16-thread parallelism races on it. It isn't a workaround for flakiness; it's running the tests the way the VM is actually meant to run.
+Don't invoke `odin test src -all-packages` directly, even with `-define:ODIN_TEST_THREADS=1` —
+it hangs unpredictably. This codebase's global state (`core/obj_string.odin`'s string-interning
+table, `vm/module.odin`'s module caches) is deliberately single-threaded by design (see
+`docs/ARCHITECTURE.md`'s Scope section), so the test runner's default parallelism has to be
+disabled — but even single-threaded, running enough tests in one process eventually trips a
+real, unresolved `odin test` toolchain bug (cumulative VM/allocation weight, not a particular
+test at fault — see `TODO.md`/`ROADMAP.md`'s Phase 0 for the root-cause writeup).
 
-Even single-threaded, this suite is a known, not-fully-reliable secondary check, not a substitute for `pytest` above: `vm/module.odin`'s `module_cache` holds GC-managed values allocated through the test runner's short-lived per-task allocator, which can still produce a rare hang or segfault unrelated to any real bug in a change under test. See `TODO.md`/`ROADMAP.md` (Phase 0) for the full root-cause writeup.
+`bin/test_odin.sh` works around this by batching `core`/`compiler`/`debug` as one `odin test
+<pkg>` call each, but running `vm` one test per process (`vm`'s own tests construct enough VM
+instances per test that even a same-package batch isn't safe). `natives` has no `@(test)` procs
+of its own — `pytest` against the built binary is the real gate for native dispatch (see
+`src/natives/README.md`'s Testing section). Full run is ~60s with zero hangs; pass a timeout in
+seconds as the one optional argument (default 60s per core/compiler/debug batch, 15s per
+isolated `vm` test) if a slower machine needs more headroom.
+
+Even with the hang worked around, this suite is a known, not-fully-reliable secondary check,
+not a substitute for `pytest` above — four `vm`-package tests are permanently disabled for the
+same root cause (see the comments above each in `src/vm/bc_cache_test.odin`).
 
 ---
 
