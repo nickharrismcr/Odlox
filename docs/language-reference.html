@@ -168,6 +168,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <div class="group">Native Objects</div>
       <a href="#window">window</a>
       <a href="#batch">batch</a>
+      <a href="#batch2d">batch2d</a>
       <a href="#batch-instanced">batch_instanced</a>
       <a href="#light">light</a>
       <a href="#texture">texture</a>
@@ -815,7 +816,7 @@ import gfx
 win = gfx.window(800, 600)</code></pre>
 <ul>
 <li><strong>built-in:</strong> <a href="#vectors"><code>vec2</code>/<code>vec3</code>/<code>vec4</code></a></li>
-<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code>, <a href="#float-array"><code>float_array</code></a>/<a href="#float-array-3d"><code>float_array_3d</code></a>, plus the image/colour helpers below</li>
+<li><strong>gfx:</strong> <a href="#window"><code>window</code></a>, <a href="#image"><code>image</code></a>, <a href="#texture"><code>texture</code></a>, <a href="#render-texture"><code>render_texture</code></a>, <a href="#camera"><code>camera</code></a>, <a href="#shader"><code>shader</code></a>, <a href="#batch"><code>batch</code></a>, <a href="#batch2d"><code>batch2d</code></a>, <a href="#batch-instanced"><code>batch_instanced</code></a>, <a href="#light"><code>instanced_light</code></a>/<code>instanced_ambient</code>, <a href="#float-array"><code>float_array</code></a>/<a href="#float-array-3d"><code>float_array_3d</code></a>, plus the image/colour helpers below</li>
 <li><strong id="mod-physics">physics:</strong> <a href="#physics-world"><code>physics_world</code></a> — hand-rolled 3D sphere/box simulation</li>
 <li><strong id="mod-box2d-list">box2d:</strong> <a href="#box2d"><code>box2d.world</code></a> — wraps Odin's Box2D v3 bindings, 2D circle/box bodies</li>
 </ul>
@@ -948,6 +949,7 @@ win.close()</code></pre>
 
 <h3>Batch type constants</h3>
 <p>Passed to <a href="#batch"><code>batch()</code></a>: <code>win.BATCH_CUBE</code>, <code>win.BATCH_TEXTURED_CUBE</code>, <code>win.BATCH_SPHERE</code>, <code>win.BATCH_TRIANGLE3</code>, <code>win.BATCH_CIRCLE3</code>.</p>
+<p>Passed to <a href="#batch2d"><code>batch2d()</code></a>: <code>win.BATCH2D_CIRCLE</code>, <code>win.BATCH2D_RECT</code>, <code>win.BATCH2D_TRIANGLE</code>, <code>win.BATCH2D_LINE</code>.</p>
 
 <!-- ==================== BATCH ==================== -->
 <h2 class="section" id="batch">batch <span class="pill">gfx</span></h2>
@@ -1012,6 +1014,67 @@ win.end_3d()</code></pre>
 </tbody>
 </table>
 <div class="tip"><strong>Batching tips</strong>Use batching for any scene with more than ~50 similar objects. Pre-allocate with <code>reserve()</code>. Reusing a batch across frames (updating by index) is cheaper than clearing and rebuilding. For flat shadows, <code>BATCH_CIRCLE3</code> + <code>add_circle3()</code> replaces a hand-built triangle fan with a single call.</div>
+
+<!-- ==================== BATCH2D ==================== -->
+<h2 class="section" id="batch2d">batch2d <span class="pill">gfx</span></h2>
+<p>The 2D counterpart to <a href="#batch"><code>batch</code></a>: accumulates many 2D primitives of one type and renders them all in a single native draw call, instead of one <code>win.circle_fill()</code>/<code>rectangle()</code>/<code>triangle()</code>/<code>line_ex()</code> call per primitive per frame. Positions/sizes are <code>vec2</code>, colours <code>vec4</code>, matching <code>batch()</code>'s own <code>vec3</code>/<code>vec4</code> convention rather than the raw x/y/w/h floats the plain window primitives take.</p>
+<div class="sig"><span class="nm">batch2d</span>(<em>type</em>) <span class="pill">→ batch2d</span></div>
+<p><code>type</code> is one of the <code>win.BATCH2D_*</code> constants. Supported primitive types: circle, rect (axis-aligned only, no per-entry rotation), triangle, line. Each batch instance holds entries of one shape only, selected at construction.</p>
+<pre><code class="lox">from gfx import window, batch2d
+import random
+win = window(800, 600)
+win.init()
+
+circles = batch2d(win.BATCH2D_CIRCLE)
+circles.reserve(1000)
+foreach (i in range(1000)) {
+    pos    = vec2(random.float(0, 800), random.float(0, 600))
+    radius = random.float(2, 6)
+    color  = vec4(255, random.integer(0, 255), 0, 255)
+    circles.add_circle(pos, radius, color)
+}
+win.begin()
+circles.draw()        // all 1000 circles in one call
+win.end()</code></pre>
+
+<h3>Adding primitives</h3>
+<table>
+<thead><tr><th>Method</th><th>Batch type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>add_circle(position, radius, color)</code></td><td>circle</td><td>Add a filled circle; returns its index</td></tr>
+<tr><td><code>add_rect(position, size, color)</code></td><td>rect</td><td>Add an axis-aligned rect (<code>position</code> is the top-left corner); returns its index</td></tr>
+<tr><td><code>add_triangle(p1, p2, p3, color)</code></td><td>triangle</td><td>Add a triangle from three <code>vec2</code> points; returns its index</td></tr>
+<tr><td><code>add_line(p1, p2, thickness, color)</code></td><td>line</td><td>Add a line segment; returns its index</td></tr>
+</tbody>
+</table>
+
+<h3>Updating primitives by index</h3>
+<table>
+<thead><tr><th>Method</th><th>Batch type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>set_circle_full(i, position, radius, color)</code></td><td>circle</td><td>Update every field at once</td></tr>
+<tr><td><code>set_circle_color(i, color)</code></td><td>circle</td><td>Update only the colour</td></tr>
+<tr><td><code>set_rect_full(i, position, size, color)</code></td><td>rect</td><td>Update every field at once</td></tr>
+<tr><td><code>set_rect_color(i, color)</code></td><td>rect</td><td>Update only the colour</td></tr>
+<tr><td><code>set_triangle_full(i, p1, p2, p3, color)</code></td><td>triangle</td><td>Update every field at once</td></tr>
+<tr><td><code>set_triangle_color(i, color)</code></td><td>triangle</td><td>Update only the colour</td></tr>
+<tr><td><code>set_line_full(i, p1, p2, thickness, color)</code></td><td>line</td><td>Update every field at once</td></tr>
+<tr><td><code>set_line_color(i, color)</code></td><td>line</td><td>Update only the colour</td></tr>
+</tbody>
+</table>
+
+<h3>Rendering &amp; management</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>draw()</code></td><td>Render every entry in one native call</td></tr>
+<tr><td><code>count()</code></td><td>Number of entries</td></tr>
+<tr><td><code>reserve(n)</code></td><td>Pre-allocate capacity for <code>n</code> entries</td></tr>
+<tr><td><code>clear()</code></td><td>Remove all entries (keeps capacity)</td></tr>
+<tr><td><code>is_valid_index(i)</code></td><td>Whether index <code>i</code> exists</td></tr>
+</tbody>
+</table>
+<div class="tip"><strong>batch2d tips</strong>Collapses the Lox-VM-to-native call boundary (one dispatch per primitive becomes one dispatch for the whole batch), not necessarily the GPU draw-call count -- raylib's rlgl already coalesces same-state immediate-mode draws on its own. Worthwhile once a scene has more than a few hundred primitives drawn every frame (particle systems, starfields). See <code>lox_examples/fireworks.lox</code> for a real usage example.</div>
 
 <!-- ==================== BATCH_INSTANCED ==================== -->
 <h2 class="section" id="batch-instanced">batch_instanced <span class="pill">gfx</span></h2>
