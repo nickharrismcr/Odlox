@@ -103,25 +103,7 @@ Tests live in `tests/new_tests/` — one Python module per language feature, eac
 bin/test_odin.sh [timeout_seconds]
 ```
 
-Don't invoke `odin test src -all-packages` directly, even with `-define:ODIN_TEST_THREADS=1` —
-it hangs unpredictably. This codebase's global state (`core/obj_string.odin`'s string-interning
-table, `vm/module.odin`'s module caches) is deliberately single-threaded by design (see
-`docs/ARCHITECTURE.md`'s Scope section), so the test runner's default parallelism has to be
-disabled — but even single-threaded, running enough tests in one process eventually trips a
-real, unresolved `odin test` toolchain bug (cumulative VM/allocation weight, not a particular
-test at fault — see `TODO.md`/`ROADMAP.md`'s Phase 0 for the root-cause writeup).
-
-`bin/test_odin.sh` works around this by batching `core`/`compiler`/`debug` as one `odin test
-<pkg>` call each, but running `vm` one test per process (`vm`'s own tests construct enough VM
-instances per test that even a same-package batch isn't safe). `natives` has no `@(test)` procs
-of its own — `pytest` against the built binary is the real gate for native dispatch (see
-`src/natives/README.md`'s Testing section). Full run is ~60s with zero hangs; pass a timeout in
-seconds as the one optional argument (default 60s per core/compiler/debug batch, 15s per
-isolated `vm` test) if a slower machine needs more headroom.
-
-Even with the hang worked around, this suite is a known, not-fully-reliable secondary check,
-not a substitute for `pytest` above — four `vm`-package tests are permanently disabled for the
-same root cause (see the comments above each in `src/vm/bc_cache_test.odin`).
+Don't invoke `odin test` directly — it hangs unpredictably (see `TODO.md`/`ROADMAP.md` Phase 0). Secondary check only; `pytest` above is the real correctness gate.
 
 ---
 
