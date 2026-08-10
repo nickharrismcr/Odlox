@@ -9,6 +9,8 @@ The extensions to the language include enhanced string operations, lists, dictio
 
 📖 **[Full language reference: `docs/language-reference.html`](docs/language-reference.html)** — a guide to the syntax, built-in types and functions, native objects, and library modules. Open it in a browser.
 
+🧩 **VS Code editing** — [`lox_lsp/`](lox_lsp/) is a Language Server extension for `.lox` files (diagnostics, go to definition, find references, rename, semantic highlighting; see [`lox_lsp/README.md`](lox_lsp/README.md) for install instructions).
+
 ### Additions to vanilla Lox
 
 Feature summary — see the **[language reference](docs/language-reference.html)** for full syntax, methods, and examples.

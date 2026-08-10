@@ -1,0 +1,138 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Lox",
+    "scopeName": "source.lox",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#brackets"
+        }
+    ],
+    "repository": {
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.lox",
+                    "match": "\\b(else|for|foreach|in|if|while|break|continue|return|try|except|finally|raise|breakpoint)\\b"
+                },
+                {
+                    "name": "keyword.other.lox",
+                    "match": "\\b(import|from|as|str)\\b"
+                },
+                {
+                    "name": "keyword.operator.logical.lox",
+                    "match": "\\b(and|or|\\!)\\b"
+                },
+                {
+                    "name": "constant.language.null.lox",
+                    "match": "\\b(nil)\\b"
+                },
+                {
+                    "name": "constant.language.boolean.lox",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "variable.language.super.lox",
+                    "match": "\\b(super)\\b"
+                },
+                {
+                    "name": "variable.language.this.lox",
+                    "match": "\\b(this)\\b"
+                },
+                {
+                    "name": "variable.function.buildin.lox",
+                    "match": "\\b(print|clock)\\b"
+                },
+                {
+                    "name": "storage.type.class.lox",
+                    "match": "\\b(class)\\b"
+                },
+                {
+                    "name": "storage.type.function.lox",
+                    "match": "\\b(fun|func)\\b"
+                },
+                {
+                    "name": "storage.type.lox",
+                    "match": "\\b(var|const)\\b"
+                },
+                {
+                    "name": "storage.modifier.lox",
+                    "match": "\\b(static)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.ternary.lox",
+                    "match": "\\?|:"
+                },
+                {
+                    "name": "keyword.operator.assignment.compound.lox",
+                    "match": "\\+=|-=|\\*=|/=|%="
+                },
+                {
+                    "name": "keyword.operator.comparison.lox",
+                    "match": "==|!=|<=|>=|<|>"
+                },
+                {
+                    "name": "keyword.operator.assignment.lox",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.arithmetic.lox",
+                    "match": "\\+\\+|&|\\+|-|\\*|/|%"
+                }
+            ]
+        },
+        "brackets": {
+            "patterns": [
+                {
+                    "name": "punctuation.definition.list.lox",
+                    "match": "\\[|\\]"
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b",
+                    "name": "constant.numeric.lox"
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.lox",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.lox",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.lox",
+                    "match": "\\/\\/.*"
+                }
+            ]
+        }
+    }
+}
