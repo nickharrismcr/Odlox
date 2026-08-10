@@ -2,7 +2,7 @@
     "name": "lox-lsp",
     "displayName": "odlox LSP",
     "description": "LSP server for odlox's extended Lox dialect",
-    "version": "0.0.12",
+    "version": "0.0.14",
     "publisher": "fabianjakobs",
     "license": "Apache-2.0",
     "icon": "images/logo.png",
@@ -40,7 +40,17 @@
                 "scopeName": "source.lox",
                 "path": "./syntaxes/lox.tmLanguage.json"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "Lox",
+            "properties": {
+                "lox.diagnostics.reportUnusedVariables": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Warn on variables that are declared but never used. Note: this check is unreliable when a name shadows an outer-scope variable of the same name (the reference can resolve to the wrong declaration) -- see odlox's CLAUDE.md."
+                }
+            }
+        }
     },
     "scripts": {
         "package": "vsce package",

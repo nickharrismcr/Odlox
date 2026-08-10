@@ -71,10 +71,22 @@ export class WorkspaceIndex {
     // B imports A) instead of recursing forever.
     private analyzing: Set<string> = new Set();
 
+    // Mirrors the `lox.diagnostics.reportUnusedVariables` VS Code setting
+    // (LoxLspServer pulls it and calls setReportUnusedVariables()). Applied
+    // to every analyze() call, open or disk -- disk documents' diagnostics
+    // are never surfaced anyway (only an open document's are published), so
+    // this only actually changes what the user sees, but keeping one flag
+    // for both avoids two analyze() code paths disagreeing with each other.
+    private reportUnusedVariables = true;
+
     constructor(private workspaceRoot?: string) {}
 
     setWorkspaceRoot(workspaceRoot: string | undefined) {
         this.workspaceRoot = workspaceRoot;
+    }
+
+    setReportUnusedVariables(value: boolean) {
+        this.reportUnusedVariables = value;
     }
 
     // Registers/updates the LoxDocument backing an open editor buffer and
@@ -86,7 +98,7 @@ export class WorkspaceIndex {
         if (fsPath) {
             this.entries.set(keyFor(fsPath), { uri, document: loxDocument, open: true });
         }
-        loxDocument.analyze((moduleName) => this.resolveImport(moduleName, uri));
+        loxDocument.analyze((moduleName) => this.resolveImport(moduleName, uri), this.reportUnusedVariables);
         return loxDocument;
     }
 
@@ -191,7 +203,10 @@ export class WorkspaceIndex {
 
         this.analyzing.add(key);
         try {
-            loxDocument.analyze((importedModuleName) => this.resolveImport(importedModuleName, uri));
+            loxDocument.analyze(
+                (importedModuleName) => this.resolveImport(importedModuleName, uri),
+                this.reportUnusedVariables
+            );
         } finally {
             this.analyzing.delete(key);
         }

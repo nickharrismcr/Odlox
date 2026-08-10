@@ -118,12 +118,20 @@ export class Resolver implements Visitor<void> {
         // to the workspace index). Undefined in single-file contexts
         // (lint-cli.ts, tests) -- imports still parse/declare fine, they
         // just can't link to a real cross-file declaration.
-        private resolveImport?: (moduleName: string) => Map<string, Token> | undefined
+        private resolveImport?: (moduleName: string) => Map<string, Token> | undefined,
+        // Gates the declared-but-unused warning below (LoxDocument wires
+        // this to the `lox.diagnostics.reportUnusedVariables` VS Code
+        // setting). Defaults on -- lint-cli.ts and Resolver.test.ts don't
+        // pass this, and existing single-file behavior shouldn't change.
+        private reportUnusedVariables: boolean = true
     ) {}
 
     resolve(statements: Array<Stmt>) {
         for (const statement of statements) {
             statement.visit(this);
+        }
+        if (!this.reportUnusedVariables) {
+            return;
         }
         for (const [name, tokens] of this.definitions) {
             if (tokens.length === 0 && !this.isGlobalDefinition.get(name)) {

@@ -46,7 +46,9 @@ export class LoxDocument {
     // Supplied by the workspace index; undefined in single-file contexts
     // (imports still parse and declare locally, they just don't link to a
     // real cross-file declaration -- see Resolver's own resolveImport param).
-    analyze(resolveImport?: (moduleName: string) => ResolvedModule | undefined) {
+    // reportUnusedVariables mirrors the `lox.diagnostics.reportUnusedVariables`
+    // VS Code setting -- see Resolver's own constructor param.
+    analyze(resolveImport?: (moduleName: string) => ResolvedModule | undefined, reportUnusedVariables: boolean = true) {
         const source = this.document.getText();
 
         this.diagnostics = [];
@@ -104,7 +106,8 @@ export class LoxDocument {
                     }
                     moduleUris.set(moduleName, resolved.uri);
                     return resolved.exports;
-                })
+                }),
+            reportUnusedVariables
         );
         resolver.resolve(statements);
 

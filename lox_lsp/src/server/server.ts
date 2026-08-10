@@ -37,6 +37,22 @@ function workspaceRootFrom(params: InitializeParams): string | undefined {
 // Also include all preview / proposed LSP features.
 const connection = createConnection(ProposedFeatures.all);
 
+let hasConfigurationCapability = false;
+
+// Pulls the current `lox.diagnostics.reportUnusedVariables` setting from the
+// client (pull-based `workspace/configuration`, not push -- vscode-languageclient
+// supports this by default, no client-side wiring needed beyond declaring the
+// setting in package.json's contributes.configuration) and applies it.
+async function refreshSettings(): Promise<void> {
+    if (!hasConfigurationCapability) {
+        return;
+    }
+    const reportUnusedVariables = await connection.workspace.getConfiguration({
+        section: "lox.diagnostics.reportUnusedVariables",
+    });
+    loxServer.setReportUnusedVariables(reportUnusedVariables ?? true);
+}
+
 // Create a simple text document manager.
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
@@ -55,6 +71,7 @@ connection.onInitialize((params: InitializeParams) => {
     loxServer.setWorkspaceRoot(workspaceRootFrom(params));
 
     const capabilities = params.capabilities;
+    hasConfigurationCapability = !!capabilities.workspace?.configuration;
 
     const hasSemanticTokensCapability = !!capabilities.textDocument?.semanticTokens?.requests?.full;
     const hasSymbolProviderCapability = !!capabilities.textDocument?.documentSymbol?.hierarchicalDocumentSymbolSupport;
@@ -98,7 +115,23 @@ connection.onInitialize((params: InitializeParams) => {
     return result;
 });
 
-connection.onInitialized(() => {});
+connection.onInitialized(() => {
+    // refreshSettings() is an async round-trip to the client; it can lose
+    // the race against the client's initial textDocument/didOpen for
+    // whatever's already open, which would otherwise analyze with the
+    // default (reportUnusedVariables: true) and never get corrected --
+    // refreshOpenDiagnostics() re-analyzes with whatever the setting turned
+    // out to be as soon as the pull actually completes.
+    refreshSettings().then(() => loxServer.refreshOpenDiagnostics());
+});
+
+// Fired whenever the client's config changes, including this extension's
+// own `lox.diagnostics.*` settings -- re-pull and republish diagnostics for
+// every open document so a toggled setting takes effect immediately rather
+// than waiting for the next edit.
+connection.onDidChangeConfiguration(() => {
+    refreshSettings().then(() => loxServer.refreshOpenDiagnostics());
+});
 
 connection.onPrepareRename((params: TextDocumentPositionParams) => {
     return loxServer.onPrepareRename(params.textDocument.uri, params.position);

@@ -18,6 +18,11 @@ Go to definition, find references, and rename all resolve across files: a symbol
 `import module` / `from module import name` links back to its real declaration in the module
 that defines it, not just the local import statement. See `ARCHITECTURE.md` §6/§10 for how.
 
+The unused-variable warning can be turned off in VS Code settings:
+`lox.diagnostics.reportUnusedVariables` (default `true`). It's unreliable when a name shadows an
+outer-scope variable of the same name — see `../CLAUDE.md`'s note on that — which is the main
+reason to disable it.
+
 It does not execute `.lox` code — odlox scripts run on odlox's own VM (`odin build .` /
 `bin/odlox.exe` at the repo root). This extension only ever analyzes source text.
 

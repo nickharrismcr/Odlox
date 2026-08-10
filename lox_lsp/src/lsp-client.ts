@@ -31,6 +31,16 @@ export async function activateLanguageClient(context: ExtensionContext) {
     const clientOptions: LanguageClientOptions = {
         // Register the server for lox documents
         documentSelector: [{ scheme: "file", language: "lox" }],
+        // Without this, vscode-languageclient's SyncConfigurationFeature never
+        // registers (see its initialize(): it's a no-op unless
+        // clientOptions.synchronize.configurationSection is set), so the server
+        // never receives a workspace/didChangeConfiguration notification -- its
+        // own onDidChangeConfiguration handler would simply never fire, and a
+        // `lox.*` setting toggled after startup would only take effect on the
+        // next window reload.
+        synchronize: {
+            configurationSection: "lox",
+        },
     };
 
     // Create the language client and start the client.

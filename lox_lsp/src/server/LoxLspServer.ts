@@ -61,6 +61,20 @@ export class LoxLspServer {
         this.workspaceIndex.setWorkspaceRoot(workspaceRoot);
     }
 
+    setReportUnusedVariables(value: boolean) {
+        this.workspaceIndex.setReportUnusedVariables(value);
+    }
+
+    // Re-analyzes every currently-open document and republishes its
+    // diagnostics -- called after a setting that affects diagnostics (e.g.
+    // reportUnusedVariables) changes, so open editors update immediately
+    // instead of waiting for the next edit.
+    refreshOpenDiagnostics() {
+        for (const uri of this.loxDocuments.keys()) {
+            this.onDidChangeContent(uri);
+        }
+    }
+
     onDidChangeContent(uri: string) {
         const document = this.documents.get(uri);
         if (!document) {

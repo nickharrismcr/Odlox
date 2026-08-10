@@ -287,11 +287,37 @@ hold stale `Token` objects until whatever imported them is itself re-analyzed (w
 `LoxDocument`'s existing no-caching/no-debounce approach: correctness on the next request, not on
 every intermediate keystroke.
 
+**Settings** (`server.ts`): `lox.diagnostics.reportUnusedVariables` (boolean, default `true`,
+declared in `package.json`'s `contributes.configuration`) gates the one warning `Resolver` emits
+(§6) — plumbed through as a plain constructor/method parameter (`Resolver` → `LoxDocument.analyze()`
+→ `WorkspaceIndex.setReportUnusedVariables()` → `LoxLspServer.setReportUnusedVariables()`), not a
+message-based diagnostic filter. `server.ts` pulls the current value via the standard LSP
+pull-based `workspace/configuration` request (`hasConfigurationCapability`, checked from
+`params.capabilities.workspace?.configuration` at `onInitialize`) at `onInitialized`, and again on
+every `workspace/didChangeConfiguration` notification (the latter followed by
+`LoxLspServer.refreshOpenDiagnostics()`, which re-`analyze()`s every currently-open document, so
+toggling the setting updates open editors without a reload).
+
+Two easy-to-miss requirements for that push-notification path to ever fire at all, both real bugs
+once (Aug 2026): `lsp-client.ts`'s `clientOptions` must set `synchronize: { configurationSection:
+"lox" }` — without it, vscode-languageclient's `SyncConfigurationFeature.initialize()` is a no-op
+(it only registers when that option is present) and `workspace/didChangeConfiguration` is never
+sent, no matter what the user changes. And even with that fixed, the _initial_ pull in
+`onInitialized` is an unawaited async round-trip that can lose the race against the client's
+first `textDocument/didOpen` for whatever's already open at startup — that first analysis would
+run with the default (`true`) and nothing would ever re-trigger it. `onInitialized` chains
+`refreshSettings().then(() => loxServer.refreshOpenDiagnostics())` for exactly this reason: once
+the pull actually completes, every open document gets re-analyzed with whatever the setting
+turned out to be, regardless of which one arrived first.
+
 **`extension.ts`/`lsp-client.ts`** — minimal: spawns `out/server/server.js` over IPC,
-`documentSelector: [{scheme:"file", language:"lox"}]`. No client-only features.
+`documentSelector: [{scheme:"file", language:"lox"}]`, `synchronize.configurationSection: "lox"`
+(see above — needed for the server to ever learn about a `lox.*` setting change). No other
+client-only features.
 
 **`package.json` contributes`**: one language (`id: "lox"`, extension `.lox"`), one grammar
-(`scopeName: "source.lox"` → `syntaxes/lox.tmLanguage.json`). No commands/settings/snippets.
+(`scopeName: "source.lox"` → `syntaxes/lox.tmLanguage.json`), one setting (see above). No
+commands/snippets.
 
 **`syntaxes/lox.tmLanguage.json`** — regex-only TextMate grammar, four repository rules:
 `keywords` (control/operator/constant/storage scopes, all simple `\b...\b`), `numbers`

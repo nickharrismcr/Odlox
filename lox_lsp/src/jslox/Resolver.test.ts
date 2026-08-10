@@ -149,6 +149,21 @@ describe("Resolver", () => {
         assert.ok(called);
     });
 
+    it("should not warn about unused variables when reportUnusedVariables is false", () => {
+        const parser = new Parser(new Scanner("{ var a; }").scanTokens());
+        const program = parser.parse();
+        assert.ok(program !== null);
+
+        let called = false;
+        const resolver = new Resolver(
+            { error: () => {}, warn: () => (called = true), runtimeError: () => {} },
+            undefined,
+            false
+        );
+        resolver.resolve(program);
+        assert.ok(!called);
+    });
+
     it("should record every module-scope binding in exports", () => {
         const parser = new Parser(new Scanner("func greet() {} var count = 1; { var local = 2; }").scanTokens());
         const program = parser.parse();
