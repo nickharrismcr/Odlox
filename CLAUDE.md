@@ -17,6 +17,11 @@ State the finding directly. "The object-heavy end of the suite is the honest bot
 "a difficult target to beat." The information content is identical; only the editorializing is
 removed.
 
+Keep comments short: 2-4 lines per comment block, even for a non-obvious design decision or a bug
+fix. State the fact and, if needed, the one-line reason -- don't narrate the investigation that led
+there (alternatives tried, intermediate wrong theories, how it was confirmed). That belongs in the
+commit message or PR description, not permanently in the source.
+
 ## Linting `.lox` scripts with the lox_lsp LSP
 
 **Run this after writing or editing any `.lox` script**, before considering the change done --
@@ -145,10 +150,9 @@ Concretely:
   array) should be one of a small set of preallocated buffers passed in, not freshly constructed
   on every call.
 
-Real case: `lox_examples/game_of_life.lox` was allocating a fresh `cols`-length list every grid
-row, every generation, for every ruleset (`horiz_sum_of`), plus a fresh grid-sized `float_array`
-per call in `state_indicator`/`neighbour_count_array` (up to 8 such allocations per generation for
-the QuadLife ruleset) -- this produced occasional multi-hundred-ms stalls, roughly once per
-ruleset. Fixed by preallocating a small fixed set of row/grid buffers once at startup
-(`ROW_BUF_A/B/C`, `IND_BUF_1..4`, `COUNT_BUF_1..4`) and writing into them every generation instead;
-allocation from this machinery is now zero regardless of ruleset.
+Real case: a CPU Game of Life implementation allocated a fresh `cols`-length list every grid row,
+every generation, plus a fresh grid-sized `float_array` per neighbour-counting call -- this
+produced occasional multi-hundred-ms stalls. Fixed by preallocating a small fixed set of row/grid
+buffers once at startup and writing into them every generation instead, dropping allocation to
+zero. (That CPU version was later replaced by `lox_examples/game_of_life_shader.lox`, which runs
+the simulation itself as a GPU fragment shader and has no per-generation CPU allocation at all.)

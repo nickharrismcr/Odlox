@@ -357,6 +357,18 @@ texture_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: in
 		}
 		rl.SetTextureWrap(t.texture, rl.TextureWrap(core.as_int(wrap_val)))
 		result = core.NIL_VALUE
+	case "set_filter_mode":
+		if arg_count != 1 {
+			vm.runtime_error(v, "set_filter_mode() expects 1 argument (filter_mode).")
+			return false
+		}
+		filter_val := vm.peek(v, 0)
+		if !core.is_number(filter_val) {
+			vm.runtime_error(v, "set_filter_mode() argument must be a number.")
+			return false
+		}
+		rl.SetTextureFilter(t.texture, rl.TextureFilter(core.as_int(filter_val)))
+		result = core.NIL_VALUE
 	case "unload":
 		if arg_count != 0 {
 			vm.runtime_error(v, "unload() takes no arguments.")

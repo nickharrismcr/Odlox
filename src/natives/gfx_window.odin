@@ -1165,16 +1165,18 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 }
 
 // window_constant answers a `win.KEY_*`/`win.MOUSE_*`/`win.BLEND_*`/
-// `win.WRAP_*`/`win.BATCH_*` property read, via window_vtable's
-// get_property hook (vm/properties.odin's get_property .Userdata case).
-// These are exposed directly on the window object rather than as
-// module-level constants, so scripts access them as
+// `win.WRAP_*`/`win.FILTER_*`/`win.BATCH_*` property read, via
+// window_vtable's get_property hook (vm/properties.odin's get_property
+// .Userdata case). These are exposed directly on the window object
+// rather than as module-level constants, so scripts access them as
 // `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`. Full
 // rl.KeyboardKey coverage except KEY_BACK/KEY_MENU (Android-only buttons
 // not exposed by vendor:raylib's Odin binding); full rl.MouseButton/
-// BLEND_*/WRAP_*/BATCH_* coverage. Values are plain immutable ints,
-// identical across every Window instance, so this is a pure function of
-// the name rather than per-object state.
+// BLEND_*/WRAP_*/BATCH_* coverage. FILTER_* covers only POINT/BILINEAR
+// (not TRILINEAR/ANISOTROPIC_*, which need mipmaps this codebase never
+// generates). Values are plain immutable ints, identical across every
+// Window instance, so this is a pure function of the name rather than
+// per-object state.
 @(private = "file")
 window_constant :: proc(name: string) -> (core.Value, bool) {
 	switch name {
@@ -1187,6 +1189,8 @@ window_constant :: proc(name: string) -> (core.Value, bool) {
 	case "WRAP_CLAMP": return core.make_int_value(int(rl.TextureWrap.CLAMP), true), true
 	case "WRAP_MIRROR_REPEAT": return core.make_int_value(int(rl.TextureWrap.MIRROR_REPEAT), true), true
 	case "WRAP_MIRROR_CLAMP": return core.make_int_value(int(rl.TextureWrap.MIRROR_CLAMP), true), true
+	case "FILTER_POINT": return core.make_int_value(int(rl.TextureFilter.POINT), true), true
+	case "FILTER_BILINEAR": return core.make_int_value(int(rl.TextureFilter.BILINEAR), true), true
 	// Ordinal values match Batch_Primitive exactly (Cube=0, Sphere=1,
 	// Triangle3=2, Circle3=3).
 	case "BATCH_CUBE": return core.make_int_value(int(Batch_Primitive.Cube), true), true

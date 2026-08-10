@@ -1,0 +1,626 @@
+from gfx import *
+// GPU (GLSL fragment shader) version of game_of_life.lox's full ruleset
+// cycle. Each generation runs as a fragment shader over ping-ponged
+// render_textures instead of step_generic on a CPU float_array. Six of
+// the ten rulesets (Conway/HighLife/Seeds/Day&Night/Replicator/2x2) are
+// all "count 8 neighbours, threshold" binary rules and share one GLSL
+// shader parameterised by birth/survival neighbour-count bitmasks;
+// Generations/Brian's Brain/Immigration Game/QuadLife have real
+// multi-state or multi-colour rules and get their own step + display
+// shaders. Unlike the CPU version, no strategy needs a smaller BOX_*
+// grid -- a single-pass fragment shader is cheap enough that even
+// Immigration Game/QuadLife's per-colour neighbour counts run at full
+// resolution (computed inline per-fragment, not as separate
+// neighbour_count_array() passes). Seeding stays CPU-side (one-time
+// cost). ESC quits, SPACE cycles strategy, A toggles auto-cycling
+// (every RESET_TICKS generations).
+
+import random
+import colour
+
+const CELL_SIZE = 2
+const RESET_TICKS = 400
+const NUM_LINES = 40
+const NUM_BOXES = 15
+const NUM_BLOCKS = 10
+
+const BG_COLOUR = colour.BLACK
+
+const ALIVE_COLOUR = vec4(0, 230, 120, 255)
+const HIGHLIFE_COLOUR = vec4(60, 200, 255, 255)
+const SEEDS_COLOUR = vec4(255, 60, 200, 255)
+const DAY_NIGHT_COLOUR = vec4(230, 230, 230, 255)
+const REPLICATOR_COLOUR = vec4(50, 255, 180, 255)
+const TWOBYTWO_COLOUR = vec4(180, 180, 255, 255)
+
+// Birth/survival neighbour-count sets encoded as bitmasks (bit n set =>
+// that neighbour count triggers birth/survival), read by binary_step_src
+// below. Bit layout matches each ruleset's own B.../S... notation.
+const CONWAY_BIRTH = 8.0        // B{3}
+const CONWAY_SURVIVAL = 12.0    // S{2,3}
+const HIGHLIFE_BIRTH = 72.0     // B{3,6}
+const HIGHLIFE_SURVIVAL = 12.0  // S{2,3}
+const SEEDS_BIRTH = 4.0         // B{2}
+const SEEDS_SURVIVAL = 0.0      // S{}
+const DAYNIGHT_BIRTH = 456.0    // B{3,6,7,8}
+const DAYNIGHT_SURVIVAL = 472.0 // S{3,4,6,7,8}
+const REPLICATOR_BIRTH = 170.0  // B{1,3,5,7}
+const REPLICATOR_SURVIVAL = 170.0 // S{1,3,5,7}
+const TWOBYTWO_BIRTH = 72.0     // B{3,6}
+const TWOBYTWO_SURVIVAL = 38.0  // S{1,2,5}
+
+var win = window(1, 1)
+win.init()
+win.toggle_fullscreen()
+// Uncapped -- VSYNC_HINT alone paces frames (matches mandel_shader.lox).
+// A fixed FPS cap that doesn't evenly divide the refresh rate beats
+// against vsync, causing a repeated-frame/skipped-frame stutter.
+win.set_target_fps(0)
+
+var screen_w = int(win.get_screen_width())
+var screen_h = int(win.get_screen_height())
+var cols = screen_w / CELL_SIZE
+var rows = screen_h / CELL_SIZE
+
+// Ping-ponged simulation textures -- one pixel per cell, not per screen
+// pixel. POINT filtering + REPEAT wrap are required (not cosmetic) for
+// exact neighbour sums and toroidal wraparound.
+var grid_a = render_texture(cols, rows)
+var grid_b = render_texture(cols, rows)
+grid_a.get_texture().set_filter_mode(win.FILTER_POINT)
+grid_a.get_texture().set_wrap_mode(win.WRAP_REPEAT)
+grid_b.get_texture().set_filter_mode(win.FILTER_POINT)
+grid_b.get_texture().set_wrap_mode(win.WRAP_REPEAT)
+
+// Standard fullscreen-quad vertex shader, same as mandel_shader.lox's.
+var vertex_shader_src = "
+#version 330
+
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main()
+{
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+// Binary two-state rules (Conway/HighLife/Seeds/Day&Night/Replicator/
+// 2x2): state and neighbour indicator are the same 0.0/1.0 value, so
+// birth/survival are just "is this neighbour count's bit set" in the
+// two mask uniforms below, cast to int for the bitwise test.
+var binary_step_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+uniform float birth_mask;
+uniform float survival_mask;
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+
+    float n = 0.0;
+    n += texture(texture0, fragTexCoord + vec2(-texel.x, -texel.y)).r;
+    n += texture(texture0, fragTexCoord + vec2(0.0,       -texel.y)).r;
+    n += texture(texture0, fragTexCoord + vec2( texel.x,  -texel.y)).r;
+    n += texture(texture0, fragTexCoord + vec2(-texel.x,  0.0)).r;
+    n += texture(texture0, fragTexCoord + vec2( texel.x,  0.0)).r;
+    n += texture(texture0, fragTexCoord + vec2(-texel.x,   texel.y)).r;
+    n += texture(texture0, fragTexCoord + vec2(0.0,        texel.y)).r;
+    n += texture(texture0, fragTexCoord + vec2( texel.x,   texel.y)).r;
+
+    int ni = int(n + 0.5);
+    int bm = int(birth_mask + 0.5);
+    int sm = int(survival_mask + 0.5);
+    float state = texture(texture0, fragTexCoord).r;
+    bool next_alive;
+    if (state > 0.5) {
+        next_alive = ((sm >> ni) & 1) == 1;
+    } else {
+        next_alive = ((bm >> ni) & 1) == 1;
+    }
+    float ns = next_alive ? 1.0 : 0.0;
+    finalColor = vec4(ns, ns, ns, 1.0);
+}
+"
+
+// Generations (B2/S345/C5): 5 states (0 dead, 1 alive, 2-4 dying),
+// stored as state/255 in texture0.r since UNORM8 stores small integer
+// bytes exactly (unlike a plain 0-1 fraction, which would round). Only
+// state 1 counts as a live neighbour, so indicator() re-derives a 0/1
+// value from the raw byte instead of reusing state directly.
+var generations_step_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+
+float indicator(vec2 uv) {
+    float s = texture(texture0, uv).r * 255.0;
+    return (abs(s - 1.0) < 0.5) ? 1.0 : 0.0;
+}
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    float n = 0.0;
+    n += indicator(fragTexCoord + vec2(-texel.x, -texel.y));
+    n += indicator(fragTexCoord + vec2(0.0,       -texel.y));
+    n += indicator(fragTexCoord + vec2( texel.x,  -texel.y));
+    n += indicator(fragTexCoord + vec2(-texel.x,  0.0));
+    n += indicator(fragTexCoord + vec2( texel.x,  0.0));
+    n += indicator(fragTexCoord + vec2(-texel.x,   texel.y));
+    n += indicator(fragTexCoord + vec2(0.0,        texel.y));
+    n += indicator(fragTexCoord + vec2( texel.x,   texel.y));
+    int ni = int(n + 0.5);
+
+    float state = texture(texture0, fragTexCoord).r * 255.0;
+    float next_state = 0.0;
+    if (state < 0.5) {
+        next_state = (ni == 2) ? 1.0 : 0.0;
+    } else if (state < 1.5) {
+        next_state = (ni == 3 || ni == 4 || ni == 5) ? 1.0 : 2.0;
+    } else {
+        next_state = state + 1.0;
+        if (next_state >= 5.0) { next_state = 0.0; }
+    }
+    finalColor = vec4(next_state / 255.0, 0.0, 0.0, 1.0);
+}
+"
+
+var generations_display_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+
+void main() {
+    float s = texture(texture0, fragTexCoord).r * 255.0;
+    vec3 c = vec3(0.0);
+    if (abs(s - 1.0) < 0.5) { c = vec3(255.0, 255.0, 60.0) / 255.0; }
+    else if (abs(s - 2.0) < 0.5) { c = vec3(255.0, 140.0, 0.0) / 255.0; }
+    else if (abs(s - 3.0) < 0.5) { c = vec3(200.0, 30.0, 0.0) / 255.0; }
+    else if (abs(s - 4.0) < 0.5) { c = vec3(70.0, 0.0, 40.0) / 255.0; }
+    finalColor = vec4(c, 1.0);
+}
+"
+
+// Brian's Brain: 3 states (0 off, 1 firing, 2 dying), same state/255
+// encoding as Generations. Firing/dying transitions are unconditional;
+// only n (firing neighbours) decides an off cell's birth.
+var brain_step_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+
+float indicator(vec2 uv) {
+    float s = texture(texture0, uv).r * 255.0;
+    return (abs(s - 1.0) < 0.5) ? 1.0 : 0.0;
+}
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    float n = 0.0;
+    n += indicator(fragTexCoord + vec2(-texel.x, -texel.y));
+    n += indicator(fragTexCoord + vec2(0.0,       -texel.y));
+    n += indicator(fragTexCoord + vec2( texel.x,  -texel.y));
+    n += indicator(fragTexCoord + vec2(-texel.x,  0.0));
+    n += indicator(fragTexCoord + vec2( texel.x,  0.0));
+    n += indicator(fragTexCoord + vec2(-texel.x,   texel.y));
+    n += indicator(fragTexCoord + vec2(0.0,        texel.y));
+    n += indicator(fragTexCoord + vec2( texel.x,   texel.y));
+    int ni = int(n + 0.5);
+
+    float state = texture(texture0, fragTexCoord).r * 255.0;
+    float next_state = 0.0;
+    if (state < 0.5) {
+        next_state = (ni == 2) ? 1.0 : 0.0;
+    } else if (state < 1.5) {
+        next_state = 2.0;
+    } else {
+        next_state = 0.0;
+    }
+    finalColor = vec4(next_state / 255.0, 0.0, 0.0, 1.0);
+}
+"
+
+var brain_display_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+
+void main() {
+    float s = texture(texture0, fragTexCoord).r * 255.0;
+    vec3 c = vec3(0.0);
+    if (abs(s - 1.0) < 0.5) { c = vec3(255.0, 255.0, 255.0) / 255.0; }
+    else if (abs(s - 2.0) < 0.5) { c = vec3(40.0, 80.0, 255.0) / 255.0; }
+    finalColor = vec4(c, 1.0);
+}
+"
+
+// Immigration Game: Conway's own birth(3)/survival(2,3) counts, but 2
+// competing colours (states 1,2). A survivor keeps its colour; a birth
+// takes the majority colour among its exactly-3 live parents. Unlike
+// the CPU version's two materialised neighbour_count_array() passes,
+// both colours' counts are just accumulated inline per-fragment here.
+var immigration_step_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+
+vec2 counts(vec2 uv) {
+    float s = texture(texture0, uv).r * 255.0;
+    float a = (abs(s - 1.0) < 0.5) ? 1.0 : 0.0;
+    float b = (abs(s - 2.0) < 0.5) ? 1.0 : 0.0;
+    return vec2(a, b);
+}
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    vec2 c = vec2(0.0);
+    c += counts(fragTexCoord + vec2(-texel.x, -texel.y));
+    c += counts(fragTexCoord + vec2(0.0,       -texel.y));
+    c += counts(fragTexCoord + vec2( texel.x,  -texel.y));
+    c += counts(fragTexCoord + vec2(-texel.x,  0.0));
+    c += counts(fragTexCoord + vec2( texel.x,  0.0));
+    c += counts(fragTexCoord + vec2(-texel.x,   texel.y));
+    c += counts(fragTexCoord + vec2(0.0,        texel.y));
+    c += counts(fragTexCoord + vec2( texel.x,   texel.y));
+    float n = c.x + c.y;
+
+    float state = texture(texture0, fragTexCoord).r * 255.0;
+    float next_state = 0.0;
+    if (state > 0.5) {
+        next_state = (n == 2.0 || n == 3.0) ? state : 0.0;
+    } else if (n == 3.0) {
+        next_state = (c.x > c.y) ? 1.0 : 2.0;
+    }
+    finalColor = vec4(next_state / 255.0, 0.0, 0.0, 1.0);
+}
+"
+
+var immigration_display_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+
+void main() {
+    float s = texture(texture0, fragTexCoord).r * 255.0;
+    vec3 c = vec3(0.0);
+    if (abs(s - 1.0) < 0.5) { c = vec3(255.0, 60.0, 60.0) / 255.0; }
+    else if (abs(s - 2.0) < 0.5) { c = vec3(60.0, 140.0, 255.0) / 255.0; }
+    finalColor = vec4(c, 1.0);
+}
+"
+
+// QuadLife: Immigration Game's own idea extended to 4 colours. A
+// birth's colour is the majority among its 3 parents if one exists, or
+// (if all 3 parents differ) the one colour missing from those 3.
+var quadlife_step_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+
+vec4 counts4(vec2 uv) {
+    float s = texture(texture0, uv).r * 255.0;
+    vec4 c = vec4(0.0);
+    if (abs(s - 1.0) < 0.5) { c.x = 1.0; }
+    else if (abs(s - 2.0) < 0.5) { c.y = 1.0; }
+    else if (abs(s - 3.0) < 0.5) { c.z = 1.0; }
+    else if (abs(s - 4.0) < 0.5) { c.w = 1.0; }
+    return c;
+}
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    vec4 c = vec4(0.0);
+    c += counts4(fragTexCoord + vec2(-texel.x, -texel.y));
+    c += counts4(fragTexCoord + vec2(0.0,       -texel.y));
+    c += counts4(fragTexCoord + vec2( texel.x,  -texel.y));
+    c += counts4(fragTexCoord + vec2(-texel.x,  0.0));
+    c += counts4(fragTexCoord + vec2( texel.x,  0.0));
+    c += counts4(fragTexCoord + vec2(-texel.x,   texel.y));
+    c += counts4(fragTexCoord + vec2(0.0,        texel.y));
+    c += counts4(fragTexCoord + vec2( texel.x,   texel.y));
+    float n = c.x + c.y + c.z + c.w;
+
+    float state = texture(texture0, fragTexCoord).r * 255.0;
+    float next_state = 0.0;
+    if (state > 0.5) {
+        next_state = (n == 2.0 || n == 3.0) ? state : 0.0;
+    } else if (n == 3.0) {
+        if (c.x >= 2.0) { next_state = 1.0; }
+        else if (c.y >= 2.0) { next_state = 2.0; }
+        else if (c.z >= 2.0) { next_state = 3.0; }
+        else if (c.w >= 2.0) { next_state = 4.0; }
+        else if (c.x < 0.5) { next_state = 1.0; }
+        else if (c.y < 0.5) { next_state = 2.0; }
+        else if (c.z < 0.5) { next_state = 3.0; }
+        else { next_state = 4.0; }
+    }
+    finalColor = vec4(next_state / 255.0, 0.0, 0.0, 1.0);
+}
+"
+
+var quadlife_display_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+
+void main() {
+    float s = texture(texture0, fragTexCoord).r * 255.0;
+    vec3 c = vec3(0.0);
+    if (abs(s - 1.0) < 0.5) { c = vec3(255.0, 70.0, 70.0) / 255.0; }
+    else if (abs(s - 2.0) < 0.5) { c = vec3(70.0, 220.0, 90.0) / 255.0; }
+    else if (abs(s - 3.0) < 0.5) { c = vec3(80.0, 140.0, 255.0) / 255.0; }
+    else if (abs(s - 4.0) < 0.5) { c = vec3(255.0, 220.0, 60.0) / 255.0; }
+    finalColor = vec4(c, 1.0);
+}
+"
+
+func load_step(src) {
+    var s = shader()
+    s.load_from_memory(vertex_shader_src, src)
+    if (!s.is_valid()) {
+        print("Failed to load a step/display shader")
+    }
+    return s
+}
+
+var binary_step = load_step(binary_step_src)
+var birth_loc = binary_step.get_location("birth_mask")
+var survival_loc = binary_step.get_location("survival_mask")
+
+var generations_step = load_step(generations_step_src)
+var generations_display = load_step(generations_display_src)
+var brain_step = load_step(brain_step_src)
+var brain_display = load_step(brain_display_src)
+var immigration_step = load_step(immigration_step_src)
+var immigration_display = load_step(immigration_display_src)
+var quadlife_step = load_step(quadlife_step_src)
+var quadlife_display = load_step(quadlife_display_src)
+
+// resolution is fixed for the whole run, so set once per shader here
+// rather than every frame.
+func set_resolution(s) {
+    var loc = s.get_location("resolution")
+    s.set_value_vec2(loc, vec2(cols, rows))
+}
+set_resolution(binary_step)
+set_resolution(generations_step)
+set_resolution(brain_step)
+set_resolution(immigration_step)
+set_resolution(quadlife_step)
+
+// --- Seeding (CPU-side, one-time) ---
+// value_fn is called once per shape (not per cell) and returns the pixel
+// colour to draw: colour.WHITE for a binary rule's "alive" (R=1.0 read
+// directly), or vec4(byte, 0, 0, 255) for a multi-state rule's "state
+// `byte`" (read back as byte / 255 by that rule's own shaders).
+
+func set_wrapped_px(rt, x, y, col) {
+    var wx = ((x % cols) + cols) % cols
+    var wy = ((y % rows) + rows) % rows
+    rt.pixel(wx, wy, col)
+}
+
+func draw_random_line(rt, value_fn) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var length = random.integer(cols / 8, cols / 2)
+    var kind = random.integer(0, 2)
+    var dx = 0
+    var dy = 0
+    if (kind == 0) {
+        dx = 1
+    } else if (kind == 1) {
+        dy = 1
+    } else {
+        dx = 1
+        dy = random.integer(0, 1) * 2 - 1
+    }
+    var col = value_fn()
+    for (var i = 0; i < length; i = i + 1) {
+        set_wrapped_px(rt, x0 + dx * i, y0 + dy * i, col)
+    }
+}
+
+func draw_random_box(rt, value_fn) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 12, cols / 4)
+    var h = random.integer(rows / 12, rows / 4)
+    var col = value_fn()
+    for (var i = 0; i < w; i = i + 1) {
+        set_wrapped_px(rt, x0 + i, y0, col)
+        set_wrapped_px(rt, x0 + i, y0 + h - 1, col)
+    }
+    for (var j = 0; j < h; j = j + 1) {
+        set_wrapped_px(rt, x0, y0 + j, col)
+        set_wrapped_px(rt, x0 + w - 1, y0 + j, col)
+    }
+}
+
+func draw_random_block(rt, value_fn) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 20, cols / 6)
+    var h = random.integer(rows / 20, rows / 6)
+    var col = value_fn()
+    for (var j = 0; j < h; j = j + 1) {
+        for (var i = 0; i < w; i = i + 1) {
+            set_wrapped_px(rt, x0 + i, y0 + j, col)
+        }
+    }
+}
+
+func randomise_with(rt, value_fn) {
+    rt.clear(colour.BLACK)
+    for (var i = 0; i < NUM_LINES; i = i + 1) {
+        draw_random_line(rt, value_fn)
+    }
+    for (var i = 0; i < NUM_BOXES; i = i + 1) {
+        draw_random_box(rt, value_fn)
+    }
+    for (var i = 0; i < NUM_BLOCKS; i = i + 1) {
+        draw_random_block(rt, value_fn)
+    }
+}
+
+func randomise(rt) {
+    randomise_with(rt, func () { return colour.WHITE })
+}
+
+// Generations/Brian's Brain read state as byte/255 (see their step
+// shaders), so "state 1" must seed as byte 1, not colour.WHITE (byte
+// 255, which decodes as state 255 and instantly wraps to dead).
+func randomise_multistate(rt) {
+    randomise_with(rt, func () { return vec4(1, 0, 0, 255) })
+}
+
+func randomise_immigration(rt) {
+    randomise_with(rt, func () {
+        if (random.integer(0, 1) == 0) {
+            return vec4(1, 0, 0, 255)
+        }
+        return vec4(2, 0, 0, 255)
+    })
+}
+
+func randomise_quadlife(rt) {
+    randomise_with(rt, func () {
+        return vec4(random.integer(1, 4), 0, 0, 255)
+    })
+}
+
+// A strategy is a step shader (nil => the shared binary_step, using
+// birth_mask/survival_mask), an optional display shader (nil => tint
+// the raw white/black texture with tint_colour instead), and a
+// randomiser. Mirrors game_of_life.lox's own Strategy class.
+class Strategy {
+    __init__(name, step_shader, birth_mask, survival_mask, display_shader, tint_colour, randomise_fn) {
+        this.name = name
+        this.step_shader = step_shader
+        this.birth_mask = birth_mask
+        this.survival_mask = survival_mask
+        this.display_shader = display_shader
+        this.tint_colour = tint_colour
+        this.randomise = randomise_fn
+    }
+}
+
+var strategies = [
+    Strategy("Conway's Game of Life", nil, CONWAY_BIRTH, CONWAY_SURVIVAL, nil, ALIVE_COLOUR, randomise),
+    Strategy("Generations (B2/S345/C5)", generations_step, nil, nil, generations_display, nil, randomise_multistate),
+    Strategy("HighLife (B36/S23)", nil, HIGHLIFE_BIRTH, HIGHLIFE_SURVIVAL, nil, HIGHLIFE_COLOUR, randomise),
+    Strategy("Seeds (B2/S)", nil, SEEDS_BIRTH, SEEDS_SURVIVAL, nil, SEEDS_COLOUR, randomise),
+    Strategy("Brian's Brain", brain_step, nil, nil, brain_display, nil, randomise_multistate),
+    Strategy("Day & Night (B3678/S34678)", nil, DAYNIGHT_BIRTH, DAYNIGHT_SURVIVAL, nil, DAY_NIGHT_COLOUR, randomise),
+    Strategy("Replicator (B1357/S1357)", nil, REPLICATOR_BIRTH, REPLICATOR_SURVIVAL, nil, REPLICATOR_COLOUR, randomise),
+    Strategy("2x2 (B36/S125)", nil, TWOBYTWO_BIRTH, TWOBYTWO_SURVIVAL, nil, TWOBYTWO_COLOUR, randomise),
+    Strategy("Immigration Game", immigration_step, nil, nil, immigration_display, nil, randomise_immigration),
+    Strategy("QuadLife", quadlife_step, nil, nil, quadlife_display, nil, randomise_quadlife)
+]
+
+var strategy_index = 0
+var strategy = strategies[0]
+var generation = 0
+var auto_switch = true
+
+func activate_strategy(index) {
+    strategy_index = index
+    strategy = strategies[strategy_index]
+    if (strategy.step_shader == nil) {
+        binary_step.set_value_float(birth_loc, strategy.birth_mask)
+        binary_step.set_value_float(survival_loc, strategy.survival_mask)
+    }
+    strategy.randomise(current)
+    generation = 0
+}
+
+var current = grid_a
+var next_tex = grid_b
+activate_strategy(0)
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+    if (win.key_pressed(win.KEY_A)) {
+        auto_switch = !auto_switch
+    }
+    if (win.key_pressed(win.KEY_SPACE)) {
+        activate_strategy((strategy_index + 1) % len(strategies))
+    }
+
+    var step_shader = strategy.step_shader
+    if (step_shader == nil) {
+        step_shader = binary_step
+    }
+
+    // Simulate one generation on the GPU. Negative source height:
+    // draw_texture_pro doesn't auto-flip a render_texture's bottom-up
+    // storage -- without it this mirrors the grid every generation.
+    win.begin_texture_mode(next_tex)
+    win.begin_shader_mode(step_shader)
+    win.draw_texture_pro(current, 0, 0, cols, -rows, 0, 0, cols, rows, 0, 0, 0, colour.WHITE)
+    win.end_shader_mode()
+    win.end_texture_mode()
+
+    var tmp = current
+    current = next_tex
+    next_tex = tmp
+
+    generation = generation + 1
+    if (auto_switch and generation >= RESET_TICKS) {
+        activate_strategy((strategy_index + 1) % len(strategies))
+    }
+
+    // Present: scale up to the screen. Binary rules tint the raw
+    // white/black texture directly (same negative-height fix as above);
+    // multi-state rules run their own palette shader instead.
+    win.begin()
+    win.clear(BG_COLOUR)
+    if (strategy.display_shader != nil) {
+        win.begin_shader_mode(strategy.display_shader)
+        win.draw_texture_pro(current, 0, 0, cols, -rows, 0, 0, screen_w, screen_h, 0, 0, 0, colour.WHITE)
+        win.end_shader_mode()
+    } else {
+        win.draw_texture_pro(current, 0, 0, cols, -rows, 0, 0, screen_w, screen_h, 0, 0, 0, strategy.tint_colour)
+    }
+    win.text(format("%s -- Generation %d / %d", strategy.name, generation, RESET_TICKS), 10, 10, 20, colour.WHITE)
+    win.text(format("%d x %d cells, %dpx", cols, rows, CELL_SIZE), 10, 34, 16, vec4(180, 180, 180, 255))
+    win.text("SPACE: next strategy", 10, 54, 16, vec4(180, 180, 180, 255))
+    if (auto_switch) {
+        win.text("A: auto-switch ON", 10, 74, 16, vec4(180, 180, 180, 255))
+    } else {
+        win.text("A: auto-switch OFF", 10, 74, 16, vec4(255, 200, 60, 255))
+    }
+    win.end()
+}
+win.close()
