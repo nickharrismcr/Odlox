@@ -1,0 +1,313 @@
+from gfx import *
+// Multi-zone (Larger-than-Life-style) cellular automaton -- generalises
+// Conway's single 3x3 neighbour count to two independently-thresholded
+// radii: a small INNER disc (an overcrowding guard) and a wider OUTER
+// annulus (the actual birth/survival signal), each summed by one shared
+// nested loop per fragment and compared as a *ratio* (population /
+// sample count), not a raw count -- ratios stay meaningful however
+// large the radius gets, unlike copying Conway's exact "3 out of 8"
+// window up to a much bigger sample count.
+//
+// This is the same family of algorithm as WebGL-Automata's glsl/0.frag
+// (github.com/SyntheticSearchSpace/WebGL-Automata), which samples ~13
+// hand-listed sparse ring point-sets (a WebGL1-era optimisation to
+// avoid runtime loops) and thresholds 4 raw sums against magic pixel
+// counts. Desktop GLSL 330 has no such restriction, so multi_zone_src
+// below uses one real nested loop with a runtime distance test instead
+// -- far less code, and the ratio/tunable-uniform approach below makes
+// the radii and thresholds adjustable without touching the shader.
+//
+// ESC quits, SPACE reseeds. INNER_R/OUTER_R/BIRTH_*/SURVIVE_*/OVERCROWD
+// below are the whole rule -- retune and rerun to explore other
+// behaviour (see this file's own comment above them for what each does).
+
+import random
+import colour
+import math
+
+const CELL_SIZE = 1
+const BG_COLOUR = colour.BLACK
+const ALIVE_COLOUR = vec4(90, 200, 255, 255)
+
+// Shape counts scale with resolution rather than being fixed: a fixed
+// count (as game_of_life.lox uses) is fine at the resolution it was
+// tuned against, but starves at a much bigger cols x rows, leaving most
+// of a high-res grid unseeded and unable to sustain any activity.
+// Lines/box outlines are thin, effectively 1D features -- each one's
+// own covered area grows linearly with resolution (a longer line at a
+// higher cols), so their *count* must also scale linearly with linear
+// resolution (sqrt(cols*rows)) to keep total covered area a constant
+// fraction of the grid. Blocks are filled rectangles -- each one's own
+// area already grows quadratically with resolution (both width and
+// height scale up), so their count must stay constant, not scale at
+// all; scaling it the same way as lines/boxes over-saturates the grid
+// at high resolution (verified: it saturated the whole screen at
+// CELL_SIZE=1 on a 960x540 grid before this was fixed). REF_* is the
+// density verified (by a dedicated tuning pass) to reliably sustain
+// the automaton; MAX_* bounds worst-case seeding time regardless.
+const REF_CELLS = 3600.0
+const REF_L = 60.0  // sqrt(REF_CELLS) -- the linear scale REF_LINES/REF_BOXES were tuned at
+const REF_LINES = 40.0
+const REF_BOXES = 15.0
+const REF_BLOCKS = 10.0
+const MAX_LINES = 400
+const MAX_BOXES = 500
+const MAX_BLOCKS = 100
+
+// The rule. INNER_R/OUTER_R are sample radii in cells (OUTER_R must not
+// exceed MAX_R in multi_zone_src below). BIRTH_LO/HI and SURVIVE_LO/HI
+// are outer-annulus fill-ratio bands (0..1) -- a dead cell whose outer
+// ratio falls in the birth band is born; a live cell whose outer ratio
+// falls in the survive band stays alive. OVERCROWD is an inner-disc
+// fill-ratio ceiling -- a live cell above it dies regardless of the
+// outer ratio, the guard that stops solid blobs living forever.
+const INNER_R = 4.0
+const OUTER_R = 10.0
+const BIRTH_LO = 0.28
+const BIRTH_HI = 0.38
+const SURVIVE_LO = 0.18
+const SURVIVE_HI = 0.55
+const OVERCROWD = 0.63
+
+var win = window(1, 1)
+win.init()
+win.toggle_fullscreen()
+win.set_target_fps(0)
+
+var screen_w = int(win.get_screen_width())
+var screen_h = int(win.get_screen_height())
+var cols = screen_w / CELL_SIZE
+var rows = screen_h / CELL_SIZE
+
+var grid_scale = math.sqrt(float(cols * rows)) / REF_L
+var NUM_LINES = int(math.min(REF_LINES * grid_scale, MAX_LINES))
+var NUM_BOXES = int(math.min(REF_BOXES * grid_scale, MAX_BOXES))
+var NUM_BLOCKS = int(math.min(REF_BLOCKS, MAX_BLOCKS))
+
+// Ping-ponged simulation textures, same convention as game_of_life.lox:
+// one pixel per cell, POINT filtering + REPEAT wrap for exact sampling
+// and toroidal wraparound.
+var grid_a = render_texture(cols, rows)
+var grid_b = render_texture(cols, rows)
+grid_a.get_texture().set_filter_mode(win.FILTER_POINT)
+grid_a.get_texture().set_wrap_mode(win.WRAP_REPEAT)
+grid_b.get_texture().set_filter_mode(win.FILTER_POINT)
+grid_b.get_texture().set_wrap_mode(win.WRAP_REPEAT)
+
+// Standard fullscreen-quad vertex shader, same as every other shader
+// example in this codebase.
+var vertex_shader_src = "
+#version 330
+
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main()
+{
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+// One nested loop over a fixed MAX_R-sized window computes both zones
+// in a single pass (each sample tested once, bucketed into inner or
+// outer by distance) rather than looping once per zone. The loop bound
+// itself is a compile-time constant (MAX_R); outer_r/inner_r are still
+// freely tunable at runtime via the `if (d > outer_r) continue` cutoff.
+var multi_zone_src = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;
+uniform vec2 resolution;
+uniform float inner_r;
+uniform float outer_r;
+uniform float birth_lo;
+uniform float birth_hi;
+uniform float survive_lo;
+uniform float survive_hi;
+uniform float overcrowd;
+
+const int MAX_R = 14;
+
+void main() {
+    vec2 texel = 1.0 / resolution;
+    float cur = texture(texture0, fragTexCoord).r;
+
+    float inner_sum = 0.0;
+    float inner_count = 0.0;
+    float outer_sum = 0.0;
+    float outer_count = 0.0;
+
+    for (int dx = -MAX_R; dx <= MAX_R; dx++) {
+        for (int dy = -MAX_R; dy <= MAX_R; dy++) {
+            if (dx == 0 && dy == 0) { continue; }
+            float d = length(vec2(float(dx), float(dy)));
+            if (d > outer_r) { continue; }
+            float v = texture(texture0, fragTexCoord + vec2(float(dx), float(dy)) * texel).r;
+            if (d <= inner_r) {
+                inner_sum += v;
+                inner_count += 1.0;
+            } else {
+                outer_sum += v;
+                outer_count += 1.0;
+            }
+        }
+    }
+
+    float inner_ratio = inner_sum / max(inner_count, 1.0);
+    float outer_ratio = outer_sum / max(outer_count, 1.0);
+
+    float next_state = 0.0;
+    if (cur > 0.5) {
+        if (outer_ratio >= survive_lo && outer_ratio <= survive_hi && inner_ratio <= overcrowd) {
+            next_state = 1.0;
+        }
+    } else {
+        if (outer_ratio >= birth_lo && outer_ratio <= birth_hi) {
+            next_state = 1.0;
+        }
+    }
+    finalColor = vec4(next_state, next_state, next_state, 1.0);
+}
+"
+
+var multi_zone = shader()
+multi_zone.load_from_memory(vertex_shader_src, multi_zone_src)
+if (!multi_zone.is_valid()) {
+    print("Failed to load multi-zone step shader")
+}
+multi_zone.set_value_vec2(multi_zone.get_location("resolution"), vec2(cols, rows))
+multi_zone.set_value_float(multi_zone.get_location("inner_r"), INNER_R)
+multi_zone.set_value_float(multi_zone.get_location("outer_r"), OUTER_R)
+multi_zone.set_value_float(multi_zone.get_location("birth_lo"), BIRTH_LO)
+multi_zone.set_value_float(multi_zone.get_location("birth_hi"), BIRTH_HI)
+multi_zone.set_value_float(multi_zone.get_location("survive_lo"), SURVIVE_LO)
+multi_zone.set_value_float(multi_zone.get_location("survive_hi"), SURVIVE_HI)
+multi_zone.set_value_float(multi_zone.get_location("overcrowd"), OVERCROWD)
+
+// --- Seeding (CPU-side, one-time) -- same shape-scattering approach as
+// game_of_life.lox, but built into a float_array and bulk-uploaded via
+// draw_array_fast() in one shot rather than drawn pixel by pixel: at
+// CELL_SIZE=1 on a large screen NUM_LINES/BOXES/BLOCKS above can reach
+// into the thousands, and rt.pixel() (its own GL context switch per
+// call) at that count would make startup take minutes. seed_arr is
+// allocated once and reused every reseed rather than rebuilt fresh.
+
+var seed_arr = float_array(cols, rows)
+const WHITE_PACKED = encode_rgba(255, 255, 255)
+
+func set_wrapped_val(arr, x, y) {
+    var wx = ((x % cols) + cols) % cols
+    var wy = ((y % rows) + rows) % rows
+    arr.set(wx, wy, WHITE_PACKED)
+}
+
+func draw_random_line(arr) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var length = random.integer(cols / 8, cols / 2)
+    var kind = random.integer(0, 2)
+    var dx = 0
+    var dy = 0
+    if (kind == 0) {
+        dx = 1
+    } else if (kind == 1) {
+        dy = 1
+    } else {
+        dx = 1
+        dy = random.integer(0, 1) * 2 - 1
+    }
+    for (var i = 0; i < length; i = i + 1) {
+        set_wrapped_val(arr, x0 + dx * i, y0 + dy * i)
+    }
+}
+
+func draw_random_box(arr) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 12, cols / 4)
+    var h = random.integer(rows / 12, rows / 4)
+    for (var i = 0; i < w; i = i + 1) {
+        set_wrapped_val(arr, x0 + i, y0)
+        set_wrapped_val(arr, x0 + i, y0 + h - 1)
+    }
+    for (var j = 0; j < h; j = j + 1) {
+        set_wrapped_val(arr, x0, y0 + j)
+        set_wrapped_val(arr, x0 + w - 1, y0 + j)
+    }
+}
+
+func draw_random_block(arr) {
+    var x0 = random.integer(0, cols - 1)
+    var y0 = random.integer(0, rows - 1)
+    var w = random.integer(cols / 20, cols / 6)
+    var h = random.integer(rows / 20, rows / 6)
+    for (var j = 0; j < h; j = j + 1) {
+        for (var i = 0; i < w; i = i + 1) {
+            set_wrapped_val(arr, x0 + i, y0 + j)
+        }
+    }
+}
+
+func randomise(rt) {
+    seed_arr.clear(0.0)
+    for (var i = 0; i < NUM_LINES; i = i + 1) {
+        draw_random_line(seed_arr)
+    }
+    for (var i = 0; i < NUM_BOXES; i = i + 1) {
+        draw_random_box(seed_arr)
+    }
+    for (var i = 0; i < NUM_BLOCKS; i = i + 1) {
+        draw_random_block(seed_arr)
+    }
+    rt.draw_array_fast(seed_arr)
+}
+
+randomise(grid_a)
+
+var current = grid_a
+var next_tex = grid_b
+var generation = 0
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+    if (win.key_pressed(win.KEY_SPACE)) {
+        randomise(current)
+        generation = 0
+    }
+
+    // Negative source height: draw_texture_pro doesn't auto-flip a
+    // render_texture's bottom-up storage -- without it this mirrors the
+    // grid every generation (see game_of_life.lox's own note on this).
+    win.begin_texture_mode(next_tex)
+    win.begin_shader_mode(multi_zone)
+    win.draw_texture_pro(current, 0, 0, cols, -rows, 0, 0, cols, rows, 0, 0, 0, colour.WHITE)
+    win.end_shader_mode()
+    win.end_texture_mode()
+
+    var tmp = current
+    current = next_tex
+    next_tex = tmp
+    generation = generation + 1
+
+    win.begin()
+    win.clear(BG_COLOUR)
+    win.draw_texture_pro(current, 0, 0, cols, -rows, 0, 0, screen_w, screen_h, 0, 0, 0, ALIVE_COLOUR)
+    win.text(format("Multi-zone CA -- Generation %d", generation), 10, 10, 20, colour.WHITE)
+    win.text(format("%d x %d cells, %dpx, inner_r=%g outer_r=%g", cols, rows, CELL_SIZE, INNER_R, OUTER_R), 10, 34, 16, vec4(180, 180, 180, 255))
+    win.text("SPACE: reseed", 10, 54, 16, vec4(180, 180, 180, 255))
+    win.end()
+}
+win.close()
