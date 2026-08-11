@@ -1,25 +1,16 @@
 from gfx import *
-// Multi-zone (Larger-than-Life-style) cellular automaton -- generalises
-// Conway's single 3x3 neighbour count to two independently-thresholded
-// radii: a small INNER disc (an overcrowding guard) and a wider OUTER
-// annulus (the actual birth/survival signal), each summed by one shared
-// nested loop per fragment and compared as a *ratio* (population /
-// sample count), not a raw count -- ratios stay meaningful however
-// large the radius gets, unlike copying Conway's exact "3 out of 8"
-// window up to a much bigger sample count.
-//
-// This is the same family of algorithm as WebGL-Automata's glsl/0.frag
-// (github.com/SyntheticSearchSpace/WebGL-Automata), which samples ~13
-// hand-listed sparse ring point-sets (a WebGL1-era optimisation to
-// avoid runtime loops) and thresholds 4 raw sums against magic pixel
-// counts. Desktop GLSL 330 has no such restriction, so multi_zone_src
-// below uses one real nested loop with a runtime distance test instead
-// -- far less code, and the ratio/tunable-uniform approach below makes
-// the radii and thresholds adjustable without touching the shader.
+// Multi-zone (Larger-than-Life-style) cellular automaton: generalises
+// Conway's 3x3 neighbour count to two independently-thresholded radii --
+// a small INNER disc (overcrowding guard) and a wider OUTER annulus (the
+// birth/survival signal) -- compared as fill *ratios*, not raw counts, so
+// they stay meaningful at any radius. Same family as WebGL-Automata's
+// glsl/0.frag (github.com/SyntheticSearchSpace/WebGL-Automata), but uses
+// one real nested loop with a runtime distance test instead of its
+// WebGL1-era sparse ring point-sets.
 //
 // ESC quits, SPACE reseeds. INNER_R/OUTER_R/BIRTH_*/SURVIVE_*/OVERCROWD
-// below are the whole rule -- edit the on-screen fields (click, type,
-// ENTER to apply) to retune it live, no rerun needed.
+// are the whole rule -- edit the on-screen fields (click, type, ENTER) to
+// retune it live.
 
 import random
 import colour
@@ -30,22 +21,13 @@ const CELL_SIZE = 1
 const BG_COLOUR = colour.BLACK
 const ALIVE_COLOUR = vec4(90, 200, 255, 255)
 
-// Shape counts scale with resolution rather than being fixed: a fixed
-// count (as game_of_life.lox uses) is fine at the resolution it was
-// tuned against, but starves at a much bigger cols x rows, leaving most
-// of a high-res grid unseeded and unable to sustain any activity.
-// Lines/box outlines are thin, effectively 1D features -- each one's
-// own covered area grows linearly with resolution (a longer line at a
-// higher cols), so their *count* must also scale linearly with linear
-// resolution (sqrt(cols*rows)) to keep total covered area a constant
-// fraction of the grid. Blocks are filled rectangles -- each one's own
-// area already grows quadratically with resolution (both width and
-// height scale up), so their count must stay constant, not scale at
-// all; scaling it the same way as lines/boxes over-saturates the grid
-// at high resolution (verified: it saturated the whole screen at
-// CELL_SIZE=1 on a 960x540 grid before this was fixed). REF_* is the
-// density verified (by a dedicated tuning pass) to reliably sustain
-// the automaton; MAX_* bounds worst-case seeding time regardless.
+// Shape counts scale with resolution to keep seed density constant --
+// a fixed count (as game_of_life.lox uses) starves at a larger
+// cols x rows. Lines/boxes are ~1D, so covered area grows linearly with
+// resolution and their count scales with sqrt(cols*rows); blocks are
+// filled rects whose area already grows quadratically, so their count
+// stays constant. REF_* is the density tuned to sustain the automaton;
+// MAX_* bounds worst-case seeding time.
 const REF_CELLS = 3600.0
 const REF_L = 60.0  // sqrt(REF_CELLS) -- the linear scale REF_LINES/REF_BOXES were tuned at
 const REF_LINES = 40.0
@@ -57,11 +39,9 @@ const MAX_BLOCKS = 100
 
 // The rule. INNER_R/OUTER_R are sample radii in cells (OUTER_R must not
 // exceed MAX_R in multi_zone_src below). BIRTH_LO/HI and SURVIVE_LO/HI
-// are outer-annulus fill-ratio bands (0..1) -- a dead cell whose outer
-// ratio falls in the birth band is born; a live cell whose outer ratio
-// falls in the survive band stays alive. OVERCROWD is an inner-disc
-// fill-ratio ceiling -- a live cell above it dies regardless of the
-// outer ratio, the guard that stops solid blobs living forever.
+// are outer-ratio bands (0..1): birth for a dead cell, survive for a
+// live one. OVERCROWD is an inner-ratio ceiling -- a live cell above it
+// dies regardless of the outer ratio.
 // var, not const -- the on-screen fields built below reassign these live.
 var INNER_R = 4.0
 var OUTER_R = 10.0
@@ -119,11 +99,10 @@ void main()
 }
 "
 
-// One nested loop over a fixed MAX_R-sized window computes both zones
-// in a single pass (each sample tested once, bucketed into inner or
-// outer by distance) rather than looping once per zone. The loop bound
-// itself is a compile-time constant (MAX_R); outer_r/inner_r are still
-// freely tunable at runtime via the `if (d > outer_r) continue` cutoff.
+// One nested loop over a fixed MAX_R window computes both zones in a
+// single pass, bucketed by distance -- outer_r/inner_r stay runtime-
+// tunable via the `if (d > outer_r) continue` cutoff even though the
+// loop bound itself is the compile-time constant MAX_R.
 var multi_zone_src = "
 #version 330
 in vec2 fragTexCoord;
@@ -207,13 +186,10 @@ multi_zone.set_value_float(loc_survive_lo, SURVIVE_LO)
 multi_zone.set_value_float(loc_survive_hi, SURVIVE_HI)
 multi_zone.set_value_float(loc_overcrowd, OVERCROWD)
 
-// --- Interactive rule panel -- one Label + Text_Input per rule constant.
-// Click a field, type a new value, ENTER applies it: `apply` writes the
-// Lox-side var (so seeding/HUD text stay in sync) and re-uploads just
-// that uniform, without touching the shader program itself. A parse
-// failure (e.g. a bare "-" left mid-edit) is swallowed -- the field just
-// keeps showing whatever was typed so the user can fix it; the shader
-// keeps its last valid value.
+// Interactive rule panel: one Label + Text_Input per rule constant.
+// ENTER applies a field -- `apply` updates the Lox-side var (so
+// seeding/HUD stay in sync) and re-uploads just that uniform. A parse
+// failure is swallowed; the field keeps showing what was typed.
 var param_screen = gui.Screen()
 var param_fields = []
 
@@ -240,13 +216,10 @@ add_param_field(176, "survive_lo", SURVIVE_LO, loc_survive_lo, func (v) { SURVIV
 add_param_field(200, "survive_hi", SURVIVE_HI, loc_survive_hi, func (v) { SURVIVE_HI = v })
 add_param_field(224, "overcrowd", OVERCROWD, loc_overcrowd, func (v) { OVERCROWD = v })
 
-// --- Seeding (CPU-side, one-time) -- same shape-scattering approach as
-// game_of_life.lox, but built into a float_array and bulk-uploaded via
-// draw_array_fast() in one shot rather than drawn pixel by pixel: at
-// CELL_SIZE=1 on a large screen NUM_LINES/BOXES/BLOCKS above can reach
-// into the thousands, and rt.pixel() (its own GL context switch per
-// call) at that count would make startup take minutes. seed_arr is
-// allocated once and reused every reseed rather than rebuilt fresh.
+// Seeding (CPU-side, one-time): same shape-scattering as game_of_life.lox,
+// but bulk-uploaded via draw_array_fast() instead of drawn pixel by pixel
+// -- at thousands of shapes, per-pixel rt.pixel() calls would make
+// startup take minutes. seed_arr is allocated once and reused per reseed.
 
 var seed_arr = float_array(cols, rows)
 const WHITE_PACKED = encode_rgba(255, 255, 255)
