@@ -74,3 +74,7 @@ def test_gui_disabled():
 
 def test_gui_label():
     assert_all_true("gui_label.lox", 12)
+
+
+def test_gui_text_input():
+    assert_all_true("gui_text_input.lox", 13)

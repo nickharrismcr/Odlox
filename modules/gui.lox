@@ -381,6 +381,161 @@ class Segmented_Line < Widget {
     }
 }
 
+// Text_Input is a single-line editable text field. Screen.update() alone
+// doesn't drive it -- keyboard dispatch is deliberately host-driven (see
+// Screen's own doc comment on `focused`), so the host also calls
+// `text_input.handle_keys(win, screen.focused == text_input)` once per
+// frame, alongside `screen.update(win)`.
+//
+// Typing covers lowercase letters, digits, '.', '-', and space -- no
+// shift-state tracking, so uppercase isn't reachable. Pass numeric=true
+// to restrict input to digits/'.'/'-' (for parameter fields). Parsing is
+// left to the host: on_submit hands back the raw text, which the host
+// should run through float()/int() inside try/except, since e.g. a bare
+// "-" or "" is valid mid-edit text but not a valid number.
+class Text_Input < Widget {
+    __init__(x, y, w, h, text="", numeric=false, max_length=32) {
+        super.__init__(x, y, w, h)
+        this.text = text
+        this.numeric = numeric
+        this.max_length = max_length
+
+        // Internal, written by handle_keys() -- read by draw() to decide
+        // whether to show the caret. Don't set directly; drive it by
+        // passing `screen.focused == this` into handle_keys() instead.
+        this.focused = false
+
+        // Set on the focus-gained edge (focused went false -> true) and
+        // cleared on the first edit after -- makes that first keystroke
+        // replace the whole field instead of appending to it, like a
+        // conventional "select all on focus" numeric field. Without this,
+        // clicking a field pre-filled with "4" and typing "9.5" produces
+        // "49.5".
+        this._replace_on_edit = false
+
+        this.bg_colour = colour.BLACK
+        this.border_colour = colour.GRAY
+        this.focused_border_colour = colour.WHITE
+        this.text_colour = colour.WHITE
+        this.font_size = 16
+        this.padding = 4
+
+        this.on_change = nil // (widget, text) -> _, fired whenever text is edited
+        this.on_submit = nil // (widget, text) -> _, fired on ENTER, with the raw text
+
+        // Cached lazily on first handle_keys() call, once a real `win` is
+        // available to read KEY_* constants off -- see _char_keys().
+        this._char_keys_cache = nil
+    }
+
+    // _char_keys builds (and caches) the [win.KEY_X, "x"] pairs handle_keys
+    // scans every frame -- data-driven instead of a 30-way if/else chain.
+    // Restricted to digits/'.'/'-' when `numeric` is set.
+    _char_keys(win) {
+        if (this._char_keys_cache != nil) {
+            return this._char_keys_cache
+        }
+        var pairs = [
+            [win.KEY_ZERO, "0"], [win.KEY_ONE, "1"], [win.KEY_TWO, "2"],
+            [win.KEY_THREE, "3"], [win.KEY_FOUR, "4"], [win.KEY_FIVE, "5"],
+            [win.KEY_SIX, "6"], [win.KEY_SEVEN, "7"], [win.KEY_EIGHT, "8"],
+            [win.KEY_NINE, "9"], [win.KEY_PERIOD, "."], [win.KEY_MINUS, "-"]
+        ]
+        if (!this.numeric) {
+            var letters = "abcdefghijklmnopqrstuvwxyz"
+            var letter_keys = [
+                win.KEY_A, win.KEY_B, win.KEY_C, win.KEY_D, win.KEY_E, win.KEY_F,
+                win.KEY_G, win.KEY_H, win.KEY_I, win.KEY_J, win.KEY_K, win.KEY_L,
+                win.KEY_M, win.KEY_N, win.KEY_O, win.KEY_P, win.KEY_Q, win.KEY_R,
+                win.KEY_S, win.KEY_T, win.KEY_U, win.KEY_V, win.KEY_W, win.KEY_X,
+                win.KEY_Y, win.KEY_Z
+            ]
+            for (var i = 0; i < len(letter_keys); i = i + 1) {
+                pairs.append([letter_keys[i], letters[i:i + 1]])
+            }
+            pairs.append([win.KEY_SPACE, " "])
+        }
+        this._char_keys_cache = pairs
+        return pairs
+    }
+
+    // handle_keys reads a frame's worth of keyboard state from `win` and
+    // updates `text` -- call once per frame; `is_focused` should be
+    // `screen.focused == this`.
+    handle_keys(win, is_focused) {
+        if (is_focused and !this.focused) {
+            this._replace_on_edit = true
+        }
+        this.focused = is_focused
+        if (!is_focused or !this.enabled) {
+            return
+        }
+
+        var changed = false
+        if (win.key_pressed(win.KEY_BACKSPACE)) {
+            if (this._replace_on_edit) {
+                this.text = ""
+                changed = true
+            } else if (len(this.text) > 0) {
+                this.text = this.text[0:len(this.text) - 1]
+                changed = true
+            }
+            this._replace_on_edit = false
+        } else {
+            var pairs = this._char_keys(win)
+            for (var i = 0; i < len(pairs); i = i + 1) {
+                var key = pairs[i][0]
+                var ch = pairs[i][1]
+                if (win.key_pressed(key)) {
+                    if (this._replace_on_edit) {
+                        this.text = ch
+                        changed = true
+                    } else if (len(this.text) < this.max_length) {
+                        this.text = this.text & ch
+                        changed = true
+                    }
+                    this._replace_on_edit = false
+                    break
+                }
+            }
+        }
+
+        if (changed and this.on_change != nil) {
+            this.on_change(this, this.text)
+        }
+        if (win.key_pressed(win.KEY_ENTER) and this.on_submit != nil) {
+            this.on_submit(this, this.text)
+        }
+    }
+
+    draw(win) {
+        win.rectangle(this.x, this.y, this.w, this.h, this.bg_colour)
+
+        var border = this.border_colour
+        if (this.focused) {
+            border = this.focused_border_colour
+        }
+        var x2 = this.x + this.w
+        var y2 = this.y + this.h
+        win.line(this.x, this.y, x2, this.y, border)
+        win.line(x2, this.y, x2, y2, border)
+        win.line(x2, y2, this.x, y2, border)
+        win.line(this.x, y2, this.x, this.y, border)
+
+        var text_y = this.y + (this.h - this.font_size) / 2
+        win.text(this.text, this.x + this.padding, text_y, this.font_size, this.text_colour)
+
+        // Caret position is approximated from character count -- no
+        // measure_text() is exposed to Lox, so this assumes a roughly
+        // monospace default font. Close enough for typical field widths.
+        if (this.focused) {
+            var char_w = this.font_size * 0.5
+            var caret_x = this.x + this.padding + len(this.text) * char_w
+            win.line(caret_x, this.y + this.padding, caret_x, y2 - this.padding, this.text_colour)
+        }
+    }
+}
+
 // Rect is a plain axis-aligned rectangle value -- returned by
 // Marquee.end(), and generally useful for box-testing widgets/points
 // against a selection area.

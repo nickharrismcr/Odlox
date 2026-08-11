@@ -18,12 +18,13 @@ from gfx import *
 // the radii and thresholds adjustable without touching the shader.
 //
 // ESC quits, SPACE reseeds. INNER_R/OUTER_R/BIRTH_*/SURVIVE_*/OVERCROWD
-// below are the whole rule -- retune and rerun to explore other
-// behaviour (see this file's own comment above them for what each does).
+// below are the whole rule -- edit the on-screen fields (click, type,
+// ENTER to apply) to retune it live, no rerun needed.
 
 import random
 import colour
 import math
+import gui
 
 const CELL_SIZE = 1
 const BG_COLOUR = colour.BLACK
@@ -61,13 +62,14 @@ const MAX_BLOCKS = 100
 // falls in the survive band stays alive. OVERCROWD is an inner-disc
 // fill-ratio ceiling -- a live cell above it dies regardless of the
 // outer ratio, the guard that stops solid blobs living forever.
-const INNER_R = 4.0
-const OUTER_R = 10.0
-const BIRTH_LO = 0.28
-const BIRTH_HI = 0.38
-const SURVIVE_LO = 0.18
-const SURVIVE_HI = 0.55
-const OVERCROWD = 0.63
+// var, not const -- the on-screen fields built below reassign these live.
+var INNER_R = 4.0
+var OUTER_R = 10.0
+var BIRTH_LO = 0.28
+var BIRTH_HI = 0.38
+var SURVIVE_LO = 0.18
+var SURVIVE_HI = 0.55
+var OVERCROWD = 0.63
 
 var win = window(1, 1)
 win.init()
@@ -186,14 +188,57 @@ multi_zone.load_from_memory(vertex_shader_src, multi_zone_src)
 if (!multi_zone.is_valid()) {
     print("Failed to load multi-zone step shader")
 }
+// Locations are cached once (rather than re-queried by name) since the
+// param panel below re-uploads whichever uniform changed on every submit.
+var loc_inner_r = multi_zone.get_location("inner_r")
+var loc_outer_r = multi_zone.get_location("outer_r")
+var loc_birth_lo = multi_zone.get_location("birth_lo")
+var loc_birth_hi = multi_zone.get_location("birth_hi")
+var loc_survive_lo = multi_zone.get_location("survive_lo")
+var loc_survive_hi = multi_zone.get_location("survive_hi")
+var loc_overcrowd = multi_zone.get_location("overcrowd")
+
 multi_zone.set_value_vec2(multi_zone.get_location("resolution"), vec2(cols, rows))
-multi_zone.set_value_float(multi_zone.get_location("inner_r"), INNER_R)
-multi_zone.set_value_float(multi_zone.get_location("outer_r"), OUTER_R)
-multi_zone.set_value_float(multi_zone.get_location("birth_lo"), BIRTH_LO)
-multi_zone.set_value_float(multi_zone.get_location("birth_hi"), BIRTH_HI)
-multi_zone.set_value_float(multi_zone.get_location("survive_lo"), SURVIVE_LO)
-multi_zone.set_value_float(multi_zone.get_location("survive_hi"), SURVIVE_HI)
-multi_zone.set_value_float(multi_zone.get_location("overcrowd"), OVERCROWD)
+multi_zone.set_value_float(loc_inner_r, INNER_R)
+multi_zone.set_value_float(loc_outer_r, OUTER_R)
+multi_zone.set_value_float(loc_birth_lo, BIRTH_LO)
+multi_zone.set_value_float(loc_birth_hi, BIRTH_HI)
+multi_zone.set_value_float(loc_survive_lo, SURVIVE_LO)
+multi_zone.set_value_float(loc_survive_hi, SURVIVE_HI)
+multi_zone.set_value_float(loc_overcrowd, OVERCROWD)
+
+// --- Interactive rule panel -- one Label + Text_Input per rule constant.
+// Click a field, type a new value, ENTER applies it: `apply` writes the
+// Lox-side var (so seeding/HUD text stay in sync) and re-uploads just
+// that uniform, without touching the shader program itself. A parse
+// failure (e.g. a bare "-" left mid-edit) is swallowed -- the field just
+// keeps showing whatever was typed so the user can fix it; the shader
+// keeps its last valid value.
+var param_screen = gui.Screen()
+var param_fields = []
+
+func add_param_field(y, label_text, initial, loc, apply) {
+    param_screen.add(gui.Label(10, y, label_text, 16, colour.WHITE))
+    var field = param_screen.add(gui.Text_Input(150, y - 2, 70, 20, format("%g", initial), true))
+    field.on_submit = func (w, text) {
+        try {
+            var v = float(text)
+            apply(v)
+            multi_zone.set_value_float(loc, v)
+        } except Exception as e {
+        }
+    }
+    param_fields.append(field)
+    return field
+}
+
+add_param_field(80, "inner_r", INNER_R, loc_inner_r, func (v) { INNER_R = v })
+add_param_field(104, "outer_r", OUTER_R, loc_outer_r, func (v) { OUTER_R = v })
+add_param_field(128, "birth_lo", BIRTH_LO, loc_birth_lo, func (v) { BIRTH_LO = v })
+add_param_field(152, "birth_hi", BIRTH_HI, loc_birth_hi, func (v) { BIRTH_HI = v })
+add_param_field(176, "survive_lo", SURVIVE_LO, loc_survive_lo, func (v) { SURVIVE_LO = v })
+add_param_field(200, "survive_hi", SURVIVE_HI, loc_survive_hi, func (v) { SURVIVE_HI = v })
+add_param_field(224, "overcrowd", OVERCROWD, loc_overcrowd, func (v) { OVERCROWD = v })
 
 // --- Seeding (CPU-side, one-time) -- same shape-scattering approach as
 // game_of_life.lox, but built into a float_array and bulk-uploaded via
@@ -283,7 +328,17 @@ while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }
-    if (win.key_pressed(win.KEY_SPACE)) {
+
+    param_screen.update(win)
+    for (var i = 0; i < len(param_fields); i = i + 1) {
+        var field = param_fields[i]
+        field.handle_keys(win, param_screen.focused == field)
+    }
+
+    // Gated on no field being focused, so SPACE reaches a field's text
+    // (were it ever needed) instead of also reseeding behind the user's
+    // back while they're mid-edit.
+    if (win.key_pressed(win.KEY_SPACE) and param_screen.focused == nil) {
         randomise(current)
         generation = 0
     }
@@ -308,6 +363,7 @@ while (!win.should_close()) {
     win.text(format("Multi-zone CA -- Generation %d", generation), 10, 10, 20, colour.WHITE)
     win.text(format("%d x %d cells, %dpx, inner_r=%g outer_r=%g", cols, rows, CELL_SIZE, INNER_R, OUTER_R), 10, 34, 16, vec4(180, 180, 180, 255))
     win.text("SPACE: reseed", 10, 54, 16, vec4(180, 180, 180, 255))
+    param_screen.draw(win)
     win.end()
 }
 win.close()

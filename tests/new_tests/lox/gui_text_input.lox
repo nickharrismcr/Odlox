@@ -1,0 +1,96 @@
+// Text_Input: click-to-focus goes through the real Screen.update()
+// dispatch path (screen.focused == widget); typing/backspace/max_length/
+// ENTER are driven directly through handle_keys(), which is host-called
+// per Text_Input's own doc comment (Screen doesn't dispatch keyboard).
+import gui
+
+class Fake_Win {
+    __init__(keys, click_pos) {
+        this.MOUSE_LEFT = 0
+        this.MOUSE_RIGHT = 1
+        this.KEY_BACKSPACE = 0
+        this.KEY_ENTER = 1
+        this.KEY_ZERO = 2
+        this.KEY_ONE = 3
+        this.KEY_TWO = 4
+        this.KEY_THREE = 5
+        this.KEY_FOUR = 6
+        this.KEY_FIVE = 7
+        this.KEY_SIX = 8
+        this.KEY_SEVEN = 9
+        this.KEY_EIGHT = 10
+        this.KEY_NINE = 11
+        this.KEY_PERIOD = 12
+        this.KEY_MINUS = 13
+        this.keys = keys // one key constant (or nil) per handle_keys() frame, advanced by next()
+        this.frame = -1
+        this.click_pos = click_pos
+        this.clicked = false
+    }
+    next() { this.frame = this.frame + 1 }
+    key_pressed(key) { return key == this.keys[this.frame] }
+
+    // Just enough for a single Screen.update() press-to-focus call.
+    mouse_position() { return this.click_pos }
+    mouse_pressed(btn) {
+        if (btn == this.MOUSE_LEFT and !this.clicked) {
+            this.clicked = true
+            return true
+        }
+        return false
+    }
+    mouse_down(btn) { return false }
+    mouse_released(btn) { return false }
+}
+
+// Key constants below are the literal values Fake_Win.__init__ assigns to
+// KEY_ONE/KEY_ZERO/KEY_PERIOD/KEY_FIVE/KEY_NINE/KEY_BACKSPACE/KEY_ENTER --
+// can't reference win.KEY_X here since `win` doesn't exist until this
+// constructor call returns.
+var win = Fake_Win([nil, 3, 2, 12, 7, 11, 0, 1], vec2(5, 5))
+
+var screen = gui.Screen()
+var ti = screen.add(gui.Text_Input(0, 0, 100, 20, "", true, 4)) // numeric, max_length=4
+
+print ti.text == ""
+print ti.focused == false
+
+screen.update(win) // click inside ti -- focuses it via the real dispatch path
+print screen.focused == ti
+
+var changes = []
+var submits = []
+ti.on_change = func (w, text) { changes.append(text) }
+ti.on_submit = func (w, text) { submits.append(text) }
+
+win.next() // frame 0: nil key, but called unfocused -- must be a no-op regardless
+ti.handle_keys(win, false)
+print ti.text == ""
+print ti.focused == false
+
+win.next() // frame 1: "1"
+ti.handle_keys(win, screen.focused == ti)
+print ti.text == "1"
+print ti.focused == true
+
+win.next() // frame 2: "0"
+ti.handle_keys(win, true)
+win.next() // frame 3: "."
+ti.handle_keys(win, true)
+win.next() // frame 4: "5" -- text now "10.5", len 4 == max_length
+ti.handle_keys(win, true)
+print ti.text == "10.5"
+
+win.next() // frame 5: "9" -- rejected, max_length already reached
+ti.handle_keys(win, true)
+print ti.text == "10.5"
+print len(changes) == 4 // one per accepted character; the rejected "9" didn't fire on_change
+
+win.next() // frame 6: backspace
+ti.handle_keys(win, true)
+print ti.text == "10."
+
+win.next() // frame 7: enter
+ti.handle_keys(win, true)
+print len(submits) == 1
+print submits[0] == "10."
