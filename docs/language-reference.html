@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>odlox Language Reference</title>
+<title>Odlox Language Reference</title>
 <style>
 :root{
   --bg:#ffffff; --fg:#1c2128; --muted:#57606a; --border:#d0d7de;
@@ -138,7 +138,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
-      <img class="logo" src="../logo.png" alt="odlox">
+      <img class="logo" src="../logo.png" alt="Odlox">
       <h1>Odlox Reference</h1>
       <div class="tag">A Lox bytecode interpreter, written in Odin</div>
     </div>
@@ -146,7 +146,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
     <nav id="nav">
       <div class="group">Getting Started</div>
       <a href="#introduction">Introduction</a>
-      <a href="#running">Running odlox</a>
+      <a href="#running">Running Odlox</a>
       <div class="group">Language</div>
       <a href="#comments">Comments</a>
       <a href="#variables">Variables &amp; const</a>
@@ -215,20 +215,20 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
   <main class="content">
     <div class="topbar">
       <button class="btn menu-toggle" id="menuToggle" aria-label="Toggle navigation">☰ Menu</button>
-      <span class="crumbs" id="crumbs">odlox Language Reference</span>
+      <span class="crumbs" id="crumbs">Odlox Language Reference</span>
       <button class="btn" id="themeToggle" aria-label="Toggle theme">◐ Theme</button>
     </div>
 
 <!-- ==================== INTRODUCTION ==================== -->
 <h2 class="section" id="introduction">Introduction</h2>
-<p class="lead">odlox is a bytecode interpreter for the Lox language, from Bob Nystrom's <em>Crafting Interpreters</em>, written in Odin and extended with Python-inspired features and Raylib graphics bindings. Its design follows the bytecode-VM approach the book builds in C (<em>clox</em>) — a single-pass compiler emitting bytecode for a stack-based virtual machine with its own mark-and-sweep garbage collector.</p>
-<p>On top of vanilla Lox, odlox adds: lists, tuples, dictionaries and slicing; exceptions with <code>try/except</code>; module imports; <code>foreach</code>/<code>range</code> iteration; integer arithmetic and modulus; <code>break</code>/<code>continue</code>; <code>const</code>; implicit variable declaration; string interning; native vector types (<code>vec2</code>/<code>vec3</code>/<code>vec4</code>); a <code>float_array</code> type; a native <code>physics_world</code> simulation (3D internally, though only 2D drawing is implemented so far); a <code>box2d</code> module wrapping Odin's Box2D v3 bindings for 2D rigid-body physics; and Raylib bindings for 2D graphics.</p>
+<p class="lead">Odlox is a bytecode interpreter for the Lox language, from Bob Nystrom's <em>Crafting Interpreters</em>, written in Odin and extended with Python-inspired features and Raylib graphics bindings. Its design follows the bytecode-VM approach the book builds in C (<em>clox</em>) — a single-pass compiler emitting bytecode for a stack-based virtual machine with its own mark-and-sweep garbage collector.</p>
+<p>On top of vanilla Lox, Odlox adds: lists, tuples, dictionaries and slicing; exceptions with <code>try/except</code>; module imports; <code>foreach</code>/<code>range</code> iteration; integer arithmetic and modulus; <code>break</code>/<code>continue</code>; <code>const</code>; implicit variable declaration; string interning; native vector types (<code>vec2</code>/<code>vec3</code>/<code>vec4</code>); a <code>float_array</code> type; a native <code>physics_world</code> simulation (3D internally, though only 2D drawing is implemented so far); a <code>box2d</code> module wrapping Odin's Box2D v3 bindings for 2D rigid-body physics; and Raylib bindings for 2D graphics.</p>
 <p>This document is the complete language and library reference.</p>
-<div class="note"><strong>No semicolons required</strong>odlox does <em>not</em> require semicolon line terminators. A newline ends a statement, so <code>;</code> is optional (both styles are accepted). Most examples in this reference omit them. See <a href="#variables">Variables</a>.</div>
+<div class="note"><strong>No semicolons required</strong>Odlox does <em>not</em> require semicolon line terminators. A newline ends a statement, so <code>;</code> is optional (both styles are accepted). Most examples in this reference omit them. See <a href="#variables">Variables</a>.</div>
 <div class="note"><strong>Reading the signatures</strong>Method and function signatures are shown in monospace boxes. Arguments in <em>italics</em> describe the expected value type. Unless noted, <code>vec4</code> colours use 0–255 RGBA components.</div>
 
 <!-- ==================== RUNNING ==================== -->
-<h2 class="section" id="running">Running odlox</h2>
+<h2 class="section" id="running">Running Odlox</h2>
 <p>Build the interpreter and run a script:</p>
 <pre><code class="lox">// Build (debug: -vet/-strict-style lints, and the --debug/--instrument trace hooks compiled in)
 bin/build.sh
@@ -236,10 +236,10 @@ bin/build.sh
 bin/build.sh --release
 
 // Run a script
-bin/odlox.exe script.lox
+bin/Odlox.exe script.lox
 
 // Start the REPL
-bin/odlox.exe --repl
+bin/Odlox.exe --repl
 
 // Set LOX_PATH so module imports resolve
 . ./setenv.ps1     // PowerShell
@@ -269,7 +269,7 @@ bin/odlox.exe --repl
 <div class="note"><strong>Compiled-only module distribution</strong><code>--force-bc-cache</code> is the opposite trust direction from <code>--force-compile</code>: it trusts a <code>.lxc</code> unconditionally, with no source-freshness check at all, and will resolve a module purely from its <code>__loxcache__/&lt;name&gt;.lxc</code> even when the matching <code>.lox</code> was never shipped — for distributing a library as compiled bytecode only. If neither a usable cache nor a source file can be found, the import still fails cleanly with the ordinary "Module not found" error.</div>
 
 <h3>The REPL</h3>
-<p><code>bin/odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
+<p><code>bin/Odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
 <pre><code class="lox">&gt; var x = 10
 &gt; fun add(a) { return a + x }
 &gt; print add(5)
@@ -291,7 +291,7 @@ a = 1   // trailing comment</code></pre>
 
 <!-- ==================== VARIABLES ==================== -->
 <h2 class="section" id="variables">Variables &amp; const</h2>
-<p>odlox supports both explicit (<code>var</code>) and implicit variable declaration. Assigning to a new name creates it; no <code>var</code> is required.</p>
+<p>Odlox supports both explicit (<code>var</code>) and implicit variable declaration. Assigning to a new name creates it; no <code>var</code> is required.</p>
 <pre><code class="lox">var a = 1     // explicit declaration
 b = 2         // implicit — assignment creates the variable
 a = a + b     // reassignment</code></pre>
@@ -562,7 +562,7 @@ foreach (x in Range2(3)) { print x }   // 0, 1, 2</code></pre>
 
 <!-- ==================== EXCEPTIONS ==================== -->
 <h2 class="section" id="exceptions">Exceptions</h2>
-<p>odlox provides <code>try</code>/<code>except</code>/<code>finally</code> exception handling. A built-in <code>Exception</code> base class is available; subclass it for custom exceptions. Handlers bind the caught instance with <code>as</code>.</p>
+<p>Odlox provides <code>try</code>/<code>except</code>/<code>finally</code> exception handling. A built-in <code>Exception</code> base class is available; subclass it for custom exceptions. Handlers bind the caught instance with <code>as</code>.</p>
 <pre><code class="lox">class MyError < Exception {
     __init__(msg) {
         super.__init__(msg)
@@ -612,7 +612,7 @@ try {
 
 <!-- ==================== MODULES ==================== -->
 <h2 class="section" id="modules">Modules &amp; imports</h2>
-<p>Modules are imported by name and compiled from source, or loaded from a bytecode cache if a fresh one exists (see <a href="#running">Running odlox</a>) — the entry script itself always compiles from source.</p>
+<p>Modules are imported by name and compiled from source, or loaded from a bytecode cache if a fresh one exists (see <a href="#running">Running Odlox</a>) — the entry script itself always compiles from source.</p>
 <pre><code class="lox">import math
 import particle_sys as ps        // alias
 import random, colour as clr     // multiple, with alias</code></pre>
@@ -625,7 +625,7 @@ from gfx import window, batch     // native built-in module</code></pre>
 
 <!-- ==================== NUMBERS ==================== -->
 <h2 class="section" id="numbers">Numbers</h2>
-<p>odlox distinguishes integers from floats. Integer literals have no decimal point; arithmetic between two integers stays integer (including <code>/</code>), while any float operand promotes the result to float.</p>
+<p>Odlox distinguishes integers from floats. Integer literals have no decimal point; arithmetic between two integers stays integer (including <code>/</code>), while any float operand promotes the result to float.</p>
 <pre><code class="lox">a = 10
 b = 3
 print a / b     // 3   (integer division)
@@ -1127,7 +1127,7 @@ win.end_3d()</code></pre>
 <ul>
 <li><code>type</code> — <code>0</code> for directional (a fixed direction, <code>position - target</code>, applied uniformly everywhere — like a sun) or <code>1</code> for point (direction varies per fragment, based on its actual position).</li>
 <li><code>position</code>, <code>target</code> — <code>vec3</code>. For a directional light only their difference matters, not their absolute values.</li>
-<li><code>color</code> — <code>vec4</code>, 0–255 components (same convention as every other colour in odlox).</li>
+<li><code>color</code> — <code>vec4</code>, 0–255 components (same convention as every other colour in Odlox).</li>
 </ul>
 <p>Errors if called a 5th time — only 4 light slots exist.</p>
 <div class="sig"><span class="nm">instanced_ambient</span>(<em>color</em>) <span class="pill">→ nil</span></div>
@@ -1871,7 +1871,7 @@ print digits.sub("#", "1 2 3")            // "# # #"</code></pre>
 
 <!-- ==================== MODULE: PICKLE ==================== -->
 <h2 class="section" id="mod-pickle">pickle <span class="pill">module</span></h2>
-<p><code>import pickle</code> — serialises plain-data Lox values (<code>nil</code>, <code>bool</code>, <code>int</code>, <code>float</code>, <code>string</code>, <code>list</code>, <code>tuple</code>, <code>dict</code>, <code>vec2</code>/<code>vec3</code>/<code>vec4</code>) and class instances, arbitrarily nested, to a byte string and back — useful for passing values between separate <code>odlox</code> processes over a pipe/socket/file. An instance is encoded as its class <em>name</em> plus its fields only — never its methods/code — so <code>loads()</code> can reconstruct it only if a class of that name is already loaded in the decoding process (built-ins first, then the calling script's own module scope); otherwise it raises <a href="#exceptions"><code>PickleError</code></a>, same as for any other unresolvable case. Class identity is by name only, the same convention <code>except ClassName</code> already uses. Closures, classes themselves (not their instances), modules, files, and native/graphics objects cannot be pickled and raise <code>PickleError</code>, as does a cyclic structure (e.g. a list, or an instance field, pointing back at itself).</p>
+<p><code>import pickle</code> — serialises plain-data Lox values (<code>nil</code>, <code>bool</code>, <code>int</code>, <code>float</code>, <code>string</code>, <code>list</code>, <code>tuple</code>, <code>dict</code>, <code>vec2</code>/<code>vec3</code>/<code>vec4</code>) and class instances, arbitrarily nested, to a byte string and back — useful for passing values between separate <code>Odlox</code> processes over a pipe/socket/file. An instance is encoded as its class <em>name</em> plus its fields only — never its methods/code — so <code>loads()</code> can reconstruct it only if a class of that name is already loaded in the decoding process (built-ins first, then the calling script's own module scope); otherwise it raises <a href="#exceptions"><code>PickleError</code></a>, same as for any other unresolvable case. Class identity is by name only, the same convention <code>except ClassName</code> already uses. Closures, classes themselves (not their instances), modules, files, and native/graphics objects cannot be pickled and raise <code>PickleError</code>, as does a cyclic structure (e.g. a list, or an instance field, pointing back at itself).</p>
 <table>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
@@ -1903,11 +1903,11 @@ print p2.x   // 3</code></pre>
 
 <!-- ==================== MODULE: PROCESS ==================== -->
 <h2 class="section" id="mod-process">process <span class="pill">module</span></h2>
-<p><code>import process</code> — spawns other <code>odlox</code> processes and talks to them over a pipe carrying <a href="#mod-pickle">pickled</a> values, similar to Python's <code>multiprocessing</code>. There is no <code>fork()</code> and no way to serialise a closure, so each worker is a separate <code>.lox</code> script run as its own process, not an in-memory function.</p>
+<p><code>import process</code> — spawns other <code>Odlox</code> processes and talks to them over a pipe carrying <a href="#mod-pickle">pickled</a> values, similar to Python's <code>multiprocessing</code>. There is no <code>fork()</code> and no way to serialise a closure, so each worker is a separate <code>.lox</code> script run as its own process, not an in-memory function.</p>
 <table>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
-<tr><td><code>process.spawn(script_path, ...)</code></td><td>Launch another odlox process running <code>script_path</code>, connected by a pipe on its stdin/stdout. Extra string arguments become the child's own <code>sys.args()</code>; they must not start with <code>-</code> (no <code>--</code> escape hatch in argument parsing). Returns a <a href="#mod-process-obj">Process</a>.</td></tr>
+<tr><td><code>process.spawn(script_path, ...)</code></td><td>Launch another Odlox process running <code>script_path</code>, connected by a pipe on its stdin/stdout. Extra string arguments become the child's own <code>sys.args()</code>; they must not start with <code>-</code> (no <code>--</code> escape hatch in argument parsing). Returns a <a href="#mod-process-obj">Process</a>.</td></tr>
 <tr><td><code>process.start(script_path, ...)</code></td><td>Like <code>process.spawn()</code>, but with no pipe attached at all -- for a companion process that does its own I/O (e.g. a <a href="#mod-socket">socket</a> server) rather than talking back over a pipe. The child inherits this process's own stdin/stdout/stderr. The returned <a href="#mod-process-obj">Process</a> only supports <code>wait()</code>/<code>kill()</code>/<code>pid()</code> -- <code>send()</code>/<code>recv()</code>/<code>try_recv()</code> raise, since there's no pipe.</td></tr>
 <tr><td><code>process.parent()</code></td><td>Returns a <a href="#mod-process-obj">Process</a> wired to this process's own stdin/stdout -- the far end of the pipe held by whatever spawned it. Used inside a worker script to talk back to its spawner.</td></tr>
 <tr><td><code>process.wait_any(processes)</code></td><td>Blocks until any of the given Process objects has a message ready. Returns the tuple <code>(index, value)</code>, or <code>nil</code> once every process in the list has finished. This is the fan-in primitive for collecting results from several workers without polling each in turn. A process that finished cleanly (closed its pipe normally) is dropped from consideration rather than aborting the wait for the others; a genuine I/O error still raises <code>ProcessError</code> immediately.</td></tr>
@@ -1941,7 +1941,7 @@ p.send(x * 2)</code></pre>
 
 <!-- ==================== MODULE: SOCKET ==================== -->
 <h2 class="section" id="mod-socket">socket <span class="pill">module</span></h2>
-<p><code>import socket</code> — raw TCP sockets, for IPC with any process (not just another odlox instance), as a lower-level alternative to <a href="#mod-process"><code>process</code></a>'s pickled-value pipe: <code>send()</code>/<code>recv()</code> move plain bytes as strings, with no serialisation format imposed. TCP only -- there's no Unix-domain-socket support underneath, so local IPC here means a real TCP connection over loopback (<code>"127.0.0.1"</code>) rather than a filesystem-path socket. As with <code>process</code>, there's no threading model anywhere in odlox, so <code>accept()</code>/<code>recv()</code> block by default, exactly like <code>Process.recv()</code> does, and <code>try_accept()</code>/<code>try_recv()</code> are the non-blocking variants a polling loop uses instead.</p>
+<p><code>import socket</code> — raw TCP sockets, for IPC with any process (not just another Odlox instance), as a lower-level alternative to <a href="#mod-process"><code>process</code></a>'s pickled-value pipe: <code>send()</code>/<code>recv()</code> move plain bytes as strings, with no serialisation format imposed. TCP only -- there's no Unix-domain-socket support underneath, so local IPC here means a real TCP connection over loopback (<code>"127.0.0.1"</code>) rather than a filesystem-path socket. As with <code>process</code>, there's no threading model anywhere in Odlox, so <code>accept()</code>/<code>recv()</code> block by default, exactly like <code>Process.recv()</code> does, and <code>try_accept()</code>/<code>try_recv()</code> are the non-blocking variants a polling loop uses instead.</p>
 <table>
 <thead><tr><th>Function</th><th>Description</th></tr></thead>
 <tbody>
@@ -2069,7 +2069,7 @@ p.close()</code></pre>
 <h2 class="section" id="performance">Performance notes</h2>
 <p>The loxcraft benchmark suite (13 scripts covering arithmetic, object/class dispatch, collections, and recursion) measured against CPython, release builds, 3 runs averaged each:</p>
 <table>
-<thead><tr><th>benchmark</th><th>odlox</th><th>CPython</th><th>odlox / CPython</th></tr></thead>
+<thead><tr><th>benchmark</th><th>Odlox</th><th>CPython</th><th>Odlox / CPython</th></tr></thead>
 <tbody>
 <tr><td><code>binary_trees</code></td><td>23.59s</td><td>7.40s</td><td>3.19×</td></tr>
 <tr><td><code>collections</code></td><td>5.33s</td><td>2.95s</td><td>1.81×</td></tr>
@@ -2086,7 +2086,7 @@ p.close()</code></pre>
 <tr><td><code>zoo_batch</code></td><td>10.01s</td><td>10.02s</td><td>1.00×</td></tr>
 </tbody>
 </table>
-<p>A ratio below 1.00× means odlox is faster. Across the suite: 1.58× arithmetic mean, 1.41× geometric mean, 1.49× by total time. odlox is at or ahead of CPython on <code>loop</code>, <code>invocation</code>, and <code>zoo</code>/<code>zoo_batch</code>; furthest behind on <code>binary_trees</code>/<code>trees</code> (deep object-tree construction and traversal) and <code>collections</code> (dict-heavy code) — the object-model and hash-map-heavy end of the suite.</p>
+<p>A ratio below 1.00× means Odlox is faster. Across the suite: 1.58× arithmetic mean, 1.41× geometric mean, 1.49× by total time. Odlox is at or ahead of CPython on <code>loop</code>, <code>invocation</code>, and <code>zoo</code>/<code>zoo_batch</code>; furthest behind on <code>binary_trees</code>/<code>trees</code> (deep object-tree construction and traversal) and <code>collections</code> (dict-heavy code) — the object-model and hash-map-heavy end of the suite.</p>
 <p>Key implementation notes for writing fast Lox:</p>
 <ul>
 <li>Prefer <a href="#control-flow"><code>foreach (i in range(n))</code></a> over manual counter loops — <code>range</code> is a native iterator.</li>
@@ -2097,7 +2097,7 @@ p.close()</code></pre>
 <p>Interpreter-level optimisations include slice-indexed globals, string interning, a peephole pass with numeric superinstructions (<code>Add_Ii</code>/<code>Add_Ff</code>/<code>Incr_Const_I</code>/<code>Incr_Const_F</code>), a monomorphic inline cache on property/method access, inline call frames, and a hoisted dispatch-loop frame context.</p>
 
 <footer>
-<p>odlox Language Reference. For implementation details (package layout, value/object representation, GC design) see <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
+<p>Odlox Language Reference. For implementation details (package layout, value/object representation, GC design) see <a href="ARCHITECTURE.md">ARCHITECTURE.md</a>.</p>
 </footer>
   </main>
 </div>
@@ -2107,14 +2107,14 @@ p.close()</code></pre>
   // ---- Theme toggle ----
   var root = document.documentElement;
   var saved = null;
-  try { saved = localStorage.getItem("odlox-theme"); } catch(e){}
+  try { saved = localStorage.getItem("Odlox-theme"); } catch(e){}
   if (saved) root.setAttribute("data-theme", saved);
   document.getElementById("themeToggle").addEventListener("click", function(){
     var cur = root.getAttribute("data-theme");
     if (!cur) cur = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     var next = cur === "dark" ? "light" : "dark";
     root.setAttribute("data-theme", next);
-    try { localStorage.setItem("odlox-theme", next); } catch(e){}
+    try { localStorage.setItem("Odlox-theme", next); } catch(e){}
   });
 
   // ---- Mobile menu ----
@@ -2147,7 +2147,7 @@ p.close()</code></pre>
     for (var i=0;i<sections.length;i++){ if (sections[i].offsetTop <= pos) current = sections[i]; }
     links.forEach(function(a){ a.classList.remove("active"); });
     var link = current && byId["#"+current.id];
-    if (link){ link.classList.add("active"); crumbs.textContent = "odlox Reference › " + current.textContent.replace(/native object|module|native module/g,"").trim(); }
+    if (link){ link.classList.add("active"); crumbs.textContent = "Odlox Reference › " + current.textContent.replace(/native object|module|native module/g,"").trim(); }
   }
   window.addEventListener("scroll", spy, {passive:true});
   spy();
