@@ -1,4 +1,6 @@
-# odlox
+![image info](./logo.png)
+
+# Odlox
 
 **A bytecode interpreter for the Lox language, implemented in Odin**
 
