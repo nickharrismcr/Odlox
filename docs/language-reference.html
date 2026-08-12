@@ -236,10 +236,10 @@ bin/build.sh
 bin/build.sh --release
 
 // Run a script
-bin/Odlox.exe script.lox
+bin/odlox.exe script.lox
 
 // Start the REPL
-bin/Odlox.exe --repl
+bin/odlox.exe --repl
 
 // Set LOX_PATH so module imports resolve
 . ./setenv.ps1     // PowerShell
@@ -269,7 +269,7 @@ bin/Odlox.exe --repl
 <div class="note"><strong>Compiled-only module distribution</strong><code>--force-bc-cache</code> is the opposite trust direction from <code>--force-compile</code>: it trusts a <code>.lxc</code> unconditionally, with no source-freshness check at all, and will resolve a module purely from its <code>__loxcache__/&lt;name&gt;.lxc</code> even when the matching <code>.lox</code> was never shipped — for distributing a library as compiled bytecode only. If neither a usable cache nor a source file can be found, the import still fails cleanly with the ordinary "Module not found" error.</div>
 
 <h3>The REPL</h3>
-<p><code>bin/Odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
+<p><code>bin/odlox.exe --repl</code> starts an interactive session. State <strong>persists across lines</strong>: variables, functions, and classes defined on one line remain in scope for every later line.</p>
 <pre><code class="lox">&gt; var x = 10
 &gt; fun add(a) { return a + x }
 &gt; print add(5)
