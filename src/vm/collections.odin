@@ -87,6 +87,7 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 	if obj.type == .Obj && obj.obj_type == .Dict {
 		key := dict_key(idx)
 		core.dict_set(core.as_dict(obj), key, value)
+		write_barrier_value(vm, value)
 		push(vm, value)
 		return true
 	}
@@ -109,6 +110,7 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 		return false
 	}
 	l.items[i] = value
+	write_barrier_value(vm, value)
 	push(vm, value)
 	return true
 }
@@ -190,6 +192,13 @@ do_slice_assign :: proc(vm: ^VM) -> bool {
 	append(&tmp, ..l.items[end:])
 	delete(l.items)
 	l.items = tmp
+	// Only rhs's elements are genuinely new to l -- the rest of tmp is l's
+	// own already-accounted-for content, just relocated to a new backing
+	// array (marking is per-object, not per-slot, so that relocation
+	// alone can't have lost anything).
+	for v in rhs.items {
+		write_barrier_value(vm, v)
+	}
 	push(vm, value)
 	return true
 }

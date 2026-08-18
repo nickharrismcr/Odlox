@@ -129,11 +129,13 @@ do_foreach :: proc(vm: ^VM, slots: int, var_slot, iter_slot: u8, end_offset: int
 		// not the actual error handling.
 	}
 	vm.stack[slots + int(iter_slot)] = it
+	write_barrier_value(vm, it)
 	val := iterator_next(vm, it)
 	if val.type == .Nil {
 		return end_offset
 	}
 	vm.stack[slots + int(var_slot)] = val
+	write_barrier_value(vm, val)
 	return 0
 }
 
@@ -149,5 +151,6 @@ do_next :: proc(vm: ^VM, slots: int, var_slot, iter_slot: u8) -> bool {
 		return false
 	}
 	vm.stack[slots + int(var_slot)] = val
+	write_barrier_value(vm, val)
 	return true
 }

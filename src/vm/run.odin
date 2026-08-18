@@ -711,12 +711,14 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			v := pop(vm)
 			v.immutable = false
 			core.env_set_global(fl.fn.environment, int(slot), v)
+			write_barrier_value(vm, v)
 		case .Define_Global_Const:
 			slot := fl.code[ip]
 			ip += 1
 			v := pop(vm)
 			v.immutable = true
 			core.env_set_global(fl.fn.environment, int(slot), v)
+			write_barrier_value(vm, v)
 		case .Get_Global:
 			slot := fl.code[ip]
 			ip += 1
@@ -740,6 +742,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				v := peek(vm, 0)
 				v.immutable = false
 				core.env_set_global(fl.fn.environment, int(slot), v)
+				write_barrier_value(vm, v)
 			}
 
 		// --- locals / upvalues ---
@@ -750,7 +753,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Set_Local:
 			slot := fl.code[ip]
 			ip += 1
-			vm.stack[fl.f.slots + int(slot)] = peek(vm, 0)
+			v := peek(vm, 0)
+			vm.stack[fl.f.slots + int(slot)] = v
+			write_barrier_value(vm, v)
 		case .Get_Upvalue:
 			slot := fl.code[ip]
 			ip += 1
@@ -758,7 +763,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Set_Upvalue:
 			slot := fl.code[ip]
 			ip += 1
-			fl.f.closure.upvalues[slot].location^ = peek(vm, 0)
+			v := peek(vm, 0)
+			fl.f.closure.upvalues[slot].location^ = v
+			write_barrier_value(vm, v)
 		case .Close_Upvalue:
 			close_upvalues(vm, vm.stack_top - 1)
 			pop(vm)
@@ -952,6 +959,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			if inst.class == fl.f.closure.owner_class {
 				value := peek(vm, 0)
 				inst.slots[slot] = value
+				write_barrier_value(vm, value)
 				pop(vm)
 				pop(vm)
 				push(vm, value)

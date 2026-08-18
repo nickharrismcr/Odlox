@@ -102,6 +102,7 @@ bind_imported_name :: proc(vm: ^VM, name: string, val: core.Value) {
 	}
 	core.env_grow_globals(vm.environment, slot + 1)
 	core.env_set_global(vm.environment, slot, val)
+	write_barrier_value(vm, val)
 }
 
 // bind_imported_name_soft is `from mod import *`'s own binding step --
@@ -122,12 +123,14 @@ bind_imported_name :: proc(vm: ^VM, name: string, val: core.Value) {
 @(private = "file")
 bind_imported_name_soft :: proc(vm: ^VM, name: string, val: core.Value) {
 	core.env_set_var(vm.environment, core.intern_string(name), val)
+	write_barrier_value(vm, val)
 	slot := core.env_slot_for_name(vm.environment, name)
 	if slot < 0 {
 		return
 	}
 	core.env_grow_globals(vm.environment, slot + 1)
 	core.env_set_global(vm.environment, slot, val)
+	write_barrier_value(vm, val)
 }
 
 @(private = "file")
@@ -197,6 +200,23 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	// everything the module allocated, avoiding this instead of
 	// special-casing module-level containers.
 	if sub.objects != nil {
+		// sub's own GC state (gray_stack, gc_phase) is discarded along with
+		// sub itself. Under the incremental collector (gc.odin), sub's last
+		// cycle can still have been mid-Marking when its top-level code
+		// finished running -- some of its objects could be marked=true
+		// without ever having been blackened (still sitting in sub's own,
+		// now-abandoned gray_stack). Left alone, the parent's mark_object
+		// would see that stale true and skip re-tracing them (the
+		// "already marked, don't re-queue" fast path this file's own
+		// comment above already flags), so their children would never get
+		// marked by the parent either -- a use-after-free. Resetting every
+		// spliced object to unmarked makes the parent's own reachability
+		// analysis (whichever cycle discovers mod, via the gc_track call
+		// below) the sole authority on what's reachable, exactly as if
+		// these objects had just been allocated fresh.
+		for o := sub.objects; o != nil; o = o.next {
+			o.marked = false
+		}
 		tail := sub.objects
 		for tail.next != nil {
 			tail = tail.next

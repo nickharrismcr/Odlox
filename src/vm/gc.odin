@@ -3,11 +3,17 @@ package vm
 import "../core"
 
 // Mark-and-sweep collector -- design documented in
-// docs/ARCHITECTURE.md's Garbage collector section. Two refinements
-// beyond that document's blueprint, explained where they matter below:
+// docs/ARCHITECTURE.md's Garbage collector section. Refinements beyond
+// that document's blueprint, explained where they matter below:
 //
-//  1. No mid-opcode collection trigger, so no "pre-mark on link" trick
-//     is needed at all -- see maybe_collect_garbage.
+//  1. Marking and sweeping are incremental: maybe_collect_garbage does at
+//     most GC_WORK_UNIT objects' worth of work per call rather than
+//     draining a whole cycle atomically, so no single opcode-boundary
+//     pause is proportional to heap size -- see the GC_Phase state
+//     machine below (start_gc_cycle/step_mark/step_sweep). Root scanning
+//     (mark_roots) is the one part that stays atomic: the root set is
+//     bounded by live stack/frame/global/module count, not heap size, so
+//     it doesn't need to be split up.
 //  2. Of the four kinds ARCHITECTURE.md's "no permanent-object
 //     exemption" simplification named (classes, modules, functions,
 //     strings), only two -- Class_Object and Module_Object -- actually
@@ -20,17 +26,65 @@ import "../core"
 //     nothing reachable only through a Function's constant pool or a
 //     String's own bytes (impossible -- strings have no Object
 //     children) goes missing.
+//
+// Write barrier: with marking spread across many opcodes and the mutator
+// actually running in between, an already-blackened object (fully
+// traced, never revisited this cycle) can have a field mutated to point
+// at a still-white object -- invisible to the current cycle, so that
+// object would be incorrectly swept while still reachable. The same
+// hazard applies to the root slots mark_roots only scans once, at cycle
+// start (globals, locals, open upvalues): a later write to one of those
+// slots is just as invisible to the rest of the cycle as a heap-field
+// mutation would be. write_barrier/write_barrier_value (below) must be
+// called immediately after every such write; see properties.odin,
+// collections.odin, upvalue.odin, run.odin, module.odin, builtins.odin,
+// and foreach.odin for the actual call sites (cross-checked against
+// blacken_object's own child enumeration and against mark_roots' own
+// root enumeration).
 
 INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox's starting nextGC
 GC_HEAP_GROW_FACTOR :: 2
 
+// GC_WORK_UNIT bounds how many gray-stack entries step_mark drains, or
+// how many objects step_sweep walks, per maybe_collect_garbage call -- a
+// fixed per-call budget. Not attempting a Go-style adaptive pacer in
+// this pass; a fixed constant is the right first cut and can be tuned
+// from real --trace-gc measurements afterward.
+GC_WORK_UNIT :: 64
+
+GC_Phase :: enum {
+	Idle,
+	Marking,
+	Sweeping,
+}
+
 // gc_track registers obj as a newly-allocated collectible object on
 // this VM's own intrusive list (mirroring clox's vm.objects). Does NOT
 // check the allocation threshold itself -- see maybe_collect_garbage.
+//
+// "Allocate gray": whenever a cycle is active, a freshly tracked object
+// is marked *and* queued for tracing (via mark_object), not just marked
+// black outright. A brand-new object's own children are almost always
+// already-marked-or-fresh values by construction (they came from the
+// stack/globals/fields this same cycle already knows about, so tracing
+// them again is a cheap no-op) -- but one real case needs it to be more
+// than a no-op: module.odin's load_module splices a whole separate
+// sub-VM's already-existing object subtree (arbitrary prior marked
+// bits, from that sub-VM's own unrelated GC history) into this VM's
+// object list via a single gc_track call on the Module_Object wrapping
+// it. Marking that object black without queuing it would leave
+// everything reachable only through it untraced for the rest of this
+// cycle -- a use-after-free the moment sweep ran. Queuing it (what this
+// proc does) instead lets the ordinary blacken_object(Module) pass
+// discover and mark that whole subtree correctly, whenever it's
+// eventually dequeued.
 gc_track :: proc(vm: ^VM, obj: ^core.Obj) {
 	obj.next = vm.objects
 	vm.objects = obj
 	vm.bytes_allocated += object_size(obj)
+	if vm.gc_phase != .Idle {
+		mark_object(vm, obj)
+	}
 }
 
 // gc_adopt recursively gc_tracks every collectible object reachable from
@@ -92,36 +146,148 @@ make_tracked_string_value :: proc(vm: ^VM, s: string, immutable := false) -> cor
 	return val
 }
 
-// maybe_collect_garbage runs a full cycle if the allocation threshold
-// has been crossed. Called once per dispatch-loop iteration, *between*
-// opcodes (see run.odin) -- deliberately never from inside a single
-// opcode's own handler. Checking only at instruction boundaries means
-// the value stack is *always* in a fully consistent, source-level-valid
-// state -- exactly what root scanning is allowed to assume -- whenever
-// a collection can actually run. An opcode handler that pops several
-// already-built values off the stack (transiently unreachable from
-// anywhere) before combining them into a new object (e.g.
-// Op_Create_List) never has a collection interleaved into that window,
-// so no "pre-mark a just-linked object before anything else can reach
-// it" trick is needed to protect it.
+// maybe_collect_garbage advances the collector by one bounded step,
+// starting a new cycle first if the allocation threshold has been
+// crossed and none is already running. Called once per dispatch-loop
+// iteration, *between* opcodes (see run.odin) -- deliberately never
+// from inside a single opcode's own handler. Checking only at
+// instruction boundaries means the value stack is *always* in a fully
+// consistent, source-level-valid state -- exactly what root scanning is
+// allowed to assume -- whenever a cycle can actually start. An opcode
+// handler that pops several already-built values off the stack
+// (transiently unreachable from anywhere) before combining them into a
+// new object (e.g. Op_Create_List) never has a cycle start interleaved
+// into that window, so no "pre-mark a just-linked object before
+// anything else can reach it" trick is needed to protect it.
 maybe_collect_garbage :: proc(vm: ^VM) {
-	if vm.bytes_allocated > vm.next_gc {
-		collect_garbage(vm)
+	if vm.gc_phase == .Idle && vm.bytes_allocated > vm.next_gc {
+		start_gc_cycle(vm)
+	}
+	#partial switch vm.gc_phase {
+	case .Marking:
+		step_mark(vm)
+	case .Sweeping:
+		step_sweep(vm)
 	}
 }
 
-collect_garbage :: proc(vm: ^VM) {
+// start_gc_cycle begins a new cycle: fires .Gc_Start (still exactly
+// once per cycle, so debug/trace.odin's Gc_Hook before/after byte
+// accounting keeps working unmodified), scans roots -- atomically,
+// unlike the marking/sweeping this hands off to; see this file's header
+// comment for why that's safe -- then starts marking.
+start_gc_cycle :: proc(vm: ^VM) {
 	if vm.debug_hook != nil {
 		vm.debug_hook(vm, .Gc_Start)
 	}
 	mark_roots(vm)
-	trace_references(vm)
-	sweep(vm)
-	vm.next_gc = vm.bytes_allocated * GC_HEAP_GROW_FACTOR
-	if vm.debug_hook != nil {
-		vm.debug_hook(vm, .Gc_End)
+	vm.gc_phase = .Marking
+}
+
+// step_mark pops up to GC_WORK_UNIT entries off the gray stack, tracing
+// each -- identical per-entry body to a non-incremental collector's
+// full trace_references drain, just bounded. When the stack empties
+// before the budget is spent, the whole reachable graph has been
+// discovered: transition to sweeping.
+step_mark :: proc(vm: ^VM) {
+	for _ in 0 ..< GC_WORK_UNIT {
+		if len(vm.gray_stack) == 0 {
+			vm.gc_phase = .Sweeping
+			vm.sweep_cursor = vm.objects
+			vm.sweep_prev = nil
+			return
+		}
+		n := len(vm.gray_stack) - 1
+		obj := vm.gray_stack[n]
+		resize(&vm.gray_stack, n)
+		blacken_object(vm, obj)
 	}
 }
+
+// step_sweep walks up to GC_WORK_UNIT objects from wherever the
+// previous call left off (vm.sweep_cursor/vm.sweep_prev), freeing
+// anything left unmarked and clearing the mark on survivors for next
+// cycle -- identical per-object body to a non-incremental collector's
+// full sweep. Anything requiring real external-resource teardown
+// (currently just an open file) gets that call first (see
+// docs/ARCHITECTURE.md's Object model section). When the cursor runs
+// off the end of the list, the cycle is done: recompute next_gc
+// (applying the 3b floor) and go Idle.
+step_sweep :: proc(vm: ^VM) {
+	for _ in 0 ..< GC_WORK_UNIT {
+		obj := vm.sweep_cursor
+		if obj == nil {
+			vm.next_gc = max(vm.bytes_allocated * GC_HEAP_GROW_FACTOR, vm.gc_threshold_floor)
+			vm.gc_phase = .Idle
+			if vm.debug_hook != nil {
+				vm.debug_hook(vm, .Gc_End)
+			}
+			return
+		}
+		next := obj.next
+		if obj.marked {
+			obj.marked = false
+			vm.sweep_prev = obj
+		} else {
+			// object_size must be read before free_object runs -- several
+			// cases (List/Dict/Instance/...) compute it from fields
+			// (len(l.items), len(inst.fields), ...) that free_object's own
+			// delete() calls invalidate.
+			vm.bytes_allocated -= object_size(obj)
+			free_object(obj)
+			if vm.sweep_prev == nil {
+				vm.objects = next
+			} else {
+				vm.sweep_prev.next = next
+			}
+		}
+		vm.sweep_cursor = next
+	}
+}
+
+// write_barrier/write_barrier_value are no-ops outside an active cycle.
+// Call immediately after any write that installs obj/v into storage the
+// collector won't automatically revisit for the rest of this cycle --
+// see this file's header comment for the full site list.
+//
+// During Marking, this just enqueues obj like mark_object always does --
+// a later step_mark call will trace it in due course. During Sweeping,
+// no later step_mark call is coming (step_mark only ever runs during
+// Marking), so deferring wouldn't work: obj's own not-yet-discovered
+// children could be swept before anything traced them this cycle. Mark
+// and fully trace eagerly instead, right here, rather than leaving
+// anything on the gray stack for a phase that will never drain it.
+// (Provably a no-op in practice for real bytecode: by the time Sweeping
+// starts, everything the mutator can still reach is already marked, or
+// freshly allocated -- see gc_track's "allocate gray" -- so obj should
+// already be marked whenever write_barrier runs during Sweeping. Kept
+// as a real, working path anyway rather than an assert, since that
+// argument covers every mutation site audited for this plan, not a
+// language-level guarantee.)
+write_barrier :: proc(vm: ^VM, obj: ^core.Obj) {
+	#partial switch vm.gc_phase {
+	case .Marking:
+		mark_object(vm, obj)
+	case .Sweeping:
+		if obj != nil && !obj.marked {
+			mark_object(vm, obj)
+			for len(vm.gray_stack) > 0 {
+				n := len(vm.gray_stack) - 1
+				o := vm.gray_stack[n]
+				resize(&vm.gray_stack, n)
+				blacken_object(vm, o)
+			}
+		}
+	}
+}
+
+write_barrier_value :: proc(vm: ^VM, v: core.Value) {
+	#partial switch v.type {
+	case .Obj:
+		write_barrier(vm, v.obj)
+	}
+}
+
 mark_roots :: proc(vm: ^VM) {
 	for i in 0 ..< vm.stack_top {
 		mark_value(vm, vm.stack[i])
@@ -180,15 +346,6 @@ mark_object :: proc(vm: ^VM, obj: ^core.Obj) {
 	}
 	obj.marked = true
 	append(&vm.gray_stack, obj)
-}
-
-trace_references :: proc(vm: ^VM) {
-	for len(vm.gray_stack) > 0 {
-		n := len(vm.gray_stack) - 1
-		obj := vm.gray_stack[n]
-		resize(&vm.gray_stack, n)
-		blacken_object(vm, obj)
-	}
 }
 
 // blacken_object traces obj's own children, marking each in turn. Every
@@ -275,35 +432,6 @@ blacken_object :: proc(vm: ^VM, obj: ^core.Obj) {
 	}
 }
 
-// sweep walks this VM's own registry, freeing anything left unmarked
-// and clearing the mark on survivors for next cycle. Anything requiring
-// real external-resource teardown (currently just an open file) gets
-// that call first (see docs/ARCHITECTURE.md's Object model section).
-sweep :: proc(vm: ^VM) {
-	prev: ^core.Obj
-	obj := vm.objects
-	for obj != nil {
-		next := obj.next
-		if obj.marked {
-			obj.marked = false
-			prev = obj
-		} else {
-			// object_size must be read before free_object runs -- several
-			// cases (List/Dict/Instance/...) compute it from fields
-			// (len(l.items), len(inst.fields), ...) that free_object's own
-			// delete() calls invalidate.
-			vm.bytes_allocated -= object_size(obj)
-			free_object(obj)
-			if prev == nil {
-				vm.objects = next
-			} else {
-				prev.next = next
-			}
-		}
-		obj = next
-	}
-}
-
 @(private = "file")
 free_object :: proc(obj: ^core.Obj) {
 	#partial switch obj.type {
@@ -355,8 +483,10 @@ free_object :: proc(obj: ^core.Obj) {
 
 // object_size is a rough per-object size estimate for the heap-growth
 // heuristic -- exactness doesn't matter, only that it's roughly
-// proportional to how much churn is actually happening.
-@(private = "file")
+// proportional to how much churn is actually happening. Package-private
+// (not file-private): the vm-package test suite asserts List/Dict's
+// backing-storage accounting directly.
+@(private)
 object_size :: proc(obj: ^core.Obj) -> int {
 	#partial switch obj.type {
 	case .Closure:
@@ -371,9 +501,14 @@ object_size :: proc(obj: ^core.Obj) -> int {
 		inst := cast(^core.Instance_Object)obj
 		return size_of(core.Instance_Object) + len(inst.slots) * size_of(core.Value)
 	case .List:
-		return size_of(core.List_Object)
+		// Backing storage, not just the header -- same reasoning as
+		// Float_Array below (a large list badly under-reports its real
+		// footprint otherwise).
+		l := cast(^core.List_Object)obj
+		return size_of(core.List_Object) + len(l.items) * size_of(core.Value)
 	case .Dict:
-		return size_of(core.Dict_Object)
+		d := cast(^core.Dict_Object)obj
+		return size_of(core.Dict_Object) + len(d.items) * (size_of(^core.String_Object) + size_of(core.Value))
 	case .String:
 		// As with Float_Array below, the backing bytes (not the struct
 		// header) dominate a long string's real footprint.

@@ -104,6 +104,19 @@ VM :: struct {
 	next_gc:         int,
 	gray_stack:      [dynamic]^core.Obj,
 
+	// gc_threshold_floor: a lower bound on next_gc, set via
+	// sys.gc_set_min_threshold (vm/builtins_sys.odin) -- 0 (the default)
+	// means no floor. Applied every cycle (not just once), so a script
+	// that wants fewer, larger pauses can set this once at startup and
+	// have it stick.
+	gc_threshold_floor: int,
+
+	// gc_phase/sweep_cursor/sweep_prev: incremental-collection state --
+	// see gc.odin's header comment.
+	gc_phase:     GC_Phase,
+	sweep_cursor: ^core.Obj,
+	sweep_prev:   ^core.Obj,
+
 	debug_hook: Debug_Hook,
 
 	// force_compile: when set, module.odin's load_module skips

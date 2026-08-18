@@ -76,12 +76,14 @@ seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 		if v, ok := vm.builtins[id]; ok {
 			core.env_set_global(vm.environment, slot, v)
 			core.env_set_var(vm.environment, id, v)
+			write_barrier_value(vm, v)
 			continue
 		}
 		if mod, ok := vm.builtin_modules[id]; ok {
 			v := core.make_object_value(&mod.obj)
 			core.env_set_global(vm.environment, slot, v)
 			core.env_set_var(vm.environment, id, v)
+			write_barrier_value(vm, v)
 		}
 	}
 }
@@ -107,10 +109,12 @@ define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_F
 	val := core.make_object_value(&native.obj)
 	if module == "" {
 		vm.builtins[core.intern_string(name)] = val
+		write_barrier_value(vm, val)
 		return
 	}
 	mod := vm.builtin_modules[core.intern_string(module)]
 	core.env_set_var(mod.environment, core.intern_string(name), val)
+	write_barrier_value(vm, val)
 }
 
 // -----------------------------------------------------------------------
@@ -220,6 +224,7 @@ append_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Va
 		return core.NIL_VALUE
 	}
 	core.list_append(l, vm.stack[arg_stack_ptr + 1])
+	write_barrier_value(vm, vm.stack[arg_stack_ptr + 1])
 	return val
 }
 

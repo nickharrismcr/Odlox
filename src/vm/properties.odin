@@ -249,12 +249,15 @@ set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, valu
 			// core.instance_get_field/Get_Field_Slot's fallback would find
 			// it in -- see that helper's own doc comment.
 			core.instance_set_field(core.as_instance(recv), name, value)
+			write_barrier_value(vm, value)
 			return true
 		case .Class:
 			core.as_class(recv).statics[name] = value
+			write_barrier_value(vm, value)
 			return true
 		case .Module:
 			core.env_set_var(core.as_module(recv).environment, name, value)
+			write_barrier_value(vm, value)
 			return true
 		}
 	}
@@ -350,8 +353,10 @@ do_inherit :: proc(vm: ^VM) -> bool {
 	class := core.as_class(class_val)
 	for k, v in super.methods {
 		class.methods[k] = v
+		write_barrier_value(vm, v)
 	}
 	class.super = super
+	write_barrier(vm, &super.obj)
 	pop(vm) // class_val -- super_val stays, becoming the `super` local's slot
 	return true
 }
@@ -360,6 +365,7 @@ do_method :: proc(vm: ^VM, name: string, is_static: bool) {
 	method_val := peek(vm, 0)
 	class := core.as_class(peek(vm, 1))
 	key := core.intern_string(name)
+	write_barrier_value(vm, method_val)
 	if is_static {
 		class.static_methods[key] = method_val
 	} else {
@@ -379,6 +385,7 @@ do_class_var :: proc(vm: ^VM, name: string) {
 	val := peek(vm, 0)
 	class := core.as_class(peek(vm, 1))
 	class.statics[core.intern_string(name)] = val
+	write_barrier_value(vm, val)
 	pop(vm)
 }
 

@@ -275,6 +275,7 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			return false
 		}
 		core.list_append(l, peek(vm, 0))
+		write_barrier_value(vm, peek(vm, 0))
 		result = core.NIL_VALUE
 	case "remove":
 		if arg_count != 1 {
