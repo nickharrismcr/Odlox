@@ -44,6 +44,8 @@ if (pulse_shader.is_valid()) {
 
 // ========== SIMULATION VARIABLES ==========
 angle = 0.0                    // Camera orbital angle
+cam_height_phase = 0.0         // Phase of the camera height sine wave
+cam_dist_phase = 0.0           // Phase of the camera distance sine wave
 frame_count = 0                // Frame counter for timing
 floor_flash_timer = 0          // Explosion floor flash effect timer
 time_value = 0.0               // Time in seconds (for shader uniforms)
@@ -74,7 +76,15 @@ const REFERENCE_BALL_RADIUS = 0.5  // Midpoint of the spawn loop's random.float(
                                     // average-sized ball still feels the same force FORCE always
                                     // meant, while bigger balls get proportionally more push and
                                     // smaller ones less.
-const DISTANCE = 40.0          // Camera orbital distance from center
+const CAM_ANGLE_SPEED = 0.005  // Camera orbital rotation speed (radians/frame)
+const CAM_HEIGHT_MIN = 1.0     // Closest the camera gets to the floor
+const CAM_HEIGHT_MAX = 20.0    // Highest the camera rises above the floor
+const CAM_HEIGHT_SPEED = 0.004 // Height sine wave speed (radians/frame)
+const CAM_DIST_MIN = 8.0       // Closest orbital distance from centre
+const CAM_DIST_MAX = 35.0      // Farthest orbital distance from centre
+const CAM_DIST_SPEED = 0.0025  // Distance sine wave speed (radians/frame) -- deliberately
+                                // different from CAM_HEIGHT_SPEED so height and distance
+                                // drift in and out of phase with each other
 const NORMAL=0
 const RAINBOW=1
 const PULSE=2
@@ -378,11 +388,21 @@ foreach ( i in range(SHAPES)) {
 while (!win.should_close()) {
 
     // ===== CAMERA CONTROL =====
-    angle = angle + 0.005  // Rotation speed (radians per frame)
-    x = math.cos(angle) * DISTANCE  // Calculate X position on circle
-    z = math.sin(angle) * DISTANCE  // Calculate Z position on circle
-    cam_pos.x = x  // Y stays 10, never changes
-    cam_pos.z = z
+    // Keeps orbiting and pointing at the origin (target set once at
+    // construction, never changed) -- height and orbital distance each
+    // drift on their own sine wave between CAM_*_MIN and CAM_*_MAX, at
+    // different speeds so they're never in lockstep with each other.
+    angle = angle + CAM_ANGLE_SPEED
+    cam_height_phase = cam_height_phase + CAM_HEIGHT_SPEED
+    cam_dist_phase = cam_dist_phase + CAM_DIST_SPEED
+
+    height_t = (math.sin(cam_height_phase) + 1.0) * 0.5  // 0..1
+    dist_t = (math.sin(cam_dist_phase) + 1.0) * 0.5       // 0..1
+    dist = CAM_DIST_MIN + (CAM_DIST_MAX - CAM_DIST_MIN) * dist_t
+
+    cam_pos.x = math.cos(angle) * dist
+    cam_pos.z = math.sin(angle) * dist
+    cam_pos.y = CAM_HEIGHT_MIN + (CAM_HEIGHT_MAX - CAM_HEIGHT_MIN) * height_t
     cam.set_position(cam_pos)
 
     // ===== TIMING AND ANIMATION =====
