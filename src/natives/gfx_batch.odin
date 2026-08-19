@@ -55,15 +55,12 @@ Batch_Data :: struct {
 	triangles:  [dynamic]Triangle_Batch_Entry, // BATCH_TRIANGLE3
 	circles:    [dynamic]Circle_Batch_Entry, // BATCH_CIRCLE3
 
-	// circle_mesh/circle_material back BATCH_CIRCLE3: a single shared
-	// unit quad (lazily created, cached per-batch) drawn once per entry
-	// via rl.DrawMesh with a per-entry scale/rotate/translate transform,
-	// instead of rebuilding a triangle-fan circle approximation from
-	// scratch every frame. The quad's own shape is a plain square --
-	// set_circle_texture supplies a texture (e.g. a pre-rendered filled
-	// circle) so it reads as a circle; without one it draws as a
-	// flat-colored square. Never explicitly unloaded -- process exit
-	// tears down the GL context regardless.
+	// circle_mesh/circle_material back BATCH_CIRCLE3: a single shared unit
+	// quad (lazily created, cached per-batch) drawn once per entry via
+	// rl.DrawMesh with a per-entry scale/rotate/translate transform, instead
+	// of rebuilding a triangle-fan circle approximation every frame.
+	// set_circle_texture supplies a texture so it reads as a circle;
+	// without one it draws as a flat-colored square.
 	circle_mesh:       rl.Mesh,
 	circle_material:   rl.Material,
 	circle_mesh_ready: bool,
@@ -312,15 +309,11 @@ batch_draw_circle3 :: proc(b: ^Batch_Data, entry: Circle_Batch_Entry) {
 }
 
 // batch_draw renders every entry in the batch. The BATCH_CIRCLE3 branch
-// flushes rlgl's own internal render batch before drawing (rl.DrawMesh,
-// used here and by cube_rotated, does not flush it itself) and disables
-// depth writes for the duration: immediate-mode primitives drawn earlier
-// in the frame (win.plane, win.cube, ...) only *queue* vertices into
-// rlgl's batch, not send them to the GPU; without an explicit flush
-// here, a translucent shadow quad can rasterize before, say, the floor
-// it should sit on top of, and since alpha=0 still writes to the depth
-// buffer, that gap becomes permanent once the floor's own already-queued
-// draw later fails the depth test against it.
+// flushes rlgl's internal render batch before drawing (rl.DrawMesh does
+// not flush it itself): immediate-mode primitives drawn earlier in the
+// frame only queue vertices, so without an explicit flush a translucent
+// shadow quad can rasterize before the floor it should sit on top of, and
+// since alpha=0 still writes depth, that gap becomes permanent.
 @(private = "file")
 batch_draw :: proc(b: ^Batch_Data) {
 	switch b.batch_type {

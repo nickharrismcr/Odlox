@@ -140,14 +140,11 @@ make_texture_data :: proc(image: rl.Image, frames, start_frame, end_frame: int) 
 }
 
 // texture_data_from_texture2d wraps an already-loaded GPU texture this
-// Texture_Data does *not* own (e.g. render_texture.get_texture() pulling
-// out the render_texture's own live rl.Texture2D) as a single-frame,
-// non-animated Texture_Data. owns_texture is left false, so
-// texture_unload below never calls rl.UnloadTexture on it: a script that
-// calls get_texture() every frame makes the previous frame's wrapper
-// unreachable and GC-collectible, and without owns_texture, reaping one
-// of these transient wrappers would unload the render_texture's own
-// shared GPU texture out from under it.
+// Texture_Data does not own (e.g. render_texture.get_texture()) as a
+// single-frame, non-animated Texture_Data. owns_texture is left false, so
+// texture_unload never calls rl.UnloadTexture on it -- reaping one of
+// these transient wrappers would otherwise unload the render_texture's
+// own shared GPU texture out from under it.
 @(private = "file")
 texture_data_from_texture2d :: proc(texture: rl.Texture2D) -> ^Texture_Data {
 	w, h := int(texture.width), int(texture.height)
@@ -183,16 +180,12 @@ texture_animate :: proc(t: ^Texture_Data) {
 	}
 }
 
-// texture_unload is the single place GPU teardown for a texture
-// happens -- shared by the Lox-visible unload() method and GC-triggered
-// cleanup, guarded by freed so whichever runs first wins, not a double
-// UnloadTexture. A borrowed texture (owns_texture == false, see
-// texture_data_from_texture2d) never calls rl.UnloadTexture at all --
-// the GPU resource belongs to whatever created it (a render_texture, so
-// far), and unloading it here would destroy that owner's still-live
-// texture out from under it. freed is still set either way, so a script
-// calling .unload() on a borrowed Texture is a harmless no-op rather
-// than an error.
+// texture_unload is the single place GPU teardown happens -- shared by
+// the Lox-visible unload() method and GC-triggered cleanup, guarded by
+// freed so whichever runs first wins. A borrowed texture (owns_texture ==
+// false) never calls rl.UnloadTexture, since the GPU resource belongs to
+// its owner; freed is still set, so .unload() on a borrowed Texture is a
+// harmless no-op.
 @(private = "file")
 texture_unload :: proc(t: ^Texture_Data) {
 	if t.freed {
@@ -384,20 +377,13 @@ texture_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: in
 	return true
 }
 
-// render_texture_invoke: width/height/unload, a mirror of Window's own
-// 2D primitive set (clear/pixel/line/line_ex/triangle/rectangle/circle/
-// circle_fill/text/draw_texture), letting a script draw directly onto a
-// render_texture the same way it draws onto the window, not only via
-// win.begin_texture_mode/end_texture_mode/win.<primitive> (still
-// supported separately in gfx_window.odin) -- plus
-// get_texture()/draw_texture_pro() and draw_array_fast() for
-// bulk-uploading a computed float_array into a render_texture every
-// frame. Each drawing call here brackets *just that one draw* in its own
-// BeginTextureMode/EndTextureMode, not a persistent mode switch -- unlike
-// Window's own drawing methods, which draw against whatever the current
-// global GL target already is. text() is narrower than Window's own:
-// (x, y, string) only, fixed font size 10, hardcoded white, not Window's
-// (string, x, y, size, color).
+// render_texture_invoke: width/height/unload, a mirror of Window's own 2D
+// primitive set, letting a script draw directly onto a render_texture --
+// plus get_texture()/draw_texture_pro()/draw_array_fast(). Each drawing
+// call here brackets just that one draw in its own
+// BeginTextureMode/EndTextureMode, unlike Window's own methods, which draw
+// against whatever the current global GL target is. text() is narrower
+// than Window's: (x, y, string) only, fixed size and color.
 @(private = "file")
 render_texture_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int) -> bool {
 	v := vm.native_vm(vm_ctx)

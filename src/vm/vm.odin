@@ -5,16 +5,11 @@ import "../core"
 import "core:fmt"
 import "core:time"
 
-// The VM: fixed-size value stack and call-frame array (matching clox's
-// own arrays -- no heap indirection on the hot path), one intrusive GC
-// object list, and the small amount of session state (REPL mode, error
-// reporting, module cache) a running interpreter needs. See
-// docs/ARCHITECTURE.md's VM dispatch loop and Garbage collector
-// sections for the design this implements.
-//
-// No mutex/lock anywhere in this package: the VM is single-threaded for
-// its whole life (see docs/ARCHITECTURE.md's Scope section -- threads
-// are out of scope entirely).
+// The VM: fixed-size value stack and call-frame array (matching clox's own
+// arrays -- no heap indirection on the hot path), one intrusive GC object
+// list, and the small amount of session state (REPL mode, error reporting,
+// module cache) a running interpreter needs. No mutex/lock anywhere in
+// this package: the VM is single-threaded for its whole life.
 
 FRAMES_MAX :: 64
 STACK_MAX :: FRAMES_MAX * 256
@@ -127,14 +122,11 @@ VM :: struct {
 	force_compile: bool,
 
 	// force_bc_cache: the opposite trust direction from force_compile --
-	// when set, bc_cache_load (vm/bc_cache.odin) skips the source-mtime
-	// freshness check entirely and trusts a `.lxc` unconditionally
-	// whenever one exists, and read_module_source (module.odin) will
-	// resolve a module from a `.lxc` alone even when no matching `.lox`
-	// exists on disk at all. Exists for compiled-only library
-	// distribution: ship `__loxcache__/<name>.lxc` without the source
-	// `.lox` it was built from. Never affects the entry script, same as
-	// force_compile.
+	// when set, bc_cache_load skips the source-mtime freshness check and
+	// trusts a `.lxc` unconditionally, and read_module_source will resolve
+	// a module from a `.lxc` alone with no matching `.lox` on disk. Exists
+	// for compiled-only library distribution. Never affects the entry
+	// script, same as force_compile.
 	force_bc_cache: bool,
 }
 

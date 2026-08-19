@@ -3,15 +3,12 @@ package compiler
 import "../core"
 import "core:strings"
 
-// print_ast renders the output of Parse (stmts, before the Resolver has
-// annotated anything) as an indented Lisp-style listing, one entry per
-// top-level statement. Used by main.odin's --print-ast.
-//
+// print_ast renders the output of Parse as an indented Lisp-style listing,
+// one entry per top-level statement. Used by main.odin's --print-ast.
 // Every Stmt/Expr node prints as a bare atom or a parenthesized form; a
 // statement owning nested statements prints a header line, each child
-// indented one level further, and a closing ")" on its own line. print_expr
-// never writes its own leading indent or trailing newline -- always
-// embedded mid-line by its caller, including Expr_Lambda.
+// indented one level further, and a closing ")" on its own line.
+// print_expr never writes its own leading indent or trailing newline.
 print_ast :: proc(stmts: []Stmt, allocator := context.allocator) -> string {
 	sb: strings.Builder
 	strings.builder_init(&sb, allocator)

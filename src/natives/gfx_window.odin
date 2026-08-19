@@ -9,37 +9,12 @@ import rl "vendor:raylib"
 import rlgl "vendor:raylib/rlgl"
 
 // gfx_window: Window_Data -- the Lox-facing handle for raylib's
-// window/graphics context. raylib's own window/OpenGL-context state is
-// process-global (InitWindow/CloseWindow), so this struct is mostly a
-// lightweight marker plus the width/height a script asked for, and the
-// lazily-built shared unit-cube mesh/material `cube_mesh`/`cube_material`
-// need (raylib has no DrawCube overload that takes a rotation, so those
-// draw an arbitrarily rotated box via DrawMesh with a transform matrix
-// instead -- one shared unit cube serves every box regardless of size,
-// scaled at draw time).
-//
-// window lifecycle, frame begin/end, input, 2D primitive drawing,
-// texture/render_texture drawing, blend/shader modes, 3D drawing (see
-// begin_3d's own doc comment), draw_array, and win.KEY_*/BLEND_*/WRAP_*/
-// BATCH_* property constants (window_get_property, via the vtable's
-// get_property hook) all live here too.
-//
-// Colors cross the Lox boundary as vec4, each channel 0-255 -- matches
-// colour_utils.odin's existing convention (colour_utils_fade's
-// clamp255/alpha-at-255 usage), not a 0-1 normalized float.
-//
-// end() does *not* call rl.DrawFPS unconditionally -- that would be a
-// debug overlay side effect baked into every frame regardless of
-// whether the script wants one. It's opt-in instead: .show_fps(bool)
-// toggles it (off by default), and get_fps() remains available too for
-// a script that wants to draw its own FPS text some other way entirely.
-//
-// No GC-triggered window teardown: Window_Data owns no GPU resource of
-// its own to free -- raylib's window/GL context is process-global, torn
-// down only by an explicit .close() call (idempotent via the closed
-// bool), never implicitly by garbage collection. Its lazily-built
-// cube_mesh/cube_material are the same story -- never explicitly
-// unloaded, process exit tears down the GL context regardless.
+// window/graphics context, which is process-global (InitWindow/
+// CloseWindow), so this struct is mostly a lightweight marker plus the
+// lazily-built shared unit-cube mesh/material (raylib has no DrawCube
+// overload taking a rotation). Also holds window lifecycle, drawing,
+// blend/shader modes, and win.KEY_*/BLEND_*/WRAP_*/BATCH_* constants.
+// Colors cross the Lox boundary as vec4, each channel 0-255, not 0-1.
 
 Window_Data :: struct {
 	width:    int,
@@ -360,14 +335,11 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 		}
 		result = core.make_bool_value(bool(rl.IsCursorHidden()))
 	case "disable_cursor":
-		// Unlike hide_cursor (visibility only), this locks the cursor to
-		// the window -- raylib re-centres it every frame internally, so
-		// mouse_delta() keeps reporting real relative movement no matter
-		// how far or how long the mouse is pushed in one direction,
-		// instead of the real OS cursor drifting into a screen edge and
-		// getting stuck there (no further delta in that direction until
-		// physically moved back). The standard raylib idiom for a
-		// mouse-look/FPS-style camera.
+		// Unlike hide_cursor (visibility only), this locks the cursor to the
+		// window -- raylib re-centres it every frame internally, so
+		// mouse_delta() keeps reporting real relative movement instead of the
+		// OS cursor drifting into a screen edge and getting stuck. The
+		// standard raylib idiom for a mouse-look/FPS-style camera.
 		if arg_count != 0 {
 			vm.runtime_error(v, "disable_cursor() takes no arguments.")
 			return false
@@ -945,16 +917,12 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 		axis := rl.Vector3Normalize(rl.Vector3{f32(axis_v.x), f32(axis_v.y), f32(axis_v.z)})
 		rotation := rl.MatrixRotate(axis, f32(core.as_float(angle_val)) * math.RAD_PER_DEG)
 		translation := rl.MatrixTranslate(f32(pos.x), f32(pos.y), f32(pos.z))
-		// raylib/OpenGL uses column-vector convention (confirmed directly
-		// from Vector3Transform's own source: (m * v4).xyz -- matrix on
-		// the left), so composing "scale, then rotate, then translate"
-		// needs translation * rotation * scale: transform * v expands as
-		// translation * (rotation * (scale * v)), applying scale to the
-		// vertex first and translation last. The reverse order, scale *
-		// rotation * translation, would apply translation to the mesh's
+		// raylib/OpenGL uses column-vector convention, so composing "scale,
+		// then rotate, then translate" needs translation * rotation * scale:
+		// transform * v expands as translation * (rotation * (scale * v)).
+		// The reverse order would apply translation to the mesh's
 		// still-local-space vertices first, then rotate the whole
-		// already-displaced object around the world origin instead of its
-		// own center.
+		// already-displaced object around the world origin.
 		transform := translation * rotation * scale
 		material.maps[rl.MaterialMapIndex.ALBEDO].color = col
 		rl.DrawMesh(mesh, material, transform)
@@ -1165,18 +1133,12 @@ window_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 }
 
 // window_constant answers a `win.KEY_*`/`win.MOUSE_*`/`win.BLEND_*`/
-// `win.WRAP_*`/`win.FILTER_*`/`win.BATCH_*` property read, via
-// window_vtable's get_property hook (vm/properties.odin's get_property
-// .Userdata case). These are exposed directly on the window object
-// rather than as module-level constants, so scripts access them as
-// `win.KEY_SPACE`/`win.BLEND_ALPHA` etc., not `gfx.KEY_SPACE`. Full
-// rl.KeyboardKey coverage except KEY_BACK/KEY_MENU (Android-only buttons
-// not exposed by vendor:raylib's Odin binding); full rl.MouseButton/
-// BLEND_*/WRAP_*/BATCH_* coverage. FILTER_* covers only POINT/BILINEAR
-// (not TRILINEAR/ANISOTROPIC_*, which need mipmaps this codebase never
-// generates). Values are plain immutable ints, identical across every
-// Window instance, so this is a pure function of the name rather than
-// per-object state.
+// `win.WRAP_*`/`win.FILTER_*`/`win.BATCH_*` property read, exposed
+// directly on the window object (`win.KEY_SPACE`, not `gfx.KEY_SPACE`).
+// Full rl.KeyboardKey coverage except KEY_BACK/KEY_MENU (Android-only,
+// not exposed by vendor:raylib); FILTER_* covers only POINT/BILINEAR (not
+// TRILINEAR/ANISOTROPIC_*, which need mipmaps this codebase never uses).
+// Values are plain immutable ints.
 @(private = "file")
 window_constant :: proc(name: string) -> (core.Value, bool) {
 	switch name {

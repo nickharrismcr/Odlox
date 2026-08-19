@@ -632,20 +632,12 @@ test_method_brace_on_next_line_compiles :: proc(t: ^testing.T) {
 	testing.expect(t, contains_op(c, .Method))
 }
 
-// Regression test for the bug that made the missing tolerance above
-// far worse than a wrong-but-quick compile error: class_declaration's
-// member loop had no panic_mode/synchronize check of its own (unlike
-// declaration() at the top level), so a malformed method whose error
-// path returned without consuming a token made the loop call method()
-// again on the exact same token forever. Before both fixes (this one
-// and functions.odin's Eol tolerance), this exact input hung the
-// compiler indefinitely rather than reporting a compile error -- a
-// real, reproduced hang in the compiled odlox binary, not a
-// hypothetical. If this regresses, this test itself will hang
-// `odin test src/compiler` rather than failing cleanly; that's an
-// acceptable trade-off for pinning down an infinite loop specifically
-// (a timeout-based test would only prove "eventually terminates",
-// which isn't what an infinite loop bug threatens).
+// Regression test: class_declaration's member loop had no
+// panic_mode/synchronize check of its own, so a malformed method whose
+// error path returned without consuming a token made the loop call
+// method() again on the same token forever, hanging the compiler. If this
+// regresses, this test itself hangs rather than failing cleanly -- an
+// acceptable trade-off for pinning down an infinite loop specifically.
 @(test)
 test_malformed_method_does_not_hang_the_compiler :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
@@ -739,21 +731,12 @@ test_from_import_star :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // Peephole optimizer
 
-// Both the default-enabled and explicitly-disabled peephole behaviors
-// are checked in one test function (rather than two separate @(test)
-// procs) deliberately: DebugSkipPeephole is a package-level flag
-// (mirroring the reference implementation's own core.DebugSkipPeephole -- a real CLI-flag-backed
-// toggle, not just a test convenience) that end_compiler snapshots into
-// each Parser's own skip_peephole field at construction time (see
-// parser.odin), specifically so one compile's behavior can't be
-// affected by another compile concurrently flipping the *global* --
-// but two separate test functions each toggling that same global around
-// their own compile_ok call could still race against each other under
-// Odin's parallel test runner (each sees a consistent snapshot for its
-// own compile, but which value that snapshot holds isn't guaranteed if
-// both tests' set/defer-reset windows overlap in time). Keeping both
-// checks sequential inside one test function removes that risk instead
-// of just documenting it.
+// Both the default-enabled and explicitly-disabled peephole behaviors are
+// checked in one test function rather than two: DebugSkipPeephole is a
+// package-level flag that end_compiler snapshots into each Parser's own
+// skip_peephole field at construction time, so two separate test
+// functions each toggling that global could race under Odin's parallel
+// test runner. Keeping both checks sequential removes that risk.
 @(test)
 test_peephole_enabled_by_default_and_disabled_by_flag :: proc(t: ^testing.T) {
 	source := "func f(a, b) { a = a + b }\n"

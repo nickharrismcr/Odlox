@@ -12,11 +12,10 @@ import "../core"
 // get_property/set_property/bind_method/invoke/invoke_from_class all take
 // name as an already-interned ^core.String_Object, not a plain string --
 // call sites already have it interned off a bytecode constant, so passing
-// the pointer through avoids re-hashing the name on every property access.
-//
-// get_property/invoke additionally take a monomorphic inline cache (one
-// per callsite, nil for the colder do_get_super/do_super_invoke) so a
-// same-class repeat hit skips the second (class.methods) map lookup too.
+// the pointer avoids re-hashing on every access. get_property/invoke also
+// take a monomorphic inline cache (nil for the colder do_get_super/
+// do_super_invoke) so a same-class repeat hit skips the class.methods
+// lookup too.
 get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, 0)
 
@@ -134,14 +133,10 @@ get_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string) -> bool {
 }
 
 // vec_with_field_set returns v (a Vec2/3/4 Value) with its swizzle
-// component named `name` set to f, and whether `name` was a valid
-// component for v's arity. Pure computation, no VM/stack involvement --
-// v is an inline value (see core/value.odin), so this can't mutate it
-// in place the way the old heap-object design did; the caller (either
-// set_vec_swizzle below, for the ordinary-and-now-unreachable-via-vec
-// Set_Property path, or swizzle_assign below, for the real
-// write-back-capable path) is responsible for doing something with the
-// returned whole value.
+// component named `name` set to f, and whether `name` was valid for v's
+// arity. Pure computation, no VM/stack involvement -- v is an inline
+// value, so this can't mutate it in place; the caller (set_vec_swizzle or
+// swizzle_assign below) is responsible for the returned whole value.
 vec_with_field_set :: proc(v: core.Value, name: string, f: f64) -> (result: core.Value, ok: bool) {
 	#partial switch v.type {
 	case .Vec2:
@@ -188,15 +183,11 @@ vec_with_field_set :: proc(v: core.Value, name: string, f: f64) -> (result: core
 }
 
 // set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`)
-// via the ordinary (non-write-back) Set_Property opcode -- reachable
-// today only if something outside compiled Lox code calls set_property
-// directly with a vector receiver, since the compiler now always routes
-// a swizzle-shaped assignment target through the write-back-capable
-// Set_*_Vec_Field family instead (see emit_expr.odin's emit_property)
-// or rejects it at compile time. Kept for that defensive case: computes
-// the mutated value correctly, same as ever, but -- with no write-back
-// destination available here -- the mutation isn't observable afterward,
-// same as it never was for value types.
+// via the ordinary (non-write-back) Set_Property opcode -- reachable only
+// if something outside compiled Lox code calls set_property directly with
+// a vector receiver, since the compiler always routes a swizzle assignment
+// through Set_*_Vec_Field instead. Kept as a defensive fallback: with no
+// write-back destination here, the mutation isn't observable afterward.
 set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
 	if !core.is_number(value) {
 		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)
@@ -215,13 +206,11 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 
 // set_obj_field mutates recv's `name` property in place -- the shared
 // logic behind set_property's Instance/Class/Module cases, extracted so
-// the swizzle-assignment write-back opcodes (run.odin's
-// Set_*_Vec_Field handlers) can reach it too, for the case where a
+// the swizzle-assignment write-back opcodes can reach it too, for when a
 // swizzle-shaped target (`recv.x = ...`) turns out at runtime to hold
-// something other than a vector -- e.g. an Instance with a field
-// genuinely named "x". Takes recv/value as plain parameters rather than
-// reading them off the VM stack, unlike set_property, since callers
-// besides the ordinary Set_Property opcode need this too.
+// something other than a vector (e.g. an Instance field named "x"). Takes
+// recv/value as plain parameters rather than reading them off the VM
+// stack, since callers besides Set_Property need this too.
 set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> bool {
 	if recv.type == .Obj {
 		#partial switch recv.obj_type {
@@ -268,17 +257,13 @@ set_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	return false
 }
 
-// swizzle_assign implements the runtime half of `<target>.f = value`
-// where f is a swizzle component name (x/y/z/w/r/g/b/a) and `recv` is
-// <target>'s current value. If recv is a vector, the mutated whole
-// vector is returned for the caller to write back into wherever recv
-// came from (write_back = true) -- recv itself, being an inline Value
-// copy, was never actually mutated. If recv is an Instance/Class/Module
-// (a genuine field/static/module-var named "x" or similar), it's
-// mutated in place via set_obj_field and write_back is false -- already
-// reference-shared, no write-back needed. Either way, on success the
-// caller should push `value` as the assignment expression's result (the
-// caller owns the stack; this proc doesn't touch it).
+// swizzle_assign implements the runtime half of `<target>.f = value` where
+// f is a swizzle component name and `recv` is <target>'s current value. If
+// recv is a vector, the mutated whole vector is returned for the caller to
+// write back (write_back = true) -- recv itself, an inline Value copy, was
+// never mutated. If recv is an Instance/Class/Module, it's mutated in
+// place via set_obj_field and write_back is false. Either way the caller
+// owns the stack; this proc doesn't touch it.
 swizzle_assign :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> (mutated: core.Value, write_back: bool, ok: bool) {
 	#partial switch recv.type {
 	case .Vec2, .Vec3, .Vec4:

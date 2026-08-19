@@ -413,12 +413,10 @@ emit_try_crossings :: proc(em: ^Emitter, crosses_tries: []^Stmt_Try, local_count
 
 // -----------------------------------------------------------------------
 // try / except / finally
-//
 // emit_finally_copy re-resolves finally_body immediately before emitting
 // it rather than trusting previously-computed slot numbers -- a crossing
-// return/break/continue inside this try's body or an except clause can run
-// first and overwrite finally_body's shared AST nodes with crossing-
-// specific slot numbers.
+// return/break/continue inside this try's body or an except clause can
+// overwrite finally_body's shared AST nodes with crossing-specific slots.
 
 @(private = "file")
 emit_finally_copy :: proc(em: ^Emitter, v: ^Stmt_Try, local_count: int) {

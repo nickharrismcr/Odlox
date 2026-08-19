@@ -7,17 +7,12 @@ import "core:mem"
 import "core:strings"
 import rl "vendor:raylib"
 
-// gfx_batch_instanced: Batch_Instanced_Data -- GPU-instanced rendering
-// of a single textured cube mesh, for scenes with too many identical
-// cubes for individual win.cube()/batch() draw calls to keep up (tens of
-// thousands).
-//
-// The instancing shader (src/shaders/instanced/*) is loaded once, lazily,
-// as a process-wide singleton shared by every Batch_Instanced_Data. The
-// shader source is embedded directly into the binary via #load and
-// loaded with rl.LoadShaderFromMemory rather than read from a disk path
-// at runtime, since it's an internal implementation asset, not something
-// a Lox script ever supplies or edits.
+// gfx_batch_instanced: Batch_Instanced_Data -- GPU-instanced rendering of
+// a single textured cube mesh, for scenes with too many identical cubes
+// for individual win.cube()/batch() draw calls to keep up (tens of
+// thousands). The instancing shader (src/shaders/instanced/*) is loaded
+// once, lazily, as a process-wide singleton, embedded into the binary via
+// #load rather than read from a disk path at runtime.
 @(private = "file")
 instanced_vs_src := #load("../shaders/instanced/base_lighting_instanced.vs", string)
 @(private = "file")
@@ -46,16 +41,12 @@ instanced_shader_get :: proc() -> rl.Shader {
 	instanced_shader.locs[int(rl.ShaderLocationIndex.VECTOR_VIEW)] = rl.GetShaderLocation(instanced_shader, "viewPos")
 	instanced_shader.locs[int(rl.ShaderLocationIndex.MATRIX_MODEL)] = rl.GetShaderLocationAttrib(instanced_shader, "instanceTransform")
 
-	// lighting.fs divides ambient by 10 before use (finalColor +=
-	// texelColor*(ambient/10.0)*colDiffuse) -- 0.2 here matches the
-	// upstream shaders_mesh_instancing.odin raylib example's own default
-	// (ambient/10 = 0.02), a subtle base fill that leaves room for
-	// lights[] to actually be visible; an earlier default of 10.0
-	// (ambient/10 = 1.0, i.e. full brightness) saturated every instanced
-	// cube regardless of any added lights. Scripts can override this at
-	// runtime via gfx.instanced_ambient() (gfx_light.odin), which takes
-	// a 0-255 vec4 like instanced_light()'s color argument rather than
-	// this raw 0-1 float array.
+	// lighting.fs divides ambient by 10 before use, so 0.2 here (ambient/10
+	// = 0.02) is a subtle base fill leaving room for lights[] to be
+	// visible -- a default of 10.0 saturated every instanced cube
+	// regardless of added lights. Scripts can override this via
+	// gfx.instanced_ambient(), which takes a 0-255 vec4 rather than this
+	// raw 0-1 float array.
 	ambient_loc := rl.GetShaderLocation(instanced_shader, "ambient")
 	ambient_values := [4]f32{0.2, 0.2, 0.2, 1.0}
 	rl.SetShaderValue(instanced_shader, ambient_loc, &ambient_values, .VEC4)

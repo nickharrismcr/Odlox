@@ -7,13 +7,10 @@ import "core:math"
 import "core:mem"
 
 // physics: a hand-rolled 3D SoA sphere/box physics engine, no raylib
-// dependency at all. Userdata_Object object kind (see
-// core/obj_userdata.odin and this package's own README.md) -- struct,
-// simulation logic (step, integrate, broad/narrow phase, resolve), and
-// Lox-facing method dispatch all live together in this one file.
-//
-// One known limitation: Physics_Material.friction is stored and combined
-// but never actually applied in resolve()'s collision response.
+// dependency. Struct, simulation logic (step, integrate, broad/narrow
+// phase, resolve), and Lox-facing method dispatch all live in this file.
+// Known limitation: Physics_Material.friction is stored and combined but
+// never actually applied in resolve()'s collision response.
 
 // P_Vec3 is purely an internal math type for the SoA simulation -- not
 // exposed to Lox directly (positions/velocities/etc. cross the Lox
@@ -488,15 +485,10 @@ physics_world_rebuild_grid :: proc(w: ^Physics_World_Data) {
 }
 
 // narrow_phase visits, for each dynamic body i, the 27 cells around i's
-// own cell. Those 27 (dx,dy,dz) offsets are all distinct absolute cell
-// coordinates, so a given neighbor cell is visited at most once per i --
-// no pair can be found twice within one i's scan. Combined with the
-// `j <= i` guard (which only ever looks for the higher-indexed half of
-// a pair), every unordered dynamic-dynamic pair {a,b} is discovered
-// exactly once overall, so no separate dedup set is needed here.
-//
-// Static bodies never appear here at all (as i or via the grid, which
-// never contains them) -- they're handled entirely by
+// own cell. Those offsets are all distinct absolute cell coordinates, so
+// combined with the `j <= i` guard, every unordered dynamic-dynamic pair
+// {a,b} is discovered exactly once, with no separate dedup set needed.
+// Static bodies never appear here -- they're handled entirely by
 // resolve_static_pairs.
 @(private = "file")
 physics_world_narrow_phase :: proc(w: ^Physics_World_Data) {
@@ -510,16 +502,11 @@ physics_world_narrow_phase :: proc(w: ^Physics_World_Data) {
 			for dy: i32 = -1; dy <= 1; dy += 1 {
 				for dx: i32 = -1; dx <= 1; dx += 1 {
 					k := Physics_Cell_Key{base.x + dx, base.y + dy, base.z + dz}
-					// Read into a local before ranging over it -- ranging
-					// directly over a map-index expression (`for j in
-					// w.grid[k]`) segfaults when k is absent from the map
-					// (confirmed as a real, reproducible Odin behavior via
-					// an isolated standalone repro, not a bounds-check-
-					// catchable bug in this code: crashes identically in
-					// both -debug and -o:speed builds). Every other map
-					// read in this file already goes through a local first
-					// (see rebuild_grid) -- this was the one direct-index
-					// exception.
+					// Read into a local before ranging over it -- ranging directly
+					// over a map-index expression (`for j in w.grid[k]`) segfaults
+					// when k is absent from the map, in both -debug and -o:speed
+					// builds. Every other map read in this file already goes
+					// through a local first (see rebuild_grid).
 					bucket := w.grid[k]
 					for j in bucket {
 						if j <= i || !w.active[j] {
