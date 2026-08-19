@@ -2,14 +2,12 @@ package core
 
 import "core:strings"
 
-// Instance_Object.fields is keyed by canonical `^String_Object`, same
-// reasoning as Class_Object's method maps: a direct map key, no separate
-// name-id indirection. slots backs the compile-time-baked field-slot fast
-// path: a fixed-size array, sized from class.field_slot_names, for fields
-// the compiler proved are always assigned unconditionally in the class's
-// own init. Every entry starts as UNDEFINED_VALUE (not Nil) so a read
-// before assignment still misses correctly. fields and slots never hold
-// the same name, since field-slot discovery is total and disjoint.
+// Instance_Object.fields is keyed by canonical `^String_Object`: a direct
+// map key, no separate name-id indirection. slots is a fixed-size array,
+// sized from class.field_slot_names, for fields the compiler proved are
+// always assigned unconditionally in the class's own init; every entry
+// starts as UNDEFINED_VALUE (not Nil) so a read before assignment still
+// misses. fields and slots never hold the same name.
 Instance_Object :: struct {
 	using obj: Obj,
 	class:     ^Class_Object,

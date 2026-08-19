@@ -22,15 +22,12 @@ Value_Type :: enum u8 {
 	Undefined, // VM-internal: an omitted default-parameter slot before its default runs
 }
 
-// Value_Payload is `#raw_union` (not a tagged Odin `union`): `data`,
-// `obj`, and `vec` are never more than one meaningful for the same Value
-// at once -- which one is valid is entirely determined by `Value.type`
-// -- so they can overlap the same bytes with no discriminant of their
-// own, the same way clox's `as` union does. `vec` is sized for a Vec4
-// (the largest of the three); Vec2/Vec3 just leave the trailing lanes
-// unused. This is the one field that makes Value_Payload (and so Value)
-// bigger than a single register-width slot -- see value.odin's header
-// comment.
+// Value_Payload is `#raw_union` (not a tagged Odin `union`): `data`, `obj`,
+// and `vec` are never more than one meaningful for the same Value at once,
+// determined entirely by `Value.type`, so they overlap the same bytes with
+// no discriminant of their own. `vec` is sized for a Vec4; Vec2/Vec3 leave
+// the trailing lanes unused -- the one field making Value bigger than a
+// single register-width slot.
 Value_Payload :: struct #raw_union {
 	data: u64, // int (bit pattern), f64 (bit pattern via transmute), or bool (0/1)
 	obj:  ^Obj, // heap object pointer -- meaningful iff type is Obj
@@ -268,16 +265,11 @@ values_equal :: proc(a, b: Value, types_must_match: bool) -> bool {
 
 // objects_equal implements object-kind equality for two Values already
 // confirmed to share an Object_Type. Strings compare by content
-// (`s1.chars == s2.chars` is Odin's native string equality -- a real
-// byte comparison, not a pointer compare): for interned (short, see
-// obj_string.odin's STRING_INTERN_MAX_LEN) strings this is equivalent to
-// a pointer compare since interning guarantees equal content <=> equal
-// pointer, but it's also correct on its own for two collectible (long)
-// strings that happen to share content without sharing an allocation.
-// Lists/dicts get real recursive structural equality; every other kind
-// (functions, closures, classes, instances, modules, natives, files,
-// iterators, bound methods) is reference/identity equality, matching
-// Lox's normal "same object" semantics for those.
+// (`s1.chars == s2.chars`, a real byte comparison), which is also correct
+// for two collectible (long) strings that share content without sharing
+// an allocation. Lists/dicts get recursive structural equality; every
+// other kind is reference/identity equality, matching Lox's normal
+// "same object" semantics.
 @(private = "file")
 objects_equal :: proc(a, b: ^Obj) -> bool {
 	if a == b {

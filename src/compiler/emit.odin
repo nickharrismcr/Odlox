@@ -4,18 +4,13 @@ import "../core"
 import "core:fmt"
 
 // The Emitter's shared primitives and function/chunk lifecycle: walks the
-// AST the parser (parser.odin/rules.odin/expr.odin/stmt.odin) built and
-// the Resolver (resolve.odin) annotated, turning it into core.Chunk
-// bytecode. emit_expr.odin/emit_stmt.odin hold the per-node-kind walk.
-// See docs/plans/compiler-ast-split.md for the full design.
-//
-// Everything here reads slot numbers/resolutions the Resolver already
-// computed (Var_Ref.kind/slot, declared_slot, Local_Exit, etc. -- all on
-// the AST already) rather than re-deriving them. break/continue/return
-// crossing an enclosing try (emit_stmt.odin's emit_try_crossings) walks
-// the ancestor Stmt_Try chain the Resolver already collected and emits
-// each crossed try's cleanup/finally directly, in order -- no jump-to-a-
-// deferred-site indirection the way a single-pass compiler needs.
+// AST the parser built and the Resolver annotated, turning it into
+// core.Chunk bytecode (emit_expr.odin/emit_stmt.odin hold the
+// per-node-kind walk). Everything here reads slot numbers/resolutions the
+// Resolver already computed rather than re-deriving them. break/continue/
+// return crossing an enclosing try walks the ancestor Stmt_Try chain the
+// Resolver already collected and emits each crossed try's cleanup/finally
+// directly, in order.
 
 // -----------------------------------------------------------------------
 // Types
@@ -384,22 +379,18 @@ DebugSkipPeephole := false
 // -----------------------------------------------------------------------
 // Compile-time peephole optimizer -- rewrites two fixed-shape 8-byte
 // instruction sequences in place, padding with Noop so already-computed
-// jump offsets elsewhere in the chunk stay valid (nothing shifts). This
-// is stage one of a two-stage design: the VM further specializes
-// Add_Nn/Incr_Const_N into their _Ii/_Ff type-specific children at
-// runtime, on first execution (a minimal inline cache) -- see
-// docs/ARCHITECTURE.md's Chunk section. Runs on the finished Chunk
-// regardless of how it was generated, so it's unaffected by the parse/
-// resolve/emit split.
+// jump offsets elsewhere in the chunk stay valid. Stage one of a two-stage
+// design: the VM further specializes Add_Nn/Incr_Const_N into their
+// _Ii/_Ff type-specific children at runtime, on first execution (a minimal
+// inline cache) -- see docs/ARCHITECTURE.md's Chunk section.
 
 // Numeric_Fuse_Family: one row per arithmetic operator this pass fuses --
-// the plain source opcode Get_Local/Get_Local(or Constant)/<source_op>/
-// Set_Local/Pop compiles to, and the two fused opcodes (local-local,
-// local-constant) it collapses into. Subtract/Multiply/Divide are
-// generalizations of the original Add_Numeric/Add_Nn/Incr_Const_N case;
-// see chunk.odin's Op_Code doc comment for why their _Ii/_Ff children
-// still re-check types every execution instead of trusting the first
-// patch the way Add_Ii/Add_Ff do.
+// the plain source opcode sequence it compiles to, and the two fused
+// opcodes (local-local, local-constant) it collapses into. Subtract/
+// Multiply/Divide generalize the original Add_Numeric/Add_Nn/Incr_Const_N
+// case; see chunk.odin's Op_Code doc comment for why their _Ii/_Ff
+// children still re-check types every execution instead of trusting the
+// first patch the way Add_Ii/Add_Ff do.
 @(private = "file")
 Numeric_Fuse_Family :: struct {
 	source_op:      core.Op_Code,

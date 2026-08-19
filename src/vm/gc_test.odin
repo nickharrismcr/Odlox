@@ -127,14 +127,11 @@ test_incremental_cycle_reclaims_dead_and_keeps_live :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // Write barrier regression
 
-// test_write_barrier_protects_object_installed_into_blackened_container
-// is the core correctness case this whole plan's write barrier exists
-// for: mutating an already-blackened object's field to point at a
-// still-white object must protect that referent for the rest of the
-// current cycle, or it would be incorrectly swept despite being
-// reachable. Mirrors what call.odin's "append" method dispatch does
-// (core.list_append then write_barrier_value) rather than calling
-// write_barrier directly, so this exercises the real call shape.
+// The core correctness case the write barrier exists for: mutating an
+// already-blackened object's field to point at a still-white object must
+// protect that referent for the rest of the current cycle. Mirrors
+// call.odin's "append" method dispatch (list_append then
+// write_barrier_value) rather than calling write_barrier directly.
 @(test)
 test_write_barrier_protects_object_installed_into_blackened_container :: proc(t: ^testing.T) {
 	vm := new_vm("test")

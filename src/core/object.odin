@@ -41,15 +41,11 @@ Object_Type :: enum u8 {
 }
 
 // Obj is embedded (via `using`) at the head of every concrete object
-// struct. `next` is the intrusive singly-linked list pointer the
-// garbage collector (see the vm package) walks to sweep every live
-// allocation -- zero/unused until a VM's registry exists to link an
-// object into it.
-//
-// `marked`/`next` living directly on this plain pointer means a nil
-// `^Class_Object` stored in an `Obj`-shaped slot is just a nil pointer,
-// full stop -- there is no "non-nil box wrapping a nil pointer" state
-// for the mark phase to trip over.
+// struct. `next` is the intrusive singly-linked list pointer the garbage
+// collector walks to sweep every live allocation, zero/unused until a
+// VM's registry links the object into it. `marked`/`next` living directly
+// on this plain pointer means a nil `^Class_Object` in an `Obj`-shaped
+// slot is just a nil pointer, with no boxed-nil state for mark to trip over.
 Obj :: struct {
 	type:   Object_Type,
 	marked: bool,

@@ -252,15 +252,10 @@ const MIN_RADIUS2 = 0.25   // (0.5)^2
 const FIXED_RADIUS2 = 1.0
 const FOLD_LIMIT = 1.0
 
-// Iteration budget the shader's max_iterations uniform is interpolated
-// between each frame (see update_detail_level below) -- MIN_ITERATIONS is
-// enough to read the Mandelbox's overall shape from a distance, but not
-// enough to resolve its finer nested folds up close (they'd look
-// smoothed-over, the same way a 2D Mandelbrot deep zoom goes flat once
-// max_iter is too low for how far in you've gone); MAX_ITERATIONS is high
-// enough to hold up under a close approach without costing much, since
-// BAILOUT2 in the shader keeps far-field pixels cheap regardless of the
-// cap.
+// Iteration budget the shader's max_iterations uniform is interpolated between each
+// frame (see update_detail_level below) -- MIN_ITERATIONS reads the Mandelbox's overall
+// shape from a distance but not its finer nested folds up close; MAX_ITERATIONS holds up
+// under a close approach without costing much, since BAILOUT2 keeps far-field pixels cheap.
 const MIN_ITERATIONS = 16.0
 const MAX_ITERATIONS = 64.0
 // APPROX_FRACTAL_RADIUS: rough extent of the Mandelbox from the origin
@@ -274,14 +269,9 @@ const DETAIL_FAR_DIST = 15.0  // distance-to-surface at/above which detail is at
 
 const MOVE_SPEED = 2.5
 const BOOST_MULT = 4.0
-// At the camera's current start distance (20 units), the fractal's ~3-unit
-// extent only subtends ~17 degrees of the ~53-degree vertical FOV -- with
-// the old 0.0025 rad/pixel sensitivity, one ordinary mouse swipe (a few
-// hundred pixels) turns the camera by tens of degrees, well past that 17
-// degrees, so the fractal exits the frame in a single motion. Not a sign/
-// direction bug (the camera basis itself is correct -- see forward's own
-// comment below) -- just too much rotation per pixel for how small a
-// target this is at range. Cut ~4x for finer control.
+// At the camera's start distance (20 units), the fractal's ~3-unit extent only subtends
+// ~17 degrees of the ~53-degree vertical FOV, so a higher rad/pixel sensitivity turns the
+// camera past that in a single mouse swipe and the fractal exits the frame. Cut for finer control.
 const MOUSE_SENS = 0.0006
 const PITCH_LIMIT = 1.5 // just under pi/2, avoids the forward vector flipping at the poles
 const SCALE_MIN = 1.2
@@ -314,14 +304,10 @@ var fold_limit_loc = mandelbox_shader.get_location("fold_limit")
 var time_loc = mandelbox_shader.get_location("time")
 var max_iterations_loc = mandelbox_shader.get_location("max_iterations")
 
-// update_detail_level uploads max_iterations for the current camera
-// position -- distance to the origin, less APPROX_FRACTAL_RADIUS, stands
-// in for distance to the fractal's surface (see that constant's own
-// comment). Linearly interpolated between MIN_ITERATIONS (at
-// DETAIL_FAR_DIST or beyond) and MAX_ITERATIONS (at DETAIL_NEAR_DIST or
-// closer) -- called once per frame, after `pos` is updated, so flying
-// towards the fractal ramps detail up smoothly rather than in a single
-// jump.
+// Uploads max_iterations for the current camera position -- distance to the origin, less
+// APPROX_FRACTAL_RADIUS, stands in for distance to the fractal's surface. Linearly
+// interpolated between MIN_ITERATIONS (at DETAIL_FAR_DIST or beyond) and MAX_ITERATIONS
+// (at DETAIL_NEAR_DIST or closer), called once per frame so detail ramps up smoothly.
 func update_detail_level(cam_pos) {
     var dist_to_surface = vec3_length(cam_pos) - APPROX_FRACTAL_RADIUS
     var detail_t = (DETAIL_FAR_DIST - dist_to_surface) / (DETAIL_FAR_DIST - DETAIL_NEAR_DIST)
@@ -344,24 +330,16 @@ mandelbox_shader.set_value_float(fold_limit_loc, FOLD_LIMIT)
 // start the camera on the light's own side of the fractal.
 const LIGHT_DIR = vec3(0.6, 0.8, -0.4)
 
-// CAMERA_START_DIST: the classic Mandelbox parameter set below (scale 2.5,
-// fold_limit 1, min/fixed radius 0.5/1.0) extends roughly 1.5-3 units from
-// the origin. The ray fan's implicit vertical FOV (uv.y spans -0.5..0.5
-// against unit-length camUp/camRight/camForward, i.e. +/-atan(0.5) =~ 26.5
-// degrees half-angle) means fitting a half-extent E inside frame needs
-// distance >= E / tan(26.5 deg) =~ 2*E -- 6 units would put the set right
-// at the frame edge with no margin, so 20 (roughly 6-7x the extent) leaves
-// it comfortably small in frame with lots of room on every side.
+// CAMERA_START_DIST: the classic Mandelbox parameter set below extends roughly 1.5-3
+// units from the origin. The ray fan's implicit vertical FOV (~26.5 degree half-angle)
+// means fitting a half-extent E in frame needs distance >= 2*E -- 20 (roughly 6-7x the
+// extent) leaves it comfortably small in frame with room on every side.
 const CAMERA_START_DIST = 20.0
 
-// Start the camera on the same side as the light (rather than +z) and
-// looking back towards the origin, so the first thing in frame is a face
-// lit close to head-on instead of one lit only at a grazing angle or in
-// full shadow. yaw/pitch are derived from the desired forward vector
-// (pointing from the start position back at the origin) by inverting
-// forward's own formula below (forward = (cos(pitch)sin(yaw), sin(pitch),
-// -cos(pitch)cos(yaw))): pitch = atan2(forward.y, length of its xz part),
-// yaw = atan2(forward.x, -forward.z).
+// Start the camera on the same side as the light, looking back towards the origin, so the
+// first thing in frame is a face lit close to head-on instead of at a grazing angle or in
+// full shadow. yaw/pitch are derived from the desired forward vector by inverting
+// forward's own formula below.
 var light_dir_norm = vec3_normalize(LIGHT_DIR)
 var pos = vec3_scale(light_dir_norm, CAMERA_START_DIST)
 var start_forward = vec3_scale(light_dir_norm, -1.0)

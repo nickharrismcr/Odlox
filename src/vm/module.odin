@@ -9,13 +9,10 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 
-// Module import execution. With threads out of scope entirely (see
-// docs/ARCHITECTURE.md's Scope section), module_cache is a plain
-// process-wide map, no lock needed.
-//
-// Built-in modules (sys/os, registered in builtins.odin; gfx/re/pickle/
-// process/colour_utils/inspect/physics, registered from the natives/
-// package -- see each one's own register_* proc) resolve through
+// Module import execution. With threads out of scope entirely, module_cache
+// is a plain process-wide map, no lock needed. Built-in modules (sys/os,
+// registered in builtins.odin; gfx/re/pickle/process/colour_utils/
+// inspect/physics, registered from the natives package) resolve through
 // vm.builtin_modules. A *.lox source module resolves through
 // read_module_source below.
 
@@ -29,13 +26,10 @@ import "core:strings"
 module_cache: map[string]^core.Module_Object
 
 // module_source_cache holds every imported module's own source text,
-// keyed by its bare import name -- genuinely process-wide for the same
-// reason module_cache above is: a module's own functions run as
-// ordinary closures in whichever VM calls them, often long after the
-// sub-VM that originally compiled the module's source has gone out of
-// scope, but the stack trace (exceptions.odin's append_stack_trace/
-// source_line) still needs that module's source text to print a
-// context line for a frame inside one of its functions.
+// keyed by its bare import name -- process-wide for the same reason as
+// module_cache: a module's functions run as ordinary closures long after
+// the sub-VM that compiled them is gone, but the stack trace still needs
+// that source text to print a context line.
 @(private)
 module_source_cache: map[string]string
 
@@ -68,16 +62,12 @@ do_import_from :: proc(vm: ^VM, module_name: string, names: []string) {
 		return
 	}
 	if len(names) == 0 {
-		// `from mod import *` -- every name in the module's environment,
-		// not just its "real" top-level declarations, since Environment.vars
-		// also holds whatever free builtins the module's own code happened
-		// to reference (seed_builtin_globals writes those into both the
-		// module's globals *and* vars -- see builtins.odin). A module
-		// like math.lox that calls vec2()/vec3() internally ends up with
-		// "vec2"/"vec3" entries in its own vars purely as a side effect of
-		// referencing them, not because it "exports" them -- bind_imported_name_soft
-		// (not bind_imported_name) is what makes that harmless: see its
-		// own doc comment.
+		// `from mod import *` -- every name in the module's environment, not
+		// just its "real" top-level declarations, since Environment.vars also
+		// holds whatever free builtins the module's own code referenced
+		// (seed_builtin_globals writes those into both globals and vars).
+		// bind_imported_name_soft (not bind_imported_name) tolerates names
+		// that aren't real exports, just incidental references.
 		for k, v in mod.environment.vars {
 			bind_imported_name_soft(vm, core.string_get(k), v)
 		}
@@ -105,21 +95,12 @@ bind_imported_name :: proc(vm: ^VM, name: string, val: core.Value) {
 	write_barrier_value(vm, val)
 }
 
-// bind_imported_name_soft is `from mod import *`'s own binding step --
-// deliberately more forgiving than bind_imported_name (used for a
-// specific `from mod import name`), which treats a missing global slot
-// as an internal-error bug. For a *named* import, the compiler already
-// guaranteed a slot exists (from_import_statement's own
-// `global_slot(p, name)` call, at compile time) -- so "no slot" really
-// would mean something is broken. `import *` has no such guarantee: it
-// walks whatever names the module's environment happens to hold, most
-// of which the importing script's own compiled code never mentioned by
-// identifier at all -- e.g. a name the module's own top-level code
-// happened to reference internally but the importing script never did
-// -- so there's no reason a global slot would exist for them, and no
-// reason one needs to, either, since nothing in the importing script
-// can ever try to *read* a name it never referenced. A missing slot is
-// silently skipped here rather than treated as an error.
+// bind_imported_name_soft is `from mod import *`'s binding step --
+// deliberately more forgiving than bind_imported_name, which treats a
+// missing global slot as an internal-error bug. A named import is
+// guaranteed a slot at compile time, but `import *` walks names the
+// importing script's compiled code never mentioned at all, so a missing
+// slot is silently skipped here rather than treated as an error.
 @(private = "file")
 bind_imported_name_soft :: proc(vm: ^VM, name: string, val: core.Value) {
 	core.env_set_var(vm.environment, core.intern_string(name), val)
@@ -178,42 +159,20 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return nil, false
 	}
 
-	// sub is a throwaway VM that exists only to run this module's own
-	// top-level code (class/func declarations, any module-level `var`
-	// initializers). Every object that code allocated -- including e.g.
-	// a module-level `var _pool = [];` list a script mutates long after
-	// import -- was gc_track()ed onto *sub's* vm.objects, not the parent
-	// vm's. If sub were simply discarded below, those objects would
-	// still be reachable (via mod.environment, correctly walked by the
-	// parent's mark_roots) but never actually swept by anyone: sweep()
-	// only walks vm.objects, so their mark bit, once set on the first
-	// cycle that reaches them, would never get cleared again -- and
-	// mark_object's "already marked, don't re-queue" fast path then
-	// means they never get re-traced either. A List's own object
-	// surviving that way is harmless (it just never becomes
-	// unreachable), but anything added to it *after* this point (e.g.
-	// every particle a pool holds beyond its first GC cycle) would be
-	// invisible to every future mark phase and get swept as garbage
-	// while still genuinely referenced -- a use-after-free. Splicing
-	// sub's object list into the parent's, and folding its allocation
-	// total in too, makes the parent's own sweep the sole owner of
-	// everything the module allocated, avoiding this instead of
-	// special-casing module-level containers.
+	// sub is a throwaway VM running only this module's top-level code.
+	// Every object that code allocated was gc_track()ed onto sub's own
+	// vm.objects, not the parent's -- if sub were simply discarded, those
+	// objects would stay reachable via mod.environment but never get swept
+	// (sweep() only walks vm.objects). Splicing sub's object list into the
+	// parent's makes the parent's sweep the sole owner instead.
 	if sub.objects != nil {
-		// sub's own GC state (gray_stack, gc_phase) is discarded along with
-		// sub itself. Under the incremental collector (gc.odin), sub's last
-		// cycle can still have been mid-Marking when its top-level code
-		// finished running -- some of its objects could be marked=true
-		// without ever having been blackened (still sitting in sub's own,
-		// now-abandoned gray_stack). Left alone, the parent's mark_object
-		// would see that stale true and skip re-tracing them (the
-		// "already marked, don't re-queue" fast path this file's own
-		// comment above already flags), so their children would never get
-		// marked by the parent either -- a use-after-free. Resetting every
-		// spliced object to unmarked makes the parent's own reachability
-		// analysis (whichever cycle discovers mod, via the gc_track call
-		// below) the sole authority on what's reachable, exactly as if
-		// these objects had just been allocated fresh.
+		// sub's own GC state is discarded with sub itself. Its last cycle
+		// could still have been mid-Marking, leaving some objects marked=true
+		// without having been blackened -- left alone, the parent's
+		// mark_object would skip re-tracing them (already-marked fast path),
+		// so their children would never get marked. Resetting every spliced
+		// object to unmarked makes the parent's own reachability analysis
+		// the sole authority, as if freshly allocated.
 		for o := sub.objects; o != nil; o = o.next {
 			o.marked = false
 		}
@@ -240,21 +199,12 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	return mod, true
 }
 
-// compile_and_run_module is load_module's own compile-or-cache-hit step
-// -- deliberately not routed through interpret (which always compiles
-// from source unconditionally), since an imported module is the only
-// place a bytecode-cache hit can skip compilation entirely (see
-// docs/plans/bytecode-cache.md). Mirrors interpret's own reset-state
-// prelude, since it bypasses interpret altogether, but never touches
-// sub.repl -- a module's own sub-VM is never a REPL session.
-//
-// cache_only is true for a --force-bc-cache resolution that found no
-// .lox at all (source is ""): if bc_cache_load then misses too (corrupt/
-// incompatible cache, or --force-compile also set, which always misses
-// unconditionally), there is nothing to fall back to compiling -- that's
-// reported directly here rather than calling compiler.Compile("", ...),
-// which would "succeed" by compiling an empty program instead of
-// surfacing the real problem.
+// compile_and_run_module is load_module's compile-or-cache-hit step --
+// not routed through interpret (which always compiles unconditionally),
+// since an imported module is the only place a bytecode-cache hit can skip
+// compilation entirely. cache_only is true for a --force-bc-cache
+// resolution with no .lox at all: if bc_cache_load then misses too,
+// that's reported directly rather than compiling "" as an empty program.
 @(private = "file")
 compile_and_run_module :: proc(sub: ^VM, path: string, source: string, cache_only: bool) -> Interpret_Result {
 	reset_stack(sub)
@@ -285,28 +235,13 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string, cache_onl
 	return status
 }
 
-// read_module_source tries, in order: `$LOX_PATH/modules/<name>.lox`,
-// then alongside the *top-level entry* script (vm.root_script -- not
-// vm.script, the module currently being loaded, see the VM struct's
-// doc comment on root_script), then a recursive search of the entry
-// script's own directory tree -- so scripts can group their own
-// modules into subfolders. The stdlib modules live under a `modules/`
-// directory at the LOX_PATH root, since `src/` in this repository is
-// exclusively Odin source, not Lox source.
-//
-// When vm.force_bc_cache is set, the first two (non-recursive) locations
-// also accept a cache-only match: no `<name>.lox` there, but a
-// `__loxcache__/<name>.lxc` sitting where that .lox would have been --
-// see cache_only_module_path. data is nil in that case; the (nonexistent
-// on disk) would-be .lox path is still returned as `path`, since
-// bc_cache_path/bc_cache_load derive the .lxc location from it purely by
-// string manipulation, never by statting it. The recursive subdirectory
-// search deliberately isn't extended to cache-only matches -- it walks
-// for a file literally named `<name>.lox`, and teaching it to also
-// filesystem-walk for `.lxc` names is unneeded scope for what
-// --force-bc-cache is for (vendoring compiled stdlib-style libraries
-// into `modules/`, or dropping them alongside the entry script -- both
-// already covered by the two direct candidates above).
+// read_module_source tries, in order: `$LOX_PATH/modules/<name>.lox`, then
+// alongside the top-level entry script (vm.root_script, not vm.script),
+// then a recursive search of the entry script's directory tree. When
+// vm.force_bc_cache is set, the first two (non-recursive) locations also
+// accept a cache-only match -- a `__loxcache__/<name>.lxc` with no
+// matching `.lox` (see cache_only_module_path); data is nil in that case.
+// The recursive search isn't extended to cache-only matches.
 @(private = "file")
 read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string, found: bool) {
 	filename := strings.concatenate({name, ".lox"})

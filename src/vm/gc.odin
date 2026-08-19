@@ -26,26 +26,13 @@ GC_Phase :: enum {
 	Sweeping,
 }
 
-// gc_track registers obj as a newly-allocated collectible object on
-// this VM's own intrusive list (mirroring clox's vm.objects). Does NOT
-// check the allocation threshold itself -- see maybe_collect_garbage.
-//
-// "Allocate gray": whenever a cycle is active, a freshly tracked object
-// is marked *and* queued for tracing (via mark_object), not just marked
-// black outright. A brand-new object's own children are almost always
-// already-marked-or-fresh values by construction (they came from the
-// stack/globals/fields this same cycle already knows about, so tracing
-// them again is a cheap no-op) -- but one real case needs it to be more
-// than a no-op: module.odin's load_module splices a whole separate
-// sub-VM's already-existing object subtree (arbitrary prior marked
-// bits, from that sub-VM's own unrelated GC history) into this VM's
-// object list via a single gc_track call on the Module_Object wrapping
-// it. Marking that object black without queuing it would leave
-// everything reachable only through it untraced for the rest of this
-// cycle -- a use-after-free the moment sweep ran. Queuing it (what this
-// proc does) instead lets the ordinary blacken_object(Module) pass
-// discover and mark that whole subtree correctly, whenever it's
-// eventually dequeued.
+// gc_track registers obj as a newly-allocated collectible object on this
+// VM's own intrusive list. Does not check the allocation threshold itself
+// -- see maybe_collect_garbage. While a cycle is active, a freshly tracked
+// object is marked and queued for tracing rather than marked black
+// outright: load_module (module.odin) splices in a whole sub-VM's object
+// subtree via one gc_track call, and marking it black without queuing
+// would leave everything reachable only through it untraced this cycle.
 gc_track :: proc(vm: ^VM, obj: ^core.Obj) {
 	obj.next = vm.objects
 	vm.objects = obj
@@ -56,14 +43,11 @@ gc_track :: proc(vm: ^VM, obj: ^core.Obj) {
 }
 
 // gc_adopt recursively gc_tracks every collectible object reachable from
-// v -- used for a value tree built with no VM in scope to register
-// objects with as they were allocated (core.pickle_decode, which can run
-// from a background pipe-reader for the "process" module with no VM
-// existing yet at all; see that proc's own doc comment). Most strings are
-// never tracked at all (permanent/interned -- see obj_string.odin's
-// STRING_INTERN_MAX_LEN), but a decoded string over that length is an
-// ordinary collectible object like any other and needs the same
-// gc_track call every other case here gets.
+// v -- used for a value tree built with no VM in scope to register objects
+// with as they were allocated (core.pickle_decode, which can run from a
+// background pipe-reader with no VM existing yet). Interned strings are
+// never tracked, but a decoded string over STRING_INTERN_MAX_LEN needs the
+// same gc_track call every other case here gets.
 gc_adopt :: proc(vm: ^VM, v: core.Value) {
 	#partial switch v.type {
 	case .Obj:
@@ -115,18 +99,12 @@ make_tracked_string_value :: proc(vm: ^VM, s: string, immutable := false) -> cor
 }
 
 // maybe_collect_garbage advances the collector by one bounded step,
-// starting a new cycle first if the allocation threshold has been
-// crossed and none is already running. Called once per dispatch-loop
-// iteration, *between* opcodes (see run.odin) -- deliberately never
-// from inside a single opcode's own handler. Checking only at
-// instruction boundaries means the value stack is *always* in a fully
-// consistent, source-level-valid state -- exactly what root scanning is
-// allowed to assume -- whenever a cycle can actually start. An opcode
-// handler that pops several already-built values off the stack
-// (transiently unreachable from anywhere) before combining them into a
-// new object (e.g. Op_Create_List) never has a cycle start interleaved
-// into that window, so no "pre-mark a just-linked object before
-// anything else can reach it" trick is needed to protect it.
+// starting a new cycle first if the allocation threshold has been crossed
+// and none is already running. Called once per dispatch-loop iteration,
+// between opcodes, never inside a single opcode's own handler -- so the
+// value stack is always in a fully consistent state whenever a cycle can
+// start, and a handler that transiently pops values before combining them
+// never has a cycle interleaved into that window.
 maybe_collect_garbage :: proc(vm: ^VM) {
 	if vm.gc_phase == .Idle && vm.bytes_allocated > vm.next_gc {
 		start_gc_cycle(vm)
@@ -172,15 +150,10 @@ step_mark :: proc(vm: ^VM) {
 	}
 }
 
-// step_sweep walks up to GC_WORK_UNIT objects from wherever the
-// previous call left off (vm.sweep_cursor/vm.sweep_prev), freeing
-// anything left unmarked and clearing the mark on survivors for next
-// cycle -- identical per-object body to a non-incremental collector's
-// full sweep. Anything requiring real external-resource teardown
-// (currently just an open file) gets that call first (see
-// docs/ARCHITECTURE.md's Object model section). When the cursor runs
-// off the end of the list, the cycle is done: recompute next_gc
-// (applying the 3b floor) and go Idle.
+// step_sweep walks up to GC_WORK_UNIT objects from wherever the previous
+// call left off (vm.sweep_cursor/vm.sweep_prev), freeing anything unmarked
+// and clearing the mark on survivors for next cycle. When the cursor runs
+// off the end of the list, the cycle is done: recompute next_gc and go Idle.
 step_sweep :: proc(vm: ^VM) {
 	for _ in 0 ..< GC_WORK_UNIT {
 		obj := vm.sweep_cursor
@@ -215,23 +188,11 @@ step_sweep :: proc(vm: ^VM) {
 
 // write_barrier/write_barrier_value are no-ops outside an active cycle.
 // Call immediately after any write that installs obj/v into storage the
-// collector won't automatically revisit for the rest of this cycle --
-// see this file's header comment for the full site list.
-//
-// During Marking, this just enqueues obj like mark_object always does --
-// a later step_mark call will trace it in due course. During Sweeping,
-// no later step_mark call is coming (step_mark only ever runs during
-// Marking), so deferring wouldn't work: obj's own not-yet-discovered
-// children could be swept before anything traced them this cycle. Mark
-// and fully trace eagerly instead, right here, rather than leaving
-// anything on the gray stack for a phase that will never drain it.
-// (Provably a no-op in practice for real bytecode: by the time Sweeping
-// starts, everything the mutator can still reach is already marked, or
-// freshly allocated -- see gc_track's "allocate gray" -- so obj should
-// already be marked whenever write_barrier runs during Sweeping. Kept
-// as a real, working path anyway rather than an assert, since that
-// argument covers every mutation site audited for this plan, not a
-// language-level guarantee.)
+// collector won't automatically revisit this cycle. During Marking this
+// just enqueues obj like mark_object always does. During Sweeping, no
+// later step_mark call is coming, so mark and fully trace eagerly right
+// here instead -- otherwise obj's undiscovered children could be swept
+// before anything traced them.
 write_barrier :: proc(vm: ^VM, obj: ^core.Obj) {
 	#partial switch vm.gc_phase {
 	case .Marking:

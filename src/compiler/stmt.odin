@@ -1,21 +1,12 @@
 package compiler
 
 // Declarations, statements, and control flow. Each function builds and
-// returns an AST node -- see docs/plans/compiler-ast-split.md.
-//
-// Scope tracking, loop/try context stacks, and every validity check that
-// needs more than a token comparison (break/continue outside a loop,
-// return outside a function or with a value in an initializer, const
-// reassignment) are deliberately NOT done here -- they're the Resolver's
-// job (resolve.odin). Self-inheritance is checked right here in
-// class_declaration, since it's pure lexeme comparison with no scope
-// context needed.
-//
-// try/except/finally carries its whole body/excepts/finally_body up front
-// as one Stmt_Try node (see ast.odin's own doc comment on it) -- there is
-// no trampoline mechanism here the way a single-pass compiler needs;
-// resolve.odin/emit_stmt.odin handle a return/break/continue that crosses
-// a try directly, by walking the already-complete tree.
+// returns an AST node. Scope tracking, loop/try context stacks, and any
+// validity check needing more than a token comparison are the Resolver's
+// job (resolve.odin); self-inheritance is checked here in
+// class_declaration since it's pure lexeme comparison. try/except/finally
+// carries its whole body/excepts/finally_body up front as one Stmt_Try
+// node -- no trampoline mechanism is needed here.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
