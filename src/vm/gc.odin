@@ -4,12 +4,11 @@ import "../core"
 
 // Mark-and-sweep collector -- design in docs/ARCHITECTURE.md's Garbage
 // collector section. Marking/sweeping are incremental (GC_WORK_UNIT per
-// maybe_collect_garbage call, via the GC_Phase state machine below); only
-// root scanning stays atomic. Function_Object and String_Object are
-// constructed with no VM in scope to register them, so they stay
-// structurally permanent (still fully traced). write_barrier/
-// write_barrier_value must run after any write the collector won't
-// otherwise revisit this cycle -- see call sites across the package.
+// maybe_collect_garbage call); only root scanning stays atomic.
+// Function_Object/String_Object have no VM in scope at construction to
+// register with, so they stay structurally permanent (still fully
+// traced). write_barrier/write_barrier_value must run after any write
+// the collector won't otherwise revisit this cycle.
 
 INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox's starting nextGC
 GC_HEAP_GROW_FACTOR :: 2

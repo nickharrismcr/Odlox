@@ -4,9 +4,8 @@ from gfx import *
 // Each iteration applies a box fold (clamp every axis to [-fold_limit, fold_limit], then
 // mirror) then a sphere fold (rescale points inside a sphere for uniform detail at any
 // distance) -- the box fold gives the Mandelbox its flat faces, unlike a Mandelbulb's
-// spherical-fold-only iteration.
-// Free-fly camera: WASD/Q/E move, mouse look, LEFT SHIFT faster. UP/DOWN scale live
-// (1.5-3.0), R resets, ESC quits.
+// spherical-fold-only iteration. Free-fly camera: WASD/Q/E move, mouse look, LEFT SHIFT
+// faster. UP/DOWN scale live (1.5-3.0), R resets, ESC quits.
 
 import math
 
@@ -156,15 +155,12 @@ vec3 calc_normal(vec3 p) {
     ));
 }
 
-// Soft shadow: marches a second ray from the surface towards the light and
-// shrinks the returned factor (1.0 = fully lit, 0.0 = fully shadowed) by how
-// closely that ray ever grazes another part of the fractal, not just whether
-// it eventually hits one -- an outright hit (d < SURF_DIST) returns 0.0
-// immediately, but a near-miss still darkens the result in proportion to how
-// close it came (k * d / t), which is what turns a hard-edged shadow into a
-// soft penumbra. Standard technique for SDF raymarchers (Quilez); ro is
-// expected pre-biased off the surface along its normal by the caller (see
-// main()) so this ray doesn't immediately re-hit the point it started at.
+// Soft shadow: marches a second ray from the surface towards the light and shrinks the
+// returned factor (1.0 = fully lit, 0.0 = fully shadowed) by how closely that ray ever
+// grazes the fractal, not just whether it eventually hits one -- a near-miss darkens the
+// result proportionally (k * d / t), turning a hard-edged shadow into a soft penumbra.
+// Standard SDF raymarcher technique (Quilez); ro is pre-biased off the surface by the
+// caller so this ray doesn't immediately re-hit its own start point.
 float calc_shadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
     float res = 1.0;
     float t = mint;

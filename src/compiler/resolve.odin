@@ -2,26 +2,13 @@ package compiler
 
 import "core:fmt"
 
-// The Resolver: walks the AST the parser built (parser.odin/rules.odin/
-// expr.odin/stmt.odin), annotating nodes in place with scope/local/
-// upvalue/global resolution (Var_Ref/declared_slot/is_local/local_exits/
-// etc., all declared on the relevant ast.odin node types) and running
-// every validity check that needs more than a token comparison to decide
-// (self-inheritance is pure lexeme comparison and happens at parse time
-// instead -- see stmt.odin's class_declaration). See docs/plans/
-// compiler-ast-split.md for the full design.
-//
-// A return/break/continue whose target is outside an enclosing try
-// (crosses_tries) is resolved here too; resolve_finally_for_crossing is
-// what lets a crossed try's finally be *emitted* correctly, since its own
-// local slot numbers are replay-relative -- see its own doc comment and
-// Finally_Resolve_Ctx's.
-//
-// Hard invariant: this file never touches core.Chunk. It only ever
-// assigns slot *numbers* (local index, upvalue index, global index) --
-// never bytecode-pool indices -- which is what keeps the seam clean for
-// a future type-checker to occupy the same position in the pipeline
-// (after this, before Emit).
+// The Resolver: walks the AST the parser built, annotating nodes in place
+// with scope/local/upvalue/global resolution (Var_Ref/declared_slot/
+// is_local/local_exits/etc.) and running every validity check that needs
+// more than a token comparison. A return/break/continue crossing an
+// enclosing try (crosses_tries) is resolved here too, via
+// resolve_finally_for_crossing. Hard invariant: this file never touches
+// core.Chunk -- it only assigns slot numbers, never bytecode-pool indices.
 
 // -----------------------------------------------------------------------
 // Types
@@ -51,14 +38,11 @@ Upvalue :: struct {
 }
 
 // field_slots/field_slot_names back the compile-time-baked field-slot
-// fast path (see core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc
-// comment) -- populated once, by discover_field_slots, before this
-// class's members are resolved, so every `this.name` reference anywhere
-// in the class body (including textually before __init__) resolves against
-// the finished table. field_slots is name -> index; field_slot_names is
-// the same table in index -> name form, copied onto Stmt_Class_Decl at
-// the end of resolve_class_decl for the Emitter to register with the
-// Chunk.
+// fast path (core/chunk.odin's Get_Field_Slot/Set_Field_Slot). Populated
+// once by discover_field_slots before class members are resolved, so
+// every `this.name` reference resolves against the finished table.
+// field_slots is name -> index; field_slot_names is the same table in
+// index -> name form, copied onto Stmt_Class_Decl for the Emitter.
 Class_Compiler :: struct {
 	enclosing:        ^Class_Compiler,
 	has_superclass:   bool,
@@ -66,28 +50,14 @@ Class_Compiler :: struct {
 	field_slot_names: [dynamic]string,
 }
 
-// discover_field_slots scans v's own `__init__` method (Function_Type.
-// Initializer -- see stmt.odin's method(), which already sets this
-// exactly when the method is named "__init__") for top-level, unconditional,
-// plain-assignment `this.name = value` statements -- direct elements of
-// __init__'s body, not recursed into any if/while/for/nested block, which is
-// what "top level" means here, and specifically Property_Kind.Set, not
-// Compound_Set (`this.x += 1` reads before writing, so it can never be
-// treated as *defining* the field). This mirrors the real-world
-// convention already observed in every sampled fixture (a class's full
-// field set assigned unconditionally in __init__) without the compiler ever
-// enforcing it: a field assigned any other way (conditionally, in a
-// non-__init__ method, later) simply never enters this table and keeps
-// compiling through the ordinary Get_Property/Set_Property path,
-// unchanged and always correct.
-//
-// A field name that could also be a vec2/3/4 swizzle component
-// (is_swizzle_field_name, emit_expr.odin) is deliberately excluded --
-// `this.x = ...` inside init must still be eligible for swizzle
-// write-back if `this` turns out to hold something swizzle-relevant at
-// runtime (it never does for an Instance, but the compiler can't know
-// that here -- see emit_swizzle_set's own doc comment), so it stays on
-// the existing path entirely.
+// discover_field_slots scans the class's `__init__` method for top-level,
+// unconditional, plain-assignment `this.name = value` statements --
+// direct elements of __init__'s body, not recursed into any nested block,
+// and Property_Kind.Set only (not Compound_Set, which reads before
+// writing). A field assigned any other way never enters this table and
+// keeps compiling through the ordinary Get_Property/Set_Property path.
+// A name that could be a vec2/3/4 swizzle component
+// (is_swizzle_field_name) is excluded so swizzle write-back still applies.
 @(private = "file")
 discover_field_slots :: proc(class_ctx: ^Class_Compiler, members: []Class_Member) {
 	init_method: ^Method
