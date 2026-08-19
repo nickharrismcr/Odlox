@@ -10,26 +10,13 @@ import "../core"
 // isn't an Obj-carrying Value kind the same way (see core/value.odin).
 
 // get_property/set_property/bind_method/invoke/invoke_from_class all take
-// name as an already-interned ^core.String_Object, not a plain string.
-// Every call site (run.odin's Get_Property/Set_Property/Invoke/
-// Super_Invoke/Get_Super cases) reads name straight off a bytecode
-// constant that the compiler already interned when it emitted it
-// (compiler/expr.odin's dot -> core.make_string_value); a plain-string
-// signature here would mean every single property/method access
-// re-hashes that name's full content against the global intern table
-// just to re-derive the exact pointer already sitting in the constant
-// pool -- a real, measured cost on property-access-heavy code. Passing
-// the pointer through turns every one of these into a single map
-// lookup keyed by pointer identity.
+// name as an already-interned ^core.String_Object, not a plain string --
+// call sites already have it interned off a bytecode constant, so passing
+// the pointer through avoids re-hashing the name on every property access.
 //
-// get_property/invoke additionally take a monomorphic inline cache
-// (core.Property_Cache, one per callsite -- see core/chunk.odin's doc
-// comment) so a same-class repeat hit skips the *second* map lookup too
-// (class.methods[name], after an instance-fields-miss) -- nil for the
-// callsites that don't get one (do_get_super/do_super_invoke, both
-// comparatively cold). It can never replace the instance-fields lookup
-// itself: Lox instances have no fixed shape, so a field masking a method
-// on one instance says nothing about another instance of the same class.
+// get_property/invoke additionally take a monomorphic inline cache (one
+// per callsite, nil for the colder do_get_super/do_super_invoke) so a
+// same-class repeat hit skips the second (class.methods) map lookup too.
 get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, 0)
 
@@ -40,14 +27,10 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 		#partial switch receiver.obj_type {
 		case .Instance:
 			inst := core.as_instance(receiver)
-			// core.instance_get_field, not a raw inst.fields[name] read:
-			// this is the canonical field-lookup path Get_Field_Slot's own
-			// guard-miss fallback reuses (see run.odin), so it must see a
-			// field regardless of whether the compiler put it in
-			// inst.fields or inst.slots (compiler/resolve.odin's
-			// discover_field_slots) -- an ordinary `some_instance.field`
-			// access from outside the declaring class never goes through
-			// Get_Field_Slot at all, only ever this path.
+			// core.instance_get_field, not a raw inst.fields[name] read: it
+			// must see a field regardless of whether the compiler put it in
+			// inst.fields or inst.slots (discover_field_slots) -- this is
+			// also the fallback path Get_Field_Slot's guard-miss reuses.
 			if v, ok := core.instance_get_field(inst, name); ok {
 				pop(vm)
 				push(vm, v)

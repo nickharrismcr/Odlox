@@ -250,14 +250,10 @@ test_vector_add_uses_plus_plus :: proc(t: ^testing.T) {
 
 // -----------------------------------------------------------------------
 // Swizzle-component assignment write-back (`v.x = expr`) -- see
-// emit_expr.odin's emit_swizzle_set and core/chunk.odin's
-// Set_*_Vec_Field family. A top-level `var` resolves as a global (see
-// run_builtins's own finding in vm/builtins_test.odin), so this is the
-// Global half of the family; the Local/Upvalue/Property halves are
-// covered end-to-end in vm/builtins_test.odin instead, since their
-// distinguishing behavior (a real write-back into a function-local slot
-// or an instance field) needs the VM actually running, not just opcode
-// shape.
+// emit_expr.odin's emit_swizzle_set. A top-level `var` resolves as a
+// global, so this is the Global half of the family; the
+// Local/Upvalue/Property halves are covered end-to-end in
+// vm/builtins_test.odin instead, since they need the VM actually running.
 
 @(test)
 test_vec_swizzle_assign_uses_dedicated_opcode :: proc(t: ^testing.T) {
@@ -355,14 +351,11 @@ test_index_and_slice :: proc(t: ^testing.T) {
 
 @(test)
 test_compound_assignment_desugars_no_dedicated_opcode :: proc(t: ^testing.T) {
-	// `x` here is a *global* (top-level `var`), so this exercises
+	// `x` here is a global (top-level `var`), so this exercises
 	// Get_Global/Set_Global, not Get_Local/Set_Local -- the peephole
-	// optimizer only ever fuses local-slot sequences (see
-	// peephole_optimise's own doc comment), so this shape is never a
-	// fusion candidate regardless of DebugSkipPeephole, deliberately
-	// sidestepping that flag's race against other tests under Odin's
-	// parallel test runner (test_peephole_disabled_by_flag toggles it
-	// too, and both can run concurrently).
+	// optimizer only fuses local-slot sequences, so this shape is never a
+	// fusion candidate, sidestepping DebugSkipPeephole's race against other
+	// tests under Odin's parallel test runner.
 	c := compile_ok(t, "var x = 1\nx += 2\n")
 	seq := op_sequence(c)
 	found := false
@@ -481,13 +474,10 @@ test_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Parenthesized control-flow headers and unbraced bodies (the reference
-// implementation's real grammar requires the parens unconditionally -- see stmt.odin's
-// parse_condition doc comment; this port makes them optional instead,
-// to add the parenthesized fixtures the ported test suite actually
-// uses without breaking the bare style every existing test already
-// relies on). One shape test per statement kind, both forms, plus the
-// unbraced-body case parens make possible.
+// Parenthesized control-flow headers and unbraced bodies. The reference
+// implementation requires the parens unconditionally; this port makes
+// them optional instead, to support parenthesized fixtures without
+// breaking the bare style existing tests rely on.
 
 @(test)
 test_if_accepts_optional_parens_both_forms :: proc(t: ^testing.T) {
