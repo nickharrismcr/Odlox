@@ -4,14 +4,12 @@ import "../core"
 import "../vm"
 
 // pickle: plain-data serialisation. The actual encoder/decoder lives in
-// core/pickle.odin -- see that file for the wire format and its own
-// doc comment on why it lives in core rather than here. Class instances
-// round-trip their field data only, never methods/code -- loads()
-// resolves the class by name against the *calling frame's own* global
-// scope (vm.resolve_class_by_name, exceptions.odin -- the same lookup
-// an `except ClassName` clause uses), so an instance of a class that's
-// only a global in some other module's own scope can't be
-// reconstructed there.
+// core/pickle.odin. Class instances round-trip their field data only,
+// never methods/code -- loads() resolves the class by name against the
+// calling frame's own global scope (vm.resolve_class_by_name, the same
+// lookup an `except ClassName` clause uses), so an instance of a class
+// that's only a global in another module's scope can't be reconstructed
+// there.
 
 @(private)
 register_pickle :: proc(v: ^vm.VM) {

@@ -609,14 +609,10 @@ render_texture_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_co
 		result = core.NIL_VALUE
 	case "get_texture":
 		// A pixel readback (LoadImageFromTexture/UnloadImage, result
-		// discarded) forces the GPU driver to finish any prior writes to
-		// this render texture before the caller starts sampling it
-		// elsewhere. This render texture's own drawing methods each open
-		// and close their own texture-mode context, so without an
-		// explicit sync point here the GPU can still be mid-flight on
-		// those writes when the returned Texture starts getting drawn
-		// from -- relevant for a script that re-samples a live-painted
-		// canvas into a texture every frame.
+		// discarded) forces the GPU driver to finish any prior writes to this
+		// render texture before the caller starts sampling it elsewhere --
+		// relevant for a script that re-samples a live-painted canvas into a
+		// texture every frame.
 		if arg_count != 0 {
 			vm.runtime_error(v, "get_texture() takes no arguments.")
 			return false
@@ -662,15 +658,12 @@ render_texture_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_co
 		result = core.NIL_VALUE
 	case "draw_array_fast":
 		// Bulk-uploads a float_array (each cell a packed-RGB float, same
-		// encoding as gfx.encode_rgba/decode_rgba) as one texture and
-		// blits it in a single draw, instead of one draw call per cell --
-		// useful for a script that rewrites an entire computed image
-		// every frame. Reuses rt's own array_texture across calls (Load
-		// only on the first call or a size change; Update otherwise)
-		// rather than loading/unloading a fresh GPU texture every frame --
-		// see Render_Texture_Data's own doc comment for why that
-		// specifically matters here (a driver race, not just a
-		// performance nicety).
+		// encoding as gfx.encode_rgba/decode_rgba) as one texture and blits
+		// it in a single draw, instead of one draw call per cell. Reuses rt's
+		// array_texture across calls (Load only on the first call or a size
+		// change; Update otherwise) rather than a fresh GPU texture every
+		// frame -- see Render_Texture_Data's doc comment (a driver race, not
+		// just a performance nicety).
 		if arg_count != 1 {
 			vm.runtime_error(v, "draw_array_fast() expects 1 argument (float_array).")
 			return false
