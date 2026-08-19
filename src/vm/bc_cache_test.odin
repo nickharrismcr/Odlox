@@ -7,18 +7,12 @@ import "core:path/filepath"
 import "core:testing"
 import "core:time"
 
-// bc_cache.odin's own integration tests: real filesystem fixtures (a
-// temp directory tree), a real compiler, and real module imports through
-// do_import -- not just the format-level unit tests in
-// core/bc_cache_test.odin, since the risk this feature actually carries
-// (a wrong-length property_caches array, a not-fully-wired environment
-// on a nested function) only shows up once a cache hit is actually
-// *executed*, not merely decoded. See module_test.odin's own doc comment
-// for this project's established note on the toolchain issue these
-// VM-heavy tests can trigger *in pairs* even though each passes reliably
-// alone (-define:ODIN_TEST_NAMES=vm.test_x, one at a time) -- run these
-// the same way if a batched run misbehaves, rather than assuming a new
-// bug.
+// bc_cache.odin's own integration tests: real filesystem fixtures, a real
+// compiler, and real module imports through do_import -- not just the
+// format-level unit tests in core/bc_cache_test.odin, since risks like a
+// wrong-length property_caches array only show up once a cache hit is
+// actually executed, not merely decoded. See module_test.odin for the
+// toolchain note on running these VM-heavy tests one at a time.
 
 @(private = "file")
 write_temp_file :: proc(t: ^testing.T, dir: string, name: string, content: string) -> string {
@@ -79,13 +73,11 @@ run_main_importing_helper_expecting_failure :: proc(t: ^testing.T, root: string,
 }
 
 // -----------------------------------------------------------------------
-// Stage 2/3: a cache hit is used, and its whole Function_Object tree
-// (not just the root) resolves globals correctly. helper.lox nests a
-// closure two levels deep (make_counter -> bump), both of which need
-// .environment wired for `counter = counter + 1` to resolve at all, and
-// invokes Greeter.greet twice through the same call site, exercising the
-// property_caches array-length requirement (a wrong length would corrupt
-// or crash on the *second* Invoke through that cache slot).
+// Stage 2/3: a cache hit is used, and its whole Function_Object tree (not
+// just the root) resolves globals correctly. helper.lox nests a closure
+// two levels deep (both need .environment wired) and invokes Greeter.greet
+// twice through the same call site, exercising the property_caches
+// array-length requirement.
 
 @(private = "file")
 HELPER_SOURCE :: `
@@ -162,21 +154,11 @@ test_bc_cache_hit_wires_nested_environment_and_property_cache :: proc(t: ^testin
 // completely fresh VM importing the same module should hit it, with
 // identical results.
 
-// @(test) removed: constructs two VM instances (vm1, vm2) in one test
-// function, both importing the same module through the process-wide
-// module_cache (module.odin). Confirmed via bin/test_odin.sh's one-
-// process-per-test isolation that this specific shape -- not batching,
-// not accumulation across tests -- is what's wrong: run alone, vm2's
-// counter reads back 13/14 instead of a fresh 11/12, i.e. it saw vm1's
-// leftover state. Consistent with TODO.md's Phase 0 entry (module_cache
-// holds GC-managed values on a short-lived per-task allocator odin test
-// recycles) rather than a new bug -- see bc_cache_test.odin's own header
-// comment and Stage 7's doc comment below, which already flags this
-// exact multi-VM-one-process hazard for a different test.
-// tests/new_tests/test_bc_cache.py's test_bc_cache_roundtrip_cold_and_warm_match
-// covers the same cold/warm roundtrip behavior end to end, via two real
-// separate OS processes (no shared in-memory cache possible), so this
-// isn't a coverage gap. Re-add @(test) and run via
+// @(test) removed: two VM instances (vm1, vm2) importing the same module
+// share the process-wide module_cache, so vm2 sees vm1's leftover state
+// (per-task allocator odin test recycles). Covered end to end via real OS
+// processes by test_bc_cache_roundtrip_cold_and_warm_match in
+// tests/new_tests/test_bc_cache.py. Re-add and run with
 // `-define:ODIN_TEST_NAMES=vm.test_bc_cache_write_then_reimport_hits_cache`
 // to verify manually if bc_cache.odin/module.odin change.
 test_bc_cache_write_then_reimport_hits_cache :: proc(t: ^testing.T) {
@@ -210,16 +192,11 @@ test_bc_cache_write_then_reimport_hits_cache :: proc(t: ^testing.T) {
 // serve -- and the cache self-refreshes to match.
 
 // @(test) removed: same multi-VM-in-one-process hazard as
-// test_bc_cache_write_then_reimport_hits_cache above (vm1/vm2/vm3 here),
-// same fix. Unlike that test, this behavior has **no pytest-level
-// equivalent** as of this writing -- mtime-based cache invalidation on a
-// source edit isn't currently exercised by tests/new_tests/test_bc_cache.py,
-// so this is a real, if narrow, coverage gap, not just a redundant
-// skip. Re-add @(test) and run via
-// `-define:ODIN_TEST_NAMES=vm.test_bc_cache_mtime_invalidation_on_source_edit`
-// to verify manually if bc_cache.odin's freshness check changes; porting
-// this to a pytest fixture (edit a file on disk, re-run, assert the
-// updated output) would close the gap properly.
+// test_bc_cache_write_then_reimport_hits_cache above (vm1/vm2/vm3 here).
+// Unlike that test, mtime-based cache invalidation on a source edit has no
+// pytest-level equivalent -- a real, narrow coverage gap. Re-add and run
+// via `-define:ODIN_TEST_NAMES=vm.test_bc_cache_mtime_invalidation_on_source_edit`
+// to verify manually if bc_cache.odin's freshness check changes.
 test_bc_cache_mtime_invalidation_on_source_edit :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)
 	root, _ := filepath.join({base, "odlox_bc_cache_test_mtime"})
@@ -249,20 +226,15 @@ var result = helper.value()
 }
 
 // -----------------------------------------------------------------------
-// Stage 5: --force-compile bypasses the cache *read* but still refreshes
-// the *write* -- matching the reference implementation's own -f semantics exactly (see
-// docs/plans/bytecode-cache.md). Verified by planting a *valid* cache
-// holding a deliberately wrong result: a run with force_compile=false
-// must be fooled by it (sanity-checking this test's own mechanism), one
-// with force_compile=true must not be, and a run after that must see the
-// cache freshly corrected.
+// Stage 5: --force-compile bypasses the cache read but still refreshes the
+// write. Verified by planting a valid cache holding a deliberately wrong
+// result: force_compile=false must be fooled by it, force_compile=true
+// must not be, and a run after that must see the cache freshly corrected.
 
-// @(test) removed: same multi-VM-in-one-process hazard (vm1..vm4 here),
-// same fix -- see test_bc_cache_write_then_reimport_hits_cache above.
-// tests/new_tests/test_bc_cache.py's test_bc_cache_force_compile_ignores_stale_cache
-// covers the same --force-compile-bypasses-the-read behavior end to end
-// (real binary, real process), so this isn't a coverage gap. Re-add
-// @(test) and run via
+// @(test) removed: same multi-VM-in-one-process hazard (vm1..vm4 here) --
+// see test_bc_cache_write_then_reimport_hits_cache above. Covered end to
+// end by test_bc_cache_force_compile_ignores_stale_cache in
+// tests/new_tests/test_bc_cache.py. Re-add and run via
 // `-define:ODIN_TEST_NAMES=vm.test_bc_cache_force_compile_bypasses_read_but_refreshes_write`
 // to verify manually if this code path changes.
 test_bc_cache_force_compile_bypasses_read_but_refreshes_write :: proc(t: ^testing.T) {
@@ -345,17 +317,12 @@ var result = helper.value()
 }
 
 // @(test) removed: same multi-VM-in-one-process hazard (three sequential
-// imports via test_one_corruption_falls_back_and_self_heals, each its
-// own VM), same fix -- see test_bc_cache_write_then_reimport_hits_cache
-// above. Like the mtime-invalidation test, this has **no pytest-level
-// equivalent** as of this writing -- corrupted-.lxc fallback/self-heal
-// isn't currently exercised by tests/new_tests/test_bc_cache.py, so this
-// is a real coverage gap. Re-add @(test) and run via
+// imports here, each its own VM) -- see
+// test_bc_cache_write_then_reimport_hits_cache above. Corrupted-.lxc
+// fallback/self-heal has no pytest-level equivalent, a real coverage gap.
+// Re-add and run via
 // `-define:ODIN_TEST_NAMES=vm.test_bc_cache_corrupted_lxc_falls_back_and_self_heals`
-// to verify manually if bc_cache.odin's corruption handling changes;
-// porting this to a pytest fixture (write garbage bytes to the .lxc
-// path, re-run, assert correct fallback output and a clean re-read)
-// would close the gap properly.
+// to verify manually if bc_cache.odin's corruption handling changes.
 test_bc_cache_corrupted_lxc_falls_back_and_self_heals :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)
 	root, _ := filepath.join({base, "odlox_bc_cache_test_corrupt"})
@@ -371,13 +338,11 @@ test_bc_cache_corrupted_lxc_falls_back_and_self_heals :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Stage 6: --force-bc-cache -- the opposite trust direction from
-// --force-compile. A module with a .lxc but no matching .lox at all
-// (compiled-only distribution: ship the cache, not the source) must
-// fail to resolve by default ("Module not found" -- read_module_source
-// never finds a .lox to read) and succeed once force_bc_cache is set,
-// running straight off the planted cache with no compiler invocation at
-// all (proven by there being no source to compile even if it tried).
+// Stage 6: --force-bc-cache is the opposite trust direction from
+// --force-compile. A module with a .lxc but no matching .lox (compiled-only
+// distribution) must fail to resolve by default ("Module not found") and
+// succeed once force_bc_cache is set, running straight off the planted
+// cache with no compiler invocation at all.
 
 @(private = "file")
 FORCE_BC_CACHE_HELPER_SOURCE :: "func value() { return 7 }\n"
@@ -423,20 +388,12 @@ var result = helper.value()
 }
 
 // -----------------------------------------------------------------------
-// Stage 7: --force-bc-cache trusts the cache *unconditionally* -- no
-// source-mtime freshness check at all, unlike ordinary caching (Stage 4
-// above). Proven the same way Stage 5 proves --force-compile's opposite
-// direction: plant a real, valid cache compiled from *different* source
-// than what's actually on disk, then check whether it gets used.
-//
-// Deliberately one import in one test function, not a multi-VM before/
-// after sequence like Stage 4's: module_cache (module.odin) is process-
-// wide, not per-VM, by design (see its own doc comment) -- a second
-// `import helper` from a second VM within the *same test binary process*
-// hits that shared in-memory cache directly and never re-touches disk at
-// all, so it can't observe a mid-test cache-file change. Every other
-// hand-planted-cache test in this file (Stage 2, Stage 5's own bogus-
-// cache check) avoids the same trap the same way, for the same reason.
+// Stage 7: --force-bc-cache trusts the cache unconditionally -- no
+// source-mtime freshness check, unlike ordinary caching (Stage 4). Proven
+// by planting a valid cache compiled from different source than what's on
+// disk, then checking whether it gets used. One import in one test
+// function, deliberately: module_cache is process-wide, so a second VM's
+// import here would hit the shared in-memory cache instead of disk.
 @(test)
 test_force_bc_cache_trusts_a_mismatched_cache :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)

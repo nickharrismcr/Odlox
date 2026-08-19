@@ -5,14 +5,11 @@ import "core:strings"
 
 // Serializer/deserializer for a compiled module's Function_Object tree,
 // the format vm/bc_cache.odin's file-backed bytecode cache reads and
-// writes. Same tag-dispatch, length-prefixed shape as pickle.odin's
-// Value serializer, but limited to compile-time constants
-// (Int/Float/String/Function).
-//
+// writes. Same tag-dispatch, length-prefixed shape as pickle.odin's Value
+// serializer, but limited to compile-time constants (Int/Float/String/Function).
 // A `.lxc` file is untrusted input, so every decode step is bounds-checked
-// and fails as ok=false rather than panicking; `[dynamic]` collections grow
-// via `append` instead of pre-sizing from a decoded count, except
-// `property_caches`, which is capped explicitly (BC_CACHE_MAX_PROPERTY_CACHES).
+// and fails as ok=false rather than panicking, instead of pre-sizing an
+// allocation from a decoded count, except `property_caches`, capped explicitly.
 
 BC_CACHE_MAGIC :: [4]u8{'O', 'L', 'X', 'C'}
 BC_CACHE_VERSION :: u16(3) // Bumped whenever an Op_Code variant is inserted mid-enum
@@ -291,22 +288,11 @@ bc_dec_value :: proc(d: ^Bc_Decoder) -> (v: Value, ok: bool) {
 		r.data = n
 		return r, true
 	case .String:
-		// make_interned_string_value (not make_string_value): a chunk's
-		// constant pool holds both literal string values AND identifier
-		// names (property/method/class/module names -- compiled via
-		// make_interned_string_value too, see compiler/expr.odin,stmt.odin),
-		// indistinguishable once serialized down to a generic .String
-		// constant tag. Always interning on cache-load keeps identifier
-		// constants correct (map-keyed lookups need the canonical pointer
-		// regardless of length); the cost is a long string *literal*
-		// staying permanently interned when loaded from a bytecode cache,
-		// same as every string did before STRING_INTERN_MAX_LEN existed,
-		// rather than getting the length-split treatment a fresh compile
-		// of the same source would give it -- acceptable since a literal's
-		// content is bounded by source size, not external runtime data
-		// (the actual leak source the split exists for). s itself is a
-		// slice into d.data and never retained past this call, so no
-		// explicit clone is needed here.
+		// Always interned (make_interned_string_value, not make_string_value): the
+		// constant pool holds both literal strings and identifier names indistinguishably
+		// once serialized, and identifier constants need the canonical interned pointer
+		// for map-keyed lookups to work. s is a slice into d.data, never retained past
+		// this call, so no clone is needed.
 		s, sok := bc_dec_string(d)
 		if !sok {
 			return NIL_VALUE, false
@@ -443,14 +429,9 @@ bc_dec_chunk :: proc(d: ^Bc_Decoder) -> (c: ^Chunk, ok: bool) {
 		return nil, false
 	}
 
-	// field_slot_tables: real data (see bc_enc_chunk's own comment), not
-	// a resettable cache, so -- unlike property_caches just above -- the
-	// actual names must round-trip, not just a count. No explicit cap
-	// needed the way property_cache_count gets one: every entry here has
-	// real payload bytes behind it (an inner count, then that many real
-	// strings), so a garbage-huge count fails cleanly on the next
-	// out-of-range read once the buffer is exhausted, same as
-	// global_names above.
+	// field_slot_tables holds real data, not a resettable cache, so the actual
+	// names must round-trip, not just a count -- no explicit cap needed since
+	// every entry has real payload bytes to bound the decode loop against.
 	field_slot_table_count, fstc_ok := bc_dec_u32(d)
 	if !fstc_ok {
 		delete(lines)
@@ -503,18 +484,11 @@ bc_dec_chunk :: proc(d: ^Bc_Decoder) -> (c: ^Chunk, ok: bool) {
 	return c, true
 }
 
-// function_deserialise decodes data (produced by function_serialise)
-// back into a fresh Function_Object tree. Every node's .environment is
-// left nil -- the caller (vm package; only vm-layer code has a live
-// ^Environment in scope for a given module load) must walk the returned
-// tree and set it on every node before the result is callable. Never
-// panics on malformed/truncated/wrong-version input: err distinguishes
-// "not one of our files" (.Bad_Magic, the common no-cache-yet case) from
-// "a real cache of ours from a different schema" (.Bad_Version, worth a
-// one-line diagnostic) from "corrupt/truncated body" (.Malformed) purely
-// so a caller CAN log something more specific than "cache miss" -- every
-// one of these should be treated identically for control flow (fall back
-// to compiling from source), never as a hard error.
+// function_deserialise decodes data (produced by function_serialise) back into a
+// fresh Function_Object tree. Every node's .environment is left nil -- the caller
+// (vm package) must walk the tree and set it before the result is callable. Never
+// panics on malformed input: err distinguishes .Bad_Magic/.Bad_Version/.Malformed
+// only for diagnostics -- callers treat all three the same (fall back to compiling).
 function_deserialise :: proc(data: []u8) -> (fn: ^Function_Object, err: Bc_Decode_Error) {
 	if len(data) < 6 {
 		return nil, .Malformed

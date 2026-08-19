@@ -2,12 +2,9 @@
 // @file logging.lox
 // @brief Basic leveled logging with a pluggable writer.
 //
-// Logger.log(level, msg) filters against the logger's own configured
-// level, then hands a fully-formatted line ("[date time] [LEVEL] name:
-// message") to the logger's writer -- a plain closure taking one string
-// argument. The default writer prints to stdout; swap in something else
-// (e.g. file_writer(file) below) to send output elsewhere. Timestamps
-// come from sys.today()/sys.now() (real wall-clock date/time).
+// Logger.log(level, msg) filters against the logger's own level, then hands
+// a formatted line to the logger's writer (a func(line) closure; default
+// prints to stdout -- see file_writer() below for logging to a file).
 //
 
 import sys;

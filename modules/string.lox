@@ -1,10 +1,7 @@
 //
 // @file string.lox
-// @brief String manipulation utilities for odlox
-// 
-// Functions:
-// - split(string, delimiter) - Split string into list using delimiter
-// 
+// @brief String manipulation utilities: split(string, delimiter).
+//
 // @author odlox Project
 // @date 2025
 //

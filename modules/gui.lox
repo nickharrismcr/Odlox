@@ -1,32 +1,9 @@
 //
 // @file gui.lox
-// @brief A small class-based GUI layer.
-//
-// Widgets: Button, Label, Checkbox, Draggable, Slider, Segmented_Line.
-// Containers/helpers: Screen, Button_Group, Marquee, Rect.
-// Utilities: snap(pos, grid_size), clamp(v, lo, hi).
-//
-// Built entirely on the existing `gfx`/window native surface (texture
-// drawing, poll-based mouse input) -- no native code involved. Interaction
-// is wired up by assigning closures to callback fields:
-//
-//   import gui
-//   var screen = gui.Screen()
-//   var btn = screen.add(gui.Button(10, 10, 64, 64, my_texture))
-//   btn.on_left_click = func (b, pos) { print "clicked" }
-//
-//   while (!win.should_close()) {
-//       screen.update(win)
-//       win.begin()
-//       win.clear(colour.BLACK)
-//       screen.draw(win)
-//       win.end()
-//   }
-//
-// `Screen.update()` takes any object exposing the same surface as the
-// native `win` object (mouse_position/mouse_pressed/mouse_down/
-// mouse_released, MOUSE_LEFT/MOUSE_RIGHT) -- this is what lets the event
-// dispatch logic be exercised in tests without a real window.
+// @brief A small class-based GUI layer: widgets (Button, Label, Checkbox,
+// Draggable, Slider, Segmented_Line), containers (Screen, Button_Group,
+// Marquee, Rect), and utilities (snap, clamp). Built on the `gfx`/window
+// native surface; interaction is wired up via callback fields on widgets.
 //
 
 import colour
@@ -301,15 +278,11 @@ class Slider < Widget {
 }
 
 // Segmented_Line is a polyline: an ordered list of vec2 points, drawn as
-// connected segments with a draggable handle at each vertex -- the
-// widget-based counterpart of the hand-rolled Line/handle bookkeeping in
-// lox_examples/mouse_demo.lox. Unlike Button/Draggable it isn't hit-tested
-// against a bounding rect -- contains() tests every handle individually
-// and records which one matched in `active_handle`, which the click/drag
-// logic below (and drag_anchor/set_drag_position) then acts on. That
-// makes contains() double as a hit *and* a selection step -- fine because
-// Screen.update() only ever calls it once per widget per frame, right
-// before using the result.
+// connected segments with a draggable handle at each vertex. Unlike
+// Button/Draggable it isn't hit-tested against a bounding rect --
+// contains() tests every handle individually, records the match in
+// `active_handle`, and so doubles as a selection step (safe since
+// Screen.update() calls it once per widget per frame, right before use).
 class Segmented_Line < Widget {
     // points: a list of >= 2 vec2 vertices. handle_radius: hit-test/draw
     // radius, in pixels, for each vertex handle.
@@ -381,18 +354,12 @@ class Segmented_Line < Widget {
     }
 }
 
-// Text_Input is a single-line editable text field. Screen.update() alone
-// doesn't drive it -- keyboard dispatch is deliberately host-driven (see
-// Screen's own doc comment on `focused`), so the host also calls
-// `text_input.handle_keys(win, screen.focused == text_input)` once per
-// frame, alongside `screen.update(win)`.
-//
-// Typing covers lowercase letters, digits, '.', '-', and space -- no
-// shift-state tracking, so uppercase isn't reachable. Pass numeric=true
-// to restrict input to digits/'.'/'-' (for parameter fields). Parsing is
-// left to the host: on_submit hands back the raw text, which the host
-// should run through float()/int() inside try/except, since e.g. a bare
-// "-" or "" is valid mid-edit text but not a valid number.
+// Text_Input is a single-line editable text field. Screen.update() doesn't
+// drive it -- the host must also call
+// `text_input.handle_keys(win, screen.focused == text_input)` each frame.
+// Typing covers lowercase letters, digits, '.', '-', and space (no shift
+// tracking); numeric=true restricts to digits/'.'/'-'. Parsing raw text
+// from on_submit is left to the host (e.g. float()/int() in try/except).
 class Text_Input < Widget {
     __init__(x, y, w, h, text="", numeric=false, max_length=32) {
         super.__init__(x, y, w, h)

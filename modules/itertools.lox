@@ -2,16 +2,8 @@ import random
 
 //
 // @file itertools.lox
-// @brief Iterator and sequence utilities for odlox
-// 
-// This module provides utilities for working with iterables including strings and lists.
-// Inspired by Python's itertools module, it offers functions for manipulating and
-// transforming sequences.
-// 
-// Functions:
-// - reverse(sequence) - Reverse a string or list
-// - sort(list, cmp) - Sort a list using a custom comparison function
-// 
+// @brief Sequence utilities: reverse(string or list), sort(list, cmp).
+//
 // @author odlox Project
 // @date 2025
 //

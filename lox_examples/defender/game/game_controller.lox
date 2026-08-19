@@ -8,18 +8,11 @@ from player import state_play, state_safe_start
 
 // Drives the level/game-state machine: intro -> level_start -> level ->
 // level_finish -> level_start (loops), or level_start -> ... -> game_over.
-// Mirrors the enter_<state>/state_<state> convention used elsewhere (see
-// npc.lox); `state` is a readable string, tested by main.lox for gating what
-// runs/draws each frame -- mirrors the same convention human.lox uses.
-//
-// level_finish is the "ATTACK WAVE N COMPLETED." screen: entering it clears
-// every enemy, bullet, and laser (humans persist) and hides the ship. It also
-// emits a "level_finish" event (via entities.events) that Mountain listens
-// for to hide itself for the duration -- see Mountain.attach() in
-// world/mountains.lox. Shows the banner for LEVEL_FINISH_DISPLAY_TIME before
-// handing off to level_start, which spawns the next level's entities,
-// reveals the ship, and emits "level_start" (undoing both) -- it no longer
-// shows any banner itself.
+// `state` is a readable string, tested by main.lox for gating what runs/draws each frame.
+// level_finish is the "ATTACK WAVE N COMPLETED." screen: it clears every enemy, bullet,
+// and laser (humans persist), hides the ship, and emits "level_finish" (Mountain listens
+// for this to hide itself). Shows the banner for LEVEL_FINISH_DISPLAY_TIME, then hands off
+// to level_start, which spawns the next level, reveals the ship, and emits "level_start".
 
 const LEVEL_FINISH_DISPLAY_TIME = 240  // frames the "ATTACK WAVE N COMPLETED." banner shows (4s at 60fps)
 const GAME_OVER_PAUSE    = 180  // frames game_over waits before done becomes true (3s at 60fps)

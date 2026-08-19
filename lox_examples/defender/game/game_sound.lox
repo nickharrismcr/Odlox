@@ -61,14 +61,10 @@ const SOUND_PATHS = {
     "swarmer":      "assets/swarmer.wav"
 }
 
-// GameSound wraps a sound_mgr.SoundManager with this game's own event
-// wiring and continuous "buzz while visible" cues (swarmer/mutant),
-// attached directly onto EntityMgr (as `entities.sound`) the same way
-// `cam`/`mountains`/`player` already are.
-//
-// mute is taken as a constructor argument and applied to this file's own
-// imported sound_mgr, since each module import gets its own independent
-// copy -- setting the flag on a different file's copy wouldn't reach it.
+// GameSound wraps a sound_mgr.SoundManager with this game's own event wiring and
+// continuous "buzz while visible" cues (swarmer/mutant), attached onto EntityMgr as
+// `entities.sound`. mute is applied to this file's own imported sound_mgr, since each
+// module import gets its own independent copy.
 class GameSound {
     __init__(mute) {
         sound_mgr.SoundManager.no_sound = mute

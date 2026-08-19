@@ -3,14 +3,10 @@ package core
 import "core:slice"
 import "core:testing"
 
-// bc_cache.odin's own unit-level tests: hand-built Chunk/Function_Object
-// trees (this package can't reach the compiler package -- core sits
-// below it -- so a real compiled program is exercised separately, in
-// compiler/bc_cache_test.odin). These focus on the format itself: a
-// direct round trip through function_serialise/function_deserialise,
-// and each of the documented "not one of our files"/"stale schema"/
-// "corrupt body" decode-error cases (see Bc_Decode_Error's own doc
-// comment) never panicking, always coming back as a clean error.
+// Unit-level tests for bc_cache.odin using hand-built Chunk/Function_Object
+// trees, since core can't reach the compiler package (a real compiled
+// program is exercised separately, in compiler/bc_cache_test.odin). Covers
+// a direct serialise/deserialise round trip and each decode-error case.
 
 @(test)
 test_bc_cache_roundtrips_hand_built_chunk :: proc(t: ^testing.T) {

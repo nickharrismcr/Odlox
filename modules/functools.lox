@@ -1,15 +1,7 @@
 //
 // @file functools.lox
-// @brief Functional programming utilities for odlox
-// 
-// This module provides higher-order functions commonly used in functional programming,
-// including map, reduce, and filter operations for working with lists and collections.
-// 
-// Functions:
-// - map(list, function) - Apply function to each element in list
-// - reduce(list, function) - Reduce list to single value using accumulator function
-// - filter(list, function) - Filter list elements based on predicate function
-// 
+// @brief Higher-order list functions: map, reduce, filter.
+//
 // @author odlox Project
 // @date 2025
 //

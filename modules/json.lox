@@ -1,20 +1,9 @@
 //
 // @file json.lox
-// @brief Minimal JSON encoding and decoding
-//
-// A small, ASCII-only JSON encoder/decoder built on the native `re` module.
-// Supports nil, bool, int, float, string, list and dict values.
-// Not supported (raises an error): \uXXXX escapes, \b and \f string escapes,
-// and non-ASCII text -- this is intentionally basic/minimal, not a full
-// JSON implementation.
-//
-// Features:
-// - json.encode(value [, indent]) -- Lox value to JSON string, optionally
-//   pretty-printed with `indent` spaces per nesting level
-// - json.decode(s) -- JSON string to Lox value
-// - json.load(path) -- read a file and decode its contents as JSON
-// - json.JSONDecodeError / json.JSONEncodeError -- raised on malformed
-//   input / on values that cannot be represented in JSON
+// @brief Minimal ASCII-only JSON encode/decode, built on the native `re`
+// module: encode(value [, indent]), decode(s), load(path). Supports nil,
+// bool, int, float, string, list, dict; no \uXXXX/\b/\f escapes or
+// non-ASCII text. Raises JSONDecodeError / JSONEncodeError.
 //
 // @author odlox Project
 // @date 2025
@@ -23,14 +12,8 @@
 import re;
 import os;
 
-// -------------------------------------------------------------------------
-// Character constants.
-//
-// Lox string literals process no backslash escapes at all (there is no \n,
-// \t, \" etc. escape) and there is no chr()/ord() built-in, so control
-// characters are built at runtime via format()'s "%c" verb (Go's fmt.Sprintf
-// character verb) -- the only reliable way to produce them.
-// -------------------------------------------------------------------------
+// Character constants, built via format()'s "%c" verb since Lox string
+// literals have no backslash escapes and there is no chr()/ord() built-in.
 
 var _QUOTE = format("%c", 34);
 var _BACKSLASH = format("%c", 92);

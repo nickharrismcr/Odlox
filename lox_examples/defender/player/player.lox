@@ -21,41 +21,16 @@ const HYPERSPACE_MAX_ATTEMPTS = 20    // give up and use the last candidate afte
 const SAFE_START_FRAMES = 60   // 1s at 60fps
 
 // The player ship.
-//
-// Controls (classic Defender):
-//   R-SHIFT (hold) : thrust in the facing direction
-//   SPACE   (tap)  : reverse facing and reset speed
-//   Q / A          : move up / down within the play area
-//   ENTER          : fire
-//   L-SHIFT (tap)  : hyperspace
-//
-// A small state machine of swappable update functions, matching the NPC
-// idiom (enter_<state>/state_<state>). The player's own states, and what
-// they mean for the enemy NPCs (via EntityMgr.{hide,show,freeze,unfreeze}_
-// enemies(), called directly from the enter_/state_ functions below rather
-// than through an event, since the coupling here is tight and this keeps
-// cause and effect in one place):
-//
-//   safe_start : ship visible and already flyable, enemies hidden AND
-//                frozen. 1s. Entered on construction and after every
-//                respawn. Input is skipped for just its first frame, since
-//                that's the one frame SPACE might still be registering as
-//                having just started the game rather than as a "reverse"
-//                command here.
-//   play       : normal gameplay. Enemies visible and active.
-//   die        : just hit -- frozen in place, flashing red. Enemies stay
-//                visible but freeze too. 2s, then -> explode.
-//   explode    : ship gone, particle burst plays. Enemies hidden AND
-//                frozen. 3s, then -> safe_start (or game_controller ends
-//                the game first, if this was the last life -- see its
-//                on_player_start()).
-//   hyperspace : warped to a random spot, rematerialising. Enemies are
-//                NOT hidden/frozen for this one -- it's the player's own
-//                choice to jump into danger, not a death. On arrival,
-//                either -> play or -> die (misjump).
-//
-// The camera follows the ship, keeping it at a fixed screen offset that shifts
-// to look ahead in the facing direction.
+// Controls: R-SHIFT (hold) thrust, SPACE (tap) reverse facing, Q/A move up/down,
+// ENTER fire, L-SHIFT (tap) hyperspace.
+// State machine of swappable update functions (NPC idiom: enter_<state>/state_<state>),
+// each directly calling EntityMgr.{hide,show,freeze,unfreeze}_enemies() for tight coupling:
+//   safe_start: flyable, enemies hidden+frozen, 1s. On construction/respawn.
+//   play: normal gameplay, enemies visible+active.
+//   die: frozen, flashing red, enemies frozen. 2s -> explode.
+//   explode: ship gone, particle burst, enemies hidden+frozen. 3s -> safe_start.
+//   hyperspace: warps to a random spot; enemies untouched. Arrival -> play or die (misjump).
+// The camera follows the ship at a fixed offset that shifts to look ahead in facing direction.
 
 class Player < Sprite {
 

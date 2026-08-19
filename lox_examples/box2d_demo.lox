@@ -5,12 +5,8 @@ import math
 import colour
 
 // box2d native-module demo: two switchable scenes.
-//   1 - top-down view, 100 circles with random pos/velocity, no
-//       gravity/friction, bouncing elastically off each other and
-//       four sealed boundary walls.
-//   2 - side view with gravity and a few angled static ramps, no floor --
-//       balls dropped continuously from the top at random x positions
-//       bounce down through the ramps and off the bottom of the screen.
+//   1 - top-down view, 100 circles bouncing elastically off each other and sealed walls.
+//   2 - side view with gravity and angled static ramps; balls drop continuously from the top.
 // Press 1/2 to switch scenes, R to reset/rebuild the active scene.
 
 const STATIC = 0

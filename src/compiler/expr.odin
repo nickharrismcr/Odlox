@@ -3,14 +3,12 @@ package compiler
 import "../core"
 import "core:strconv"
 
-// All prefix/infix expression parse functions the rule table (rules.odin)
-// dispatches to. Each one assumes p.previous is the token that triggered
-// it (standard Pratt-parser convention) and builds/returns an AST node --
-// see docs/plans/compiler-ast-split.md. Validity checks that need more
-// than a token comparison (`this`/`super` outside a class, const
-// reassignment) are deliberately NOT done here -- they're the Resolver's
-// job (resolve.odin), which is also where `Var_Ref`/`declared_slot`
-// fields left zero-valued below get filled in.
+// Prefix/infix expression parse functions the rule table (rules.odin)
+// dispatches to. Each assumes p.previous is the token that triggered it
+// and builds/returns an AST node. Validity checks needing more than a
+// token comparison (`this`/`super` outside a class, const reassignment)
+// are the Resolver's job, which also fills the `Var_Ref`/`declared_slot`
+// fields left zero-valued below.
 
 // -----------------------------------------------------------------------
 // Literals
