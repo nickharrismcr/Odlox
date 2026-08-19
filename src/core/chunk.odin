@@ -1,30 +1,11 @@
 package core
 
 // Op_Code: one variant per bytecode instruction. Odin's enums are
-// namespaced under the type (`.Constant` reads fine at a use site), so
-// no prefix is needed to avoid collisions.
-//
-// Three families are worth knowing about up front, all fully explained
-// where the compiler/VM actually implement them:
-//
-//   - Add_Nn/Add_Ii/Add_Ff and Incr_Const_N/Incr_Const_I/Incr_Const_F are
-//     a compile-time peephole fusion (Add_Nn, Incr_Const_N) that the VM
-//     then further specializes at runtime via in-place opcode-byte
-//     patching on first execution (a minimal inline cache) into the
-//     type-specific Ii/Ff variants.
-//   - Add_Vv/Add_V2/Add_V3/Add_V4 are the same peephole-fusion-plus-
-//     runtime-specialization idea applied to `++` (vector add), with one
-//     deliberate divergence from Add_Nn's family: Add_V2/V3/V4 re-check
-//     their operand types on every execution instead of trusting the
-//     first patch forever, since a mismatched or non-vector operand is a
-//     genuine Lox-level error (unlike int/float, which always produces
-//     *some* correct-shaped number either way) -- see
-//     docs/plans/vec-op-peephole.md / docs/ARCHITECTURE.md for the full
-//     reasoning.
-//   - Try/End_Try/Except/End_Except/Finally/Raise implement
-//     try/except/finally -- the bytecode shape and VM-side matching loop
-//     are involved enough to read directly in src/vm/exceptions.odin
-//     rather than summarize here.
+// namespaced under the type (`.Constant` reads fine at a use site), so no
+// prefix is needed to avoid collisions. Add_Nn/Incr_Const_N and their
+// Vv/V2/V3/V4 vector-op counterparts are compile-time peephole fusions
+// further specialized at runtime via in-place opcode-byte patching (an
+// inline cache) into type-specific variants.
 Op_Code :: enum u8 {
 	Return,
 	Noop,
@@ -93,28 +74,16 @@ Op_Code :: enum u8 {
 	Static_Method,
 	Class_Var,
 
-	// Compile-time-baked instance field-slot fast path -- see
-	// Property_Cache's own doc comment for why the general case can't be
-	// cached this way, and chunk_add_field_slot_table's doc comment below
-	// for the mechanism that makes this narrower case safe. Only ever emitted for
-	// `this.name` access inside the declaring class's own methods
-	// (compiler/emit_expr.odin's emit_field_slot_access); every other
-	// property access keeps compiling to Get_Property/Set_Property
-	// unchanged.
+	// Compile-time-baked instance field-slot fast path, emitted only for
+	// `this.name` access inside the declaring class's own methods; every
+	// other property access still compiles to Get_Property/Set_Property.
 	Get_Field_Slot,
 	Set_Field_Slot,
 
-	// Swizzle-component assignment (`v.x = expr`) write-back family --
-	// see vm/properties.odin's swizzle_assign doc comment for why these
-	// exist: a vec2/3/4 Value is an inline copy (see value.odin), so
-	// mutating a component read via plain Get_Local/Get_Global/
-	// Get_Upvalue/Get_Property has nothing to write back into unless the
-	// compiler also emits the matching write-back half. One opcode per
-	// storage kind, mirroring Get_Local/Get_Global/Get_Upvalue/
-	// Get_Property's own four-way split. Falls back to an ordinary
-	// Instance/Class/Module field-set (no write-back needed -- those stay
-	// reference types) if the receiver turns out not to be a vector at
-	// runtime.
+	// Swizzle-component assignment (`v.x = expr`) write-back family: a
+	// vec2/3/4 Value is an inline copy, so mutating a component read via
+	// plain Get_Local/Get_Global/Get_Upvalue/Get_Property has nothing to
+	// write back into without a matching write-back opcode per storage kind.
 	Set_Local_Vec_Field,
 	Set_Global_Vec_Field,
 	Set_Upvalue_Vec_Field,
@@ -157,20 +126,12 @@ Op_Code :: enum u8 {
 	Add_V3,
 	Add_V4,
 
-	// Self-specializing subtract/multiply/divide families -- the same
-	// peephole-fusion shape as Add_Nn/Incr_Const_N, generalized to the
-	// other three arithmetic operators. Subtract/Multiply, unlike Add,
-	// have alternate operand-type semantics of their own (vector
-	// subtraction, string repetition -- see vm/arithmetic.odin's
-	// numeric_binop) that a later call at a given site can still hit
-	// after an earlier Int/Int or Float/Float call patched it, so their
-	// _Ii/_Ff children keep a type guard on every execution and fall
-	// back to the exact unfused behavior on a miss, the same discipline
-	// Add_V2/V3/V4 use for vectors -- not Add_Ii/Add_Ff's "trust the
-	// first patch forever". Divide has no such alternate-type hazard,
-	// but keeps the same shape for uniformity; its zero-divisor check
-	// already has to run on every execution regardless, since the
-	// *type* staying Int says nothing about the *value* staying nonzero.
+	// Self-specializing subtract/multiply/divide families, the same
+	// peephole-fusion shape as Add_Nn/Incr_Const_N. Subtract/Multiply have
+	// alternate operand-type semantics (vector subtraction, string
+	// repetition) a later call can still hit after an earlier patch, so
+	// their _Ii/_Ff children keep a type guard every execution rather than
+	// trusting the first patch forever, like Add_V2/V3/V4 do for vectors.
 	Sub_Nn,
 	Sub_Ii,
 	Sub_Ff,
@@ -217,21 +178,11 @@ Chunk :: struct {
 }
 
 // Property_Cache backs the monomorphic inline cache on Get_Property and
-// Invoke: one per callsite, allocated at compile time
-// (chunk_add_property_cache) and carried as an extra bytecode operand
-// (the cache's index into this array), not looked up by class identity
-// in some shared map -- a real O(1) array access on a hit, not another
-// hash lookup wearing an inline cache's clothes. `class == nil` means
-// "never populated" (cold).
-//
-// Caches only the class -> method resolution (Class_Object.methods),
-// never the receiver's own instance-fields lookup: that can't be safely
-// cached at the class level at all, since Lox instances have no fixed
-// shape -- two instances of the same class can have different field
-// sets, so a field that happens to mask a method on one instance doesn't
-// mean it does on another. See vm/call.odin's invoke and
-// vm/properties.odin's get_property for exactly which lookup this skips
-// (always the *second* one, after a same-class field-lookup miss).
+// Invoke: one per callsite, allocated at compile time and carried as an
+// extra bytecode operand (an index into this array) for O(1) access on a
+// hit. `class == nil` means "never populated" (cold). Caches only the
+// class -> method resolution (Class_Object.methods), never the receiver's
+// own instance-fields lookup, since Lox instances have no fixed shape.
 Property_Cache :: struct {
 	class:  ^Class_Object,
 	method: Value,
@@ -243,40 +194,22 @@ new_chunk :: proc(filename: string) -> ^Chunk {
 	return c
 }
 
-// chunk_add_property_cache allocates a fresh, cold cache slot and
-// returns its index -- called once per Get_Property/Invoke callsite at
-// compile time (compiler/expr.odin's dot), mirroring chunk_add_constant's
-// shape. u8-indexed like every other operand in this bytecode format, so
-// a single function emitting more than 255 property/method-call
-// expressions hits the same kind of hard limit the 255-argument-list
-// check already does -- checked at the call site, not here, matching
-// that existing pattern.
+// chunk_add_property_cache allocates a fresh, cold cache slot and returns
+// its index, called once per Get_Property/Invoke callsite at compile time.
+// u8-indexed, so a function emitting more than 255 such expressions hits a
+// hard limit checked at the call site, not here.
 chunk_add_property_cache :: proc(c: ^Chunk) -> u8 {
 	append(&c.property_caches, Property_Cache{})
 	return u8(len(c.property_caches) - 1)
 }
 
 // chunk_add_field_slot_table registers one class declaration's discovered
-// field-slot names (compiler/resolve.odin's discover_field_slots -- index
-// -> name, in discovery order) and returns its index into
-// Chunk.field_slot_tables, emitted as the Class opcode's second operand
-// (vm/run.odin's .Class case reads it and hands the slice to
-// vm/properties.odin's do_class, which stores it on the new Class_Object
-// and builds field_slot_index from it). Called once per class
-// declaration, even for a class with zero discovered fields (an empty
-// slice), so there's no "does a table exist" branch anywhere downstream.
-//
-// This table only ever answers "what does slot i mean for this class",
-// used at class-construction time (Instance_Object.slots sizing) and by
-// the disassembler/instance_get_field's cold compatibility path -- never
-// on Get_Field_Slot/Set_Field_Slot's own hot path, which only ever reads
-// a literal slot index baked into the bytecode operand. This is the
-// distinction that keeps this design from repeating glox's own reverted
-// "runtime slot table" attempt (see chunk.odin's Get_Field_Slot/
-// Set_Field_Slot doc comment): that attempt moved the per-access lookup
-// from a per-instance map to a per-class map and was a net regression
-// because it was still a lookup, just a smaller one. Nothing here is
-// consulted per access on a hit.
+// field-slot names (index -> name, in discovery order) and returns its
+// index into Chunk.field_slot_tables, emitted as the Class opcode's second
+// operand. Called once per class declaration, even for zero discovered
+// fields. Only answers "what does slot i mean for this class" at
+// class-construction time and in cold paths -- never consulted on
+// Get_Field_Slot/Set_Field_Slot's hot path, which reads a literal index.
 chunk_add_field_slot_table :: proc(c: ^Chunk, names: []string) -> u8 {
 	append(&c.field_slot_tables, names)
 	return u8(len(c.field_slot_tables) - 1)

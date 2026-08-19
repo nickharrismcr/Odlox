@@ -3,13 +3,9 @@ from lox_helper import run_lox
 
 # process module implementation is parked: process.wait_any() raises a
 # spurious "truncated message" ProcessError when a worker fires off several
-# messages back-to-back and exits immediately after (suspected Windows
-# PeekNamedPipe/pipe-EOF race -- see ROADMAP.md's process module section for
-# the full writeup and why this was parked rather than chased further).
-# test_process_basic itself passes (spawn/send/recv/wait/kill/pid all work
-# without wait_any involved) but is skipped here too, at the whole-file
-# level, so this file's status is a single, unambiguous signal rather than
-# a mix of pass/skip that has to be individually re-checked later.
+# messages back-to-back and exits immediately after. Whole file is skipped
+# (test_process_basic itself passes) so this file's status stays a single
+# unambiguous signal -- see ROADMAP.md's process module section.
 pytestmark = pytest.mark.skip(reason="process module implementation parked -- see ROADMAP.md's process module section")
 
 BASIC_EXPECTED = [

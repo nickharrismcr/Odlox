@@ -26,17 +26,9 @@ func move(particle) {
 // return a particle initialisation closure
 func init(col1,col2) {
 
-    // Capped at 300 (was 1000): steady-state concurrent particle count is
-    // roughly (spawn rate) x (avg lifetime), so an unbounded lifemax let a
-    // handful of long-lived stragglers keep the total climbing for tens of
-    // seconds after every burst -- measured ~1450 concurrent particles in
-    // steady state at MAX_DELAY=30 before this cap. A hard cap on
-    // concurrent *emitter count* was tried instead and made things worse:
-    // it blocks ALL new spawns once the cap is hit, so a handful of
-    // long-lived stragglers from one spawn wave stall every subsequent
-    // wave until they finally die, reading as long dead gaps between
-    // bursts. Bounding lifemax fixes the actual cause (a few particles
-    // living far longer than the rest) without touching spawn timing.
+    // Capped at 300 (was 1000): steady-state concurrent particle count is roughly
+    // (spawn rate) x (avg lifetime), so an unbounded lifemax let long-lived stragglers
+    // keep the total climbing for tens of seconds after every burst.
     var lifemax=random.integer(20,300);
     var speedmax=random.integer(1,7);
     var sizemax=random.integer(5,10);

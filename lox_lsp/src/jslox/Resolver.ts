@@ -51,19 +51,13 @@ import { ErrorReporter, defaultErrorReporter } from "./Error";
 export type FunctionType = "none" | "function" | "initializer" | "method";
 export type ClassType = "none" | "class" | "subclass";
 
-// A scope entry is `false` while a name has been declared but its initializer
-// hasn't been resolved yet (catches `var a = a;`), or the declaring token
-// (plus whether the binding is `const`) once fully defined. `crossModule` is
-// set instead of a same-document declaring token being meaningful when the
-// binding came from `from <module> import ...` and resolved to a real
-// declaration in another file (see `moduleReferences` below) -- `token` is
-// still populated in that case (the local import-site name token, or a
-// placeholder for `import *`) so scope bookkeeping doesn't need a second
-// optional field to check everywhere. `moduleNamespace` is set instead for a
-// plain `import <module> [as alias]` binding -- unlike an arbitrary object,
-// a module namespace's properties are exactly its exports, so `visitGet`
-// uses this to resolve `<binding>.<name>` the same way a named import would,
-// without treating every other property access as statically resolvable.
+// A scope entry is `false` while a name is declared but its initializer
+// isn't resolved yet (catches `var a = a;`), or the declaring token (plus
+// `isConst`) once defined. `crossModule` marks a `from <module> import ...`
+// binding resolved to another file's declaration (`token` still holds the
+// local import-site name). `moduleNamespace` marks a plain
+// `import <module> [as alias]` binding, letting `visitGet` resolve
+// `<binding>.<name>` as its exports rather than an arbitrary property.
 type ScopeEntry =
     | false
     | { token: Token; isConst: boolean; crossModule?: { moduleName: string; token: Token }; moduleNamespace?: string };

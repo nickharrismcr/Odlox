@@ -7,26 +7,18 @@ import "core:path/filepath"
 // try/except/finally at the VM level. The bytecode shape this reads is
 // documented in stmt.odin's try_except_statement; read that first.
 //
-// Op_Except carries its own explicit 2-byte skip offset (patched
-// exactly like any other jump -- see stmt.odin) pointing straight at
-// the next clause, rather than requiring a scan for the next
-// Except/Finally opcode in the raw bytecode. A byte-by-byte scan would
-// need to track nesting depth to work correctly when a clause body
-// itself contains a *nested* try/except (whose own End_Except/Except/
-// Finally bytes would otherwise be mistaken for the outer clause's
-// terminator); an explicit offset needs no scanning and works through
-// nested trys for free.
+// Op_Except carries its own explicit 2-byte skip offset pointing straight
+// at the next clause, rather than scanning for the next Except/Finally
+// opcode -- a scan would need nesting-depth tracking to skip past a
+// nested try/except's own End_Except/Except/Finally bytes.
 
 // bootstrap_exceptions compiles and runs a small embedded Lox source
-// string defining the base exception hierarchy (Exception,
-// RunTimeError, EOFError) through a disposable sub-VM, then harvests
-// the resulting classes into vm.builtins (see docs/ARCHITECTURE.md's
-// Native/builtin functions section): far less code than hand-building
-// Class_Object graphs, and the hierarchy behaves exactly like any other
-// Lox class (inheritance, __str__, ...) because it *is* one, compiled
-// by this same compiler. __str__() returns the bare `this.msg`, with
-// no class-name prefix, so `str(e)` on a caught exception yields just
-// the message.
+// string defining the base exception hierarchy (Exception, RunTimeError,
+// EOFError, ...) through a disposable sub-VM, then harvests the resulting
+// classes into vm.builtins -- far less code than hand-building
+// Class_Object graphs, and the hierarchy behaves like any other Lox class
+// since it is one. __str__() returns the bare `this.msg` with no
+// class-name prefix.
 @(private = "file")
 EXCEPTION_SOURCE :: `
 class Exception {
@@ -70,17 +62,12 @@ class SocketError < Exception {
 }`
 
 // bootstrap_cache holds the harvested exception classes after the first
-// bootstrap_exceptions call in this process -- every subsequent VM
-// (there are many: one per script run in production is normal, but
-// module.odin's load_module and the test suite both construct plenty of
-// short-lived ones too) just copies from this cache instead of paying
-// for a full compile-and-run of EXCEPTION_SOURCE again. Not just a perf
-// win: recompiling the same tiny source through a fresh sub-VM dozens of
-// times in one process, all hammering the same global string-intern
-// table (see obj_string.odin), also risks an Odin-test-runner-specific
-// memory-tracking issue under heavy repetition (see
-// docs/ARCHITECTURE.md's "No concurrency anywhere" section) -- doing
-// the real bootstrap only once per process avoids that entirely.
+// bootstrap_exceptions call in this process -- every subsequent VM (many
+// are short-lived: module.odin's load_module and the test suite both
+// construct plenty) just copies from this cache instead of recompiling
+// EXCEPTION_SOURCE again. Recompiling the same tiny source through a fresh
+// sub-VM dozens of times also risks an Odin-test-runner memory-tracking
+// issue under heavy repetition.
 @(private)
 bootstrap_cache: map[string]core.Value
 @(private)
@@ -233,14 +220,10 @@ clear_stack_trace :: proc(vm: ^VM) {
 	vm.stack_trace = nil
 }
 
-// append_stack_trace records one entry per frame `raise_exception`'s
-// unwind loop visits, recorded *before* that frame is popped
-// (pop_frame_for_exception below discards the frame outright, taking
-// its ip/line info with it -- there's no recovering it afterward). Each
+// append_stack_trace records one entry per frame raise_exception's unwind
+// loop visits, before that frame is popped and its ip/line info lost. Each
 // frame contributes two trace lines: the "File '<script>', line <N>, in
 // <function>" location line, and the actual source line's text.
-// vm.stack_trace is printed unconditionally on every uncaught error
-// (print_stack_trace, vm.odin), not as an opt-in debug feature.
 @(private = "file")
 append_stack_trace :: proc(vm: ^VM) {
 	f := frame(vm)
@@ -348,20 +331,13 @@ match_clause_chain :: proc(vm: ^VM, h: ^Exception_Handler, err_class: ^core.Clas
 			return true
 		}
 
-		// next_clause is either the next Except/Finally clause's start,
-		// or -- when this was the last clause -- the shared landing
-		// point right after the whole try/except construct (the same
-		// position normal_end_jump/End_Try's own jump target patches
-		// to; see stmt.odin's try_except_statement). Bounds-checking
-		// against len(code) alone cannot tell these apart: it only
-		// looks "off the end of the chunk", which is only true when
-		// this try/except happens to be the very last construct in its
-		// function. Any code after it (the overwhelmingly common case)
-		// puts a real, in-bounds instruction at next_clause that has
-		// nothing to do with exception handling, so this checks what's
-		// actually *at* next_clause -- an Except or Finally opcode --
-		// rather than just whether the offset is in bounds, before
-		// reading it as [type_const][skip_hi][skip_lo].
+		// next_clause is either the next Except/Finally clause's start, or
+		// -- when this was the last clause -- the shared landing point
+		// right after the whole try/except construct. Bounds-checking
+		// against len(code) alone can't tell these apart, since code after
+		// the construct is a real in-bounds instruction unrelated to
+		// exception handling, so this checks what's actually at
+		// next_clause (an Except or Finally opcode) before reading it.
 		next_clause := clause_start + 4 + skip
 		if next_clause >= len(code) {
 			return false // no more clauses in this try

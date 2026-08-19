@@ -2,45 +2,14 @@ package vm
 
 import "../core"
 
-// Mark-and-sweep collector -- design documented in
-// docs/ARCHITECTURE.md's Garbage collector section. Refinements beyond
-// that document's blueprint, explained where they matter below:
-//
-//  1. Marking and sweeping are incremental: maybe_collect_garbage does at
-//     most GC_WORK_UNIT objects' worth of work per call rather than
-//     draining a whole cycle atomically, so no single opcode-boundary
-//     pause is proportional to heap size -- see the GC_Phase state
-//     machine below (start_gc_cycle/step_mark/step_sweep). Root scanning
-//     (mark_roots) is the one part that stays atomic: the root set is
-//     bounded by live stack/frame/global/module count, not heap size, so
-//     it doesn't need to be split up.
-//  2. Of the four kinds ARCHITECTURE.md's "no permanent-object
-//     exemption" simplification named (classes, modules, functions,
-//     strings), only two -- Class_Object and Module_Object -- actually
-//     get full sweep participation here. Function_Object and
-//     String_Object are constructed by the *compiler*/`core.intern_string`
-//     respectively, neither of which has a VM in scope to register them
-//     with (core/compiler sit below vm in the package graph -- see
-//     docs/ARCHITECTURE.md's package-layout section) -- so those two
-//     remain structurally permanent. Still fully traced either way, so
-//     nothing reachable only through a Function's constant pool or a
-//     String's own bytes (impossible -- strings have no Object
-//     children) goes missing.
-//
-// Write barrier: with marking spread across many opcodes and the mutator
-// actually running in between, an already-blackened object (fully
-// traced, never revisited this cycle) can have a field mutated to point
-// at a still-white object -- invisible to the current cycle, so that
-// object would be incorrectly swept while still reachable. The same
-// hazard applies to the root slots mark_roots only scans once, at cycle
-// start (globals, locals, open upvalues): a later write to one of those
-// slots is just as invisible to the rest of the cycle as a heap-field
-// mutation would be. write_barrier/write_barrier_value (below) must be
-// called immediately after every such write; see properties.odin,
-// collections.odin, upvalue.odin, run.odin, module.odin, builtins.odin,
-// and foreach.odin for the actual call sites (cross-checked against
-// blacken_object's own child enumeration and against mark_roots' own
-// root enumeration).
+// Mark-and-sweep collector -- design in docs/ARCHITECTURE.md's Garbage
+// collector section. Marking/sweeping are incremental (GC_WORK_UNIT per
+// maybe_collect_garbage call, via the GC_Phase state machine below); only
+// root scanning stays atomic. Function_Object and String_Object are
+// constructed with no VM in scope to register them, so they stay
+// structurally permanent (still fully traced). write_barrier/
+// write_barrier_value must run after any write the collector won't
+// otherwise revisit this cycle -- see call sites across the package.
 
 INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox's starting nextGC
 GC_HEAP_GROW_FACTOR :: 2

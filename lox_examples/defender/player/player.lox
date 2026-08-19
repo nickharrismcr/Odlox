@@ -20,16 +20,12 @@ const HYPERSPACE_MAX_ATTEMPTS = 20    // give up and use the last candidate afte
 
 const SAFE_START_FRAMES = 60   // 1s at 60fps
 
-// The player ship.
-// Controls: R-SHIFT (hold) thrust, SPACE (tap) reverse facing, Q/A move up/down,
-// ENTER fire, L-SHIFT (tap) hyperspace.
-// State machine of swappable update functions (NPC idiom: enter_<state>/state_<state>),
-// each directly calling EntityMgr.{hide,show,freeze,unfreeze}_enemies() for tight coupling:
-//   safe_start: flyable, enemies hidden+frozen, 1s. On construction/respawn.
-//   play: normal gameplay, enemies visible+active.
-//   die: frozen, flashing red, enemies frozen. 2s -> explode.
-//   explode: ship gone, particle burst, enemies hidden+frozen. 3s -> safe_start.
-//   hyperspace: warps to a random spot; enemies untouched. Arrival -> play or die (misjump).
+// The player ship. Controls: R-SHIFT (hold) thrust, SPACE (tap) reverse facing, Q/A
+// move up/down, ENTER fire, L-SHIFT (tap) hyperspace.
+// State machine of swappable update functions (NPC idiom: enter_<state>/state_<state>):
+// safe_start (flyable, enemies hidden+frozen, 1s, on construction/respawn) -> play (normal,
+// enemies active) -> die (frozen, flashing red, 2s) -> explode (particle burst, 3s) ->
+// safe_start. hyperspace (warps away, enemies untouched) -> play or die (misjump).
 // The camera follows the ship at a fixed offset that shifts to look ahead in facing direction.
 
 class Player < Sprite {

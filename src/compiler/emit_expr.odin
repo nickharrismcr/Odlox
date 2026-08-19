@@ -199,15 +199,12 @@ emit_super :: proc(em: ^Emitter, v: ^Expr_Super) {
 }
 
 // is_swizzle_field_name reports whether name could name a vec2/3/4
-// component -- x/y/z/w, plus r/g/b/a as Vec4's color-channel aliases
-// (see properties.odin's get_vec_swizzle/vec_with_field_set). Purely a
-// lexical check on the field name token, since the compiler can't know
-// at compile time whether a given property target actually holds a
-// vector -- see emit_swizzle_set's own doc comment for why that's fine.
-// Package-private (not file-private): resolve.odin's discover_field_slots
-// needs the identical exclusion, so a `this.x = ...` inside init never
-// gets baked into a field slot -- swizzle write-back must still run for
-// it, exactly as if this feature didn't exist.
+// component: x/y/z/w, plus r/g/b/a as Vec4's color-channel aliases. Purely
+// a lexical check, since the compiler can't know at compile time whether a
+// property target actually holds a vector. Package-private: resolve.odin's
+// discover_field_slots needs the same exclusion so `this.x = ...` inside
+// init never gets baked into a field slot, letting swizzle write-back
+// still run for it.
 @(private)
 is_swizzle_field_name :: proc(name: string) -> bool {
 	switch name {
@@ -217,23 +214,13 @@ is_swizzle_field_name :: proc(name: string) -> bool {
 	return false
 }
 
-// emit_property covers all four forms dot() compiles today: plain
-// `.name` read, `.name = value` write, `.name <op>= value` compound
-// write, and `.name(args)` invoke. A `.Set`/`.Compound_Set` whose field
-// name could be a vec swizzle component is routed to emit_swizzle_set
-// instead -- see its own doc comment.
-//
-// v.field_slot >= 0 (Resolver-populated, resolve.odin's
-// discover_field_slots) means this is a `this.name` access the compiler
-// proved reads/writes one of the enclosing class's own compile-time-
-// discovered field slots -- emit Get_Field_Slot/Set_Field_Slot (a
-// literal slot operand, core/chunk.odin) instead of Get_Property/
-// Set_Property (a constant-pool name lookup) for that one op. Never true
-// for .Invoke (resolve.odin never sets it there) -- this.field(...) always
-// keeps the ordinary Invoke shape. emit_expr(em, v.object) below already
-// emits the correct Get_Local/Get_Upvalue for `this` on its own (see the
-// Expr_This case above) whether or not field_slot applies, so no special
-// receiver-emission path is needed here.
+// emit_property covers all four forms: plain `.name` read, `.name = value`
+// write, `.name <op>= value` compound write, and `.name(args)` invoke. A
+// `.Set`/`.Compound_Set` field name that could be a vec swizzle component
+// routes to emit_swizzle_set instead. v.field_slot >= 0 means this is a
+// `this.name` access to a compile-time-discovered field slot -- emit
+// Get_Field_Slot/Set_Field_Slot instead of Get_Property/Set_Property;
+// never true for .Invoke.
 @(private = "file")
 emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 	line := v.token.line
@@ -297,44 +284,12 @@ emit_property :: proc(em: ^Emitter, v: ^Expr_Property) {
 }
 
 // emit_swizzle_set compiles `<target>.f = value` and `<target>.f <op>=
-// value` where f could be a vector component name -- see
-// core/chunk.odin's Set_*_Vec_Field family and properties.odin's
-// swizzle_assign for why this needs dedicated codegen instead of the
-// ordinary Get/Set_Property path: <target>'s current value is always an
-// inline copy (see core/value.odin's Value representation), not a
-// shared heap reference, so a plain Get-then-Set_Property sequence has
-// nothing to write a mutated vector back into -- and unlike a *read*
-// (`v.x`) or any *other* field name, which never need write-back at
-// all, an assignment does.
-//
-// The runtime (swizzle_assign) doesn't need to know at compile time
-// whether <target> actually holds a vector -- Lox is dynamically typed,
-// and if it turns out to be an Instance/Class/Module with a field
-// genuinely named "x" or similar (by far the most common real case --
-// see the Expr_This case below), these opcodes fall back to an ordinary
-// field-set with no write-back needed (see run.odin's Set_*_Vec_Field
-// handlers). What the compiler *does* need to know statically is
-// <target>'s own shape, to emit the matching write-back half: a bare
-// variable or `this` (v.object is Expr_Variable/Expr_This, both
-// resolved by the Resolver same as any other read of them -- they need
-// identical treatment, since `this` resolves exactly like a Local) or
-// exactly one property access -- however its own object expression got
-// there; that part is emitted as an ordinary opaque expression and
-// Dup'd, so `this.pos.x`, `get_thing().pos.x`, and `a.b.c.pos.x` are all
-// equally supported, since only the *last* link needs the write-back
-// treatment. Anything else as the target -- indexing
-// (`list[i].x = ...`), or the vector itself being a call's direct
-// result (`get_vec().x = ...`) -- has no assignable storage location
-// the write-back opcodes could target, so it's a compile error rather
-// than a silently-lost mutation.
-//
-// Compound assignment (`v.x += 1`) additionally needs v.f's *current*
-// value before combining with the RHS -- read via an ordinary
-// Get_Property "f" on the same receiver the write-back half already has
-// in hand (correct for both a vector receiver, via get_vec_swizzle, and
-// an Instance/Class/Module receiver with a real field "f"), exactly
-// mirroring how the ordinary (non-swizzle) `.Compound_Set` case below
-// reads-before-writing through a Dup'd receiver.
+// value` where f could be a vector component name (core/chunk.odin's
+// Set_*_Vec_Field family). A vector value is an inline copy, not a heap
+// reference, so plain Get-then-Set_Property has nothing to write the
+// mutation back into; the opcodes fall back to an ordinary field-set if
+// <target> isn't a vector. <target> must be a bare variable, `this`, or
+// one property access -- indexing or a call result is a compile error.
 @(private = "file")
 emit_swizzle_set :: proc(em: ^Emitter, v: ^Expr_Property, field_name_const: u8, line: int) {
 	is_compound := v.kind == .Compound_Set

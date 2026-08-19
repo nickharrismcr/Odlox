@@ -201,15 +201,12 @@ var result = h.run()
 	testing.expect_value(t, core.string_get(core.as_string(v)), "called")
 }
 
-// test_field_slot_custom_exception_message_formats_correctly is a
-// regression test for vm/exceptions.odin's format_uncaught_exception,
-// which used to read inst.fields["msg"] directly -- a custom exception
-// class's __init__ (this.msg = m at the top level) is exactly the shape
-// discover_field_slots slot-optimizes, so "msg" can live in inst.slots
-// instead. Fixed via core.instance_get_field. Checks the *caught* path
-// (e.msg, an external/generic read) rather than the uncaught-formatting
-// path directly, since that's the reachable, testable half of the same
-// underlying lookup.
+// Regression test for exceptions.odin's format_uncaught_exception, which
+// used to read inst.fields["msg"] directly -- a custom exception's
+// __init__ (this.msg = m) is exactly the shape discover_field_slots
+// slot-optimizes, so "msg" can live in inst.slots instead. Fixed via
+// core.instance_get_field; checks the caught path (e.msg) as the
+// reachable, testable half of the same lookup.
 @(test)
 test_field_slot_custom_exception_message_formats_correctly :: proc(t: ^testing.T) {
 	source := `

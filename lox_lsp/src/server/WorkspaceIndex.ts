@@ -1,20 +1,11 @@
-// Tracks a LoxDocument per file the server has ever needed to look at --
-// not just documents open in an editor tab, which is all LoxLspServer knew
-// about before this. Two kinds of entry:
-//
-//   - "open" documents: content comes from the live TextDocuments buffer
-//     (unsaved edits win), kept current by LoxLspServer.onDidChangeContent.
-//   - "disk" documents: content is read from the filesystem the first time
-//     something imports them, cached, and only re-read when the file's
-//     mtime changes.
-//
-// This is what makes `from module import name` resolvable at all when
-// `module` isn't open in the editor -- resolveImport() is what Resolver
-// (via LoxDocument) calls to look up another file's exports.
-//
-// Keyed by a case-normalized absolute fs path (not the raw URI string) so
-// an open document and the same file reached via a resolved import path
-// always land on one entry regardless of how each URI was cased/escaped.
+// Tracks a LoxDocument per file the server has ever needed to look at, not
+// just editor-open documents. "open" entries read from the live
+// TextDocuments buffer; "disk" entries are read from the filesystem on
+// first import and re-read only when the file's mtime changes. This is
+// what makes `from module import name` resolvable when `module` isn't
+// open -- resolveImport() is what Resolver looks it up through. Keyed by
+// a case-normalized absolute fs path so an open document and the same
+// file reached via a resolved import always land on one entry.
 
 import * as fs from "fs";
 import * as path from "path";

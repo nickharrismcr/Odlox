@@ -6,15 +6,9 @@ import "core:os"
 import "core:path/filepath"
 import "core:testing"
 
-// End-to-end tests for Phase 6a's core builtins -- same "compile and
-// actually run it" philosophy as vm_test.odin (see that file's header
-// comment), plus define_builtins, which those tests don't need. This
-// is what caught every real bug this phase found: format()'s any-
-// boxing segfault, the missing Op_Invoke module-dispatch case (every
-// built-in module function call fell through to "Undefined method"),
-// and file_write's missing `\n`-unescape (this language's string
-// literals have no real backslash-escape mechanism at all -- see
-// obj_file.odin's file_write doc comment).
+// End-to-end tests for the core builtins -- same "compile and actually run
+// it" philosophy as vm_test.odin, plus define_builtins, which those tests
+// don't need.
 
 @(private = "file")
 run_builtins :: proc(t: ^testing.T, source: string, var_name: string) -> core.Value {
@@ -114,13 +108,10 @@ test_vec_constructors :: proc(t: ^testing.T) {
 }
 
 // Swizzle-component assignment (`v.x = ...`) through a bare global
-// variable -- see emit_expr.odin's emit_swizzle_set and
-// properties.odin's swizzle_assign. Because Vec2/3/4 are inlined into
-// Value (see core/value.odin), `v` here is an independent copy each
-// time it's read off the global slot -- Set_Global_Vec_Field (run.odin)
-// is what actually writes the mutated whole vector back into that slot;
-// without it, `v.x = 10` would silently do nothing observable (the
-// mutation would happen to a copy on the stack and be discarded).
+// variable. Vec2/3/4 are inlined into Value, so `v` is an independent copy
+// each time it's read off the global slot -- Set_Global_Vec_Field writes
+// the mutated whole vector back into that slot, without which `v.x = 10`
+// would silently mutate a discarded stack copy.
 @(test)
 test_vec_field_assignment :: proc(t: ^testing.T) {
 	v := run_builtins(t, "var v = vec2(1, 2)\nv.x = 10\nvar result = v.x + v.y\n", "result")
@@ -189,14 +180,9 @@ test_vec_field_assignment_color_aliases :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.as_float(v), 255.0)
 }
 
-// Copy independence: since vec2/3/4 are inline values (not shared heap
-// objects -- see core/value.odin), assigning one variable's value to
-// another must never let a later mutation through one be observed
-// through the other. This is the direct mirror-image of what the old
-// (now-deleted) pool allocator's stress test checked -- that one caught
-// stale reused-heap-memory leaking between logically distinct vectors;
-// this one catches the opposite failure mode a naive inlining port
-// could introduce (accidentally keeping reference semantics somewhere).
+// Copy independence: since vec2/3/4 are inline values, not shared heap
+// objects, assigning one variable's value to another must never let a
+// later mutation through one be observed through the other.
 @(test)
 test_vec_assignment_is_a_copy_not_an_alias :: proc(t: ^testing.T) {
 	v := run_builtins(t, "var a = vec2(1, 2)\nvar b = a\nb.x = 99\nvar result = a.x\n", "result")
@@ -277,20 +263,12 @@ f()
 `)
 }
 
-// The central regression case this plan's Design decision section exists
-// for: a dynamically-typed call site is not a coding error the way a
-// fixed mismatched-arity `++` is. `add`'s body does a local-local `++`,
-// so its call site gets peephole-fused to Add_Vv and then self-specializes
-// -- on the first call (Vec2, Vec2) it patches to Add_V2. The second call
-// passes Vec3 arguments through that *same* bytecode site. Add_Ii/Add_Ff
-// would have no equivalent hazard here (see chunk.odin's Op_Code doc
-// comment) -- an Add_V2-patched site blindly trusting its patch the way
-// Add_Ii does would run 2-lane math against Vec3 operands with no error
-// at all, silently producing a wrong or corrupted result instead of the
-// same "Vector operands must be the same type" family of error the
-// mismatched-type test above expects. Add_V2/V3/V4's per-execution type
-// guard (see arithmetic.odin's vec_add_dispatch) is what this test
-// actually verifies still holds.
+// A dynamically-typed call site is not a coding error the way a fixed
+// mismatched-arity `++` is. `add`'s body does a local-local `++`, so its
+// call site self-specializes to Add_V2 on the first (Vec2, Vec2) call;
+// the second call passes Vec3 through that same bytecode site. This
+// verifies Add_V2/V3/V4's per-execution type guard (vec_add_dispatch)
+// still catches the mismatch instead of running 2-lane math on Vec3.
 @(test)
 test_vec_add_polymorphic_call_site :: proc(t: ^testing.T) {
 	v := run_builtins(t, `
