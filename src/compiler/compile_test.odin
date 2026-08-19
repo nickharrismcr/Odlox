@@ -10,15 +10,12 @@ import "core:testing"
 // scanner_test.odin checks token-type shape rather than exact bytes.
 
 // -----------------------------------------------------------------------
-// Decoding helper: walks a Chunk's code, one instruction at a time,
+// Decoding helper: walks a Chunk's code one instruction at a time,
 // skipping the right number of operand bytes per opcode (including the
-// two variable-length ones, Closure and Import_From, which need to
-// consult the constant pool / a count byte respectively to know their
-// own width). This is deliberately *not* Phase 5's disassembler -- it
-// exists only so these tests can assert "opcode X appears here" without
-// either hand-counting byte offsets everywhere or risking a false match
-// against some unrelated instruction's operand byte that happens to
-// equal X's numeric value.
+// two variable-length ones, Closure and Import_From). Not the
+// disassembler -- exists only so tests can assert "opcode X appears here"
+// without hand-counting byte offsets or risking a false match against an
+// unrelated operand byte.
 
 @(private = "file")
 Decoded :: struct {
@@ -187,14 +184,9 @@ from math import sqrt, pow
 }
 
 // Regression test: print_statement must emit Op_Str before Op_Print --
-// Op_Str is also the __str__() dispatch point (run.odin's Op_Str
-// case), so skipping it (an earlier version did) meant `print instance`
-// never picked up a class's own __str__() even after __str__
-// dispatch was wired up in Op_Str itself, since print never routed
-// through that opcode at all. str(x) (expr.odin's str_call, a
-// different call site) already emitted Op_Str correctly, which is
-// exactly what made this easy to miss -- str(x) "worked" while print
-// x on the same value silently didn't.
+// Op_Str is also the __str__() dispatch point (run.odin's Op_Str case),
+// so skipping it meant `print instance` never picked up a class's own
+// __str__() even though str(x) already routed through Op_Str correctly.
 @(test)
 test_print_statement_emits_str_before_print :: proc(t: ^testing.T) {
 	c := compile_ok(t, "print 1\n")

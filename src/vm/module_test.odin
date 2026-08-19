@@ -194,25 +194,12 @@ func get_base_plus(x) {
 }
 
 // -----------------------------------------------------------------------
-// Regression test for `from mod import *`, which had two separate real
-// bugs found together while porting math.lox:
-//
-//  1. The scanner's Eol-suppression heuristic (scanner.odin's keep_eol)
-//     treats `*` purely by token type -- indistinguishable from the
-//     multiplication operator, which legitimately continues onto the
-//     next line -- so the Eol after `from mod import *` on its own
-//     line was never scanned at all, and from_import_statement's old
-//     unconditional consume_eol call always failed.
-//  2. Even past that, `from mod import *` iterates *every* name in the
-//     imported module's own environment, which includes free builtins
-//     the module's code merely referenced internally (e.g. math.lox
-//     calling vec2()/vec3()), not just its "real" exports -- binding
-//     one of those into the importing script raised "has no global
-//     slot" whenever the importing script's own code never happened
-//     to reference that same name itself. Fixed with
-//     bind_imported_name_soft, which (like the reference implementation's own
-//     importFunctionFromModule) silently skips the fast-slot write
-//     when none exists, rather than treating that as an error.
+// Regression test for `from mod import *`, which had two bugs: (1) the
+// scanner's Eol-suppression heuristic can't distinguish `*` from
+// multiplication, so consume_eol always failed after the statement; (2)
+// `import *` iterates every name in the module's environment, including
+// incidentally-referenced free builtins, raising "has no global slot" --
+// fixed with bind_imported_name_soft.
 @(test)
 test_from_import_star_with_module_referencing_extra_builtins :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)

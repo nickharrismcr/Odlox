@@ -2,14 +2,12 @@ package compiler
 
 import "../core"
 
-// Top-level entry points. `Compile` is a fresh, one-shot compile (a
-// script file, or a from-scratch module import); `Compile_Repl` differs
-// only in seeding/committing the persistent Repl_State around it, so a
-// name resolved on one REPL line stays resolved the same way on the
-// next. Both run the same three-stage pipeline: parse to an AST
-// (parser.odin/rules.odin/expr.odin/stmt.odin), resolve it in place
-// (resolve.odin), then emit bytecode from the resolved tree (emit.odin/
-// emit_expr.odin/emit_stmt.odin) -- see docs/plans/compiler-ast-split.md.
+// Top-level entry points. `Compile` is a fresh, one-shot compile (a script
+// file, or a from-scratch module import); `Compile_Repl` differs only in
+// seeding/committing the persistent Repl_State around it, so a name
+// resolved on one REPL line stays resolved the same way on the next. Both
+// run the same three-stage pipeline: parse to an AST, resolve it in place,
+// then emit bytecode from the resolved tree.
 
 // Compile compiles source into a top-level Function_Object ready to be
 // wrapped in a Closure_Object and run. filename is used for error
