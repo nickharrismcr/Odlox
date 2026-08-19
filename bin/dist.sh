@@ -5,50 +5,20 @@
 #
 # Usage:
 #   bin/dist.sh <name> <script.lox> [<script2.lox> ...]
-#       Flat mode: bundles the given script file(s) only (no sibling files).
-#       Correct for the common case -- most of lox_examples/*.lox are single
-#       files with no local imports or asset paths (confirmed by grep: only
-#       gfx/box2d natives, nothing under lox_examples/assets or shaders/).
-#
+#       Flat mode: bundles the given script file(s) only, no sibling files.
 #   bin/dist.sh <name> --dir <root-dir> <entry.lox>
-#       Folder mode: bundles a self-contained example folder that has its own
-#       local imports and/or asset paths resolved relative to its own
-#       directory -- e.g. lox_examples/defender (main.lox + game/ + npc/ +
-#       player/ + world/ + pngs/ + assets/). entry.lox is given relative to
-#       root-dir.
+#       Folder mode: bundles a self-contained example folder (local
+#       imports/assets resolved relative to root-dir). entry.lox is given
+#       relative to root-dir. Local modules are flattened into the bundle
+#       root and shipped as compiled __loxcache__/*.lxc only, since
+#       cache-only module resolution only checks $LOX_PATH/modules and
+#       beside the entry script, not subdirectories. Duplicate basenames
+#       across the tree are a hard error. Assets keep their original
+#       relative layout; the entry script is always bundled as source.
 #
-#       Local modules living in subdirectories (game/npc/player/world) get
-#       *flattened* into the bundle root rather than kept in their original
-#       layout: read_module_source (module.odin:268-340) only supports
-#       cache-only resolution for two tiers -- $LOX_PATH/modules/<name>.lox
-#       and a <name>.lox sitting directly beside the entry script -- not for
-#       find_module_in_subdirs' recursive walk, which requires the literal
-#       .lox on disk unconditionally (module.odin:283-289's own comment: a
-#       deliberate, documented scope cut, not an oversight). Flattening
-#       every local module into the entry script's own directory moves them
-#       all onto the tier that *does* support cache-only, since
-#       read_module_source resolves relative to vm.root_script -- the
-#       top-level entry script -- regardless of which module is doing the
-#       importing (see that same comment block). Duplicate basenames across
-#       the tree would make flattening ambiguous, so that's a hard error.
-#       Asset paths (image()/sound() natives resolve relative to the
-#       process's working directory, which run.bat sets to the bundle root)
-#       are copied preserving their original relative layout, unaffected by
-#       the module flattening.
-#
-#       This bundles the entry script itself as real source unconditionally
-#       -- main.odin's run_file reads it directly by path, never through
-#       read_module_source, so there's no cache-only path for it at all
-#       (main.odin's own comment: the entry script "never consults the cache
-#       at all").
-#
-# Either mode writes dist/<name>/ and dist/<name>.zip. The bundle ships
-# modules/ as compiled __loxcache__/*.lxc only (no .lox source) and its
-# run.bat launches odlox.exe --force-bc-cache, matching module.odin's
-# documented use case for that flag: "distributing a library as compiled
-# bytecode only" (see docs/plans/done/bytecode-cache.md). --force-bc-cache is
-# required here, not optional -- without it, module resolution only accepts
-# a literal <name>.lox next to the script, and this bundle never ships one.
+# Writes dist/<name>/ and dist/<name>.zip. run.bat launches odlox.exe
+# --force-bc-cache, required because the bundle never ships a literal
+# .lox for any flattened module.
 set -e
 cd "$(dirname "$0")/.."
 repo_root="$(pwd)"
