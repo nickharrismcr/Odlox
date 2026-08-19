@@ -3,38 +3,21 @@ package core
 import "core:encoding/endian"
 import "core:strings"
 
-// bc_cache.odin: serializer/deserializer for a compiled module's
-// Function_Object tree -- the format vm/bc_cache.odin's file-backed
-// bytecode cache reads and writes (see docs/plans/bytecode-cache.md for
-// the full design). Same tag-dispatch, length-prefixed, bounds-checked
-// shape as pickle.odin's Value serializer, applied to a narrower value
-// population: compile-time constants only (Int/Float/String/Function --
-// nothing else is ever a Chunk constant), not arbitrary runtime values.
-// Int/float constants round-trip the full 8-byte payload with no
-// truncation.
+// Serializer/deserializer for a compiled module's Function_Object tree,
+// the format vm/bc_cache.odin's file-backed bytecode cache reads and
+// writes. Same tag-dispatch, length-prefixed shape as pickle.odin's
+// Value serializer, but limited to compile-time constants
+// (Int/Float/String/Function).
 //
-// Same error-not-panic discipline as pickle.odin throughout: a `.lxc`
-// file is untrusted input (could be corrupt, truncated, or written by a
-// different schema version), so every decode step is bounds-checked and
-// every failure comes back as ok=false, never a crash. No decode step
-// ever pre-sizes an allocation from an attacker/corruption-controlled
-// count -- every `[dynamic]` collection below starts at zero capacity
-// and grows one bounds-checked element at a time via `append`, so a
-// garbage-huge count fails on the very next out-of-range read instead of
-// attempting a huge allocation. The one exception, `property_caches` (a
-// bare count with no per-entry payload to bound it against), gets an
-// explicit cap instead -- see BC_CACHE_MAX_PROPERTY_CACHES.
+// A `.lxc` file is untrusted input, so every decode step is bounds-checked
+// and fails as ok=false rather than panicking; `[dynamic]` collections grow
+// via `append` instead of pre-sizing from a decoded count, except
+// `property_caches`, which is capped explicitly (BC_CACHE_MAX_PROPERTY_CACHES).
 
 BC_CACHE_MAGIC :: [4]u8{'O', 'L', 'X', 'C'}
-BC_CACHE_VERSION :: u16(3) // v2 -> v3: compile-time-baked instance field slots (TODO.md's Phase
-                           // 7 entry) added Get_Field_Slot/Set_Field_Slot mid-enum, and the
-                           // Subtract/Multiply/Divide peephole family (Sub_Nn etc.) before that
-                           // -- same shifted-numeric-value hazard the v1 -> v2 bump below
-                           // describes, not just a missed cache: any v2 cache would misdecode
-                           // under the new enum layout, not merely fail to be found.
-                           // v1 -> v2: inlining Vec2/3/4 into Value added new Op_Code variants
-                           // mid-enum (Set_*_Vec_Field -- see docs/plans/inline-vec-value.md),
-                           // shifting every later opcode's numeric value the same way.
+BC_CACHE_VERSION :: u16(3) // Bumped whenever an Op_Code variant is inserted mid-enum
+                           // (shifting later opcodes' numeric values), so a stale-version
+                           // cache is rejected instead of misdecoded under the new layout.
 
 // BC_CACHE_MAX_PROPERTY_CACHES: chunk_add_property_cache (chunk.odin)
 // returns a u8 index, so no real compiler output can ever produce more
@@ -192,17 +175,10 @@ bc_enc_function :: proc(e: ^Bc_Encoder, fn: ^Function_Object) -> bool {
 }
 
 // function_serialise encodes fn and, recursively, every nested
-// Function_Object reachable through its own chunk.constants (nested
-// functions/closures are always constants of their enclosing chunk --
-// see compiler/functions.odin's emit_closure -- so the whole compiled
-// unit is one tree reachable from a single top-level Function_Object,
-// same as main.odin's own program_stats already walks for `--info`).
-// Never touches fn.environment -- that's a runtime-only back-pointer;
-// the caller must wire it up on every node of a decoded tree after a
-// successful function_deserialise (see that proc's own doc comment for
-// why every node, not just the root). ok is false only if fn's constant
-// pool contains something other than Int/Float/String/Function -- not
-// expected from any real compiler output, checked rather than assumed.
+// Function_Object reachable through chunk.constants. Never touches
+// fn.environment (a runtime-only back-pointer); the caller must wire that
+// up on every node after function_deserialise. ok is false only if a
+// constant pool holds something other than Int/Float/String/Function.
 function_serialise :: proc(fn: ^Function_Object) -> (data: []u8, ok: bool) {
 	e: Bc_Encoder
 	magic := BC_CACHE_MAGIC

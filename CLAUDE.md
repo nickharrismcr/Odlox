@@ -17,10 +17,27 @@ State the finding directly. "The object-heavy end of the suite is the honest bot
 "a difficult target to beat." The information content is identical; only the editorializing is
 removed.
 
-Keep comments short: 2-4 lines per comment block, even for a non-obvious design decision or a bug
-fix. State the fact and, if needed, the one-line reason -- don't narrate the investigation that led
-there (alternatives tried, intermediate wrong theories, how it was confirmed). That belongs in the
-commit message or PR description, not permanently in the source.
+Keep comments short: a hard ceiling of 1-7 lines per comment block, even for a non-obvious design
+decision or a bug fix. Target 2-4 lines for the common case; treat 7 as the outer bound for
+something genuinely necessary, not the norm. Anything longer belongs in a commit message, PR
+description, or ARCHITECTURE.md, not permanently in the source. State the fact and, if needed, the
+one-line reason -- don't narrate the investigation that led there (alternatives tried, intermediate
+wrong theories, how it was confirmed).
+
+Example:
+```
+// Avoid:
+// The mark-and-sweep collector was chosen over a copying collector because
+// copying would require updating every live pointer through a forwarding
+// table, which conflicts with native code holding raw Object pointers into
+// the heap across GC-safepoint boundaries. An earlier prototype tried a
+// generational scheme, but the extra write-barrier bookkeeping wasn't
+// justified given typical Lox script allocation patterns.
+
+// Prefer:
+// Mark-and-sweep, not copying: native code holds raw pointers into the
+// heap across GC safepoints, so objects can't move.
+```
 
 ## Linting `.lox` scripts with the lox_lsp LSP
 

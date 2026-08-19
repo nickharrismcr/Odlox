@@ -2,18 +2,12 @@ package compiler
 
 import "../core"
 
-// AST node types built by the parser (parser.odin/rules.odin/expr.odin/
-// stmt.odin), annotated in place by the Resolver (resolve.odin), and
-// walked by the Emitter (emit.odin/emit_expr.odin/emit_stmt.odin) to
-// produce bytecode. See docs/plans/compiler-ast-split.md for the full
-// design and the reasoning behind each collapsing/reuse decision below.
-//
-// `Function_Type` and `Upvalue` are declared in resolve.odin and reused
-// here unchanged rather than redeclared.
-//
-// Expr/Stmt are unions of *pointer* variants (^Expr_Literal, ^Stmt_If,
-// ...), so a node reference is typed plain `Expr`/`Stmt`, never `^Expr`/
-// `^Stmt` -- the indirection is already inside the union.
+// AST node types built by the parser, annotated in place by the Resolver,
+// and walked by the Emitter to produce bytecode. `Function_Type` and
+// `Upvalue` are declared in resolve.odin and reused here rather than
+// redeclared. Expr/Stmt are unions of *pointer* variants (^Expr_Literal,
+// ^Stmt_If, ...), so a node reference is typed plain `Expr`/`Stmt`, never
+// `^Expr`/`^Stmt` -- the indirection is already inside the union.
 
 // Node_Base is embedded (`using base: Node_Base`) in every node so error
 // reporting has a token to point at, matching what error_at_current/error
@@ -129,20 +123,12 @@ Var_Ref :: struct {
 	is_const: bool,
 }
 
-// Local_Exit is what the Emitter (implementation phase 5) needs at the
-// point a scope closes: which local slots go out of scope here, in
-// declaration order, and for each one whether any nested closure captured
-// it as an upvalue (Close_Upvalue) or not (plain Pop) -- mirroring
-// end_scope's own Pop/Close_Upvalue decision today. Centralized on each
-// scope-owning node (Stmt_Block, Stmt_Foreach, Except_Clause, Stmt_For's
-// own init-variable scope, Stmt_Try's body/finally scopes) rather than a
-// captured-flag scattered across every different declaration-site node
-// type, since "is_captured" can only be known once the whole scope has
-// been resolved (a closure capturing an earlier local may appear later in
-// the same scope) -- the Resolver fills this in as each scope closes.
-// Function-body scopes (Function_Decl.body) don't need this: nothing ever
-// emits an explicit end-of-scope Pop/Close_Upvalue for a function's own
-// params/`this` today, since Op_Return already discards the whole frame.
+// Local_Exit tells the Emitter which local slots go out of scope at a
+// scope-closing point, in declaration order, and whether each was captured
+// as an upvalue (Close_Upvalue) or not (plain Pop). Stored on each
+// scope-owning node since captured-ness is only known once the whole scope
+// is resolved. Function-body scopes don't need this: Op_Return discards
+// the whole frame instead.
 Local_Exit :: struct {
 	slot:        int,
 	is_captured: bool,
@@ -394,20 +380,12 @@ Stmt_Foreach :: struct {
 	local_exits: []Local_Exit, // filled in by the Resolver; covers var_name and the hidden __iter local, in that order
 }
 
-// pop_exits on Break/Continue is what pop_locals_above emits today: a
-// break/continue jumps directly out of every block it's nested in up to
-// (not including) the target loop's own control-variable scope, bypassing
-// each of those blocks' own Stmt_Block.local_exits cleanup -- so the
-// locals living between here and the loop boundary need their own
-// Pop/Close_Upvalue emitted right at the jump site instead.
-// crosses_tries/local_count_at_crossing on Break/Continue/Return (below)
-// are implementation phase 6's addition: every enclosing Stmt_Try between
-// here and the target (the loop being broken out of, for Break/Continue;
-// the function boundary, for Return), innermost first. Each crossed try
-// needs an Op_End_Try (unconditional) plus, if it has a finally, that
-// finally re-emitted right here -- see Stmt_Try's own doc comment on why
-// that emission has to be freshly resolved per crossing site rather than
-// reusing a fixed slot assignment.
+// pop_exits: a break/continue jumps out of every enclosing block up to (not
+// including) the target loop's control-variable scope, bypassing each
+// block's own local_exits cleanup, so those locals need Pop/Close_Upvalue
+// emitted at the jump site. crosses_tries/local_count_at_crossing list
+// every Stmt_Try crossed between here and the target, innermost first;
+// each needs an Op_End_Try plus, if it has a finally, that re-emitted here.
 Stmt_Break :: struct {
 	using base:             Node_Base,
 	pop_exits:              []Local_Exit, // filled in by the Resolver
@@ -479,21 +457,13 @@ Except_Clause :: struct {
 	local_exits:  []Local_Exit, // filled in by the Resolver; covers the binding (if any) and any locals declared in body
 }
 
-// Stmt_Try carries has_finally/finally_body up front, unlike today's
-// token-position-replay design -- this is what lets the Emitter resolve
-// return/break/continue crossings immediately instead of deferring them
-// through a trampoline. See docs/plans/compiler-ast-split.md's
-// "try/finally" section for how finally_body's own local slots stay
-// replay-relative even though everything else here is resolved once.
-//
-// body_local_exits/finally_local_exits are filled in by the ordinary
-// single-pass Resolver walk (implementation phase 4/5) and reflect one
-// normal-completion pass over each. Crossing return/break/continue
-// (implementation phase 6) needs finally_body re-resolved per crossing
-// site instead, since its own locals' slot numbers are replay-relative --
-// see the plan doc's own section on this. That phase-6 mechanism
-// supersedes finally_local_exits for crossing sites; this field remains
-// exactly what the Emitter uses for the single normal-completion copy.
+// has_finally/finally_body let the Emitter resolve return/break/continue
+// crossings directly rather than deferring through a trampoline.
+// body_local_exits/finally_local_exits reflect one normal-completion pass
+// over each. A crossing return/break/continue re-resolves finally_body per
+// crossing site instead, since its locals' slot numbers are
+// replay-relative; finally_local_exits remains what the Emitter uses for
+// the single normal-completion copy.
 Stmt_Try :: struct {
 	using base:          Node_Base,
 	body:                []Stmt,
