@@ -111,19 +111,12 @@ test_import_prefers_lox_path_modules_dir :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Regression test for a real, severe, pre-existing bug found porting
-// the .lox standard library: run.odin's Get_Global/Set_Global/
-// Define_Global(_Const) all resolved through vm.environment -- the
-// *running VM instance's own* Environment field -- instead of the
-// *currently executing frame's own function*'s environment
-// (fl.fn.environment). Those only coincide for the top-level script
-// itself; the instant an *imported module's* function is called and
-// that function references any global at all (calling another
-// function in its own module, reading a module-level var, or calling
-// an underscore-prefixed native), it resolved against the *importing
-// script's* global slot space instead of its own -- wrong slot, wrong
-// value, or "Undefined variable '#N'" outright. See run.odin's own
-// doc comment on the fix for the full story.
+// Regression test: run.odin's Get_Global/Set_Global/Define_Global(_Const)
+// resolved through vm.environment (the running VM's own field) instead of
+// the currently executing frame's function's environment. Those only
+// coincide for the top-level script -- an imported module's function
+// referencing any global resolved against the importing script's slot
+// space instead of its own. See run.odin's doc comment on the fix.
 
 @(private = "file")
 run_two_module_files :: proc(t: ^testing.T, dir: string, main_source, helper_source: string) -> (result: core.Value, status: Interpret_Result, msg: string) {

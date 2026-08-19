@@ -8,9 +8,8 @@ import "core:fmt"
 // core.Chunk bytecode (emit_expr.odin/emit_stmt.odin hold the
 // per-node-kind walk). Everything here reads slot numbers/resolutions the
 // Resolver already computed rather than re-deriving them. break/continue/
-// return crossing an enclosing try walks the ancestor Stmt_Try chain the
-// Resolver already collected and emits each crossed try's cleanup/finally
-// directly, in order.
+// return crossing an enclosing try walks the ancestor Stmt_Try chain and
+// emits each crossed try's cleanup/finally directly, in order.
 
 // -----------------------------------------------------------------------
 // Types
