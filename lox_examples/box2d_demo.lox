@@ -4,34 +4,40 @@ import random
 import math
 import colour
 
-// box2d native-module demo: two switchable scenes.
-//   1 - top-down view, 100 circles bouncing elastically off each other and sealed walls.
-//   2 - side view with gravity and angled static ramps; balls drop continuously from the top.
-// Press 1/2 to switch scenes, R to reset/rebuild the active scene.
+// box2d native-module demo: two scenes running side by side in a split
+// screen, left = scene 1, right = scene 2.
+//   left  - top-down view, circles bouncing elastically off each other and sealed walls.
+//   right - side view with gravity and angled static ramps; balls drop continuously from the top.
+// Each side rebuilds itself when it reaches the point that used to trigger
+// switching scenes (all non-killer balls gone on the left; all balls spawned
+// and fallen off screen on the right). Press R to reset both sides.
 
 const STATIC = 0
 const DYNAMIC = 2
 
 const SCALE = 25.0 // pixels per metre
 
-// WIDTH/HEIGHT/WORLD_W/WORLD_H are plain globals, not consts: their real
-// values aren't known until the window exists and toggle_fullscreen() has
-// run (see the "Main loop / scene switching" section at the bottom of this
-// file, which sets them before Scene1()/Scene2() are constructed). Global
-// name lookup for these is only ever done when a function/method actually
-// runs, not at class/function declaration time, so referencing them here --
-// textually above where they're actually assigned -- is fine.
+// WIDTH/HEIGHT/HALF_W/WORLD_W/WORLD_H are plain globals, not consts: their
+// real values aren't known until the window exists and toggle_fullscreen()
+// has run (see the "Main loop" section at the bottom of this file, which
+// sets them before Scene1()/Scene2() are constructed). Global name lookup
+// for these is only ever done when a function/method actually runs, not at
+// class/function declaration time, so referencing them here -- textually
+// above where they're actually assigned -- is fine.
 var WIDTH = 0
 var HEIGHT = 0
+var HALF_W = 0
 var WORLD_W = 0.0
 var WORLD_H = 0.0
 
-// Box2D is Y-up; the window is Y-down with the origin at the top-left.
-// This mapping puts world y=0 at the bottom of the window (floor-friendly
-// for scene 2) and is used unchanged by scene 1 too, where gravity is
-// zero so the axis convention doesn't matter physically.
-func to_screen(pos) {
-    return vec2(pos.x * SCALE, HEIGHT - pos.y * SCALE)
+// Box2D is Y-up; the window is Y-down with the origin at the top-left. This
+// mapping puts world y=0 at the bottom of the window (floor-friendly for the
+// right-hand scene) and is used unchanged by the left-hand scene too, where
+// gravity is zero so the axis convention doesn't matter physically.
+// offset_x shifts into the scene's half of the split screen (0 for the left
+// panel, HALF_W for the right).
+func to_screen(pos, offset_x) {
+    return vec2(offset_x + pos.x * SCALE, HEIGHT - pos.y * SCALE)
 }
 
 // ---------------------------------------------------------------------
@@ -41,7 +47,8 @@ const SCENE1_COUNT = 500
 const SCENE1_KILLER_COUNT = 40
 
 class Scene1 {
-    __init__() {
+    __init__(offset_x) {
+        this.offset_x = offset_x
         this.world = box2d.world(vec2(0.0, 0.0))
         this.ids = []
         this.colours = []
@@ -137,7 +144,7 @@ class Scene1 {
     draw(win) {
         i = 0
         foreach (var id in this.ids) {
-            pos = to_screen(this.world.get_position(id))
+            pos = to_screen(this.world.get_position(id), this.offset_x)
             win.circle_fill(pos.x, pos.y, this.radii[i] * SCALE, this.colours[i])
             i = i + 1
         }
@@ -159,7 +166,8 @@ const SCENE2_BALL_RADIUS_MAX = 10.0 / SCALE
 const KILL_Y = -2.0
 
 class Scene2 {
-    __init__() {
+    __init__(offset_x) {
+        this.offset_x = offset_x
         this.world = box2d.world(vec2(0.0, -10.0))
         this.ids = []
         this.colours = []
@@ -174,6 +182,13 @@ class Scene2 {
         this.ramps.append(this.add_ramp(WORLD_W * 0.75, WORLD_H * 0.52, WORLD_W * 0.24, 0.62))
         this.ramps.append(this.add_ramp(WORLD_W * 0.28, WORLD_H * 0.30, WORLD_W * 0.24, -0.55))
         this.ramps.append(this.add_ramp(WORLD_W * 0.72, WORLD_H * 0.12, WORLD_W * 0.22, 0.58))
+
+        // Left wall only -- without it, ramp bounces can knock balls past
+        // x=0 and they draw into the left panel's half of the screen. No
+        // right/bottom wall: balls are meant to fall off the bottom, and
+        // the right edge is the outer edge of the whole window.
+        wall_t = 0.5
+        this.world.add_box(vec2(-wall_t / 2, WORLD_H / 2), vec2(wall_t / 2, WORLD_H / 2 + wall_t), 0.0, STATIC, 1.0, 0.4, 0.2)
     }
 
     add_ramp(cx, cy, half_len, angle) {
@@ -233,14 +248,14 @@ class Scene2 {
             p = this.world.get_position(id)
             dx = math.cos(t) * half_len
             dy = math.sin(t) * half_len
-            a = to_screen(vec2(p.x - dx, p.y - dy))
-            b = to_screen(vec2(p.x + dx, p.y + dy))
+            a = to_screen(vec2(p.x - dx, p.y - dy), this.offset_x)
+            b = to_screen(vec2(p.x + dx, p.y + dy), this.offset_x)
             win.line_ex(a.x, a.y, b.x, b.y, 6.0, colour.RED)
         }
 
         i = 0
         foreach (var id in this.ids) {
-            pos = to_screen(this.world.get_position(id))
+            pos = to_screen(this.world.get_position(id), this.offset_x)
             win.circle_fill(pos.x, pos.y, this.radii[i] * SCALE, this.colours[i])
             i = i + 1
         }
@@ -248,7 +263,7 @@ class Scene2 {
 }
 
 // ---------------------------------------------------------------------
-// Main loop / scene switching.
+// Main loop: both scenes run every frame, side by side.
 
 win = window(1, 1)
 win.init()
@@ -257,52 +272,39 @@ win.set_target_fps(60)
 
 WIDTH = int(win.get_screen_width())
 HEIGHT = int(win.get_screen_height())
-WORLD_W = WIDTH / SCALE
+HALF_W = WIDTH / 2
+WORLD_W = HALF_W / SCALE
 WORLD_H = HEIGHT / SCALE
 
-scene = 1
-s1 = Scene1()
-s2 = Scene2()
+s1 = Scene1(0.0)
+s2 = Scene2(HALF_W)
 
 while (!win.should_close()) {
-    if (win.key_pressed(win.KEY_ONE)) {
-        scene = 1
-    }
-    if (win.key_pressed(win.KEY_TWO)) {
-        scene = 2
-    }
     if (win.key_pressed(win.KEY_R)) {
-        if (scene == 1) {
-            s1 = Scene1()
-        } else {
-            s2 = Scene2()
-        }
+        s1 = Scene1(0.0)
+        s2 = Scene2(HALF_W)
     }
 
-    if (scene == 1) {
-        s1.step()
-        if (s1.regular_remaining() <= 0) {
-            // All non-killer balls are gone -- move on to scene 2.
-            scene = 2
-            s2 = Scene2()
-        }
-    } else {
-        s2.step()
-        if (s2.is_done()) {
-            // Everything has fallen off screen -- back to a fresh scene 1.
-            scene = 1
-            s1 = Scene1()
-        }
+    s1.step()
+    if (s1.regular_remaining() <= 0) {
+        // All non-killer balls are gone -- this used to switch to scene 2;
+        // now it just rebuilds the left panel in place.
+        s1 = Scene1(0.0)
+    }
+
+    s2.step()
+    if (s2.is_done()) {
+        // Everything has fallen off screen -- this used to switch back to
+        // scene 1; now it just rebuilds the right panel in place.
+        s2 = Scene2(HALF_W)
     }
 
     win.begin()
     win.clear(colour.BLACK)
-    if (scene == 1) {
-        s1.draw(win)
-    } else {
-        s2.draw(win)
-    }
-    win.text(format("Scene %d  (1/2: switch, R: reset)  FPS: %d", scene, int(win.get_fps())), 10, 10, 18, colour.WHITE)
+    s1.draw(win)
+    s2.draw(win)
+    win.line_ex(float(HALF_W), 0.0, float(HALF_W), float(HEIGHT), 2.0, colour.GRAY)
+    win.text(format("Split screen (R: reset)  FPS: %d", int(win.get_fps())), 10, 10, 18, colour.WHITE)
     win.end()
 }
 win.close()
