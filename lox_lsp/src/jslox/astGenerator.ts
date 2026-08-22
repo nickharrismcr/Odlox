@@ -21,10 +21,16 @@ const grammar: Record<string, Array<string>> = {
     "IndexSet Expr": ["Expr object", "Token bracket", "Expr index", "Expr value"],
     "SliceExpr Expr": ["Expr object", "Token bracket", "Expr|null from", "Expr|null to"],
     "SliceSet Expr": ["Expr object", "Token bracket", "Expr|null from", "Expr|null to", "Expr value"],
-    "Lambda Expr": ["Token keyword", "Array<Param> params", "Array<Stmt> body"],
+    "Lambda Expr": ["Token keyword", "Array<Param> params", "Array<Stmt> body", "TypeExpr|null returnType"],
 
     "Expression Stmt": ["Expr expression"],
-    "FunctionStmt Stmt": ["Token name", "Array<Param> params", "Array<Stmt> body", "boolean isStatic"],
+    "FunctionStmt Stmt": [
+        "Token name",
+        "Array<Param> params",
+        "Array<Stmt> body",
+        "boolean isStatic",
+        "TypeExpr|null returnType",
+    ],
     "ClassStmt Stmt": [
         "Token name",
         "Variable|null superclass",
@@ -39,7 +45,7 @@ const grammar: Record<string, Array<string>> = {
     "ReturnStmt Stmt": ["Token keyword", "Expr|null value"],
     "WhileStmt Stmt": ["Expr condition", "Stmt body"],
     "ForStmt Stmt": ["Stmt|null initializer", "Expr|null condition", "Expr|null increment", "Stmt body"],
-    "VariableDeclaration Stmt": ["Token name", "Expr initializer", "boolean isConst"],
+    "VariableDeclaration Stmt": ["Token name", "Expr initializer", "boolean isConst", "TypeExpr|null typeAnnotation"],
     "ForeachStmt Stmt": ["Token keyword", "Token name", "Expr iterable", "Stmt body"],
     "TryStmt Stmt": ["Stmt block", "Array<ExceptClause> clauses", "Stmt|null finallyBlock"],
     "RaiseStmt Stmt": ["Token keyword", "Expr expression"],
@@ -59,13 +65,32 @@ export interface Stmt {
     visit<R>(visitor: Visitor<R>): R;
 }
 
+// A parsed (but never checked) type annotation -- \`int\`, \`List[int]\`,
+// \`int?\` -- mirroring odlox's own Type_Expr (../../src/compiler/ast.odin)
+// and its three annotation sites exactly: Param.typeAnnotation,
+// VariableDeclaration.typeAnnotation, FunctionStmt/Lambda.returnType (see
+// ../../docs/plans/optional-type-checking-implementation.md's Phase 1).
+// Not part of the Visitor<R> dispatch (like Param/ExceptClause/ImportName
+// below): nothing on this LSP-only front end consults an annotation's
+// *meaning* yet, only its shape -- parsed purely so annotated scripts
+// don't produce spurious diagnostics.
+export interface TypeExpr {
+    kind: "named" | "generic" | "nilable";
+    name: Token; // meaningful for "named"/"generic" (the outer name) and "nilable" (delegates to inner's name)
+    args: Array<TypeExpr>; // meaningful only for "generic"
+    inner: TypeExpr | null; // meaningful only for "nilable"
+}
+
 // A function/lambda parameter: a plain name, one with a default value
-// (\`func f(x, y = 1)\`), or the single trailing variadic parameter
-// (\`func f(*rest)\`) -- at most one of defaultValue/isVariadic is ever set.
+// (\`func f(x, y = 1)\`), one with a type annotation (\`func f(x: int)\`),
+// or the single trailing variadic parameter (\`func f(*rest)\`) -- a
+// variadic parameter never carries a type annotation, matching odlox's
+// own parse_function_decl (Type_Expr parsing isn't offered there either).
 export interface Param {
     name: Token;
     defaultValue: Expr | null;
     isVariadic: boolean;
+    typeAnnotation: TypeExpr | null;
 }
 
 // One \`except Type as name { ... }\` clause of a try statement.

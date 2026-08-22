@@ -36,6 +36,7 @@ import {
     ThisExpr,
     TryStmt,
     TupleLiteral,
+    TypeExpr,
     Unary,
     UnpackStmt,
     Variable,
@@ -112,29 +113,48 @@ export class PrettyPrinter implements Visitor<string> {
 
     visitVariableDeclaration(variabledeclaration: VariableDeclaration): string {
         const kind = variabledeclaration.isConst ? "const" : "var";
-        return `(${kind} ${variabledeclaration.name.lexeme} ${variabledeclaration.initializer.visit(this)})`;
+        const type = variabledeclaration.typeAnnotation
+            ? `:${this.typeExprString(variabledeclaration.typeAnnotation)}`
+            : "";
+        return `(${kind} ${variabledeclaration.name.lexeme}${type} ${variabledeclaration.initializer.visit(this)})`;
     }
 
     visitFunctionStmt(functiondecl: FunctionStmt): string {
         const params = functiondecl.params.map((param) => this.paramString(param)).join(" ");
         const body = functiondecl.body.map((statement) => statement.visit(this)).join(" ");
-        return `(fun ${functiondecl.name.lexeme} (${params}) (${body}))`;
+        const returnType = functiondecl.returnType ? `->${this.typeExprString(functiondecl.returnType)} ` : "";
+        return `(fun ${functiondecl.name.lexeme} (${params}) ${returnType}(${body}))`;
     }
 
     visitLambda(lambda: Lambda): string {
         const params = lambda.params.map((param) => this.paramString(param)).join(" ");
         const body = lambda.body.map((statement) => statement.visit(this)).join(" ");
-        return `(func (${params}) (${body}))`;
+        const returnType = lambda.returnType ? `->${this.typeExprString(lambda.returnType)} ` : "";
+        return `(func (${params}) ${returnType}(${body}))`;
     }
 
     private paramString(param: Param): string {
+        const type = param.typeAnnotation ? `:${this.typeExprString(param.typeAnnotation)}` : "";
         if (param.isVariadic) {
             return `*${param.name.lexeme}`;
         }
         if (param.defaultValue) {
-            return `${param.name.lexeme}=${param.defaultValue.visit(this)}`;
+            return `${param.name.lexeme}${type}=${param.defaultValue.visit(this)}`;
         }
-        return param.name.lexeme;
+        return `${param.name.lexeme}${type}`;
+    }
+
+    // Mirrors surface syntax (`int`, `List[int]`, `int?`), same choice
+    // odlox's own --print-ast makes (ast_print.odin's print_type_expr).
+    private typeExprString(te: TypeExpr): string {
+        switch (te.kind) {
+            case "named":
+                return te.name.lexeme;
+            case "generic":
+                return `${te.name.lexeme}[${te.args.map((a) => this.typeExprString(a)).join(",")}]`;
+            case "nilable":
+                return `${this.typeExprString(te.inner!)}?`;
+        }
     }
 
     visitCall(call: Call): string {
@@ -193,9 +213,7 @@ export class PrettyPrinter implements Visitor<string> {
     }
 
     visitIndexSet(indexset: IndexSet): string {
-        return `(index-set ${indexset.object.visit(this)} ${indexset.index.visit(this)} ${indexset.value.visit(
-            this
-        )})`;
+        return `(index-set ${indexset.object.visit(this)} ${indexset.index.visit(this)} ${indexset.value.visit(this)})`;
     }
 
     visitSliceExpr(sliceexpr: SliceExpr): string {

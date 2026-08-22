@@ -39,6 +39,7 @@ import {
     Ternary,
     TryStmt,
     TupleLiteral,
+    TypeExpr,
     Unary,
     UnpackStmt,
     Variable,
@@ -209,11 +210,41 @@ export class Parser {
 
         this.consume("LEFT_PAREN", `Expect '(' after ${kind} name.`);
         const parameters = this.parameterList();
-        this.match("EOL"); // allow EOL after parameters
 
+        let returnType: TypeExpr | null = null;
+        if (this.match("ARROW")) {
+            returnType = this.parseTypeExpr();
+        }
+
+        this.match("EOL"); // allow EOL after parameters
         this.consume("LEFT_BRACE", `Expect '{' before ${kind} body.`);
         const body = this.block();
-        return new FunctionStmt(name, parameters, body, isStatic);
+        return new FunctionStmt(name, parameters, body, isStatic, returnType);
+    }
+
+    // type_expr → IDENTIFIER ( "[" type_expr ( "," type_expr )* "]" )? "?"?
+    // Mirrors odlox's own parse_type_expr (../../src/compiler/type_expr.odin)
+    // exactly -- called directly wherever a type is expected (param/var-decl
+    // annotations, return types) rather than through the Pratt-style
+    // expression chain below, since it isn't an expression precedence level.
+    private parseTypeExpr(): TypeExpr {
+        const name = this.consume("IDENTIFIER", "Expect type name.");
+        let result: TypeExpr = { kind: "named", name, args: [], inner: null };
+
+        if (this.match("LEFT_BRACKET")) {
+            const args: Array<TypeExpr> = [this.parseTypeExpr()];
+            while (this.match("COMMA")) {
+                args.push(this.parseTypeExpr());
+            }
+            this.consume("RIGHT_BRACKET", "Expect ']' after type arguments.");
+            result = { kind: "generic", name, args, inner: null };
+        }
+
+        if (this.match("QUESTION")) {
+            result = { kind: "nilable", name, args: [], inner: result };
+        }
+
+        return result;
     }
 
     // Assumes the opening '(' has already been consumed; consumes through and
@@ -232,13 +263,17 @@ export class Parser {
                 }
                 if (this.match("STAR")) {
                     const name = this.consume("IDENTIFIER", "Expect parameter name after '*'.");
-                    parameters.push({ name, defaultValue: null, isVariadic: true });
+                    parameters.push({ name, defaultValue: null, isVariadic: true, typeAnnotation: null });
                     if (this.check("COMMA")) {
                         this.error(this.current, "'*rest' must be the last parameter.");
                     }
                     break;
                 }
                 const name = this.consume("IDENTIFIER", "Expect parameter name.");
+                let typeAnnotation: TypeExpr | null = null;
+                if (this.match("COLON")) {
+                    typeAnnotation = this.parseTypeExpr();
+                }
                 let defaultValue: Expr | null = null;
                 if (this.match("EQUAL")) {
                     defaultValue = this.expression();
@@ -246,7 +281,7 @@ export class Parser {
                 } else if (seenDefault) {
                     this.error(name, "Non-default parameter cannot follow a default parameter.");
                 }
-                parameters.push({ name, defaultValue, isVariadic: false });
+                parameters.push({ name, defaultValue, isVariadic: false, typeAnnotation });
             } while (this.match("COMMA"));
         }
         this.match("EOL"); // allow EOL after parameters
@@ -257,6 +292,11 @@ export class Parser {
     private varDeclaration(isConst: boolean): Stmt {
         const name = this.consume("IDENTIFIER", "Expect variable name.");
 
+        let typeAnnotation: TypeExpr | null = null;
+        if (this.match("COLON")) {
+            typeAnnotation = this.parseTypeExpr();
+        }
+
         let initializer: Expr | null = null;
         if (this.match("EQUAL")) {
             initializer = this.expression();
@@ -265,7 +305,7 @@ export class Parser {
         }
 
         this.consumeTerminator("Expect terminator after variable declaration.");
-        return new VariableDeclaration(name, initializer || new Literal(null), isConst);
+        return new VariableDeclaration(name, initializer || new Literal(null), isConst, typeAnnotation);
     }
 
     private statement(): Stmt {
@@ -876,10 +916,16 @@ export class Parser {
         const keyword = this.previous!;
         this.consume("LEFT_PAREN", "Expect '(' after 'func'.");
         const params = this.parameterList();
+
+        let returnType: TypeExpr | null = null;
+        if (this.match("ARROW")) {
+            returnType = this.parseTypeExpr();
+        }
+
         this.match("EOL"); // allow EOL after parameters
         this.consume("LEFT_BRACE", "Expect '{' before lambda body.");
         const body = this.blockBody();
-        return new Lambda(keyword, params, body);
+        return new Lambda(keyword, params, body, returnType);
     }
 
     // '(' expr ')' is a grouping; '(' expr (, expr)+ ')' is a tuple literal --

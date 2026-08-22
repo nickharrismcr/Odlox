@@ -36,6 +36,7 @@ export type TokenType =
     | "SLASH_EQUAL"
     | "PERCENT_EQUAL"
     | "PLUS_PLUS"
+    | "ARROW"
 
     // Literals
     | "IDENTIFIER"

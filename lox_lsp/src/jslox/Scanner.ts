@@ -46,6 +46,15 @@ const keywords: Map<string, TokenType> = new Map([
 // couldn't sensibly end a statement -- e.g. right after "(" or "," a newline is
 // just a line-continuation. Mirrors glox's own scanner (SkipEOL in
 // ../../../src/compiler/scanner.go) exactly, so the two stay in sync.
+// QUESTION is deliberately absent here, even though it leads the ternary
+// operator (`cond ? a : b`) the same way EQUAL/MINUS/PLUS/... lead their
+// own forms: `?` is also reused postfix for a nilable type annotation
+// (`int?`, see Parser.ts's parseTypeExpr), and a line commonly *ends*
+// right after one (`var c: string?`). This scanner has no parser context
+// to tell the two uses apart, so always suppressing here would break
+// every such annotation; a ternary's `?` genuinely spanning a line break
+// (`x ?\n a : b`) is unsupported as a result -- mirrors the equivalent
+// fix in odlox's own scanner.odin (see that file's keep_eol comment).
 const EOL_SUPPRESSED_AFTER: ReadonlySet<TokenType> = new Set<TokenType>([
     "LEFT_BRACE",
     "LEFT_PAREN",
@@ -54,7 +63,6 @@ const EOL_SUPPRESSED_AFTER: ReadonlySet<TokenType> = new Set<TokenType>([
     "SEMICOLON",
     "COLON",
     "EOL",
-    "QUESTION",
     "EQUAL",
     "MINUS",
     "PLUS",
@@ -133,7 +141,13 @@ export class Scanner {
                 yield this.makeToken("AMPERSAND");
                 break;
             case "-":
-                yield this.makeToken(this.match("=") ? "MINUS_EQUAL" : "MINUS");
+                if (this.match("=")) {
+                    yield this.makeToken("MINUS_EQUAL");
+                } else if (this.match(">")) {
+                    yield this.makeToken("ARROW");
+                } else {
+                    yield this.makeToken("MINUS");
+                }
                 break;
             case "+":
                 if (this.match("=")) {
@@ -432,7 +446,16 @@ export class Scanner {
             toks.pop();
         }
         return toks.map(
-            (t) => new Token(t.type, t.lexeme, t.literal, this.line, this.character, t.start + baseOffset, t.end + baseOffset)
+            (t) =>
+                new Token(
+                    t.type,
+                    t.lexeme,
+                    t.literal,
+                    this.line,
+                    this.character,
+                    t.start + baseOffset,
+                    t.end + baseOffset
+                )
         );
     }
 

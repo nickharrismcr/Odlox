@@ -94,6 +94,40 @@ describe("Scanner", () => {
         assertToken(tokens[3], "EOF", "", undefined, 1);
     });
 
+    it("should scan '->' as ARROW, distinct from '-' and '-='", () => {
+        const scanner = new Scanner("- -= ->");
+        const tokens = [...scanner.scanTokens()];
+        assert.equal(tokens.length, 4);
+        assertToken(tokens[0], "MINUS", "-", undefined, 1);
+        assertToken(tokens[1], "MINUS_EQUAL", "-=", undefined, 1);
+        assertToken(tokens[2], "ARROW", "->", undefined, 1);
+        assertToken(tokens[3], "EOF", "", undefined, 1);
+    });
+
+    // Regression test: EOL_SUPPRESSED_AFTER originally always suppressed the
+    // EOL right after a QUESTION token, since that's correct for the ternary
+    // operator (`cond ?\n a : b`) but wrong for a nilable type annotation
+    // ending a line (`var c: string?`), which is a complete statement. See
+    // this file's EOL_SUPPRESSED_AFTER comment for why QUESTION was removed.
+    it("should keep the EOL right after a line-ending '?' (nilable type annotation)", () => {
+        const scanner = new Scanner("var c: string?\nvar d = 1");
+        const tokens = [...scanner.scanTokens()];
+        const types = tokens.map((t) => t.type);
+        assert.deepEqual(types, [
+            "VAR",
+            "IDENTIFIER",
+            "COLON",
+            "IDENTIFIER",
+            "QUESTION",
+            "EOL",
+            "VAR",
+            "IDENTIFIER",
+            "EQUAL",
+            "INT",
+            "EOF",
+        ]);
+    });
+
     it("should scan keywords", () => {
         const scanner = new Scanner(`and class else false for fun if nil or print return super this true var while`);
         const tokens = [...scanner.scanTokens()];

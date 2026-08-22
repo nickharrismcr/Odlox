@@ -8,13 +8,32 @@ export interface Stmt {
     visit<R>(visitor: Visitor<R>): R;
 }
 
+// A parsed (but never checked) type annotation -- `int`, `List[int]`,
+// `int?` -- mirroring odlox's own Type_Expr (../../src/compiler/ast.odin)
+// and its three annotation sites exactly: Param.typeAnnotation,
+// VariableDeclaration.typeAnnotation, FunctionStmt/Lambda.returnType (see
+// ../../docs/plans/optional-type-checking-implementation.md's Phase 1).
+// Not part of the Visitor<R> dispatch (like Param/ExceptClause/ImportName
+// below): nothing on this LSP-only front end consults an annotation's
+// *meaning* yet, only its shape -- parsed purely so annotated scripts
+// don't produce spurious diagnostics.
+export interface TypeExpr {
+    kind: "named" | "generic" | "nilable";
+    name: Token; // meaningful for "named"/"generic" (the outer name) and "nilable" (delegates to inner's name)
+    args: Array<TypeExpr>; // meaningful only for "generic"
+    inner: TypeExpr | null; // meaningful only for "nilable"
+}
+
 // A function/lambda parameter: a plain name, one with a default value
-// (`func f(x, y = 1)`), or the single trailing variadic parameter
-// (`func f(*rest)`) -- at most one of defaultValue/isVariadic is ever set.
+// (`func f(x, y = 1)`), one with a type annotation (`func f(x: int)`),
+// or the single trailing variadic parameter (`func f(*rest)`) -- a
+// variadic parameter never carries a type annotation, matching odlox's
+// own parse_function_decl (Type_Expr parsing isn't offered there either).
 export interface Param {
     name: Token;
     defaultValue: Expr | null;
     isVariadic: boolean;
+    typeAnnotation: TypeExpr | null;
 }
 
 // One `except Type as name { ... }` clause of a try statement.
@@ -108,7 +127,7 @@ export class Grouping implements Expr {
 }
 
 export class Literal implements Expr {
-    constructor(readonly value: string|number|null|boolean) {}
+    constructor(readonly value: string | number | null | boolean) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitLiteral(this);
@@ -236,7 +255,7 @@ export class IndexSet implements Expr {
 }
 
 export class SliceExpr implements Expr {
-    constructor(readonly object: Expr, readonly bracket: Token, readonly from: Expr|null, readonly to: Expr|null) {}
+    constructor(readonly object: Expr, readonly bracket: Token, readonly from: Expr | null, readonly to: Expr | null) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitSliceExpr(this);
@@ -244,7 +263,13 @@ export class SliceExpr implements Expr {
 }
 
 export class SliceSet implements Expr {
-    constructor(readonly object: Expr, readonly bracket: Token, readonly from: Expr|null, readonly to: Expr|null, readonly value: Expr) {}
+    constructor(
+        readonly object: Expr,
+        readonly bracket: Token,
+        readonly from: Expr | null,
+        readonly to: Expr | null,
+        readonly value: Expr
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitSliceSet(this);
@@ -252,7 +277,12 @@ export class SliceSet implements Expr {
 }
 
 export class Lambda implements Expr {
-    constructor(readonly keyword: Token, readonly params: Array<Param>, readonly body: Array<Stmt>) {}
+    constructor(
+        readonly keyword: Token,
+        readonly params: Array<Param>,
+        readonly body: Array<Stmt>,
+        readonly returnType: TypeExpr | null
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitLambda(this);
@@ -268,7 +298,13 @@ export class Expression implements Stmt {
 }
 
 export class FunctionStmt implements Stmt {
-    constructor(readonly name: Token, readonly params: Array<Param>, readonly body: Array<Stmt>, readonly isStatic: boolean) {}
+    constructor(
+        readonly name: Token,
+        readonly params: Array<Param>,
+        readonly body: Array<Stmt>,
+        readonly isStatic: boolean,
+        readonly returnType: TypeExpr | null
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitFunctionStmt(this);
@@ -276,7 +312,12 @@ export class FunctionStmt implements Stmt {
 }
 
 export class ClassStmt implements Stmt {
-    constructor(readonly name: Token, readonly superclass: Variable|null, readonly methods: Array<FunctionStmt>, readonly classVars: Array<ClassVarStmt>) {}
+    constructor(
+        readonly name: Token,
+        readonly superclass: Variable | null,
+        readonly methods: Array<FunctionStmt>,
+        readonly classVars: Array<ClassVarStmt>
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitClassStmt(this);
@@ -300,7 +341,7 @@ export class ContinueStmt implements Stmt {
 }
 
 export class IfStmt implements Stmt {
-    constructor(readonly condition: Expr, readonly thenBranch: Stmt, readonly elseBranch: Stmt|null) {}
+    constructor(readonly condition: Expr, readonly thenBranch: Stmt, readonly elseBranch: Stmt | null) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitIfStmt(this);
@@ -324,7 +365,7 @@ export class PrintStmt implements Stmt {
 }
 
 export class ReturnStmt implements Stmt {
-    constructor(readonly keyword: Token, readonly value: Expr|null) {}
+    constructor(readonly keyword: Token, readonly value: Expr | null) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitReturnStmt(this);
@@ -340,7 +381,12 @@ export class WhileStmt implements Stmt {
 }
 
 export class ForStmt implements Stmt {
-    constructor(readonly initializer: Stmt|null, readonly condition: Expr|null, readonly increment: Expr|null, readonly body: Stmt) {}
+    constructor(
+        readonly initializer: Stmt | null,
+        readonly condition: Expr | null,
+        readonly increment: Expr | null,
+        readonly body: Stmt
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitForStmt(this);
@@ -348,7 +394,12 @@ export class ForStmt implements Stmt {
 }
 
 export class VariableDeclaration implements Stmt {
-    constructor(readonly name: Token, readonly initializer: Expr, readonly isConst: boolean) {}
+    constructor(
+        readonly name: Token,
+        readonly initializer: Expr,
+        readonly isConst: boolean,
+        readonly typeAnnotation: TypeExpr | null
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitVariableDeclaration(this);
@@ -364,7 +415,7 @@ export class ForeachStmt implements Stmt {
 }
 
 export class TryStmt implements Stmt {
-    constructor(readonly block: Stmt, readonly clauses: Array<ExceptClause>, readonly finallyBlock: Stmt|null) {}
+    constructor(readonly block: Stmt, readonly clauses: Array<ExceptClause>, readonly finallyBlock: Stmt | null) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitTryStmt(this);
@@ -410,5 +461,3 @@ export class UnpackStmt implements Stmt {
         return visitor.visitUnpackStmt(this);
     }
 }
-
-
