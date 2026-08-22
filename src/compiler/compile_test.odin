@@ -888,3 +888,60 @@ test_syntax_error_does_not_crash_compiler :: proc(t: ^testing.T) {
 	_, ok := Compile("var = = =\nprint 1\n", "test.lox", env)
 	testing.expect(t, !ok) // just must not panic; a wrong-but-recovered parse is fine
 }
+
+// -----------------------------------------------------------------------
+// --strict-types (Phase 4 of optional type annotations): the same
+// optional-type diagnostic that's a warning by default becomes a hard
+// compile failure under StrictTypes. StrictTypes is a package-level var
+// (see compile.odin, same pattern as DebugSkipPeephole) -- every test
+// here saves/restores it, since Odin tests share one process and a
+// leaked `true` would silently flip every *other* test's compile calls
+// into strict mode too.
+
+@(test)
+test_strict_types_fails_compile_on_diagnostic :: proc(t: ^testing.T) {
+	source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nadd(1, \"two\")\n"
+
+	// Default: the same bad call is a warning, compile still succeeds.
+	env := core.make_environment("test")
+	_, ok := Compile(source, "test.lox", env)
+	testing.expect(t, ok, "expected the default (warnings-only) mode to still compile")
+
+	saved := StrictTypes
+	StrictTypes = true
+	defer StrictTypes = saved
+
+	env2 := core.make_environment("test")
+	_, ok2 := Compile(source, "test.lox", env2)
+	testing.expect(t, !ok2, "expected --strict-types to fail the compile on the same diagnostic")
+}
+
+@(test)
+test_strict_types_is_noop_on_clean_program :: proc(t: ^testing.T) {
+	saved := StrictTypes
+	StrictTypes = true
+	defer StrictTypes = saved
+
+	env := core.make_environment("test")
+	_, ok := Compile("func add(x: int, y: int) -> int {\nreturn x + y\n}\nprint add(1, 2)\n", "test.lox", env)
+	testing.expect(t, ok, "expected --strict-types to be a no-op on a program with zero diagnostics")
+}
+
+@(test)
+test_strict_types_gates_compile_repl_too :: proc(t: ^testing.T) {
+	source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nadd(1, \"two\")\n"
+
+	env := core.make_environment("repl")
+	st := make_repl_state(env)
+	_, ok := Compile_Repl(source, &st)
+	testing.expect(t, ok, "expected the default (warnings-only) mode to still compile in the REPL")
+
+	saved := StrictTypes
+	StrictTypes = true
+	defer StrictTypes = saved
+
+	env2 := core.make_environment("repl")
+	st2 := make_repl_state(env2)
+	_, ok2 := Compile_Repl(source, &st2)
+	testing.expect(t, !ok2, "expected --strict-types to fail the compile in the REPL too")
+}

@@ -2,14 +2,10 @@ package compiler
 
 import "../core"
 
-// StrictTypes gates Phase 2's optional-type diagnostics from a warning
-// (printed, never affecting `ok`) into a hard compile failure -- unused
-// until Phase 4 adds the `--strict-types` flag that sets it (see main.odin)
-// and the `if StrictTypes && len(diagnostics) > 0` check Phase 4 adds
-// below. Declared now, default false, because Compile_Repl's diagnostic
-// print is gated on it from Phase 2 onward (see Compile_Repl below) --
-// cheaper to add that gate once here than to touch this call site twice.
-// Same package-var pattern as DebugSkipPeephole.
+// StrictTypes gates the optional-type diagnostics Phases 2-3 produce from
+// a warning (printed, never affecting `ok`) into a hard compile failure --
+// set by the `--strict-types` CLI flag (main.odin). Same package-var
+// pattern as DebugSkipPeephole.
 StrictTypes: bool
 
 // Top-level entry points. `Compile` is a fresh, one-shot compile (a
@@ -51,7 +47,10 @@ Compile :: proc(source: string, filename: string, environment: ^core.Environment
 	}
 
 	diagnostics := typecheck_program(stmts[:])
-	print_type_diagnostics(diagnostics) // Phase 2: always warnings, never affects `ok`
+	print_type_diagnostics(diagnostics) // always printed, warnings by default
+	if StrictTypes && len(diagnostics) > 0 {
+		return nil, false
+	}
 
 	return emit_program(stmts[:], filename, environment, globals, DebugSkipPeephole)
 }
@@ -110,6 +109,9 @@ Compile_Repl :: proc(source: string, st: ^Repl_State) -> (fn: ^core.Function_Obj
 	diagnostics := typecheck_program(stmts[:])
 	if StrictTypes {
 		print_type_diagnostics(diagnostics)
+		if len(diagnostics) > 0 {
+			return nil, false
+		}
 	}
 
 	fn, ok = emit_program(stmts[:], "__repl__", st.environment, globals, DebugSkipPeephole)

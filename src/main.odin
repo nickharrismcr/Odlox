@@ -3,7 +3,7 @@ package main
 // CLI entry point: file execution, REPL, the standalone `--print-tokens`
 // scanner smoke test, and debug-tooling flags (--compile-only,
 // --disassemble, --info, --debug, --instrument, --no-peephole,
-// --force-compile, --force-bc-cache).
+// --strict-types, --force-compile, --force-bc-cache).
 
 import "core:bufio"
 import "core:fmt"
@@ -70,6 +70,8 @@ main :: proc() {
 			opts.trace_gc = true
 		case "--no-peephole":
 			compiler.DebugSkipPeephole = true
+		case "--strict-types":
+			compiler.StrictTypes = true
 		case "--force-compile":
 			// Must be handled as an explicit case here: this loop treats
 			// the first unrecognized argument as file_path, and every
@@ -427,6 +429,7 @@ Options:
   --instrument        Count executed instructions while running (needs a -debug build)
   --trace-gc          Log each GC cycle (bytes freed, new threshold) and report a summary (needs a -debug build)
   --no-peephole       Disable the peephole optimizer
+  --strict-types      Fail to compile on any optional-type-annotation diagnostic (default: warn only)
   --force-compile     Bypass the bytecode cache's read for imported modules
   --force-bc-cache    Trust the bytecode cache unconditionally for imported modules, even with no matching source
   -h, --help          Show this help`)

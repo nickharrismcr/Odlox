@@ -258,6 +258,7 @@ bin/odlox.exe --repl
 <tr><td><code>--instrument</code></td><td>Count executed instructions while running</td></tr>
 <tr><td><code>--trace-gc</code></td><td>Log each GC cycle (bytes freed, new threshold) and report a summary after running</td></tr>
 <tr><td><code>--no-peephole</code></td><td>Disable the peephole optimiser</td></tr>
+<tr><td><code>--strict-types</code></td><td>Fail to compile on any optional-type-annotation diagnostic (default: printed as a warning, compile still succeeds)</td></tr>
 <tr><td><code>--force-compile</code></td><td>Bypass the bytecode cache's read for imported modules (see below); still refreshes the cache afterward</td></tr>
 <tr><td><code>--force-bc-cache</code></td><td>Trust an imported module's bytecode cache unconditionally — no source-freshness check, and a module resolves even with no matching source file at all (see below)</td></tr>
 <tr><td><code>-h</code>, <code>--help</code></td><td>Show usage and exit</td></tr>
