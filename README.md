@@ -31,6 +31,7 @@ Feature summary — see the **[language reference](docs/language-reference.html)
 - **Default & variadic parameters** — `func f(a, b=expr)` (defaults evaluated at call time) and a trailing `*rest` that collects surplus positional arguments into a list.
 - **Exceptions** — `try` / `except` / `finally`, `raise`, custom `Exception` subclasses, catchable runtime errors.
 - **Module imports** — `import m`, `import m as alias`, `from m import ...`; a project's own modules resolve alongside the entry script and recursively through its subdirectories, so they can be grouped into subfolders freely. Imported modules are cached as compiled bytecode (`__loxcache__/*.lxc`, invalidated on source change); `--force-compile` bypasses a stale-looking cache for one run.
+- **Optional type annotations** — `func f(x: int, y: string = "hi") -> bool`, `var x: int`, nilable (`x: int?`) and container (`List[int]`, `Dict[string, int]`) shapes, plus class names as types. Gradual: an unannotated site is never checked, so annotating existing code is always safe to try. Diagnostics are warnings by default (the script still compiles and runs); `--strict-types` turns them into compile errors instead.
 
 **Types & operators**
 - **Lists** — slicing, slice assignment, `&` concatenation, `in` membership, `append`/`remove`.
@@ -119,13 +120,14 @@ Implemented in Odin, developed with the assistance of Claude Code (Anthropic).
 
 ## Compiler Architecture
 
-clox compiles Lox source to bytecode in a single pass: a Pratt parser recognizes grammar, resolves names/scopes, and emits bytecode all in the same walk over the token stream, with no intermediate representation ever built. `odlox`'s compiler (`src/compiler/`) instead runs three explicit phases:
+clox compiles Lox source to bytecode in a single pass: a Pratt parser recognizes grammar, resolves names/scopes, and emits bytecode all in the same walk over the token stream, with no intermediate representation ever built. `odlox`'s compiler (`src/compiler/`) instead runs explicit phases:
 
 1. **Parse** (`parser.odin`, `rules.odin`, `expr.odin`, `stmt.odin`, `functions.odin`) — a Pratt parser identical in structure to clox's, except prefix/infix functions build and return AST nodes (`ast.odin`) instead of writing bytecode.
 2. **Resolve** (`resolve.odin`) — walks the AST, annotating each node in place with its resolved scope (local slot, upvalue index, or global slot) and running every validity check that needs more than the current token to decide (duplicate declarations, break/continue outside a loop, `this`/`super` outside a class, const reassignment, and so on).
-3. **Emit** (`emit.odin`, `emit_expr.odin`, `emit_stmt.odin`) — walks the resolved AST and generates bytecode into the same `core.Chunk`/`Op_Code` target clox-style compilation would have produced directly.
+3. **Typecheck** (`types.odin`, `typecheck.odin`, `typecheck_expr.odin`, `typecheck_stmt.odin`, `typecheck_class.odin`) — the **optional type annotations** pass (see above): walks the resolved AST again, consuming the Resolver's already-assigned scope/slot data directly (no name lookup of its own) to check annotated sites and produce diagnostics. Never touches bytecode, so an unannotated program's output is bit-for-bit unaffected by this phase existing at all.
+4. **Emit** (`emit.odin`, `emit_expr.odin`, `emit_stmt.odin`) — walks the resolved AST and generates bytecode into the same `core.Chunk`/`Op_Code` target clox-style compilation would have produced directly.
 
-This is to facilitate possible future compiler enhancements such as optional typing.
+This clean separation (each phase reads what the last one wrote, never reaching backward) is what let the typecheck phase slot in without touching Parse/Resolve/Emit at all.
 
 ---
 

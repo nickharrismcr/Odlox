@@ -155,6 +155,7 @@ footer{color:var(--muted); font-size:13px; border-top:1px solid var(--border); m
       <a href="#control-flow">Control flow</a>
       <a href="#functions">Functions</a>
       <a href="#classes">Classes</a>
+      <a href="#type-annotations">Optional type annotations</a>
       <a href="#exceptions">Exceptions</a>
       <a href="#modules">Modules &amp; imports</a>
       <div class="group">Built-in Types</div>
@@ -560,6 +561,51 @@ class Range2Iter {
     }
 }
 foreach (x in Range2(3)) { print x }   // 0, 1, 2</code></pre>
+
+<!-- ==================== TYPE ANNOTATIONS ==================== -->
+<h2 class="section" id="type-annotations">Optional type annotations</h2>
+<p>Odlox stays a dynamically typed language, but parameters, return types, and variable declarations may optionally be annotated with a type. Annotations are checked at compile time and <strong>never affect runtime behaviour</strong> — a script that passes the wrong type to an annotated parameter still compiles and runs exactly as if the annotation weren't there, printing a warning instead of failing (pass <a href="#running"><code>--strict-types</code></a> to turn every warning into a compile error instead).</p>
+<pre><code class="lox">func add(x: int, y: int) -&gt; int {
+    return x + y
+}
+var count: int = 0
+
+print add(1, 2)        // 3
+print add(1, "two")    // [line 7] Warning at '"two"': argument 2: expected int, got string
+                        // ...still compiles and runs; crashes at the real type error inside add()</code></pre>
+<p>An annotation goes after the name with a colon; a function's return type follows the parameter list with <code>-&gt;</code>:</p>
+<table>
+<thead><tr><th>Site</th><th>Syntax</th></tr></thead>
+<tbody>
+<tr><td>Parameter</td><td><code>func f(x: int, y: string = "hi") { … }</code></td></tr>
+<tr><td>Return type</td><td><code>func f() -&gt; int { … }</code>, checked on every <code>return</code> (methods too)</td></tr>
+<tr><td>Variable</td><td><code>var x: int = 1</code> (a <code>const</code> may be annotated the same way)</td></tr>
+<tr><td>Nilable</td><td><code>x: int?</code> — accepts an <code>int</code> or <code>nil</code></td></tr>
+<tr><td>Container</td><td><code>List[int]</code>, <code>Dict[string, int]</code> — nesting (<code>List[List[int]]</code>) works too, see below</td></tr>
+<tr><td>Class name</td><td>Any declared class is itself a valid type: <code>func adopt(a: Animal) { … }</code></td></tr>
+</tbody>
+</table>
+<p>Recognised primitive names are <code>int</code>, <code>float</code>, <code>string</code>, and <code>bool</code>; any other identifier is looked up against the classes declared in the same file.</p>
+<h3>Gradual typing: annotated sites are checked, everything else stays dynamic</h3>
+<p>An <strong>unannotated</strong> site is never checked, no matter what flows through it — this is what keeps annotations opt-in rather than an all-or-nothing switch. <code>var x = 1</code> may be freely reassigned to a string, a list, anything, with no warning, exactly as today. Only a site that was actually given a <code>: Type</code> is held to that promise:</p>
+<pre><code class="lox">var a = 1        // unannotated -- inferred, but the inference is never enforced
+a = "now a string"    // fine, no warning
+
+var b: int = 1   // annotated -- a real promise
+b = "now a string"    // [line 5] Warning at 'b': cannot assign string to 'b' of type int</code></pre>
+<p>An unannotated variable's <em>current</em> type is still tracked between assignments — so <code>var c = Circle(); c.speek()</code> (a typo for <code>speak</code>) is still caught, even though <code>c</code> itself was never annotated — reassigning <code>c</code> just never fails, matching the "gradual" half of gradual typing.</p>
+<h3>What gets checked</h3>
+<ul>
+<li>Arguments against an annotated parameter's type, and a function/method's own <code>return</code> statements against its annotated return type.</li>
+<li>Assignment (including compound assignment, <code>+=</code> etc.) to an annotated variable or a known class field.</li>
+<li>A misspelled or nonexistent method call (e.g. <code>obj.speek()</code> instead of <code>obj.speak()</code>) — <em>methods</em> are closed once a class is declared, so a typo is always caught regardless of any annotation.</li>
+<li>A class instance's fields, inferred from the plain <code>this.x = …</code> assignments in its own <code>__init__</code> — fields are otherwise open (an instance genuinely accepts arbitrary new fields at runtime), so only a field <code>__init__</code> actually assigns gets checked, wherever else it's later touched.</li>
+<li>Method overrides in a subclass, checked against the superclass's own signature (<code>__init__</code> is exempt — a constructor is never called polymorphically, so a subclass's own constructor may take entirely different parameters).</li>
+<li>A subclass instance satisfies a superclass-typed parameter (ordinary substitutability) — but two unrelated classes with identically-shaped methods are still incompatible with each other, since class types are nominal, not structural.</li>
+</ul>
+<h3>What's deliberately not checked</h3>
+<p>A uniform list/dict literal infers a real element type, checked structurally through <code>List[…]</code>/<code>Dict[…, …]</code> to any nesting depth (<code>List[List[int]]</code> included) — but a <em>mixed</em>-element literal (e.g. <code>[1, "two", 3]</code>) degrades its element type to fully dynamic rather than flagging the mismatch, matching this feature's "never over-tighten" rule. Argument <em>count</em> is never checked (only positions both the call and the declaration have), so default parameters and <code>*rest</code> are unaffected. <code>static</code> class variables (as opposed to instance fields) aren't type-tracked. There's no separate field-annotation syntax (<code>this.x: int</code>) — a field's type always comes from how <code>__init__</code> assigns it. A class name only resolves against classes declared in the <em>same file</em>: used as an annotation, a class imported from another module is simply treated as fully dynamic (no warning either way); used as a superclass (<code>class Foo &lt; Imported</code>), <code>Foo</code>'s own inherited methods are left unchecked too, rather than wrongly flagged as missing.</p>
+<div class="note"><strong>Warnings, not errors, by default</strong>Every diagnostic prints in the same <code>[line …]</code> format as a compile error but never stops the script from compiling or running — this is deliberate, so adding an annotation to an existing script is always safe to try. Pass <code>--strict-types</code> (see <a href="#running">Command-line flags</a>) to fail the build on any of them instead, e.g. in CI.</div>
 
 <!-- ==================== EXCEPTIONS ==================== -->
 <h2 class="section" id="exceptions">Exceptions</h2>
