@@ -2,8 +2,8 @@ package compiler
 
 import "core:testing"
 
-// Direct parser-level tests for parse_type_expr (type_expr.odin), Phase 1
-// of optional type annotations. These parse a type expression in
+// Direct parser-level tests for parse_type_expr (type_expr.odin), the
+// optional type annotation grammar. These parse a type expression in
 // isolation, not through one of the three annotation sites (params, var
 // decls, return types) -- those sites are covered separately in
 // ast_expr_test.odin/ast_stmt_test.odin, which check the annotation lands

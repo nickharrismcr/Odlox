@@ -306,9 +306,9 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 // here beyond what Expr_Variable already does), then checks each
 // position both sides have in common. A call with more args than
 // declared params (absorbed by a `*rest` parameter) or fewer (covered by
-// defaults) is never flagged as an arity mismatch in Phase 2 -- only
-// positions that exist on both sides are compared, matching the
-// implementation plan's own scope for this phase.
+// defaults) is never flagged as an arity mismatch -- only positions that
+// exist on both sides are compared, matching the implementation plan's
+// own scope for this feature.
 @(private = "file")
 typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 	callee_type := typecheck_expr(tc, call.callee)
@@ -370,7 +370,7 @@ typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 }
 
 // -----------------------------------------------------------------------
-// this / super / properties (Phase 3)
+// this / super / properties
 
 // typecheck_super checks super.method(...)/super.method against the
 // *superclass's own* method table specifically (tc.current_class.
@@ -416,9 +416,9 @@ typecheck_super :: proc(tc: ^Type_Checker, v: ^Expr_Super) -> ^Type {
 	return method_type.func_return
 }
 
-// typecheck_property is Expr_Property's real (Phase 3) handling, in
-// place of Phase 2's unconditional Dynamic: .Get/.Set/.Compound_Set check
-// against the receiver's Class_Type.fields (*open* -- a name never
+// typecheck_property is Expr_Property's real handling: .Get/.Set/
+// .Compound_Set check against the receiver's Class_Type.fields (*open* --
+// a name never
 // mentioned in __init__ synthesizes Dynamic with no diagnostic, since
 // Instance_Object.fields genuinely accepts arbitrary runtime writes);
 // .Invoke (and a plain .Get that turns out to name a method instead of a
@@ -435,8 +435,7 @@ typecheck_super :: proc(tc: ^Type_Checker, v: ^Expr_Super) -> ^Type {
 // invoke) is never treated as a missing method either, since fields are
 // open and we don't track a callable field's own signature. A receiver
 // whose own type isn't .Class (Dynamic, or any other concrete type
-// someone mistakenly dereferences) is left fully permissive, matching
-// Phase 2's own treatment.
+// someone mistakenly dereferences) is left fully permissive.
 @(private = "file")
 typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 	object_type := typecheck_expr(tc, v.object)
@@ -562,7 +561,7 @@ typecheck_subscript :: proc(tc: ^Type_Checker, v: ^Expr_Subscript) -> ^Type {
 // entries agreeing on a type synthesizes List[T]/Dict[K,V]; any
 // disagreement (or no entries at all) degrades to List[Dynamic]/
 // Dict[Dynamic,Dynamic] -- unification failure degrades, it never
-// errors, matching this phase's warnings-only, never-over-tighten
+// errors, matching this feature's warnings-only, never-over-tighten
 // contract. Every element is still visited for its own diagnostics
 // regardless of what the running unification has already degraded to.
 

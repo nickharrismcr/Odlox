@@ -82,8 +82,8 @@ test_two_char_operators :: proc(t: ^testing.T) {
 	})
 }
 
-// Arrow (`->`, Phase 1 of optional type annotations -- return-type
-// annotation syntax) shares its lead character with Minus/Minus_Equal, so
+// Arrow (`->`, the return-type annotation syntax) shares its lead
+// character with Minus/Minus_Equal, so
 // this pins down all three of scan_token's '-' branches individually: a
 // lone '-' still scans as Minus, '-=' still scans as Minus_Equal, and
 // only '->' scans as the new Arrow token.

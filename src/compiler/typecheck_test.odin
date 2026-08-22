@@ -172,7 +172,7 @@ test_typecheck_dict_literal_unification :: proc(t: ^testing.T) {
 	testing.expectf(t, len(mixed) == 0, "expected mixed-value dict unification to degrade without diagnosing, got %v", mixed)
 }
 
-// This phase's own implementation surfaced a real gap between the
+// This feature's own implementation surfaced a real gap between the
 // implementation plan's prose and this VM's actual runtime semantics
 // (see typecheck_expr.odin's typecheck_binary header comment, verified
 // against vm/arithmetic.odin directly): `+` never concatenates strings
@@ -189,7 +189,7 @@ test_typecheck_string_repeat_and_plus_match_runtime_semantics :: proc(t: ^testin
 }
 
 // -----------------------------------------------------------------------
-// Phase 3: class support
+// Class support
 
 @(test)
 test_typecheck_misspelled_method_call_diagnoses :: proc(t: ^testing.T) {
@@ -494,13 +494,13 @@ w.someMethodFromElsewhere()
 
 // An unannotated var's inferred type (record_inferred_type/is_pinned,
 // typecheck.odin) is *widened*, not enforced, on reassignment -- a real
-// gap this phase's implementation surfaced: without this, `var c =
+// gap this feature's own implementation surfaced: without this, `var c =
 // Circle()` (the overwhelmingly common, idiomatic way to hold an
 // instance -- nobody writes `var c: Circle = Circle()`) would never get
-// Class_Type-based checking at all, making every one of this phase's own
-// test-list catches unreachable in ordinary code. Reassigning `c` to an
-// unrelated value must still never diagnose (the same escape valve
-// Phase 2 already guarantees for primitives).
+// Class_Type-based checking at all, making every one of this feature's
+// own class-checking catches unreachable in ordinary code. Reassigning
+// `c` to an unrelated value must still never diagnose (the same escape
+// valve already guaranteed for primitives).
 @(test)
 test_typecheck_unannotated_object_var_widens_on_reassignment :: proc(t: ^testing.T) {
 	source := `

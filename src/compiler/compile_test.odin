@@ -855,8 +855,8 @@ test_syntax_error_does_not_crash_compiler :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// --strict-types (Phase 4 of optional type annotations): the same
-// optional-type diagnostic that's a warning by default becomes a hard
+// --strict-types (optional type annotations): the same optional-type
+// diagnostic that's a warning by default becomes a hard
 // compile failure under StrictTypes. StrictTypes is a package-level var
 // (see compile.odin, same pattern as DebugSkipPeephole) -- every check
 // below happens inside one test function rather than several, the same

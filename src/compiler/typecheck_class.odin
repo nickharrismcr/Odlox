@@ -1,6 +1,6 @@
 package compiler
 
-// Class support, Phase 3 of optional type annotations (docs/plans/
+// Class support for optional type annotations (docs/plans/
 // optional-type-checking-implementation.md). Class_Type is the per-class
 // signature the rest of the checker consults (typecheck_expr.odin's
 // Expr_This/Expr_Super/Expr_Property/typecheck_call, typecheck_stmt.
@@ -81,9 +81,9 @@ typecheck_collect_class_signatures :: proc(tc: ^Type_Checker, stmts: []Stmt) {
 // class) -- deliberately does *not* walk into arbitrary expression
 // subtrees looking for a class declared inside e.g. a lambda used as a
 // default-parameter value or a class-var initializer. Nothing in this
-// codebase's own examples/tests corpus does that (verified against the
-// full corpus, see Phase 3's own regression run), and the implementation
-// plan's own test list doesn't exercise it either.
+// codebase's own examples/tests corpus does that (verified against a
+// full-corpus regression run), and the implementation plan's own test
+// list doesn't exercise it either.
 
 @(private = "file")
 find_all_class_decls :: proc(stmts: []Stmt) -> []^Stmt_Class_Decl {

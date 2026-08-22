@@ -239,7 +239,7 @@ Param :: struct {
 	default:         Expr, // nil if this param has no default
 	is_rest:         bool, // `*rest`; must be the last param if set
 	declared_slot:   int, // filled in by the Resolver
-	type_annotation: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
+	type_annotation: ^Type_Expr, // nil = untyped; consumed by the Type_Checker (typecheck_stmt.odin)
 }
 
 Function_Decl :: struct {
@@ -249,7 +249,7 @@ Function_Decl :: struct {
 	body:             []Stmt,
 	fn_type:          Function_Type,
 	upvalues:         []Upvalue, // filled in by the Resolver
-	return_type:      ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
+	return_type:      ^Type_Expr, // nil = untyped; consumed by the Type_Checker (typecheck_stmt.odin)
 	cached_func_type: ^Type, // filled in by the Type_Checker (typecheck_stmt.odin's build_func_type), memoized so a function referenced from multiple call sites doesn't rebuild its own Func type each time
 }
 
@@ -307,7 +307,7 @@ Stmt_Var_Decl :: struct {
 	is_const:        bool,
 	declared_slot:   int, // filled in by the Resolver
 	is_local:        bool, // filled in by the Resolver; local vs. global determines which opcode family Emit uses
-	type_annotation: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
+	type_annotation: ^Type_Expr, // nil = untyped; consumed by the Type_Checker (typecheck_stmt.odin)
 }
 
 // Stmt_Implicit_Assign is a bare `x = expr` at statement level for a name
@@ -506,10 +506,11 @@ Stmt_From_Import :: struct {
 // ---------------------------------------------------------------------
 // Type expressions -- optional annotations parsed at the three sites
 // above (Param.type_annotation, Stmt_Var_Decl.type_annotation,
-// Function_Decl.return_type). Phase 1 only: parsed and printable, never
-// consulted by Resolve or Emit -- type erasure is already the status quo
-// (see docs/plans/optional-type-checking.md), so an unannotated program's
-// bytecode is unaffected either way. See type_expr.odin for the parser.
+// Function_Decl.return_type) and consumed by the Type_Checker (types.odin/
+// typecheck*.odin). Never consulted by Resolve or Emit -- type erasure is
+// already the status quo (see docs/plans/optional-type-checking.md), so
+// an unannotated program's bytecode is unaffected either way. See
+// type_expr.odin for the parser.
 Type_Expr_Kind :: enum {
 	Named, // `int`, `float`, `string`, `bool`, or a class name
 	Generic, // `Name[Name, ...]` -- args recorded, never checked in v1

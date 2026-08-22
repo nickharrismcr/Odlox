@@ -111,12 +111,12 @@ describe("Parser", () => {
         assert.deepEqual(pretty, ["(class Foo (fun square (x) ((return (* x x)))) (static count 0))"]);
     });
 
-    // Optional type annotations, Phase 1 (grammar surface): annotations at
-    // all three sites (param, var decl, return type), plus generic and
-    // nilable forms, parse without error and are silently ignored --
-    // PrettyPrinter renders them (mirroring surface syntax) purely so this
-    // test can assert they actually attached, not to imply anything
-    // downstream consults them yet.
+    // Optional type annotations: annotations at all three sites (param,
+    // var decl, return type), plus generic and nilable forms, parse
+    // without error and are silently ignored -- PrettyPrinter renders
+    // them (mirroring surface syntax) purely so this test can assert
+    // they actually attached, not to imply anything downstream consults
+    // them.
     it("should parse type annotations at all three sites without error", () => {
         const parser = new Parser(
             new Scanner("var a: int = 1\nfunc add(x: int, y: List[int] = [1]) -> string? { return x }").scanTokens(),

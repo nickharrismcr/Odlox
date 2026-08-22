@@ -3,19 +3,18 @@ package compiler
 import "core:fmt"
 import "core:strings"
 
-// The type lattice for optional type annotations, Phases 2-3 of
-// docs/plans/optional-type-checking-implementation.md: gradual typing,
-// where `Dynamic` (an unannotated site) is compatible with everything in
-// both directions. Deliberately pure data plus a handful of predicates
-// over it, no AST dependency beyond Type_Expr itself (type_from_expr) --
-// the rest is unit-testable without ever building a Parser/Resolver.
+// The type lattice for optional type annotations (docs/plans/
+// optional-type-checking-implementation.md): gradual typing, where
+// `Dynamic` (an unannotated site) is compatible with everything in both
+// directions. Deliberately pure data plus a handful of predicates over
+// it, no AST dependency beyond Type_Expr itself (type_from_expr) -- the
+// rest is unit-testable without ever building a Parser/Resolver.
 // `Class_Type` (referenced from `Type.class_type` below) is defined in
 // typecheck_class.odin, not here, since building one needs Stmt_Class_
 // Decl/Method -- this file deliberately doesn't depend on the AST beyond
-// Type_Expr itself. (type_from_expr *does* now take a ^Type_Checker,
-// since a class name in an annotation needs Phase 3's tc.classes table
-// to resolve to anything but Dynamic -- the one place this file isn't
-// fully self-contained any more.)
+// Type_Expr itself. (type_from_expr *does* take a ^Type_Checker, since a
+// class name in an annotation needs tc.classes to resolve to anything
+// but Dynamic -- the one place this file isn't fully self-contained.)
 Type_Kind :: enum {
 	Dynamic, // top: bidirectionally compatible with everything
 	Nil,
@@ -53,10 +52,10 @@ float_type :: proc() -> ^Type {return new_clone(Type{kind = .Float})}
 string_type :: proc() -> ^Type {return new_clone(Type{kind = .String})}
 
 // -----------------------------------------------------------------------
-// type_from_expr -- resolves a parsed (Phase 1) Type_Expr into a checked
-// Type. A name that isn't one of the primitives below is looked up in
-// tc.classes (Phase 3's class-name table, already fully populated by the
-// time any annotation is resolved -- see typecheck_class.odin's
+// type_from_expr -- resolves a parsed Type_Expr into a checked Type. A
+// name that isn't one of the primitives below is looked up in tc.classes
+// (the class-name table, already fully populated by the time any
+// annotation is resolved -- see typecheck_class.odin's
 // typecheck_collect_class_signatures, which runs before anything else);
 // still-unrecognized names (a typo, a name that was never a class)
 // synthesize Dynamic.

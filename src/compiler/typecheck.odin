@@ -2,13 +2,13 @@ package compiler
 
 import "core:fmt"
 
-// The Type_Checker: Phases 2-3 of optional type annotations (docs/plans/
+// The Type_Checker: the optional type annotations feature (docs/plans/
 // optional-type-checking-implementation.md). Walks the AST the Resolver
 // already annotated (resolve.odin), producing type diagnostics --
-// warnings only through Phase 3; Phase 4's --strict-types is what turns
-// them into build failures. Runs strictly after resolve_program succeeds
-// (see compile.odin), so every Var_Ref/declared_slot/is_local this walk
-// reads is already final.
+// warnings by default; compile.odin's StrictTypes (set by the
+// --strict-types CLI flag) is what turns them into build failures. Runs
+// strictly after resolve_program succeeds (see compile.odin), so every
+// Var_Ref/declared_slot/is_local this walk reads is already final.
 //
 // The load-bearing idea, straight from the design doc's "Reusing the
 // Resolver's slot numbers" section: this walk never does its own name
@@ -110,9 +110,9 @@ record_decl_type :: proc(tc: ^Type_Checker, is_local: bool, slot: int, t: ^Type)
 // record_inferred_type is the unpinned counterpart, for a slot whose type
 // was never promised by an explicit annotation -- an unannotated Stmt_
 // Var_Decl (records the initializer's own synthesized type rather than
-// forcing Dynamic the way Phase 2 did) and an unannotated Param, plus
-// Stmt_Implicit_Assign's new-binding branch (which has no annotation
-// surface of its own at all). Unlike record_decl_type, a slot recorded
+// forcing Dynamic) and an unannotated Param, plus Stmt_Implicit_Assign's
+// new-binding branch (which has no annotation surface of its own at
+// all). Unlike record_decl_type, a slot recorded
 // this way is *never* checked on reassignment -- Expr_Assign/Stmt_
 // Implicit_Assign instead call this again to *widen* it to whatever the
 // new value's type is, so later reads between here and the next
@@ -149,7 +149,7 @@ record_inferred_type :: proc(tc: ^Type_Checker, is_local: bool, slot: int, t: ^T
 // original declaring scope's slot from here would need to reach back
 // across a closure boundary, a bigger change for a rarer pattern
 // (reassigning a captured variable to a different type through a nested
-// closure) than this phase's own test list asks for.
+// closure) than the feature's own catch list asks for.
 is_pinned :: proc(tc: ^Type_Checker, ref: Var_Ref) -> bool {
 	switch ref.kind {
 	case .Local:
