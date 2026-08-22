@@ -42,21 +42,16 @@ typecheck_expr :: proc(tc: ^Type_Checker, e: Expr) -> ^Type {
 	case ^Expr_Assign:
 		return typecheck_assign(tc, v)
 	case ^Expr_This:
-		return dynamic_type() // Phase 3: synthesizes tc.current_class's own Class_Type
-	case ^Expr_Super:
-		for a in v.args {
-			typecheck_expr(tc, a)
+		if tc.current_class == nil {
+			return dynamic_type() // outside any class -- the Resolver already hard-errors this; nothing further to synthesize
 		}
-		return dynamic_type() // Phase 3: synthesizes tc.current_class.superclass's Class_Type
+		return new_clone(Type{kind = .Class, class_type = tc.current_class})
+	case ^Expr_Super:
+		return typecheck_super(tc, v)
 	case ^Expr_Call:
 		return typecheck_call(tc, v)
 	case ^Expr_Property:
-		typecheck_expr(tc, v.object)
-		typecheck_expr(tc, v.value)
-		for a in v.args {
-			typecheck_expr(tc, a)
-		}
-		return dynamic_type() // Phase 3: checks against the receiver's Class_Type.fields/.methods
+		return typecheck_property(tc, v)
 	case ^Expr_Subscript:
 		return typecheck_subscript(tc, v)
 	case ^Expr_List:
@@ -247,12 +242,26 @@ typecheck_assign :: proc(tc: ^Type_Checker, v: ^Expr_Assign) -> ^Type {
 		result_type = compound_result_type(tc, v.token, v.compound_op, existing, value_type)
 	}
 
-	if !types_compatible(existing, result_type) {
-		diagnose(
-			tc,
-			v.token,
-			fmt.tprintf("cannot assign %s to '%s' of type %s", type_string(result_type), lexeme(v.name), type_string(existing)),
-		)
+	// Pinned (explicitly annotated) target: check, never change what's
+	// recorded. Unpinned (inferred/unannotated) target: skip the check
+	// and widen instead -- see typecheck_stmt.odin's var/implicit-assign
+	// header comment for the full reasoning (typecheck.odin's
+	// record_decl_type/record_inferred_type/is_pinned is the mechanism).
+	if is_pinned(tc, v.resolved) {
+		if !types_compatible(existing, result_type) {
+			diagnose(
+				tc,
+				v.token,
+				fmt.tprintf(
+					"cannot assign %s to '%s' of type %s",
+					type_string(result_type),
+					lexeme(v.name),
+					type_string(existing),
+				),
+			)
+		}
+	} else if v.resolved.kind == .Local || v.resolved.kind == .Global {
+		record_inferred_type(tc, v.resolved.kind == .Local, v.resolved.slot, result_type)
 	}
 
 	return result_type
@@ -304,6 +313,38 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 	callee_type := typecheck_expr(tc, call.callee)
 
+	// A callee whose own synthesized type is .Class (an Expr_Variable
+	// naming a class -- see typecheck_stmt.odin's typecheck_class_decl,
+	// which records exactly this at a class's own declaring slot) is a
+	// constructor call, checked against __init__'s params like an
+	// ordinary call, but the call's own result is "an instance of this
+	// class" (the same Type, per the design doc's single shared Class
+	// representation -- see types.odin's Type_Kind.Class doc comment),
+	// not __init__'s own return_type annotation (nothing stops someone
+	// writing one syntactically; it's ignored outright here, per the
+	// design doc's "one special case every typed OOP checker needs").
+	if callee_type.kind == .Class {
+		init_type, has_init := callee_type.class_type.methods["__init__"]
+		for a, i in call.args {
+			arg_type := typecheck_expr(tc, a)
+			if has_init && i < len(init_type.func_params) {
+				if !types_compatible(init_type.func_params[i], arg_type) {
+					diagnose(
+						tc,
+						expr_token(a),
+						fmt.tprintf(
+							"argument %d: expected %s, got %s",
+							i + 1,
+							type_string(init_type.func_params[i]),
+							type_string(arg_type),
+						),
+					)
+				}
+			}
+		}
+		return callee_type
+	}
+
 	for a, i in call.args {
 		arg_type := typecheck_expr(tc, a)
 		if callee_type.kind == .Func && i < len(callee_type.func_params) {
@@ -324,6 +365,162 @@ typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 
 	if callee_type.kind == .Func {
 		return callee_type.func_return
+	}
+	return dynamic_type()
+}
+
+// -----------------------------------------------------------------------
+// this / super / properties (Phase 3)
+
+// typecheck_super checks super.method(...)/super.method against the
+// *superclass's own* method table specifically (tc.current_class.
+// superclass.methods, not tc.current_class.methods -- those are already
+// flattened to include inherited methods, so if this class itself also
+// overrides `method`, tc.current_class.methods would return *this*
+// class's own override instead of the superclass's original, defeating
+// the entire point of writing `super.method()`). A miss (a genuinely
+// missing super method) is left permissive/undiagnosed in v1 -- the
+// Resolver already hard-errors `super` used with no superclass at all or
+// outside a class, and the implementation plan's own test list doesn't
+// ask for this as a new diagnostic class.
+@(private = "file")
+typecheck_super :: proc(tc: ^Type_Checker, v: ^Expr_Super) -> ^Type {
+	arg_types := make([dynamic]^Type, 0, len(v.args))
+	for a in v.args {
+		append(&arg_types, typecheck_expr(tc, a))
+	}
+	if tc.current_class == nil || tc.current_class.superclass == nil {
+		return dynamic_type()
+	}
+	method_type, is_method := tc.current_class.superclass.methods[lexeme(v.method_name)]
+	if !is_method {
+		return dynamic_type()
+	}
+	if !v.has_args {
+		return method_type // reading super.method as a value, no call
+	}
+	for i in 0 ..< min(len(v.args), len(method_type.func_params)) {
+		if !types_compatible(method_type.func_params[i], arg_types[i]) {
+			diagnose(
+				tc,
+				expr_token(v.args[i]),
+				fmt.tprintf(
+					"argument %d: expected %s, got %s",
+					i + 1,
+					type_string(method_type.func_params[i]),
+					type_string(arg_types[i]),
+				),
+			)
+		}
+	}
+	return method_type.func_return
+}
+
+// typecheck_property is Expr_Property's real (Phase 3) handling, in
+// place of Phase 2's unconditional Dynamic: .Get/.Set/.Compound_Set check
+// against the receiver's Class_Type.fields (*open* -- a name never
+// mentioned in __init__ synthesizes Dynamic with no diagnostic, since
+// Instance_Object.fields genuinely accepts arbitrary runtime writes);
+// .Invoke (and a plain .Get that turns out to name a method instead of a
+// field, which Lox permits -- reading a method as a value) checks against
+// Class_Type.methods (*closed* -- a miss here is the design doc's single
+// highest-value catch), falling back to .static_methods too (a bare
+// class-name receiver, e.g. `ClassName.staticMethod()`, synthesizes the
+// same shared .Class Type an instance does -- see types.odin's Type_Kind.
+// Class doc comment -- so this is the one place that ambiguity needs
+// resolving: check both tables rather than trying to tell "the class
+// itself" from "an instance" apart). A name that's a known *field*
+// invoked as a call (`this.fn(x)`, a callable stored in a field -- a real
+// runtime-supported pattern, see vm/call.odin's field-shadow check in
+// invoke) is never treated as a missing method either, since fields are
+// open and we don't track a callable field's own signature. A receiver
+// whose own type isn't .Class (Dynamic, or any other concrete type
+// someone mistakenly dereferences) is left fully permissive, matching
+// Phase 2's own treatment.
+@(private = "file")
+typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
+	object_type := typecheck_expr(tc, v.object)
+	value_type := typecheck_expr(tc, v.value)
+	arg_types := make([dynamic]^Type, 0, len(v.args))
+	for a in v.args {
+		append(&arg_types, typecheck_expr(tc, a))
+	}
+
+	if object_type.kind != .Class || object_type.class_type == nil {
+		return dynamic_type()
+	}
+	ct := object_type.class_type
+	name := lexeme(v.name)
+
+	switch v.kind {
+	case .Get:
+		if field_type, is_field := ct.fields[name]; is_field {
+			return field_type
+		}
+		if method_type, is_method := ct.methods[name]; is_method {
+			return method_type
+		}
+		if static_type, is_static := ct.static_methods[name]; is_static {
+			return static_type // reading ClassName.staticMethod as a value
+		}
+		return dynamic_type()
+	case .Set, .Compound_Set:
+		field_type, is_field := ct.fields[name]
+		if !is_field {
+			return value_type // never mentioned in __init__, assigned dynamically from outside -- the open-field escape valve
+		}
+		result_type := value_type
+		if v.kind == .Compound_Set {
+			result_type = compound_result_type(tc, v.token, v.compound_op, field_type, value_type)
+		}
+		if !types_compatible(field_type, result_type) {
+			diagnose(
+				tc,
+				v.token,
+				fmt.tprintf(
+					"cannot assign %s to field '%s' of type %s",
+					type_string(result_type),
+					name,
+					type_string(field_type),
+				),
+			)
+		}
+		return result_type
+	case .Invoke:
+		// A known *field* holding a callable (`this.fn = fn; ... this.fn(x)`,
+		// or `obj.field(args)` from outside -- a real runtime-supported
+		// pattern, see vm/call.odin's own invoke-checks-the-field-shadow-
+		// first handling) is never a "missing method" -- fields are open,
+		// and we don't track a callable field's own signature, so this is
+		// fully permissive, same as any other field read.
+		if _, is_field := ct.fields[name]; is_field {
+			return dynamic_type()
+		}
+		method_type, is_method := ct.methods[name]
+		if !is_method {
+			method_type, is_method = ct.static_methods[name] // ClassName.staticMethod(...)
+		}
+		if !is_method {
+			if !ct.methods_uncertain {
+				diagnose(tc, v.token, fmt.tprintf("class '%s' has no method '%s'", ct.name, name))
+			}
+			return dynamic_type()
+		}
+		for i in 0 ..< min(len(v.args), len(method_type.func_params)) {
+			if !types_compatible(method_type.func_params[i], arg_types[i]) {
+				diagnose(
+					tc,
+					expr_token(v.args[i]),
+					fmt.tprintf(
+						"argument %d: expected %s, got %s",
+						i + 1,
+						type_string(method_type.func_params[i]),
+						type_string(arg_types[i]),
+					),
+				)
+			}
+		}
+		return method_type.func_return
 	}
 	return dynamic_type()
 }

@@ -3,18 +3,19 @@ package compiler
 import "core:fmt"
 import "core:strings"
 
-// The type lattice for optional type annotations, Phase 2 of
+// The type lattice for optional type annotations, Phases 2-3 of
 // docs/plans/optional-type-checking-implementation.md: gradual typing,
 // where `Dynamic` (an unannotated site) is compatible with everything in
 // both directions. Deliberately pure data plus a handful of predicates
 // over it, no AST dependency beyond Type_Expr itself (type_from_expr) --
 // the rest is unit-testable without ever building a Parser/Resolver.
-//
-// `Class` is deliberately not a Type_Kind yet: nothing in Phase 2 ever
-// constructs or reads a class type (Expr_This/Super/Property all
-// synthesize Dynamic unconditionally -- see typecheck_expr.odin), so
-// adding the enum case and its `^Class_Type` field now would be dead
-// scaffolding. Phase 3 adds both alongside typecheck_class.odin.
+// `Class_Type` (referenced from `Type.class_type` below) is defined in
+// typecheck_class.odin, not here, since building one needs Stmt_Class_
+// Decl/Method -- this file deliberately doesn't depend on the AST beyond
+// Type_Expr itself. (type_from_expr *does* now take a ^Type_Checker,
+// since a class name in an annotation needs Phase 3's tc.classes table
+// to resolve to anything but Dynamic -- the one place this file isn't
+// fully self-contained any more.)
 Type_Kind :: enum {
 	Dynamic, // top: bidirectionally compatible with everything
 	Nil,
@@ -25,6 +26,7 @@ Type_Kind :: enum {
 	List, // element type in .list_elem; Dynamic in v1 (generic args parsed but not propagated beyond one level -- see Scope in the implementation plan)
 	Dict, // key/value types in .dict_key/.dict_value; Dynamic in v1
 	Func, // .func_params/.func_return
+	Class, // .class_type -- represents *both* "the class itself" (a bare class-name reference, e.g. Expr_Call's callee -- see typecheck_expr.odin's typecheck_call) and "an instance of this class" (this/super, a constructor call's own result, an annotation naming a class), one shared representation per the design doc; nothing needs to tell the two apart, since the only things that ever consult a .Class Type are a callee-kind check (constructor-call detection) and field/method lookups (only ever meaningful for an instance) -- see typecheck_class.odin.
 }
 
 Type :: struct {
@@ -35,6 +37,7 @@ Type :: struct {
 	dict_value:  ^Type, // meaningful only for .Dict
 	func_params: []^Type, // meaningful only for .Func
 	func_return: ^Type, // meaningful only for .Func; never nil for a .Func Type (Dynamic when the function's own return type is unannotated -- see typecheck_stmt.odin's build_func_type)
+	class_type:  ^Class_Type, // meaningful only for .Class
 }
 
 // -----------------------------------------------------------------------
@@ -51,47 +54,55 @@ string_type :: proc() -> ^Type {return new_clone(Type{kind = .String})}
 
 // -----------------------------------------------------------------------
 // type_from_expr -- resolves a parsed (Phase 1) Type_Expr into a checked
-// (Phase 2) Type. A class name (or any other identifier this table
-// doesn't recognize) synthesizes Dynamic in Phase 2, since no class-type
-// table exists yet to resolve it against -- Phase 3 introduces that table
-// and this function's Named case consults it instead of falling through.
+// Type. A name that isn't one of the primitives below is looked up in
+// tc.classes (Phase 3's class-name table, already fully populated by the
+// time any annotation is resolved -- see typecheck_class.odin's
+// typecheck_collect_class_signatures, which runs before anything else);
+// still-unrecognized names (a typo, a name that was never a class)
+// synthesize Dynamic.
 
 @(private = "file")
-primitive_kind :: proc(name: string) -> Type_Kind {
+primitive_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
 	switch name {
 	case "int":
-		return .Int
+		return .Int, true
 	case "float":
-		return .Float
+		return .Float, true
 	case "string":
-		return .String
+		return .String, true
 	case "bool":
-		return .Bool
-	case:
-		return .Dynamic // a class name (Phase 3) or an unrecognized name
+		return .Bool, true
 	}
+	return .Dynamic, false
 }
 
-type_from_expr :: proc(te: ^Type_Expr) -> ^Type {
+type_from_expr :: proc(tc: ^Type_Checker, te: ^Type_Expr) -> ^Type {
 	if te == nil {
 		return dynamic_type()
 	}
 	switch te.kind {
 	case .Named:
-		return new_clone(Type{kind = primitive_kind(lexeme(te.name))})
+		name := lexeme(te.name)
+		if kind, ok := primitive_kind(name); ok {
+			return new_clone(Type{kind = kind})
+		}
+		if ct, ok := tc.classes[name]; ok {
+			return new_clone(Type{kind = .Class, class_type = ct})
+		}
+		return dynamic_type()
 	case .Generic:
-		elem := type_from_expr(te.args[0]) if len(te.args) > 0 else dynamic_type()
+		elem := type_from_expr(tc, te.args[0]) if len(te.args) > 0 else dynamic_type()
 		switch lexeme(te.name) {
 		case "List":
 			return new_clone(Type{kind = .List, list_elem = elem})
 		case "Dict":
-			value := type_from_expr(te.args[1]) if len(te.args) > 1 else dynamic_type()
+			value := type_from_expr(tc, te.args[1]) if len(te.args) > 1 else dynamic_type()
 			return new_clone(Type{kind = .Dict, dict_key = elem, dict_value = value})
 		case:
 			return dynamic_type() // an unrecognized generic name -- out of scope for v1, see the implementation plan's Scope section
 		}
 	case .Nilable:
-		inner := type_from_expr(te.inner)
+		inner := type_from_expr(tc, te.inner)
 		result := inner^
 		result.nilable = true
 		return new_clone(result)
@@ -134,6 +145,19 @@ types_compatible :: proc(expected, actual: ^Type) -> bool {
 			}
 		}
 		return types_compatible(expected.func_return, actual.func_return)
+	case .Class:
+		// Nominal, but substitutable up the inheritance chain -- a Dog
+		// instance fits wherever an Animal is expected (ordinary OOP
+		// substitutability), not just an exact same-class match. Two
+		// unrelated classes with identically-shaped methods are still
+		// incompatible (nominal, not structural) -- the design doc's own
+		// "cost of nominal types" example, verified as intentional.
+		for c := actual.class_type; c != nil; c = c.superclass {
+			if c == expected.class_type {
+				return true
+			}
+		}
+		return false
 	}
 	return true
 }
@@ -166,6 +190,12 @@ types_equal :: proc(a, b: ^Type) -> bool {
 			}
 		}
 		return types_equal(a.func_return, b.func_return)
+	case .Class:
+		// Strict here, unlike types_compatible -- unification (this
+		// proc's only caller) asks "are these provably the exact same
+		// type", not "does a value of one fit where the other is
+		// expected", so no subclass-substitutability allowance.
+		return a.class_type == b.class_type
 	}
 	return true
 }
@@ -213,6 +243,8 @@ type_string :: proc(t: ^Type) -> string {
 			append(&parts, type_string(p))
 		}
 		base = fmt.tprintf("func(%s) -> %s", strings.join(parts[:], ", "), type_string(t.func_return))
+	case .Class:
+		base = t.class_type.name if t.class_type != nil else "class"
 	}
 	return fmt.tprintf("%s?", base) if t.nilable else base
 }

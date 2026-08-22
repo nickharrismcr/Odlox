@@ -62,11 +62,11 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 		// checked, mirroring resolve_function_declaration_stmt's own
 		// declare-before-resolve ordering -- so a recursive call inside
 		// the body resolves against this function's own signature.
-		fn_type := build_func_type(v.decl)
+		fn_type := build_func_type(tc, v.decl)
 		record_decl_type(tc, v.is_local, v.declared_slot, fn_type)
 		typecheck_function_decl(tc, v.decl)
 	case ^Stmt_Class_Decl:
-		typecheck_class_decl_body(tc, v)
+		typecheck_class_decl(tc, v)
 	case ^Stmt_Try:
 		typecheck_try(tc, v)
 	case ^Stmt_Import:
@@ -88,30 +88,26 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 // -----------------------------------------------------------------------
 // var / const / implicit declarations
 //
-// A slot's recorded type is exactly its explicit annotation's type when
-// one exists, and Dynamic otherwise -- deliberately *not* the
-// initializer's inferred type for an unannotated `var` the way the
-// implementation plan's own prose suggests ("records ... the
-// initializer's synthesized type" for the no-annotation case). That
-// would break the plan's own, more important invariant one section
-// later: "assigning to an unannotated var never diagnoses regardless of
-// type". If `var x = 1` persisted Int (inferred, not annotated) into the
-// slot map, a later `x = "hi"` would call types_compatible(Int, String)
-// -- both concrete, kinds differ -- and wrongly diagnose a reassignment
-// that was never actually promised to stay an Int. Distinguishing
-// "annotated" from "merely inferred" per-slot would need a second map
-// throughout this file for no real Phase 2 benefit (the plan's own catch
-// list never asks for inference beyond explicit annotations), so this
-// implementation always keys assignment-compatibility off "was this slot
-// ever explicitly annotated" -- Dynamic otherwise, permanently.
+// An *annotated* var/const's slot is pinned to its declared type
+// (record_decl_type): every later reassignment is checked against it and
+// never changes what's recorded. An *unannotated* one (including a bare
+// `x = expr` first mention, which has no annotation surface of its own
+// at all) is unpinned (record_inferred_type): its slot still starts out
+// as whatever the initializer's own type is (useful for a call/property
+// check a few lines later in straight-line code), but every later
+// reassignment *widens* it to the new value's type instead of being
+// checked against it -- so `var x: int = 1; x = "hi"` diagnoses (an
+// annotation is a promise), while `var x = 1; x = "hi"` never does (no
+// promise was ever made) -- the gradual-typing escape valve the design
+// doc's own test list calls for. See record_decl_type/record_inferred_
+// type/is_pinned in typecheck.odin for the mechanism this rests on.
 
 @(private = "file")
 typecheck_var_decl :: proc(tc: ^Type_Checker, v: ^Stmt_Var_Decl) {
 	init_type := typecheck_expr(tc, v.init)
 
-	declared := dynamic_type()
 	if v.type_annotation != nil {
-		declared = type_from_expr(v.type_annotation)
+		declared := type_from_expr(tc, v.type_annotation)
 		if !types_compatible(declared, init_type) {
 			diagnose(
 				tc,
@@ -124,27 +120,39 @@ typecheck_var_decl :: proc(tc: ^Type_Checker, v: ^Stmt_Var_Decl) {
 				),
 			)
 		}
+		record_decl_type(tc, v.is_local, v.declared_slot, declared)
+		return
 	}
 
-	record_decl_type(tc, v.is_local, v.declared_slot, declared)
+	record_inferred_type(tc, v.is_local, v.declared_slot, init_type)
 }
 
 @(private = "file")
 typecheck_implicit_assign :: proc(tc: ^Type_Checker, v: ^Stmt_Implicit_Assign) {
 	value_type := typecheck_expr(tc, v.value)
 	if v.declares_new {
-		// No annotation surface for a bare `x = expr` declaration --
-		// see this section's header comment.
-		record_decl_type(tc, v.resolved.kind == .Local, v.declared_slot, dynamic_type())
+		record_inferred_type(tc, v.resolved.kind == .Local, v.declared_slot, value_type)
 		return
 	}
-	existing := lookup_var_type(tc, v.resolved)
-	if !types_compatible(existing, value_type) {
-		diagnose(
-			tc,
-			v.name,
-			fmt.tprintf("cannot assign %s to '%s' of type %s", type_string(value_type), lexeme(v.name), type_string(existing)),
-		)
+
+	if is_pinned(tc, v.resolved) {
+		existing := lookup_var_type(tc, v.resolved)
+		if !types_compatible(existing, value_type) {
+			diagnose(
+				tc,
+				v.name,
+				fmt.tprintf(
+					"cannot assign %s to '%s' of type %s",
+					type_string(value_type),
+					lexeme(v.name),
+					type_string(existing),
+				),
+			)
+		}
+		return
+	}
+	if v.resolved.kind == .Local || v.resolved.kind == .Global {
+		record_inferred_type(tc, v.resolved.kind == .Local, v.resolved.slot, value_type)
 	}
 }
 
@@ -200,20 +208,92 @@ typecheck_try :: proc(tc: ^Type_Checker, v: ^Stmt_Try) {
 }
 
 // -----------------------------------------------------------------------
-// Classes -- Phase 2 walks into a class body's method statements (so
-// nested functions/expressions inside methods still get ordinary Phase 2
-// checking) but performs no class-specific checking (no Class_Type table
-// exists yet -- Phase 3 adds typecheck_class.odin and replaces this).
+// Classes -- pass 2's per-class walk. v's own Class_Type signature is
+// already fully built (pass 1, typecheck_collect_class_signatures, ran
+// before typecheck_program's ordinary statement walk even began -- see
+// typecheck.odin). This just records it at v's own declaring slot (a
+// class name, like a function name, is itself a value -- the
+// constructor/class itself, see typecheck_expr.odin's typecheck_call for
+// how a call through it becomes a constructor call), then checks each
+// member body for real, with tc.current_class pushed/popped the same way
+// Resolver.current_class brackets resolve_class_decl (resolve.odin:1046-
+// 1080), and finally checks every override this class's own methods made
+// against its superclass for compatibility.
 
 @(private = "file")
-typecheck_class_decl_body :: proc(tc: ^Type_Checker, v: ^Stmt_Class_Decl) {
+typecheck_class_decl :: proc(tc: ^Type_Checker, v: ^Stmt_Class_Decl) {
+	ct := tc.classes[lexeme(v.name)]
+	record_decl_type(tc, v.is_local, v.declared_slot, new_clone(Type{kind = .Class, class_type = ct}))
+
+	saved_class := tc.current_class
+	tc.current_class = ct
+
 	for member in v.members {
 		switch m in member {
 		case ^Method:
-			typecheck_function_decl(tc, m.decl)
+			fn_type := typecheck_function_decl(tc, m.decl)
+			// __init__ is exempt from override-compatibility checking --
+			// unlike an ordinary method, a constructor is never called
+			// polymorphically through a base-class-typed reference, so
+			// there's no substitutability requirement to enforce: a
+			// subclass's own __init__ legitimately takes a completely
+			// different parameter list than its superclass's (see
+			// class Dog < Animal in field_slot_basic.lox -- a real
+			// false positive this surfaced).
+			if !m.is_static && m.decl.fn_type != .Initializer {
+				if super_type, is_override := ct.overrides[lexeme(m.name)]; is_override {
+					check_override_compatible(tc, m.name, fn_type, super_type)
+				}
+			}
 		case ^Class_Var_Member:
 			typecheck_expr(tc, m.init)
 		}
+	}
+
+	tc.current_class = saved_class
+}
+
+// check_override_compatible checks arity match and pointwise param/
+// return compatibility via the same types_compatible gradual predicate
+// every other call/assignment/return check already uses -- an
+// unannotated override param/return is automatically compatible
+// (Dynamic), matching the design doc's "compatible or unannotated" bar.
+@(private = "file")
+check_override_compatible :: proc(tc: ^Type_Checker, name_tok: Token, sub_type, super_type: ^Type) {
+	if len(sub_type.func_params) != len(super_type.func_params) {
+		diagnose(
+			tc,
+			name_tok,
+			fmt.tprintf("override of '%s' has a different number of parameters than its superclass method", lexeme(name_tok)),
+		)
+		return
+	}
+	for i in 0 ..< len(sub_type.func_params) {
+		if !types_compatible(super_type.func_params[i], sub_type.func_params[i]) {
+			diagnose(
+				tc,
+				name_tok,
+				fmt.tprintf(
+					"override of '%s': parameter %d type %s is incompatible with the superclass method's %s",
+					lexeme(name_tok),
+					i + 1,
+					type_string(sub_type.func_params[i]),
+					type_string(super_type.func_params[i]),
+				),
+			)
+		}
+	}
+	if !types_compatible(super_type.func_return, sub_type.func_return) {
+		diagnose(
+			tc,
+			name_tok,
+			fmt.tprintf(
+				"override of '%s' returns %s, incompatible with the superclass method's %s",
+				lexeme(name_tok),
+				type_string(sub_type.func_return),
+				type_string(super_type.func_return),
+			),
+		)
 	}
 }
 
@@ -228,16 +308,16 @@ typecheck_class_decl_body :: proc(tc: ^Type_Checker, v: ^Stmt_Class_Decl) {
 // Memoized on the node itself (Function_Decl.cached_func_type) per the
 // implementation plan, so a function referenced from many call sites
 // doesn't rebuild the same Func type at every one of them.
-build_func_type :: proc(decl: ^Function_Decl) -> ^Type {
+build_func_type :: proc(tc: ^Type_Checker, decl: ^Function_Decl) -> ^Type {
 	if decl.cached_func_type != nil {
 		return decl.cached_func_type
 	}
 	param_types := make([dynamic]^Type, 0, len(decl.params))
 	for param in decl.params {
-		pt := type_from_expr(param.type_annotation) if param.type_annotation != nil else dynamic_type()
+		pt := type_from_expr(tc, param.type_annotation) if param.type_annotation != nil else dynamic_type()
 		append(&param_types, pt)
 	}
-	return_type := type_from_expr(decl.return_type) if decl.return_type != nil else dynamic_type()
+	return_type := type_from_expr(tc, decl.return_type) if decl.return_type != nil else dynamic_type()
 	fn_type := new_clone(Type{kind = .Func, func_params = param_types[:], func_return = return_type})
 	decl.cached_func_type = fn_type
 	return fn_type
@@ -252,20 +332,28 @@ build_func_type :: proc(decl: ^Function_Decl) -> ^Type {
 // (no name to recurse through), so it skips Stmt_Function_Decl's own
 // pre-recording step and just calls straight in here.
 typecheck_function_decl :: proc(tc: ^Type_Checker, decl: ^Function_Decl) -> ^Type {
-	fn_type := build_func_type(decl)
+	fn_type := build_func_type(tc, decl)
 
 	child := new(Local_Type_Scope)
 	child.enclosing = tc.locals
 	child.slots = make(map[int]^Type)
+	child.pinned = make(map[int]bool)
 	child.upvalues = decl.upvalues
 
 	saved_locals := tc.locals
 	saved_fn_return := tc.fn_return
 	tc.locals = child
-	tc.fn_return = type_from_expr(decl.return_type) if decl.return_type != nil else nil
+	tc.fn_return = type_from_expr(tc, decl.return_type) if decl.return_type != nil else nil
 
 	for &param, i in decl.params {
 		child.slots[param.declared_slot] = fn_type.func_params[i]
+		// An unannotated param is unpinned, same treatment as an
+		// unannotated var (see record_inferred_type's own doc comment) --
+		// a later reassignment inside the body widens it rather than
+		// being checked against it.
+		if param.type_annotation != nil {
+			child.pinned[param.declared_slot] = true
+		}
 		if param.default != nil {
 			typecheck_expr(tc, param.default)
 		}
