@@ -257,13 +257,14 @@ Param :: struct {
 }
 
 Function_Decl :: struct {
-	using base:  Node_Base,
-	name:        Token, // empty/synthetic token for a lambda
-	params:      []Param,
-	body:        []Stmt,
-	fn_type:     Function_Type,
-	upvalues:    []Upvalue, // filled in by the Resolver
-	return_type: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
+	using base:       Node_Base,
+	name:             Token, // empty/synthetic token for a lambda
+	params:           []Param,
+	body:             []Stmt,
+	fn_type:          Function_Type,
+	upvalues:         []Upvalue, // filled in by the Resolver
+	return_type:      ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
+	cached_func_type: ^Type, // filled in by the Type_Checker (typecheck_stmt.odin's build_func_type), memoized so a function referenced from multiple call sites doesn't rebuild its own Func type each time
 }
 
 // ---------------------------------------------------------------------

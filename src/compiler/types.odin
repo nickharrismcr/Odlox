@@ -1,0 +1,218 @@
+package compiler
+
+import "core:fmt"
+import "core:strings"
+
+// The type lattice for optional type annotations, Phase 2 of
+// docs/plans/optional-type-checking-implementation.md: gradual typing,
+// where `Dynamic` (an unannotated site) is compatible with everything in
+// both directions. Deliberately pure data plus a handful of predicates
+// over it, no AST dependency beyond Type_Expr itself (type_from_expr) --
+// the rest is unit-testable without ever building a Parser/Resolver.
+//
+// `Class` is deliberately not a Type_Kind yet: nothing in Phase 2 ever
+// constructs or reads a class type (Expr_This/Super/Property all
+// synthesize Dynamic unconditionally -- see typecheck_expr.odin), so
+// adding the enum case and its `^Class_Type` field now would be dead
+// scaffolding. Phase 3 adds both alongside typecheck_class.odin.
+Type_Kind :: enum {
+	Dynamic, // top: bidirectionally compatible with everything
+	Nil,
+	Bool,
+	Int,
+	Float,
+	String,
+	List, // element type in .list_elem; Dynamic in v1 (generic args parsed but not propagated beyond one level -- see Scope in the implementation plan)
+	Dict, // key/value types in .dict_key/.dict_value; Dynamic in v1
+	Func, // .func_params/.func_return
+}
+
+Type :: struct {
+	kind:        Type_Kind,
+	nilable:     bool, // from a `?` suffix -- orthogonal to kind: `int?` is Type{kind = .Int, nilable = true}, not a separate kind
+	list_elem:   ^Type, // meaningful only for .List
+	dict_key:    ^Type, // meaningful only for .Dict
+	dict_value:  ^Type, // meaningful only for .Dict
+	func_params: []^Type, // meaningful only for .Func
+	func_return: ^Type, // meaningful only for .Func; never nil for a .Func Type (Dynamic when the function's own return type is unannotated -- see typecheck_stmt.odin's build_func_type)
+}
+
+// -----------------------------------------------------------------------
+// Constructors -- every Type is heap-allocated fresh (no canonical
+// singleton instances), so comparisons throughout this package are always
+// by field (kind/nilable/...), never by pointer identity.
+
+dynamic_type :: proc() -> ^Type {return new_clone(Type{kind = .Dynamic})}
+nil_type :: proc() -> ^Type {return new_clone(Type{kind = .Nil})}
+bool_type :: proc() -> ^Type {return new_clone(Type{kind = .Bool})}
+int_type :: proc() -> ^Type {return new_clone(Type{kind = .Int})}
+float_type :: proc() -> ^Type {return new_clone(Type{kind = .Float})}
+string_type :: proc() -> ^Type {return new_clone(Type{kind = .String})}
+
+// -----------------------------------------------------------------------
+// type_from_expr -- resolves a parsed (Phase 1) Type_Expr into a checked
+// (Phase 2) Type. A class name (or any other identifier this table
+// doesn't recognize) synthesizes Dynamic in Phase 2, since no class-type
+// table exists yet to resolve it against -- Phase 3 introduces that table
+// and this function's Named case consults it instead of falling through.
+
+@(private = "file")
+primitive_kind :: proc(name: string) -> Type_Kind {
+	switch name {
+	case "int":
+		return .Int
+	case "float":
+		return .Float
+	case "string":
+		return .String
+	case "bool":
+		return .Bool
+	case:
+		return .Dynamic // a class name (Phase 3) or an unrecognized name
+	}
+}
+
+type_from_expr :: proc(te: ^Type_Expr) -> ^Type {
+	if te == nil {
+		return dynamic_type()
+	}
+	switch te.kind {
+	case .Named:
+		return new_clone(Type{kind = primitive_kind(lexeme(te.name))})
+	case .Generic:
+		elem := type_from_expr(te.args[0]) if len(te.args) > 0 else dynamic_type()
+		switch lexeme(te.name) {
+		case "List":
+			return new_clone(Type{kind = .List, list_elem = elem})
+		case "Dict":
+			value := type_from_expr(te.args[1]) if len(te.args) > 1 else dynamic_type()
+			return new_clone(Type{kind = .Dict, dict_key = elem, dict_value = value})
+		case:
+			return dynamic_type() // an unrecognized generic name -- out of scope for v1, see the implementation plan's Scope section
+		}
+	case .Nilable:
+		inner := type_from_expr(te.inner)
+		result := inner^
+		result.nilable = true
+		return new_clone(result)
+	}
+	return dynamic_type()
+}
+
+// -----------------------------------------------------------------------
+// types_compatible -- the core of gradual typing: true whenever either
+// side is nil (no annotation) or Dynamic, or actual is Nil and expected
+// accepts nil, or both sides structurally agree; false otherwise. Used
+// both for "does this value fit this annotated site" (assignment,
+// argument, return) checks.
+
+types_compatible :: proc(expected, actual: ^Type) -> bool {
+	if expected == nil || actual == nil {
+		return true
+	}
+	if expected.kind == .Dynamic || actual.kind == .Dynamic {
+		return true
+	}
+	if actual.kind == .Nil {
+		return expected.nilable || expected.kind == .Nil
+	}
+	if expected.kind != actual.kind {
+		return false
+	}
+	#partial switch expected.kind {
+	case .List:
+		return types_compatible(expected.list_elem, actual.list_elem)
+	case .Dict:
+		return types_compatible(expected.dict_key, actual.dict_key) && types_compatible(expected.dict_value, actual.dict_value)
+	case .Func:
+		if len(expected.func_params) != len(actual.func_params) {
+			return false
+		}
+		for i in 0 ..< len(expected.func_params) {
+			if !types_compatible(expected.func_params[i], actual.func_params[i]) {
+				return false
+			}
+		}
+		return types_compatible(expected.func_return, actual.func_return)
+	}
+	return true
+}
+
+// types_equal is stricter than types_compatible (no Dynamic escape hatch)
+// -- used to unify branches (Expr_Logical/Expr_Conditional's "same type on
+// both sides degrades to Dynamic when they differ" rule, list/dict
+// literal element unification), where the question is "are these actually
+// the same type", not "does a value of one type fit where the other is
+// expected".
+types_equal :: proc(a, b: ^Type) -> bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.kind != b.kind || a.nilable != b.nilable {
+		return false
+	}
+	#partial switch a.kind {
+	case .List:
+		return types_equal(a.list_elem, b.list_elem)
+	case .Dict:
+		return types_equal(a.dict_key, b.dict_key) && types_equal(a.dict_value, b.dict_value)
+	case .Func:
+		if len(a.func_params) != len(b.func_params) {
+			return false
+		}
+		for i in 0 ..< len(a.func_params) {
+			if !types_equal(a.func_params[i], b.func_params[i]) {
+				return false
+			}
+		}
+		return types_equal(a.func_return, b.func_return)
+	}
+	return true
+}
+
+// union_type is Expr_Logical/Expr_Conditional's own rule: the same type on
+// both branches, else Dynamic (matches runtime -- either branch's value
+// can flow out, so a static type only survives if both branches agree).
+union_type :: proc(a, b: ^Type) -> ^Type {
+	if types_equal(a, b) {
+		return a
+	}
+	return dynamic_type()
+}
+
+// -----------------------------------------------------------------------
+// type_string -- diagnostic formatting, mirroring Type_Expr surface
+// syntax (see ast_print.odin's print_type_expr for the parsed-side
+// equivalent): `int`, `List[int]`, `int?`, `func(int, int) -> string`.
+
+type_string :: proc(t: ^Type) -> string {
+	if t == nil {
+		return "dynamic"
+	}
+	base: string
+	#partial switch t.kind {
+	case .Dynamic:
+		base = "dynamic"
+	case .Nil:
+		base = "nil"
+	case .Bool:
+		base = "bool"
+	case .Int:
+		base = "int"
+	case .Float:
+		base = "float"
+	case .String:
+		base = "string"
+	case .List:
+		base = fmt.tprintf("List[%s]", type_string(t.list_elem))
+	case .Dict:
+		base = fmt.tprintf("Dict[%s, %s]", type_string(t.dict_key), type_string(t.dict_value))
+	case .Func:
+		parts := make([dynamic]string, 0, len(t.func_params))
+		for p in t.func_params {
+			append(&parts, type_string(p))
+		}
+		base = fmt.tprintf("func(%s) -> %s", strings.join(parts[:], ", "), type_string(t.func_return))
+	}
+	return fmt.tprintf("%s?", base) if t.nilable else base
+}
