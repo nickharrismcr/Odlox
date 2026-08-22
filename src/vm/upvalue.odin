@@ -40,6 +40,7 @@ close_upvalues :: proc(vm: ^VM, last: int) {
 	for vm.open_upvalues != nil && vm.open_upvalues.slot >= last {
 		uv := vm.open_upvalues
 		uv.closed = uv.location^
+		write_barrier_value(vm, uv.closed)
 		uv.location = &uv.closed
 		vm.open_upvalues = uv.next_open
 	}

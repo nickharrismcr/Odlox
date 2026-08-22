@@ -1,23 +1,11 @@
 from gfx import *
-// GPU (GLSL fragment shader) Mandelbox -- a 3D fractal (Tom Lowe, 2010)
-// rendered by sphere-tracing (raymarching) a distance-estimate (DE) derived
-// from the iteration below, entirely on the GPU: one ray per pixel, all
-// pixels in parallel, the same fullscreen-quad-plus-fragment-shader approach
-// mandel_shader.lox uses for the 2D Mandelbrot.
-//
-// Each iteration applies a box fold (clamp every axis independently to
-// [-fold_limit, fold_limit], then mirror) followed by a sphere fold (rescale
-// points falling inside a sphere so detail stays roughly uniform at every
-// distance from the origin, not just close in). The box fold is what gives
-// the Mandelbox its flat faces and sharp edges, unlike a Mandelbulb's
-// spherical-fold-only iteration, which rounds everything off.
-//
-// Free-fly camera: WASD to move, Q/E down/up, mouse to look (cursor hidden,
-// not locked -- see hide_cursor()'s own doc comment below for why moving it
-// off-screen can momentarily stop registering deltas), LEFT SHIFT to move
-// faster. UP/DOWN change the fractal's scale parameter live (the single
-// number that most changes its structure -- try the 1.5-3.0 range), R resets
-// it, ESC quits.
+// GPU (GLSL fragment shader) Mandelbox -- a 3D fractal (Tom Lowe, 2010) rendered by
+// sphere-tracing a distance-estimate derived from the iteration below, one ray per pixel.
+// Each iteration applies a box fold (clamp every axis to [-fold_limit, fold_limit], then
+// mirror) then a sphere fold (rescale points inside a sphere for uniform detail at any
+// distance) -- the box fold gives the Mandelbox its flat faces, unlike a Mandelbulb's
+// spherical-fold-only iteration. Free-fly camera: WASD/Q/E move, mouse look, LEFT SHIFT
+// faster. UP/DOWN scale live (1.5-3.0), R resets, ESC quits.
 
 import math
 
@@ -61,31 +49,20 @@ uniform float min_radius2;
 uniform float fixed_radius2;
 uniform float fold_limit;
 uniform float time;
-// max_iterations replaces what used to be a fixed `const int ITERATIONS`:
-// the CPU side (see MIN_ITERATIONS/MAX_ITERATIONS/update_detail_level()
-// below) raises this every frame as the camera gets closer to the
-// fractal. Each iteration re-applies the same box-fold/sphere-fold map at
-// whatever scale the current z happens to be at, so more iterations
-// literally means resolving more nested levels of the same self-similar
-// folding -- that's the mechanism 'more detail when zoomed in' rests on;
-// a fixed iteration count just caps how many of those levels ever get
-// resolved, however close the camera gets.
+// max_iterations is raised each frame as the camera gets closer to the fractal (see
+// update_detail_level() below). Each iteration re-applies the box-fold/sphere-fold map at
+// the current z's scale, so more iterations resolve more nested levels of the same
+// self-similar folding -- a fixed count would cap detail however close the camera gets.
 uniform float max_iterations;
 
 const int MAX_STEPS = 128;
 const float MAX_DIST = 50.0;
 const float SURF_DIST = 0.0008;
-// BAILOUT2: once dot(z, z) exceeds this, the iterate has diverged and every
-// later iteration only pushes it further away (the z*scale+pos step
-// dominates once folding stops pulling z back towards the origin) -- so it
-// can never come back down to change the DE's own distance-vs-origin
-// relationship in a way that matters, and (for mandelbox_trap) can't beat
-// an orbit-trap minimum it already lost. Breaking out early here is what
-// keeps max_iterations affordable to raise: far-field points (most of a
-// frame, away from the fractal boundary) bail in a handful of iterations
-// regardless of the cap, so raising the cap mainly costs time on points
-// actually near the boundary -- which is exactly where more iterations
-// buys back real detail.
+// BAILOUT2: once dot(z, z) exceeds this, the iterate has diverged and every later
+// iteration only pushes it further away, so it can never change the DE's distance-vs-
+// origin relationship in a way that matters. Breaking out early here keeps max_iterations
+// affordable: far-field points bail in a handful of iterations regardless of the cap, so
+// raising the cap mainly costs time near the boundary, where more iterations buy detail.
 const float BAILOUT2 = 1000.0;
 
 // Distance estimate to the Mandelbox surface from `pos`: `pos` doubles as
@@ -178,15 +155,12 @@ vec3 calc_normal(vec3 p) {
     ));
 }
 
-// Soft shadow: marches a second ray from the surface towards the light and
-// shrinks the returned factor (1.0 = fully lit, 0.0 = fully shadowed) by how
-// closely that ray ever grazes another part of the fractal, not just whether
-// it eventually hits one -- an outright hit (d < SURF_DIST) returns 0.0
-// immediately, but a near-miss still darkens the result in proportion to how
-// close it came (k * d / t), which is what turns a hard-edged shadow into a
-// soft penumbra. Standard technique for SDF raymarchers (Quilez); ro is
-// expected pre-biased off the surface along its normal by the caller (see
-// main()) so this ray doesn't immediately re-hit the point it started at.
+// Soft shadow: marches a second ray from the surface towards the light and shrinks the
+// returned factor (1.0 = fully lit, 0.0 = fully shadowed) by how closely that ray ever
+// grazes the fractal, not just whether it eventually hits one -- a near-miss darkens the
+// result proportionally (k * d / t), turning a hard-edged shadow into a soft penumbra.
+// Standard SDF raymarcher technique (Quilez); ro is pre-biased off the surface by the
+// caller so this ray doesn't immediately re-hit its own start point.
 float calc_shadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
     float res = 1.0;
     float t = mint;
@@ -278,15 +252,10 @@ const MIN_RADIUS2 = 0.25   // (0.5)^2
 const FIXED_RADIUS2 = 1.0
 const FOLD_LIMIT = 1.0
 
-// Iteration budget the shader's max_iterations uniform is interpolated
-// between each frame (see update_detail_level below) -- MIN_ITERATIONS is
-// enough to read the Mandelbox's overall shape from a distance, but not
-// enough to resolve its finer nested folds up close (they'd look
-// smoothed-over, the same way a 2D Mandelbrot deep zoom goes flat once
-// max_iter is too low for how far in you've gone); MAX_ITERATIONS is high
-// enough to hold up under a close approach without costing much, since
-// BAILOUT2 in the shader keeps far-field pixels cheap regardless of the
-// cap.
+// Iteration budget the shader's max_iterations uniform is interpolated between each
+// frame (see update_detail_level below) -- MIN_ITERATIONS reads the Mandelbox's overall
+// shape from a distance but not its finer nested folds up close; MAX_ITERATIONS holds up
+// under a close approach without costing much, since BAILOUT2 keeps far-field pixels cheap.
 const MIN_ITERATIONS = 16.0
 const MAX_ITERATIONS = 64.0
 // APPROX_FRACTAL_RADIUS: rough extent of the Mandelbox from the origin
@@ -300,14 +269,9 @@ const DETAIL_FAR_DIST = 15.0  // distance-to-surface at/above which detail is at
 
 const MOVE_SPEED = 2.5
 const BOOST_MULT = 4.0
-// At the camera's current start distance (20 units), the fractal's ~3-unit
-// extent only subtends ~17 degrees of the ~53-degree vertical FOV -- with
-// the old 0.0025 rad/pixel sensitivity, one ordinary mouse swipe (a few
-// hundred pixels) turns the camera by tens of degrees, well past that 17
-// degrees, so the fractal exits the frame in a single motion. Not a sign/
-// direction bug (the camera basis itself is correct -- see forward's own
-// comment below) -- just too much rotation per pixel for how small a
-// target this is at range. Cut ~4x for finer control.
+// At the camera's start distance (20 units), the fractal's ~3-unit extent only subtends
+// ~17 degrees of the ~53-degree vertical FOV, so a higher rad/pixel sensitivity turns the
+// camera past that in a single mouse swipe and the fractal exits the frame. Cut for finer control.
 const MOUSE_SENS = 0.0006
 const PITCH_LIMIT = 1.5 // just under pi/2, avoids the forward vector flipping at the poles
 const SCALE_MIN = 1.2
@@ -340,14 +304,10 @@ var fold_limit_loc = mandelbox_shader.get_location("fold_limit")
 var time_loc = mandelbox_shader.get_location("time")
 var max_iterations_loc = mandelbox_shader.get_location("max_iterations")
 
-// update_detail_level uploads max_iterations for the current camera
-// position -- distance to the origin, less APPROX_FRACTAL_RADIUS, stands
-// in for distance to the fractal's surface (see that constant's own
-// comment). Linearly interpolated between MIN_ITERATIONS (at
-// DETAIL_FAR_DIST or beyond) and MAX_ITERATIONS (at DETAIL_NEAR_DIST or
-// closer) -- called once per frame, after `pos` is updated, so flying
-// towards the fractal ramps detail up smoothly rather than in a single
-// jump.
+// Uploads max_iterations for the current camera position -- distance to the origin, less
+// APPROX_FRACTAL_RADIUS, stands in for distance to the fractal's surface. Linearly
+// interpolated between MIN_ITERATIONS (at DETAIL_FAR_DIST or beyond) and MAX_ITERATIONS
+// (at DETAIL_NEAR_DIST or closer), called once per frame so detail ramps up smoothly.
 func update_detail_level(cam_pos) {
     var dist_to_surface = vec3_length(cam_pos) - APPROX_FRACTAL_RADIUS
     var detail_t = (DETAIL_FAR_DIST - dist_to_surface) / (DETAIL_FAR_DIST - DETAIL_NEAR_DIST)
@@ -370,24 +330,16 @@ mandelbox_shader.set_value_float(fold_limit_loc, FOLD_LIMIT)
 // start the camera on the light's own side of the fractal.
 const LIGHT_DIR = vec3(0.6, 0.8, -0.4)
 
-// CAMERA_START_DIST: the classic Mandelbox parameter set below (scale 2.5,
-// fold_limit 1, min/fixed radius 0.5/1.0) extends roughly 1.5-3 units from
-// the origin. The ray fan's implicit vertical FOV (uv.y spans -0.5..0.5
-// against unit-length camUp/camRight/camForward, i.e. +/-atan(0.5) =~ 26.5
-// degrees half-angle) means fitting a half-extent E inside frame needs
-// distance >= E / tan(26.5 deg) =~ 2*E -- 6 units would put the set right
-// at the frame edge with no margin, so 20 (roughly 6-7x the extent) leaves
-// it comfortably small in frame with lots of room on every side.
+// CAMERA_START_DIST: the classic Mandelbox parameter set below extends roughly 1.5-3
+// units from the origin. The ray fan's implicit vertical FOV (~26.5 degree half-angle)
+// means fitting a half-extent E in frame needs distance >= 2*E -- 20 (roughly 6-7x the
+// extent) leaves it comfortably small in frame with room on every side.
 const CAMERA_START_DIST = 20.0
 
-// Start the camera on the same side as the light (rather than +z) and
-// looking back towards the origin, so the first thing in frame is a face
-// lit close to head-on instead of one lit only at a grazing angle or in
-// full shadow. yaw/pitch are derived from the desired forward vector
-// (pointing from the start position back at the origin) by inverting
-// forward's own formula below (forward = (cos(pitch)sin(yaw), sin(pitch),
-// -cos(pitch)cos(yaw))): pitch = atan2(forward.y, length of its xz part),
-// yaw = atan2(forward.x, -forward.z).
+// Start the camera on the same side as the light, looking back towards the origin, so the
+// first thing in frame is a face lit close to head-on instead of at a grazing angle or in
+// full shadow. yaw/pitch are derived from the desired forward vector by inverting
+// forward's own formula below.
 var light_dir_norm = vec3_normalize(LIGHT_DIR)
 var pos = vec3_scale(light_dir_norm, CAMERA_START_DIST)
 var start_forward = vec3_scale(light_dir_norm, -1.0)

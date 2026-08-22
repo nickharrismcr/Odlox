@@ -10,15 +10,12 @@ import "core:testing"
 // scanner_test.odin checks token-type shape rather than exact bytes.
 
 // -----------------------------------------------------------------------
-// Decoding helper: walks a Chunk's code, one instruction at a time,
+// Decoding helper: walks a Chunk's code one instruction at a time,
 // skipping the right number of operand bytes per opcode (including the
-// two variable-length ones, Closure and Import_From, which need to
-// consult the constant pool / a count byte respectively to know their
-// own width). This is deliberately *not* Phase 5's disassembler -- it
-// exists only so these tests can assert "opcode X appears here" without
-// either hand-counting byte offsets everywhere or risking a false match
-// against some unrelated instruction's operand byte that happens to
-// equal X's numeric value.
+// two variable-length ones, Closure and Import_From). Not the
+// disassembler -- exists only so tests can assert "opcode X appears here"
+// without hand-counting byte offsets or risking a false match against an
+// unrelated operand byte.
 
 @(private = "file")
 Decoded :: struct {
@@ -187,14 +184,9 @@ from math import sqrt, pow
 }
 
 // Regression test: print_statement must emit Op_Str before Op_Print --
-// Op_Str is also the __str__() dispatch point (run.odin's Op_Str
-// case), so skipping it (an earlier version did) meant `print instance`
-// never picked up a class's own __str__() even after __str__
-// dispatch was wired up in Op_Str itself, since print never routed
-// through that opcode at all. str(x) (expr.odin's str_call, a
-// different call site) already emitted Op_Str correctly, which is
-// exactly what made this easy to miss -- str(x) "worked" while print
-// x on the same value silently didn't.
+// Op_Str is also the __str__() dispatch point (run.odin's Op_Str case),
+// so skipping it meant `print instance` never picked up a class's own
+// __str__() even though str(x) already routed through Op_Str correctly.
 @(test)
 test_print_statement_emits_str_before_print :: proc(t: ^testing.T) {
 	c := compile_ok(t, "print 1\n")
@@ -258,14 +250,10 @@ test_vector_add_uses_plus_plus :: proc(t: ^testing.T) {
 
 // -----------------------------------------------------------------------
 // Swizzle-component assignment write-back (`v.x = expr`) -- see
-// emit_expr.odin's emit_swizzle_set and core/chunk.odin's
-// Set_*_Vec_Field family. A top-level `var` resolves as a global (see
-// run_builtins's own finding in vm/builtins_test.odin), so this is the
-// Global half of the family; the Local/Upvalue/Property halves are
-// covered end-to-end in vm/builtins_test.odin instead, since their
-// distinguishing behavior (a real write-back into a function-local slot
-// or an instance field) needs the VM actually running, not just opcode
-// shape.
+// emit_expr.odin's emit_swizzle_set. A top-level `var` resolves as a
+// global, so this is the Global half of the family; the
+// Local/Upvalue/Property halves are covered end-to-end in
+// vm/builtins_test.odin instead, since they need the VM actually running.
 
 @(test)
 test_vec_swizzle_assign_uses_dedicated_opcode :: proc(t: ^testing.T) {
@@ -363,14 +351,11 @@ test_index_and_slice :: proc(t: ^testing.T) {
 
 @(test)
 test_compound_assignment_desugars_no_dedicated_opcode :: proc(t: ^testing.T) {
-	// `x` here is a *global* (top-level `var`), so this exercises
+	// `x` here is a global (top-level `var`), so this exercises
 	// Get_Global/Set_Global, not Get_Local/Set_Local -- the peephole
-	// optimizer only ever fuses local-slot sequences (see
-	// peephole_optimise's own doc comment), so this shape is never a
-	// fusion candidate regardless of DebugSkipPeephole, deliberately
-	// sidestepping that flag's race against other tests under Odin's
-	// parallel test runner (test_peephole_disabled_by_flag toggles it
-	// too, and both can run concurrently).
+	// optimizer only fuses local-slot sequences, so this shape is never a
+	// fusion candidate, sidestepping DebugSkipPeephole's race against other
+	// tests under Odin's parallel test runner.
 	c := compile_ok(t, "var x = 1\nx += 2\n")
 	seq := op_sequence(c)
 	found := false
@@ -489,13 +474,10 @@ test_foreach_emits_iterator_trio :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Parenthesized control-flow headers and unbraced bodies (the reference
-// implementation's real grammar requires the parens unconditionally -- see stmt.odin's
-// parse_condition doc comment; this port makes them optional instead,
-// to add the parenthesized fixtures the ported test suite actually
-// uses without breaking the bare style every existing test already
-// relies on). One shape test per statement kind, both forms, plus the
-// unbraced-body case parens make possible.
+// Parenthesized control-flow headers and unbraced bodies. The reference
+// implementation requires the parens unconditionally; this port makes
+// them optional instead, to support parenthesized fixtures without
+// breaking the bare style existing tests rely on.
 
 @(test)
 test_if_accepts_optional_parens_both_forms :: proc(t: ^testing.T) {
@@ -650,20 +632,12 @@ test_method_brace_on_next_line_compiles :: proc(t: ^testing.T) {
 	testing.expect(t, contains_op(c, .Method))
 }
 
-// Regression test for the bug that made the missing tolerance above
-// far worse than a wrong-but-quick compile error: class_declaration's
-// member loop had no panic_mode/synchronize check of its own (unlike
-// declaration() at the top level), so a malformed method whose error
-// path returned without consuming a token made the loop call method()
-// again on the exact same token forever. Before both fixes (this one
-// and functions.odin's Eol tolerance), this exact input hung the
-// compiler indefinitely rather than reporting a compile error -- a
-// real, reproduced hang in the compiled odlox binary, not a
-// hypothetical. If this regresses, this test itself will hang
-// `odin test src/compiler` rather than failing cleanly; that's an
-// acceptable trade-off for pinning down an infinite loop specifically
-// (a timeout-based test would only prove "eventually terminates",
-// which isn't what an infinite loop bug threatens).
+// Regression test: class_declaration's member loop had no
+// panic_mode/synchronize check of its own, so a malformed method whose
+// error path returned without consuming a token made the loop call
+// method() again on the same token forever, hanging the compiler. If this
+// regresses, this test itself hangs rather than failing cleanly -- an
+// acceptable trade-off for pinning down an infinite loop specifically.
 @(test)
 test_malformed_method_does_not_hang_the_compiler :: proc(t: ^testing.T) {
 	env := core.make_environment("test")
@@ -757,21 +731,12 @@ test_from_import_star :: proc(t: ^testing.T) {
 // -----------------------------------------------------------------------
 // Peephole optimizer
 
-// Both the default-enabled and explicitly-disabled peephole behaviors
-// are checked in one test function (rather than two separate @(test)
-// procs) deliberately: DebugSkipPeephole is a package-level flag
-// (mirroring the reference implementation's own core.DebugSkipPeephole -- a real CLI-flag-backed
-// toggle, not just a test convenience) that end_compiler snapshots into
-// each Parser's own skip_peephole field at construction time (see
-// parser.odin), specifically so one compile's behavior can't be
-// affected by another compile concurrently flipping the *global* --
-// but two separate test functions each toggling that same global around
-// their own compile_ok call could still race against each other under
-// Odin's parallel test runner (each sees a consistent snapshot for its
-// own compile, but which value that snapshot holds isn't guaranteed if
-// both tests' set/defer-reset windows overlap in time). Keeping both
-// checks sequential inside one test function removes that risk instead
-// of just documenting it.
+// Both the default-enabled and explicitly-disabled peephole behaviors are
+// checked in one test function rather than two: DebugSkipPeephole is a
+// package-level flag that end_compiler snapshots into each Parser's own
+// skip_peephole field at construction time, so two separate test
+// functions each toggling that global could race under Odin's parallel
+// test runner. Keeping both checks sequential removes that risk.
 @(test)
 test_peephole_enabled_by_default_and_disabled_by_flag :: proc(t: ^testing.T) {
 	source := "func f(a, b) { a = a + b }\n"
@@ -893,55 +858,38 @@ test_syntax_error_does_not_crash_compiler :: proc(t: ^testing.T) {
 // --strict-types (Phase 4 of optional type annotations): the same
 // optional-type diagnostic that's a warning by default becomes a hard
 // compile failure under StrictTypes. StrictTypes is a package-level var
-// (see compile.odin, same pattern as DebugSkipPeephole) -- every test
-// here saves/restores it, since Odin tests share one process and a
-// leaked `true` would silently flip every *other* test's compile calls
-// into strict mode too.
-
+// (see compile.odin, same pattern as DebugSkipPeephole) -- every check
+// below happens inside one test function rather than several, the same
+// reasoning test_peephole_enabled_by_default_and_disabled_by_flag already
+// documents for DebugSkipPeephole: two separate test functions each
+// saving/restoring the global could still race against each other (and
+// against any other test calling Compile while the toggle is briefly
+// live) under Odin's parallel test runner. Keeping every check
+// sequential in one function removes that risk entirely.
 @(test)
-test_strict_types_fails_compile_on_diagnostic :: proc(t: ^testing.T) {
-	source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nadd(1, \"two\")\n"
+test_strict_types_enforcement :: proc(t: ^testing.T) {
+	bad_source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nadd(1, \"two\")\n"
+	clean_source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nprint add(1, 2)\n"
 
-	// Default: the same bad call is a warning, compile still succeeds.
+	// Default: the bad call is a warning, compile still succeeds.
 	env := core.make_environment("test")
-	_, ok := Compile(source, "test.lox", env)
+	_, ok := Compile(bad_source, "test.lox", env)
 	testing.expect(t, ok, "expected the default (warnings-only) mode to still compile")
 
-	saved := StrictTypes
 	StrictTypes = true
-	defer StrictTypes = saved
 
 	env2 := core.make_environment("test")
-	_, ok2 := Compile(source, "test.lox", env2)
+	_, ok2 := Compile(bad_source, "test.lox", env2)
 	testing.expect(t, !ok2, "expected --strict-types to fail the compile on the same diagnostic")
-}
 
-@(test)
-test_strict_types_is_noop_on_clean_program :: proc(t: ^testing.T) {
-	saved := StrictTypes
-	StrictTypes = true
-	defer StrictTypes = saved
+	env3 := core.make_environment("test")
+	_, ok3 := Compile(clean_source, "test.lox", env3)
+	testing.expect(t, ok3, "expected --strict-types to be a no-op on a program with zero diagnostics")
 
-	env := core.make_environment("test")
-	_, ok := Compile("func add(x: int, y: int) -> int {\nreturn x + y\n}\nprint add(1, 2)\n", "test.lox", env)
-	testing.expect(t, ok, "expected --strict-types to be a no-op on a program with zero diagnostics")
-}
+	repl_env := core.make_environment("repl")
+	st := make_repl_state(repl_env)
+	_, ok4 := Compile_Repl(bad_source, &st)
+	testing.expect(t, !ok4, "expected --strict-types to fail the compile in the REPL too")
 
-@(test)
-test_strict_types_gates_compile_repl_too :: proc(t: ^testing.T) {
-	source := "func add(x: int, y: int) -> int {\nreturn x + y\n}\nadd(1, \"two\")\n"
-
-	env := core.make_environment("repl")
-	st := make_repl_state(env)
-	_, ok := Compile_Repl(source, &st)
-	testing.expect(t, ok, "expected the default (warnings-only) mode to still compile in the REPL")
-
-	saved := StrictTypes
-	StrictTypes = true
-	defer StrictTypes = saved
-
-	env2 := core.make_environment("repl")
-	st2 := make_repl_state(env2)
-	_, ok2 := Compile_Repl(source, &st2)
-	testing.expect(t, !ok2, "expected --strict-types to fail the compile in the REPL too")
+	StrictTypes = false
 }

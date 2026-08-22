@@ -10,26 +10,12 @@ import "../core"
 // isn't an Obj-carrying Value kind the same way (see core/value.odin).
 
 // get_property/set_property/bind_method/invoke/invoke_from_class all take
-// name as an already-interned ^core.String_Object, not a plain string.
-// Every call site (run.odin's Get_Property/Set_Property/Invoke/
-// Super_Invoke/Get_Super cases) reads name straight off a bytecode
-// constant that the compiler already interned when it emitted it
-// (compiler/expr.odin's dot -> core.make_string_value); a plain-string
-// signature here would mean every single property/method access
-// re-hashes that name's full content against the global intern table
-// just to re-derive the exact pointer already sitting in the constant
-// pool -- a real, measured cost on property-access-heavy code. Passing
-// the pointer through turns every one of these into a single map
-// lookup keyed by pointer identity.
-//
-// get_property/invoke additionally take a monomorphic inline cache
-// (core.Property_Cache, one per callsite -- see core/chunk.odin's doc
-// comment) so a same-class repeat hit skips the *second* map lookup too
-// (class.methods[name], after an instance-fields-miss) -- nil for the
-// callsites that don't get one (do_get_super/do_super_invoke, both
-// comparatively cold). It can never replace the instance-fields lookup
-// itself: Lox instances have no fixed shape, so a field masking a method
-// on one instance says nothing about another instance of the same class.
+// name as an already-interned ^core.String_Object, not a plain string --
+// call sites already have it interned off a bytecode constant, so passing
+// the pointer avoids re-hashing on every access. get_property/invoke also
+// take a monomorphic inline cache (nil for the colder do_get_super/
+// do_super_invoke) so a same-class repeat hit skips the class.methods
+// lookup too.
 get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, 0)
 
@@ -40,14 +26,10 @@ get_property :: proc(vm: ^VM, name: ^core.String_Object, cache: ^core.Property_C
 		#partial switch receiver.obj_type {
 		case .Instance:
 			inst := core.as_instance(receiver)
-			// core.instance_get_field, not a raw inst.fields[name] read:
-			// this is the canonical field-lookup path Get_Field_Slot's own
-			// guard-miss fallback reuses (see run.odin), so it must see a
-			// field regardless of whether the compiler put it in
-			// inst.fields or inst.slots (compiler/resolve.odin's
-			// discover_field_slots) -- an ordinary `some_instance.field`
-			// access from outside the declaring class never goes through
-			// Get_Field_Slot at all, only ever this path.
+			// core.instance_get_field, not a raw inst.fields[name] read: it
+			// must see a field regardless of whether the compiler put it in
+			// inst.fields or inst.slots (discover_field_slots) -- this is
+			// also the fallback path Get_Field_Slot's guard-miss reuses.
 			if v, ok := core.instance_get_field(inst, name); ok {
 				pop(vm)
 				push(vm, v)
@@ -151,14 +133,10 @@ get_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string) -> bool {
 }
 
 // vec_with_field_set returns v (a Vec2/3/4 Value) with its swizzle
-// component named `name` set to f, and whether `name` was a valid
-// component for v's arity. Pure computation, no VM/stack involvement --
-// v is an inline value (see core/value.odin), so this can't mutate it
-// in place the way the old heap-object design did; the caller (either
-// set_vec_swizzle below, for the ordinary-and-now-unreachable-via-vec
-// Set_Property path, or swizzle_assign below, for the real
-// write-back-capable path) is responsible for doing something with the
-// returned whole value.
+// component named `name` set to f, and whether `name` was valid for v's
+// arity. Pure computation, no VM/stack involvement -- v is an inline
+// value, so this can't mutate it in place; the caller (set_vec_swizzle or
+// swizzle_assign below) is responsible for the returned whole value.
 vec_with_field_set :: proc(v: core.Value, name: string, f: f64) -> (result: core.Value, ok: bool) {
 	#partial switch v.type {
 	case .Vec2:
@@ -205,15 +183,11 @@ vec_with_field_set :: proc(v: core.Value, name: string, f: f64) -> (result: core
 }
 
 // set_vec_swizzle mirrors get_vec_swizzle for assignment (`v.x = expr`)
-// via the ordinary (non-write-back) Set_Property opcode -- reachable
-// today only if something outside compiled Lox code calls set_property
-// directly with a vector receiver, since the compiler now always routes
-// a swizzle-shaped assignment target through the write-back-capable
-// Set_*_Vec_Field family instead (see emit_expr.odin's emit_property)
-// or rejects it at compile time. Kept for that defensive case: computes
-// the mutated value correctly, same as ever, but -- with no write-back
-// destination available here -- the mutation isn't observable afterward,
-// same as it never was for value types.
+// via the ordinary (non-write-back) Set_Property opcode -- reachable only
+// if something outside compiled Lox code calls set_property directly with
+// a vector receiver, since the compiler always routes a swizzle assignment
+// through Set_*_Vec_Field instead. Kept as a defensive fallback: with no
+// write-back destination here, the mutation isn't observable afterward.
 set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value) -> bool {
 	if !core.is_number(value) {
 		runtime_error(vm, "Vector field '%s' must be assigned a number.", name)
@@ -232,13 +206,11 @@ set_vec_swizzle :: proc(vm: ^VM, v: core.Value, name: string, value: core.Value)
 
 // set_obj_field mutates recv's `name` property in place -- the shared
 // logic behind set_property's Instance/Class/Module cases, extracted so
-// the swizzle-assignment write-back opcodes (run.odin's
-// Set_*_Vec_Field handlers) can reach it too, for the case where a
+// the swizzle-assignment write-back opcodes can reach it too, for when a
 // swizzle-shaped target (`recv.x = ...`) turns out at runtime to hold
-// something other than a vector -- e.g. an Instance with a field
-// genuinely named "x". Takes recv/value as plain parameters rather than
-// reading them off the VM stack, unlike set_property, since callers
-// besides the ordinary Set_Property opcode need this too.
+// something other than a vector (e.g. an Instance field named "x"). Takes
+// recv/value as plain parameters rather than reading them off the VM
+// stack, since callers besides Set_Property need this too.
 set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> bool {
 	if recv.type == .Obj {
 		#partial switch recv.obj_type {
@@ -249,12 +221,15 @@ set_obj_field :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, valu
 			// core.instance_get_field/Get_Field_Slot's fallback would find
 			// it in -- see that helper's own doc comment.
 			core.instance_set_field(core.as_instance(recv), name, value)
+			write_barrier_value(vm, value)
 			return true
 		case .Class:
 			core.as_class(recv).statics[name] = value
+			write_barrier_value(vm, value)
 			return true
 		case .Module:
 			core.env_set_var(core.as_module(recv).environment, name, value)
+			write_barrier_value(vm, value)
 			return true
 		}
 	}
@@ -282,17 +257,13 @@ set_property :: proc(vm: ^VM, name: ^core.String_Object) -> bool {
 	return false
 }
 
-// swizzle_assign implements the runtime half of `<target>.f = value`
-// where f is a swizzle component name (x/y/z/w/r/g/b/a) and `recv` is
-// <target>'s current value. If recv is a vector, the mutated whole
-// vector is returned for the caller to write back into wherever recv
-// came from (write_back = true) -- recv itself, being an inline Value
-// copy, was never actually mutated. If recv is an Instance/Class/Module
-// (a genuine field/static/module-var named "x" or similar), it's
-// mutated in place via set_obj_field and write_back is false -- already
-// reference-shared, no write-back needed. Either way, on success the
-// caller should push `value` as the assignment expression's result (the
-// caller owns the stack; this proc doesn't touch it).
+// swizzle_assign implements the runtime half of `<target>.f = value` where
+// f is a swizzle component name and `recv` is <target>'s current value. If
+// recv is a vector, the mutated whole vector is returned for the caller to
+// write back (write_back = true) -- recv itself, an inline Value copy, was
+// never mutated. If recv is an Instance/Class/Module, it's mutated in
+// place via set_obj_field and write_back is false. Either way the caller
+// owns the stack; this proc doesn't touch it.
 swizzle_assign :: proc(vm: ^VM, recv: core.Value, name: ^core.String_Object, value: core.Value) -> (mutated: core.Value, write_back: bool, ok: bool) {
 	#partial switch recv.type {
 	case .Vec2, .Vec3, .Vec4:
@@ -350,8 +321,10 @@ do_inherit :: proc(vm: ^VM) -> bool {
 	class := core.as_class(class_val)
 	for k, v in super.methods {
 		class.methods[k] = v
+		write_barrier_value(vm, v)
 	}
 	class.super = super
+	write_barrier(vm, &super.obj)
 	pop(vm) // class_val -- super_val stays, becoming the `super` local's slot
 	return true
 }
@@ -360,6 +333,7 @@ do_method :: proc(vm: ^VM, name: string, is_static: bool) {
 	method_val := peek(vm, 0)
 	class := core.as_class(peek(vm, 1))
 	key := core.intern_string(name)
+	write_barrier_value(vm, method_val)
 	if is_static {
 		class.static_methods[key] = method_val
 	} else {
@@ -379,6 +353,7 @@ do_class_var :: proc(vm: ^VM, name: string) {
 	val := peek(vm, 0)
 	class := core.as_class(peek(vm, 1))
 	class.statics[core.intern_string(name)] = val
+	write_barrier_value(vm, val)
 	pop(vm)
 }
 

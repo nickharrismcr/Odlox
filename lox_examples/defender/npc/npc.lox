@@ -4,23 +4,13 @@ import math
 import random
 import colour
 
-// Shared base for the NPC roster (pod, swarmer, bomber, baiter).
-//
-// Behaviour is a state machine of swappable function pointers, matching the
-// established idiom: `update_func` / `draw_func` are free functions taking the
-// entity. Death is common to every NPC -- the sprite disperses (1 -> 60) and
-// the entity is removed -- so it lives here.
-//
-// Naming convention (see also lander.lox, human.lox, player.lox): every state
-// has a per-frame update function named `state_<state>` (e.g. `state_die`),
-// and any transition INTO that state -- other than the initial state, set
-// directly in __init__() -- goes through a matching `enter_<state>(e)` function
-// that performs the one-off setup (flags, event emits, etc.) before
-// installing it as `update_func`. Callers trigger a transition by calling
-// `enter_<state>`, never by poking `update_func` directly.
-//
-// Subclasses set `update_func` in init and may override `on_die()` for
-// death side-effects (e.g. a pod releasing swarmers).
+// Shared base for the NPC roster (pod, swarmer, bomber, baiter). Behaviour is a state
+// machine of swappable function pointers: `update_func`/`draw_func` are free functions
+// taking the entity. Death (sprite disperses 1->60, entity removed) is common to every
+// NPC, so it lives here. Naming convention (see also lander.lox, human.lox, player.lox):
+// each state has an `state_<state>` update function; a transition into it goes through
+// `enter_<state>(e)` for one-off setup before installing it as `update_func`. Subclasses
+// set `update_func` in init and may override `on_die()` for death side-effects.
 
 class NPC < Sprite {
 
@@ -128,26 +118,12 @@ func state_die(e, width, height) {
 
 // --- helpers ------------------------------------------------------------------
 
-// Fire a bullet from e that homes in on the player. Free function (not an NPC
-// method) so entities that don't extend NPC, e.g. Lander, can use it too.
-// NPC.fire_bullet_at() is a thin wrapper around this.
-//
-// The invariant is TIME, not speed: pick a fixed time-to-target t (frames),
-// then set this shot's velocity on EACH axis independently to whatever
-// distance/t requires:
-//   tx = player.pos.x + player.vx * t   -- player's projected x; y is NOT led
-//   ty = player.pos.y
-//   vx = (tx - e.pos.x) / t
-//   vy = (ty - e.pos.y) / t
-// Because x and y share the same t, they are guaranteed to arrive together --
-// a stationary player is hit dead-on, a moving one is led correctly in x.
-// Velocity per axis is just distance/time, naturally bounded, exact for any
-// geometry, and the two axes are inherently synchronised.
-//
-// time_mult scales the configured time-to-target: > 1 gives a slower, more
-// lenient shot (e.g. a lander in its search state, which is more of a
-// suppressing-fire threat than a precision shot); 1.0 (the default) is the
-// straight configured value.
+// Fire a bullet from e that homes in on the player. Free function so entities that don't
+// extend NPC (e.g. Lander) can use it too; NPC.fire_bullet_at() wraps it. Invariant is
+// TIME, not speed: pick a fixed time-to-target t (frames), then set velocity per axis to
+// distance/t (tx = player.pos.x + player.vx * t led; ty = player.pos.y unled), so x and y
+// arrive together regardless of player motion. time_mult scales t: > 1 gives a slower,
+// more lenient shot (e.g. a lander's search state); 1.0 (default) is the configured value.
 func aim_bullet_at(e, player, time_mult=1.0) {
     cfg = e.mgr.config
     t = random.float(cfg.npc_bullet_time / 2, cfg.npc_bullet_time) * time_mult

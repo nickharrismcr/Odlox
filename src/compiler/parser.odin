@@ -1,13 +1,11 @@
 package compiler
 
-// The Pratt (operator-precedence) parser core: token-stream driving,
-// error recovery, and the precedence-climbing expression driver. This
-// file deliberately has no knowledge of *what* any given token parses
-// to -- that's the per-token Parse_Rule table (rules.odin) and the
-// individual prefix/infix functions (expr.odin/stmt.odin), which build
-// and return AST nodes. Resolution (locals/upvalues/globals/validity) and
-// bytecode emission happen in later passes (resolve.odin, emit*.odin) --
-// see docs/plans/compiler-ast-split.md for the full design.
+// The Pratt (operator-precedence) parser core: token-stream driving, error
+// recovery, and the precedence-climbing expression driver. This file has
+// no knowledge of what any given token parses to -- that's the per-token
+// Parse_Rule table (rules.odin) and the individual prefix/infix functions
+// (expr.odin/stmt.odin). Resolution and bytecode emission happen in later
+// passes (resolve.odin, emit*.odin).
 
 import "core:fmt"
 
@@ -69,18 +67,11 @@ consume :: proc(p: ^Parser, type: Token_Type, message: string) {
 	error_at_current(p, message)
 }
 
-// consume_eol accepts any of: an explicit Eol, an explicit Semicolon
-// (always a valid alternative statement terminator, not just inside a
-// `for(...)` header), being right at Eof (a script's last line commonly
-// has no trailing newline of its own left to consume -- see
-// scanner.odin's trailing-Eol handling), or -- checked, not consumed,
-// since the caller's own block() loop needs to see it -- sitting right
-// at a closing `}`. That last case matters for a one-line block body
-// like `{ print 1 }`: there is no Eol token between `1` and `}` at all
-// (they're on the same physical line), so the `}` itself has to count
-// as an implicit terminator, the same way it would in most brace-
-// delimited languages, or every block body would be forced onto
-// multiple lines.
+// consume_eol accepts an explicit Eol, an explicit Semicolon, being right
+// at Eof, or -- checked, not consumed, since the caller's block() loop
+// needs to see it -- sitting right at a closing `}`. The `}` case matters
+// for a one-line block body like `{ print 1 }`, where there's no Eol
+// token between `1` and `}` on the same physical line.
 consume_eol :: proc(p: ^Parser, message: string) {
 	if match(p, .Eol) || match(p, .Semicolon) || check(p, .Eof) || check(p, .Right_Brace) {
 		return
@@ -90,13 +81,9 @@ consume_eol :: proc(p: ^Parser, message: string) {
 
 // snapshot_pos/restore_pos let the parser rewind and re-parse a range of
 // already-scanned tokens -- safe because the whole token stream is
-// materialized up front (scanner.odin), so replaying is side-effect-free.
-// Used by stmt.odin's looks_like_destructuring for its own lookahead
-// probe (`identifier (, identifier)* =`). try/finally no longer needs
-// this the way the old single-pass compiler did: Stmt_Try captures its
-// whole body/excepts/finally_body as data instead of needing to re-parse
-// source text to replay finally -- see resolve.odin's
-// resolve_finally_for_crossing and emit_stmt.odin's emit_finally_copy.
+// materialized up front, so replaying is side-effect-free. Used by
+// stmt.odin's looks_like_destructuring lookahead probe (`identifier (,
+// identifier)* =`).
 snapshot_pos :: proc(p: ^Parser) -> Parser_Snapshot {
 	return Parser_Snapshot{current = p.current, previous = p.previous, token_idx = p.scn.token_idx}
 }

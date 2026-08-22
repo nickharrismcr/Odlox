@@ -39,13 +39,10 @@ refresh_frame :: proc(vm: ^VM) -> Frame_Locals {
 }
 
 // display_string shows a string Value as its raw text, not its quoted
-// representation -- core.value_to_string's `"..."` quoting exists for
-// nested display (a string inside a printed list/dict) and for
-// round-trip-able output; neither applies to a top-level `print`
-// statement, or to a raised value's own .msg field (wrapping `raise
-// "boom"` should produce a message reading `boom`, not `"boom"`).
-// Package-visible so exceptions.odin's ensure_exception_instance can
-// share it.
+// representation -- core.value_to_string's `"..."` quoting is for nested
+// display and round-trip-able output, neither of which applies to a
+// top-level `print` or a raised value's .msg field. Package-visible so
+// exceptions.odin's ensure_exception_instance can share it.
 display_string :: proc(v: core.Value) -> string {
 	if core.is_string(v) {
 		return core.string_get(core.as_string(v))
@@ -84,31 +81,13 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 	fl := refresh_frame(vm)
 
-	// ip is a genuine loop-local mirror of fl.f.ip, kept as a plain int
-	// rather than a struct field read through the fl.f pointer on every
-	// single opcode/operand byte. See docs/ARCHITECTURE.md's VM
-	// dispatch loop section for more on this design. The load-bearing
-	// property is that it's a genuine local, not a pointer-chased
-	// struct field, for the loop's whole body: Odin has no aliasing
-	// reason to reload a plain local from fl.f between sync points, so
-	// the optimizer keeps it register-resident, and a plain int matches
-	// every other place in the codebase that already treats ip as a
-	// plain offset (exceptions.odin, debug/inspect.odin, chunk line
-	// lookups) with zero conversion.
-	//
-	// Sync discipline: every existing point in this loop that already
-	// calls refresh_frame() (because frame_count might have changed)
-	// re-seeds `ip` from the new fl.f.ip right after; every call this
-	// loop makes into anything that could transitively read or
-	// reposition *this* frame's ip while it's suspended --
-	// call_value/invoke/do_super_invoke, raise_exception,
-	// do_foreach/do_next, and the per-opcode debug hook -- writes
-	// `fl.f.ip = ip` immediately before the call. Every other reader of
-	// Call_Frame.ip in the codebase (exceptions.odin's stack-trace/
-	// handler-matching, debug/inspect.odin's frame introspection
-	// natives, debug/trace.odin's disassembler) is only ever reached
-	// via one of these same call points, so this set of sync points is
-	// complete.
+	// ip is a genuine loop-local mirror of fl.f.ip, kept as a plain int so
+	// the optimizer keeps it register-resident instead of reloading through
+	// fl.f on every opcode/operand byte. Sync discipline: every point that
+	// calls refresh_frame() re-seeds `ip` right after; every call into
+	// something that could reposition this frame's ip while suspended
+	// (call_value/invoke/do_super_invoke, raise_exception, do_foreach/
+	// do_next, the debug hook) writes `fl.f.ip = ip` immediately before.
 	ip := fl.f.ip
 
 	for {
@@ -161,17 +140,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			numeric_binop(vm, instr)
 
 		// --- self-specializing peephole family ---
-		// Add_Nn/Incr_Const_N are always local-slot-indexed by
-		// construction (see compiler/compiler_state.odin's
-		// peephole_optimise). On a monomorphic int/int or float/float
-		// hit, patch this call site's opcode byte in place to the
-		// _Ii/_Ff child so every later execution skips the type check
-		// entirely -- a minimal inline cache. A mixed-type site is
-		// deliberately never patched: it just computes the generic
-		// float result and stays Add_Nn/Incr_Const_N forever. fl.code
-		// aliases the chunk's own backing array (see refresh_frame), so
-		// the patch is a real, persistent bytecode rewrite, not a
-		// per-call cache.
+		// On a monomorphic int/int or float/float hit, patch this call
+		// site's opcode byte in place to the _Ii/_Ff child so later
+		// executions skip the type check -- a minimal inline cache. A
+		// mixed-type site is never patched, computing the generic float
+		// result forever. fl.code aliases the chunk's backing array, so the
+		// patch is a persistent bytecode rewrite, not a per-call cache.
 		case .Add_Nn:
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
@@ -238,16 +212,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			vm.stack[fl.f.slots + int(slot)] = core.make_float_value(core.as_float(a) + core.as_float(b))
 
 		// --- self-specializing vector-add family ---
-		// Same peephole-fusion-plus-runtime-specialization shape as
-		// Add_Nn above, with one deliberate divergence: Add_V2/V3/V4
-		// re-check their operand types on every execution (arithmetic.odin's
-		// vec_add_dispatch) instead of trusting the first patch forever.
-		// A mismatched-type or non-vector operand is always a genuine Lox
-		// bug (add_vector already raises on it, unfused) -- unlike
-		// Add_Ii/Add_Ff, where int/float coercion has no failure mode to
-		// guard against, a dynamically-typed call site that's all-Vec2 on
-		// one call and all-Vec3 on a later call must not silently run the
-		// wrong arity's lane math. See docs/plans/vec-op-peephole.md.
+		// Same peephole-fusion-plus-runtime-specialization shape as Add_Nn
+		// above, but Add_V2/V3/V4 re-check operand types on every execution
+		// (vec_add_dispatch) instead of trusting the first patch forever:
+		// unlike int/float coercion, a mismatched or non-vector operand is
+		// a genuine Lox bug, and a call site that's all-Vec2 on one call
+		// and all-Vec3 later must not silently run the wrong lane math.
 		case .Add_Vv:
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
@@ -313,16 +283,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			}
 
 		// --- self-specializing subtract/multiply/divide families ---
-		// Same peephole-fusion-plus-runtime-specialization shape as
-		// Add_Nn, generalized to Subtract/Multiply/Divide -- see
-		// chunk.odin's Op_Code doc comment for why the Sub/Mul/Div _Ii/
-		// _Ff leaves re-check their type on every execution (falling
-		// back to numeric_binop_into_slot, arithmetic.odin, on a miss)
-		// instead of trusting the first patch the way Add_Ii/Add_Ff do,
-		// and repatch back to the unspecialized _Nn/_Const_N opcode on a
-		// miss so a call site that durably changes type re-settles to
-		// the right specialization within one call, rather than falling
-		// into the (still correct, just slower) fallback path forever.
+		// Same shape as Add_Nn, generalized to Subtract/Multiply/Divide, but
+		// the Sub/Mul/Div _Ii/_Ff leaves re-check their type on every
+		// execution (falling back to numeric_binop_into_slot on a miss)
+		// instead of trusting the first patch, and repatch back to the
+		// unspecialized opcode on a miss so a call site that durably
+		// changes type re-settles rather than staying on the slower fallback.
 		case .Sub_Nn:
 			op_ip := ip - 1
 			slot_a := fl.code[ip]
@@ -637,23 +603,13 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Print:
 			print_value(pop(vm))
 		case .Str:
-			// Dispatches to a user-defined __str__() method on an
-			// Instance receiver, if one exists. Deliberately does *not*
-			// use a nested run(vm, .Current_Function) call the way
-			// Op_Foreach/Op_Next do (see foreach.odin) -- unlike those,
-			// which need the call's result back *within* the same
-			// opcode's own handling to decide what to do next, Op_Str's
-			// call is the very last thing this case does. Peeking
-			// (never popping) the receiver, then just calling
-			// call_value + refresh_frame and falling out of the switch
-			// normally, pushes a new frame and lets the *outer* dispatch
-			// loop run it -- when __str__'s own Op_Return eventually
-			// fires, its ordinary return handling (pop back to
-			// fl.f.slots, push the result) leaves exactly the string
-			// result sitting where the original receiver was, which is
-			// exactly Op_Str's contract. Run_Mode.Current_Function is
-			// reserved for Op_Foreach/Op_Next, whose call result really
-			// is needed mid-opcode.
+			// Dispatches to a user-defined __str__() method on an Instance
+			// receiver, if one exists. Unlike Op_Foreach/Op_Next (foreach.odin),
+			// which need the call's result back within the same opcode's
+			// handling, Op_Str's call is the last thing this case does:
+			// peeking the receiver, then calling call_value + refresh_frame
+			// and falling out of the switch, pushes a new frame and lets the
+			// outer dispatch loop run it to completion.
 			v := peek(vm, 0)
 			if core.is_string(v) {
 				// already a string; nothing to do
@@ -675,48 +631,31 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			}
 
 		// --- globals ---
-		//
-		// Every one of these four cases resolves through
-		// fl.fn.environment -- the *currently executing frame's
-		// function's own* environment (already hoisted by refresh_frame
-		// -- every Function_Object records which Environment it was
-		// compiled against, see compiler_state.odin's
-		// init_root_compiler/init_function_compiler) -- rather than
-		// vm.environment, the *running VM instance's own* Environment
-		// field. Those two are only the same Environment for the
-		// top-level script itself: an *imported module's* function
-		// (e.g. `math.sin(x)`, where math.lox's own `sin` body calls
-		// `_sin(angle)`, a global reference) runs as a Closure belonging
-		// to the module's own Environment (built by its own, separate
-		// sub-VM compile in module.odin's load_module), a completely
-		// different global slot space from the importing script's
-		// vm.environment. Resolving through fl.fn.environment is
-		// correct for the top-level script too, since its own
-		// Function_Object.environment is set to the same vm.environment
-		// Compile() was called with in the first place.
+		// Every one of these four cases resolves through fl.fn.environment,
+		// the currently executing frame's function's own environment, not
+		// vm.environment -- those coincide only for the top-level script,
+		// since an imported module's function runs as a Closure belonging
+		// to the module's own, different global slot space.
 		case .Define_Global:
 			slot := fl.code[ip]
 			ip += 1
 			// A plain (non-const) declaration always stores a mutable
-			// binding, regardless of whether the value itself happens to
-			// carry an immutable tag (e.g. a texture/window/tuple/regex-
-			// match object -- see natives/gfx.odin's constructors, which
-			// return immutable=true Values for reasons unrelated to
-			// variable-reassignment semantics entirely). Set_Global below
-			// refuses to overwrite a slot whose *currently stored value*
-			// is tagged immutable, so clearing the tag here matters: a
-			// variable holding an immutable-tagged value must still be
-			// freely reassignable by ordinary `=`. Only Define_Global_Const
-			// forces the tag on.
+			// binding, regardless of whether the value itself carries an
+			// immutable tag (e.g. a texture/window/tuple/regex-match
+			// object). Set_Global refuses to overwrite a slot whose stored
+			// value is tagged immutable, so clearing the tag here matters:
+			// only Define_Global_Const forces it on.
 			v := pop(vm)
 			v.immutable = false
 			core.env_set_global(fl.fn.environment, int(slot), v)
+			write_barrier_value(vm, v)
 		case .Define_Global_Const:
 			slot := fl.code[ip]
 			ip += 1
 			v := pop(vm)
 			v.immutable = true
 			core.env_set_global(fl.fn.environment, int(slot), v)
+			write_barrier_value(vm, v)
 		case .Get_Global:
 			slot := fl.code[ip]
 			ip += 1
@@ -740,6 +679,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				v := peek(vm, 0)
 				v.immutable = false
 				core.env_set_global(fl.fn.environment, int(slot), v)
+				write_barrier_value(vm, v)
 			}
 
 		// --- locals / upvalues ---
@@ -750,7 +690,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Set_Local:
 			slot := fl.code[ip]
 			ip += 1
-			vm.stack[fl.f.slots + int(slot)] = peek(vm, 0)
+			v := peek(vm, 0)
+			vm.stack[fl.f.slots + int(slot)] = v
+			write_barrier_value(vm, v)
 		case .Get_Upvalue:
 			slot := fl.code[ip]
 			ip += 1
@@ -758,7 +700,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 		case .Set_Upvalue:
 			slot := fl.code[ip]
 			ip += 1
-			fl.f.closure.upvalues[slot].location^ = peek(vm, 0)
+			v := peek(vm, 0)
+			fl.f.closure.upvalues[slot].location^ = v
+			write_barrier_value(vm, v)
 		case .Close_Upvalue:
 			close_upvalues(vm, vm.stack_top - 1)
 			pop(vm)
@@ -917,19 +861,11 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 
 		// --- compile-time-baked instance field-slot fast path -- see
 		// core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc comment.
-		// inst.class == fl.f.closure.owner_class is the guard that makes
-		// this safe under inheritance: do_inherit copies method closures
-		// verbatim into a subclass's method table, so a superclass
-		// method's closure (and its baked-in slot index) can run against
-		// a subclass instance whose field-slot table wasn't built from
-		// the same init -- a mismatch there falls back to the exact same
-		// get_property/set_property path Get_Property/Set_Property use,
-		// same error behavior, just unoptimized for that one call.
-		// Get_Field_Slot additionally requires the slot not be
-		// core.UNDEFINED_VALUE (unset), so reading a field before its
-		// assignment line inside init still raises the same "Undefined
-		// property" error the map path already produces, instead of
-		// silently returning nil.
+		// inst.class == fl.f.closure.owner_class guards against inheritance:
+		// do_inherit copies method closures verbatim into a subclass, so a
+		// superclass method's baked-in slot index can run against an
+		// instance whose field-slot table differs -- a mismatch falls back
+		// to the ordinary get_property/set_property path, unoptimized.
 		case .Get_Field_Slot:
 			slot := fl.code[ip]
 			name_const := fl.code[ip + 1]
@@ -937,6 +873,9 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			ip += 3
 			receiver := peek(vm, 0)
 			inst := core.as_instance(receiver)
+			// .type != .Undefined: falls back to the map path (below) so
+			// reading a field before its init-assignment still raises the
+			// same "Undefined property" error, instead of returning nil.
 			if inst.class == fl.f.closure.owner_class && inst.slots[slot].type != .Undefined {
 				pop(vm)
 				push(vm, inst.slots[slot])
@@ -952,6 +891,7 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			if inst.class == fl.f.closure.owner_class {
 				value := peek(vm, 0)
 				inst.slots[slot] = value
+				write_barrier_value(vm, value)
 				pop(vm)
 				pop(vm)
 				push(vm, value)
@@ -959,15 +899,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 				set_property(vm, core.as_string(fl.constants[name_const]))
 			}
 
-		// --- swizzle-component assignment write-back (`v.x = expr`) --
-		// see properties.odin's swizzle_assign doc comment. Each reads
-		// the receiver straight from its own storage (not off the VM
-		// stack -- unlike every Get_* opcode, there's no separate "get"
-		// step emitted first; see emit_expr.odin's emit_property), mutates
-		// a local copy if it's a vector, writes the mutated whole value
-		// back into that same storage, and leaves the assigned scalar on
-		// the stack either way -- these compile as the *entire* target
-		// half of the assignment, not just the write-back tail of one.
+		// --- swizzle-component assignment write-back (`v.x = expr`) -- see
+		// properties.odin's swizzle_assign. Each reads the receiver straight
+		// from its own storage (no separate "get" step emitted first),
+		// mutates a local copy if it's a vector, writes the mutated whole
+		// value back, and leaves the assigned scalar on the stack -- the
+		// entire target half of the assignment, not just a write-back tail.
 		case .Set_Local_Vec_Field:
 			slot := fl.code[ip]
 			name_const := fl.code[ip + 1]
@@ -1061,17 +998,12 @@ run :: proc(vm: ^VM, mode: Run_Mode) -> (Interpret_Result, core.Value) {
 			h.prev = fl.f.handlers
 			fl.f.handlers = h
 		case .End_Try:
-			// Reads and applies the forward jump offset the compiler
-			// emits here (stmt.odin's try_except_statement patches
-			// normal_end_jump with the distance past the
-			// exceptional-path finally replay, straight to the
-			// normal-path finally replay -- see that proc's "Shared
-			// normal-completion landing point" comment), same pattern as
-			// Op_Jump. The offset is not always zero: a try/finally with
-			// no except clause needs it to skip past the
-			// exceptional-path finally replay (which ends in an
-			// unconditional Op_Raise, re-propagating) on normal
-			// completion.
+			// Reads and applies the forward jump offset the compiler emits
+			// here (try_except_statement patches normal_end_jump to skip past
+			// the exceptional-path finally replay), same pattern as Op_Jump.
+			// Not always zero: a try/finally with no except clause needs it
+			// to skip the exceptional-path replay (which ends in an
+			// unconditional Op_Raise) on normal completion.
 			offset := read_u16(fl.code, ip)
 			ip += 2
 			ip += offset

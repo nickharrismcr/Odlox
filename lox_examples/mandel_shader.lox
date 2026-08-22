@@ -1,31 +1,11 @@
 from gfx import *
-// GPU (GLSL fragment shader) Mandelbrot -- the escape-time iteration
-// itself runs per-pixel on the GPU inside mandel_shader_src below, rather
-// than on the CPU into a float_array. Orders of magnitude faster than the
-// CPU/native-array approach this replaced, since every pixel iterates in
-// parallel instead of across a handful of CPU-core worker threads.
-//
-// Deep-zoom precision: plain GLSL `float` is 32-bit (~7 decimal digits).
-// raylib's SetShaderValue has no double/dvec2 uniform type at all (see
-// ShaderUniformDataType in vendor:raylib), so a real GLSL `double`
-// uniform isn't uploadable through it regardless of GPU support. Instead,
-// xoffset/yoffset/scale are split into (hi, lo) float32 pairs on the Lox
-// side (split_double below) and reconstructed inside the shader using
-// Dekker's double-float (DF64) technique -- ds_add/ds_sub/ds_mul -- giving
-// ~48 effective mantissa bits (~14 decimal digits) using only ordinary
-// float32 arithmetic, portable to any GPU without a GLSL version bump or
-// fp64 hardware support.
-//
-// Always on, no plain-float fast path: when precision loss onsets depends
-// on xoffset/yoffset/resolution, not scale alone (float32's rounding
-// error scales with the magnitude of the offset the pixel coordinate gets
-// added to), so any single fixed scale threshold for switching is
-// fragile -- it either switches too late (a visible pixelated interval
-// right before the switch, as happened with an earlier scale-only
-// threshold here) or too early for a different view. Given the DF64 path
-// is already dramatically faster than the CPU-native version this
-// replaced, there's no need to economize -- running it unconditionally
-// removes the whole class of bug.
+// GPU (GLSL fragment shader) Mandelbrot -- the escape-time iteration runs per-pixel on
+// the GPU inside mandel_shader_src below, every pixel iterating in parallel.
+// Deep-zoom precision: plain GLSL `float` is 32-bit, and raylib's SetShaderValue has no
+// double/dvec2 uniform type, so xoffset/yoffset/scale are split into (hi, lo) float32
+// pairs (split_double below) and reconstructed in-shader via Dekker's double-float (DF64)
+// technique, giving ~48 effective mantissa bits. Always on: precision loss onset depends
+// on xoffset/yoffset/resolution, not scale alone, so no fixed threshold works for switching.
 
 import sys;
 import colour;
@@ -73,22 +53,11 @@ uniform float max_iteration;
 uniform float time;
 
 // ---- Double-float (Dekker/DF64) helpers -----------------------------------
-// A double-float value is a vec2(hi, lo) where hi+lo (in exact math)
-// approximates the true value to ~48 mantissa bits (~14 decimal digits)
-// versus plain float's 24 bits (~7 digits) -- Dekker (1971), 'A
-// floating-point technique for extending the available precision'. Only
-// add/sub/mul are needed for the Mandelbrot recurrence (no division).
-//
-// `precise` on every intermediate is load-bearing, not decoration: GLSL
-// does not guarantee IEEE-strict, non-reassociated evaluation by default,
-// and a compiler is free to fuse multiply-adds or reorder these
-// expressions for performance -- which silently destroys the exact-
-// cancellation these algorithms depend on (e.g. `e = t1 - a.x` relies on
-// t1 - a.x being computed exactly as written, not folded into something
-// else), collapsing the whole technique back to plain float32 accuracy
-// with no error or warning. `precise` (GL_ARB_gpu_shader5, available on
-// effectively all GL 3.3-capable desktop GPUs) forces the compiler to
-// preserve evaluation order/rounding for the marked variables.
+// A double-float value is a vec2(hi, lo) where hi+lo (in exact math) approximates the
+// true value to ~48 mantissa bits versus plain float's 24 -- Dekker (1971). Only add/sub/
+// mul are needed (no division). `precise` on every intermediate is load-bearing: GLSL
+// doesn't guarantee IEEE-strict evaluation, and a compiler reordering/fusing expressions
+// would silently destroy the exact-cancellation these algorithms depend on.
 
 vec2 ds_split(float a) {
     const float SPLIT = 4097.0; // 2^12 + 1 -- Veltkamp split of a float32
@@ -190,14 +159,10 @@ void main() {
 }
 "
 
-// Splits an f64 Lox number into a (hi, lo) float32 pair: hi+lo (in exact
-// math) equals a, with hi alone exactly representable in float32 (its
-// mantissa only occupies the top 24 bits) and lo holding the remainder --
-// together giving ~48 bits of precision once both halves round-trip
-// through float32 on upload (set_value_vec2 casts to f32; see
-// gfx_shader.odin's set_value_vec2). Veltkamp's algorithm: splitter =
-// 2^29 + 1 isolates the top 24 bits of a 53-bit double's mantissa (53 -
-// 29 = 24).
+// Splits an f64 Lox number into a (hi, lo) float32 pair: hi+lo (in exact math) equals a,
+// with hi exactly representable in float32 and lo holding the remainder, giving ~48 bits
+// of precision once both round-trip through float32 on upload. Veltkamp's algorithm:
+// splitter = 2^29 + 1 isolates the top 24 bits of a 53-bit double's mantissa.
 func split_double(a) {
     var SPLITTER = 536870913.0;
     var t = a * SPLITTER;

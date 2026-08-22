@@ -8,12 +8,11 @@ import rl "vendor:raylib"
 
 // gfx_batch_2d: Batch2D_Data accumulates many same-kind 2D primitives
 // (filled circles, axis-aligned rects, triangles, or line segments) and
-// draws them all in one .draw() call instead of one native-method-
-// dispatch round trip (win.circle_fill/rectangle/triangle/line_ex) per
-// primitive per frame -- the 2D counterpart to gfx_batch.odin's 3D
-// Batch_Data. Positions/sizes are vec2, colors vec4, matching gfx_batch's
-// own vec3/vec4 add() convention rather than window primitives' raw
-// x/y/w/h floats.
+// draws them all in one .draw() call instead of one native-method-dispatch
+// round trip per primitive per frame -- the 2D counterpart to
+// gfx_batch.odin's 3D Batch_Data. Positions/sizes are vec2, colors vec4,
+// matching gfx_batch's vec3/vec4 add() convention rather than window
+// primitives' raw x/y/w/h floats.
 
 // Batch2D_Primitive: package-private since gfx_window.odin's
 // window_constant (win.BATCH2D_CIRCLE etc.) and gfx.odin's batch2d()
@@ -286,12 +285,10 @@ batch2d_count :: proc(b: ^Batch2D_Data) -> int {
 
 // batch2d_draw renders every entry in the batch. Unlike gfx_batch's
 // BATCH_CIRCLE3, no rlgl render-batch flush/depth-mask dance is needed
-// here -- these are all plain 2D immediate-mode draws (rlgl triangle
-// fans/quads against the default white texture), the same kind rlgl
-// already coalesces into one GPU submission on its own when state
-// doesn't change between calls. What this collapses is the Lox-VM-to-
-// native call boundary (one native dispatch per entry becomes one
-// dispatch for the whole batch), not the GPU draw-call count itself.
+// here -- these are plain 2D immediate-mode draws that rlgl already
+// coalesces on its own. What this collapses is the Lox-VM-to-native call
+// boundary (one dispatch per entry becomes one dispatch for the whole
+// batch), not the GPU draw-call count itself.
 @(private = "file")
 batch2d_draw :: proc(b: ^Batch2D_Data) {
 	switch b.batch_type {

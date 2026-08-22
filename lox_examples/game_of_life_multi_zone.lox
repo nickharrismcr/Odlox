@@ -1,16 +1,10 @@
 from gfx import *
-// Multi-zone (Larger-than-Life-style) cellular automaton: generalises
-// Conway's 3x3 neighbour count to two independently-thresholded radii --
-// a small INNER disc (overcrowding guard) and a wider OUTER annulus (the
-// birth/survival signal) -- compared as fill *ratios*, not raw counts, so
-// they stay meaningful at any radius. Same family as WebGL-Automata's
-// glsl/0.frag (github.com/SyntheticSearchSpace/WebGL-Automata), but uses
-// one real nested loop with a runtime distance test instead of its
-// WebGL1-era sparse ring point-sets.
-//
-// ESC quits, SPACE reseeds. INNER_R/OUTER_R/BIRTH_*/SURVIVE_*/OVERCROWD
-// are the whole rule -- edit the on-screen fields (click, type, ENTER) to
-// retune it live.
+// Multi-zone (Larger-than-Life-style) cellular automaton: generalises Conway's 3x3
+// neighbour count to two independently-thresholded radii -- a small INNER disc
+// (overcrowding guard) and a wider OUTER annulus (birth/survival signal) -- compared as
+// fill ratios, not raw counts, so they stay meaningful at any radius.
+// ESC quits, SPACE reseeds. INNER_R/OUTER_R/BIRTH_*/SURVIVE_*/OVERCROWD are the whole
+// rule -- edit the on-screen fields (click, type, ENTER) to retune it live.
 
 import random
 import colour

@@ -1,19 +1,11 @@
 
 //
 // @file particle_sys.lox
-// @brief Particle system framework for odlox graphics
-// 
-// This module provides a flexible particle system implementation for creating
-// visual effects like explosions, smoke, fire, rain, and other particle-based
-// animations in odlox graphics applications.
-// 
-// Classes:
-// - Particle - Individual particle with position, velocity, and lifecycle
-// - Emitter - Manages a collection of particles, emitting new ones and updating existing ones
-// - Emitters - Manages multiple emitters, allowing for complex particle effects
-// 
- 
-// 
+// @brief Particle system framework for odlox graphics (explosions, smoke, fire, rain, etc).
+//
+// Classes: Particle (single particle), Emitter (owns/updates a set of
+// particles), Emitters (manages multiple Emitter instances).
+//
 // @author odlox Project
 // @date 2025
 //

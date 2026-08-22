@@ -1,31 +1,19 @@
 #!/usr/bin/env bash
 # Runs odlox's Odin unit tests: core/compiler/debug as one batched `odin
 # test <pkg>` each, but vm one test at a time, each its own process.
-# (`natives` has no @(test) procs of its own -- see
-# src/natives/README.md's Testing section: pytest against the built
-# binary is the real gate for native dispatch, not `odin test`.)
+# (`natives` has no @(test) procs -- pytest against the built binary is
+# the real gate for native dispatch, see src/natives/README.md.)
 #
-# Why vm is special: TODO.md's Phase 0 entry and ROADMAP.md's Phase 4
-# writeup document a real, unresolved `odin test` toolchain bug --
-# enough full VM instances constructed across enough tests *in one test
-# binary process* eventually hangs or crashes the run, even with
-# -define:ODIN_TEST_THREADS=1. It's not particular tests at fault (that
-# was checked directly: disabling the one test logged right before a
-# hang did not fix it) -- it's cumulative allocation weight across
-# however many vm-package tests happen to run in the same process this
-# time. Splitting core/compiler/debug into batches was enough to dodge
-# it there; vm's own tests construct enough VMs per test that even a
-# same-package batch isn't safe, so every vm test gets its own fresh
-# process via -define:ODIN_TEST_NAMES=vm.<name>. This costs wall-clock
-# time (~1s/test of odin compile+link+run overhead, ~80 tests) but loses
-# no coverage and fully sidesteps the accumulation, rather than curating
-# an ever-changing "risky test" exclusion list by hand.
+# Why vm is special: bare `odin test -all-packages` hangs unpredictably
+# -- a real, unresolved odin-test toolchain issue (see TODO.md Phase 0 /
+# ROADMAP.md Phase 4), caused by cumulative VM allocation weight across
+# however many tests share one process. Batching core/compiler/debug
+# dodges it; vm's tests construct enough VMs per test that even a
+# same-package batch isn't safe, so each vm test runs in its own process
+# via -define:ODIN_TEST_NAMES=vm.<name>.
 #
 # Usage: bin/test_odin.sh [timeout_seconds]
-#   Default 60s for the core/compiler/debug batches, 15s per individual
-#   vm test (isolated runs take well under 1s normally; a real hang on
-#   one in isolation would be its own separate bug worth seeing, not
-#   something to wait 60s to notice 80 times over).
+#   Default 60s for the core/compiler/debug batches, 15s per vm test.
 set -u
 cd "$(dirname "$0")/.."
 

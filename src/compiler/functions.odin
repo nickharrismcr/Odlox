@@ -1,14 +1,9 @@
 package compiler
 
 // Shared function-body parsing: parameters (including `*rest` variadic
-// and `name = expr` defaults) and the `{ block }` body. Used by declared
-// functions (stmt.odin's function_declaration), anonymous lambdas
-// (expr.odin's lambda), and class methods (stmt.odin's method) -- all
-// three just differ in what happens around the call, not in how the
-// function itself parses. arity/min_arity are derivable from `params` at
-// Emit time, so unlike a single-pass compiler this doesn't need to track
-// them here; scope/local declaration for each parameter is the
-// Resolver's job (fills Param.declared_slot later).
+// and `name = expr` defaults) and the `{ block }` body. Used for declared
+// functions, lambdas, and methods, which differ only in what happens
+// around the call. Param.declared_slot is filled later by the Resolver.
 parse_function_decl :: proc(p: ^Parser, fn_type: Function_Type, name_tok: Token) -> ^Function_Decl {
 	consume(p, .Left_Paren, "Expect '(' after function name.")
 

@@ -73,15 +73,10 @@ add_vector :: proc(vm: ^VM) -> bool {
 	return true
 }
 
-// vec_add_dispatch is the shared type-check-and-compute core both
-// Add_Vv's first-hit path and Add_V2/V3/V4's guard-miss path call (see
-// docs/plans/vec-op-peephole.md's Risks section on why this needs to be
-// one shared proc rather than copy-pasted three times) -- re-derives
-// which vector arity `a`/`b` actually are, returns the summed Value plus
-// which specialized opcode a call site can safely patch to next time, or
-// raises the exact same errors add_vector's push/pop-based version does
-// (mismatched types, or a same-type-but-non-vector pair) and reports
-// !ok so the caller knows not to patch or write a result.
+// vec_add_dispatch is the shared type-check-and-compute core for both
+// Add_Vv's first-hit path and Add_V2/V3/V4's guard-miss path. Returns the
+// summed Value, the specialized opcode a call site can patch to next, and
+// !ok on the same errors add_vector raises (with nothing pushed).
 vec_add_dispatch :: proc(vm: ^VM, a, b: core.Value) -> (result: core.Value, specialize_to: core.Op_Code, ok: bool) {
 	if a.type != b.type {
 		runtime_error(vm, "Vector operands must be the same type.")
@@ -215,21 +210,12 @@ numeric_binop :: proc(vm: ^VM, op: core.Op_Code) -> bool {
 	return true
 }
 
-// numeric_binop_into_slot: the safety net every Sub_Nn/Sub_Ii/Sub_Ff
-// (and the Mul_*/Div_* families alongside them, see run.odin) falls
-// into whenever its own fast Int/Int or Float/Float check misses --
-// pushes a/b and delegates to the exact same numeric_binop the unfused
-// Subtract/Multiply/Divide opcode would have run (preserving vector-
-// subtraction/string-repetition/type-error semantics, including the
-// divide-by-zero check, exactly), then writes the result into the
-// target local slot instead of leaving it on the stack. On failure,
-// numeric_binop has already raised (vm.error_msg set) and left the
-// stack balanced at its own -2 without pushing anything, so there's
-// nothing left to do here -- the shared error tail at the bottom of
-// run()'s dispatch loop takes it from there. Mirrors vec_add_dispatch's
-// role for the Add_Vv/V2/V3/V4 family: one shared "recompute the
-// general case correctly" tail instead of a second copy of
-// numeric_binop's own logic at every call site.
+// numeric_binop_into_slot is the safety net every Sub_Nn/Sub_Ii/Sub_Ff (and
+// Mul_*/Div_*) falls into when its fast Int/Int or Float/Float check misses:
+// delegates to the general numeric_binop, then writes the result into the
+// target slot instead of leaving it on the stack. On failure, numeric_binop
+// has already raised and left the stack balanced, so there's nothing more
+// to do -- run()'s dispatch-loop error tail takes it from there.
 numeric_binop_into_slot :: proc(vm: ^VM, op: core.Op_Code, slot_index: int, a, b: core.Value) {
 	push(vm, a)
 	push(vm, b)

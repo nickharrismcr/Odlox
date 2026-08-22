@@ -6,13 +6,11 @@ import "core:strings"
 import rl "vendor:raylib"
 
 // sound: audio device management plus Sound/Music construction and
-// method dispatch. Prototype of the Userdata_Object split (see
-// core/obj_userdata.odin's doc comment): unlike every other native
-// object kind in this codebase, Sound/Music no longer need a case in
-// core/object.odin's Object_Type, core/object.odin's object_to_string,
-// vm/gc.odin's free_object/object_size/blacken_object, or
-// vm/call.odin's invoke() -- everything specific to these two kinds,
-// data and behavior alike, lives in this one file.
+// method dispatch. Unlike every other native object kind in this
+// codebase, Sound/Music need no case in core/object.odin's Object_Type,
+// object_to_string, vm/gc.odin's free_object/object_size/blacken_object,
+// or vm/call.odin's invoke() -- everything specific to these two kinds
+// lives in this one file.
 
 Sound_Data :: struct {
 	sound: rl.Sound,

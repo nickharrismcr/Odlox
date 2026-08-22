@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Runs the loxcraft benchmark suite (ported unmodified from glox_reference/
-# benchmarks) against odlox, the reference implementation, and CPython, and
-# prints a comparison table. Run from anywhere; cds to the repo root first.
+# Runs the loxcraft benchmark suite against odlox, the reference glox
+# implementation, and CPython, and prints a comparison table.
 #
 # Usage: bin/benchmarks.sh [RUNS]
-#   RUNS defaults to 3. GLOX_EXE can override the reference implementation's
-#   binary location (default: d:/go/glox/bin/glox.exe -- the sibling repo on
-#   this machine); if it doesn't exist, the glox column is skipped.
+#   RUNS defaults to 3. GLOX_EXE overrides the glox binary location
+#   (default: d:/go/glox/bin/glox.exe); glox column skips if not found.
 set -e
 cd "$(dirname "$0")/.."
 

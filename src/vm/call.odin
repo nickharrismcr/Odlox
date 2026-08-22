@@ -117,24 +117,11 @@ call :: proc(vm: ^VM, closure: ^core.Closure_Object, arg_count: int) -> bool {
 }
 
 // invoke: Op_Invoke's fast path. A field holding a callable shadows a
-// method of the same name (`this.fn(x)` calls the field value, not a
-// method called `fn`) -- checked first for instances.
-// name is an already-interned ^core.String_Object throughout this file
-// (see properties.odin's get_property doc comment for why) -- the
-// String/List/Dict/Float_Array/Regex/Process builtin dispatch procs
-// below still take a plain string, since they switch on the name's
-// content rather than use it as a map key, so core.string_get(name) at
-// each of those call sites is a cheap, non-hashing conversion, not a
-// re-intern.
-// cache is a monomorphic inline cache for the .Instance case -- see
-// core/chunk.odin's Property_Cache doc comment. Always non-nil here
-// (every Op_Invoke bytecode instruction gets a cache slot from the
-// compiler, see expr.odin's dot); the .Class (static-method) branch
-// deliberately passes nil to invoke_from_class rather than reusing this
-// same cache, since a class value and an instance of that class hitting
-// the same callsite would otherwise be indistinguishable by class
-// pointer alone despite needing different method tables
-// (static_methods vs. methods).
+// method of the same name -- checked first for instances. name is an
+// already-interned ^core.String_Object throughout this file. cache is a
+// monomorphic inline cache for the .Instance case, always non-nil here;
+// the .Class (static-method) branch passes nil instead of reusing it,
+// since a class and an instance of it need different method tables.
 invoke :: proc(vm: ^VM, name: ^core.String_Object, arg_count: int, cache: ^core.Property_Cache) -> bool {
 	receiver := peek(vm, arg_count)
 	if receiver.type != .Obj {
@@ -275,6 +262,7 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			return false
 		}
 		core.list_append(l, peek(vm, 0))
+		write_barrier_value(vm, peek(vm, 0))
 		result = core.NIL_VALUE
 	case "remove":
 		if arg_count != 1 {

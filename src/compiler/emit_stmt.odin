@@ -3,16 +3,11 @@ package compiler
 import "../core"
 
 // AST-walking counterparts to stmt.odin's declaration/statement/control-
-// flow functions -- see emit.odin's header comment.
-//
-// break/continue emit whatever pop_exits/Local_Exit cleanup the Resolver
-// computed for jumping past enclosing blocks, then (emit_try_crossings)
-// End_Try/finally re-emission for every enclosing try being crossed, then
-// their real terminal jump. try/except/finally's own emission
-// (emit_try/emit_finally_copy) always re-resolves finally_body fresh
-// immediately before emitting it, never trusting a previously-computed
-// slot assignment -- see emit_finally_copy's own doc comment for why that
-// has to be true even for emit_try's two "normal" (non-crossing) copies.
+// flow functions. break/continue emit the Resolver's pop_exits/Local_Exit
+// cleanup for jumping past enclosing blocks, then End_Try/finally
+// re-emission (emit_try_crossings) for every enclosing try being crossed,
+// then their terminal jump. try/except/finally emission always re-resolves
+// finally_body fresh immediately before emitting it.
 
 // -----------------------------------------------------------------------
 // Top-level dispatch
@@ -348,11 +343,8 @@ emit_foreach :: proc(em: ^Emitter, v: ^Stmt_Foreach) {
 // -----------------------------------------------------------------------
 // break / continue / return
 //
-// pop_exits here is what pop_locals_above emitted inline today -- see
-// Stmt_Break/Stmt_Continue's own doc comment in ast.odin. crosses_tries
-// (implementation phase 6) runs *after* pop_exits, matching
-// break_statement/continue_statement's own pop_locals_above-then-
-// emit_crossing_jump order.
+// crosses_tries cleanup runs after pop_exits -- see Stmt_Break/
+// Stmt_Continue's doc comment in ast.odin.
 
 @(private = "file")
 emit_break :: proc(em: ^Emitter, v: ^Stmt_Break) {
@@ -376,14 +368,10 @@ emit_continue :: proc(em: ^Emitter, v: ^Stmt_Continue) {
 	}
 }
 
-// emit_return_stmt: for a crossing return, the value expression's own
-// emission already leaves it sitting at retval_slot's stack position (see
-// resolve_return's doc comment -- no store instruction needed for the
-// anchor itself). emit_try_crossings reloads it after each crossed try's
-// finally *actually replays* (only then does anything else land on the
-// stack above it); Op_Return itself trusts whatever's on top by then,
-// same as finalize_break_or_continue's own unconditional `emit_op(Return)`
-// today -- it never does its own separate reload.
+// For a crossing return, the value expression's emission already leaves it
+// at retval_slot's stack position (see resolve_return's doc comment).
+// emit_try_crossings reloads it after each crossed try's finally replays;
+// Op_Return trusts whatever's on top of the stack by then.
 @(private = "file")
 emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 	line := v.token.line
@@ -403,17 +391,11 @@ emit_return_stmt :: proc(em: ^Emitter, v: ^Stmt_Return) {
 
 // emit_try_crossings emits Op_End_Try (unconditional, purely for its
 // handler-popping side effect -- the 0,0 operand is a no-op offset, not a
-// real jump, same as cross_tries's own emission) for each try in
-// crosses_tries, plus that try's finally re-emitted inline if it has one.
-// No jump-to-a-deferred-site indirection needed, unlike today's
-// trampoline: the whole tree is already available, so every crossed try's
-// cleanup can just run right here, in order. retval_slot < 0 for break/
-// continue (no value to reload); for a crossing return, each crossed
-// try's finally replay is followed by reloading it, same as
-// compile_pending_trampolines's own `if try_ctx.has_finally { ...; if
-// site.retval_slot >= 0 { Get_Local } }` -- nested inside has_finally,
-// since without a finally replay disturbing anything, the value is
-// already sitting on top and re-reading it would push a spurious dup.
+// real jump) for each try in crosses_tries, plus that try's finally
+// re-emitted inline if it has one, in order. retval_slot < 0 for break/
+// continue (no value to reload); for a crossing return, each finally
+// replay is followed by reloading it -- only needed when a finally replay
+// actually disturbs the stack.
 @(private = "file")
 emit_try_crossings :: proc(em: ^Emitter, crosses_tries: []^Stmt_Try, local_count_at_crossing: int, retval_slot: int, line: int) {
 	for try_node in crosses_tries {
@@ -431,16 +413,10 @@ emit_try_crossings :: proc(em: ^Emitter, crosses_tries: []^Stmt_Try, local_count
 
 // -----------------------------------------------------------------------
 // try / except / finally
-//
 // emit_finally_copy re-resolves finally_body immediately before emitting
-// it (resolve_finally_for_crossing, implementation phase 6) rather than
-// trusting any previously-computed slot numbers on its nodes -- including
-// for emit_try's own two "normal" copies below, not just a crossing site.
-// This has to be true even for the normal copies: a crossing return/
-// break/continue *inside* this same try's body or an except clause is
-// emitted chronologically before emit_try reaches its own finally copies,
-// and would otherwise have already overwritten finally_body's shared AST
-// nodes with crossing-specific slot numbers by the time we get here.
+// it rather than trusting previously-computed slot numbers -- a crossing
+// return/break/continue inside this try's body or an except clause can
+// overwrite finally_body's shared AST nodes with crossing-specific slots.
 
 @(private = "file")
 emit_finally_copy :: proc(em: ^Emitter, v: ^Stmt_Try, local_count: int) {

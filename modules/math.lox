@@ -1,21 +1,9 @@
 //
 // @file math.lox
-// @brief Extended mathematical utilities for odlox
-// 
-// This module provides additional mathematical functions beyond the built-in math
-// functions, with a focus on 2D vector operations and geometric calculations.
-// 
-// Functions:
-// - rotate2d(vec2, angle) - Rotate a 2D vector by angle (radians)
-// - scale2d(vec2, scalar) - Scale a 2D vector by scalar
-// - floor(n) - Return the largest integer less than or equal to n
-// - round(n) - Round a number to the nearest integer
-// - max(a, b) - Return the maximum of two numbers
-// - min(a, b) - Return the minimum of two numbers
-// - abs(n) - Return the absolute value of n
-// 
-// Note: Some functions may be moved to native implementation for better performance.
-// 
+// @brief Extended mathematical utilities for odlox: 2D/3D vector ops
+// (rotate2d, scale2/3, length2/3, normalize2), floor/round/max/min/abs,
+// and trig wrappers (sin, cos, tan, atan2, sqrt) around native builtins.
+//
 // @author odlox Project
 // @date 2025
 //

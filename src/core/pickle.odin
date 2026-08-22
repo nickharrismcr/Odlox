@@ -318,25 +318,17 @@ TRUNCATED :: "truncated pickle data"
 
 // Class_Resolver looks up a live ^Class_Object by name so pickle_decode
 // can reconstruct a pickled instance against a class already loaded in
-// the decoding process -- pickle never ships class code (methods/super)
-// over the wire, only field data. ctx is an opaque pointer threaded
-// through from pickle_decode's own caller (typically a ^vm.VM, cast back
-// on the resolver's own side) -- a plain function pointer rather than a
-// closure over the caller's locals, since core sits below vm in the
-// package graph and can't name ^vm.VM directly (same rawptr-boundary
-// shape as core.Builtin_Fn; see obj_native.odin's doc comment).
+// the decoding process; pickle never ships class code over the wire, only
+// field data. ctx is an opaque pointer (typically a ^vm.VM cast back on
+// the resolver's own side), since core can't name ^vm.VM directly.
 Class_Resolver :: #type proc(name: string, ctx: rawptr) -> (^Class_Object, bool)
 
 // pickle_decode deserialises data produced by pickle_encode into a Value.
 // Returns an error rather than panicking on truncated or malformed input,
-// since the input is untrusted (arbitrary bytes from a script, a file, or
-// another process). Any collectible object this constructs (list/dict/
-// instance) is freshly allocated but not yet linked into any VM's GC
-// registry -- the caller adopts the whole result afterward (see
-// vm/gc.odin's gc_adopt, used by pickle.loads and the process module's
-// own recv()). resolve/ctx may both be nil if the caller knows the data
-// can't contain an encoded instance (any Instance tag then fails to
-// decode with a clear error rather than dereferencing a nil resolver).
+// since the input is untrusted. Any collectible object this constructs is
+// freshly allocated but not yet linked into any VM's GC registry -- the
+// caller adopts the result afterward (see vm/gc.odin's gc_adopt).
+// resolve/ctx may both be nil if the data can't contain an encoded instance.
 pickle_decode :: proc(data: []u8, resolve: Class_Resolver, ctx: rawptr) -> (result: Value, err: string, ok: bool) {
 	d := Decoder{data = data}
 	return pickle_decode_value(&d, resolve, ctx)
@@ -466,15 +458,10 @@ pickle_decode_value :: proc(d: ^Decoder, resolve: Class_Resolver, ctx: rawptr) -
 			return NIL_VALUE, fmt.tprintf("cannot unpickle instance of unknown class %q", class_name), false
 		}
 		inst := make_instance_object(class)
-		// Move any decoded key that matches the resolved class's own
-		// field-slot table (compiler/resolve.odin's discover_field_slots)
-		// into inst.slots instead of leaving it in inst.fields -- keeps a
-		// decoded instance's storage consistent with one built by running
-		// compiled init, so a later write through the field-slot fast path
-		// (vm/run.odin's Get_Field_Slot/Set_Field_Slot) can't leave a
-		// stale copy sitting in inst.fields that a generic external read
-		// would find first (see core.instance_get_field's fields-first
-		// check) while the fast path itself moved on to inst.slots.
+		// Move any decoded key matching the resolved class's field-slot
+		// table into inst.slots instead of inst.fields, keeping a decoded
+		// instance's storage consistent with one built by running compiled
+		// init, so the field-slot fast path and fields-first reads agree.
 		if len(class.field_slot_index) > 0 {
 			for key, idx in class.field_slot_index {
 				if val, has_val := fields[key]; has_val {

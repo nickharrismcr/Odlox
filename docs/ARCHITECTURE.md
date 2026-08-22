@@ -518,6 +518,40 @@ just-allocated, not-yet-reachable-from-anywhere object needs artificial
 protection at all. This removed a whole mechanism glox needed, not just
 simplified it.
 
+### Incremental collection — the cycle above is no longer atomic
+
+**Status: implemented, in `vm/gc.odin`.** The `collect_garbage` pseudocode above (root scan → drain
+gray stack → sweep, all in one call) described the collector through Phase 7. It's since been split
+into a resumable `GC_Phase` state machine — `Idle` / `Marking` / `Sweeping` — so that a single
+`maybe_collect_garbage` call (still only ever made between opcodes, per the section above) does at
+most `GC_WORK_UNIT` (64) objects' worth of marking or sweeping, not a whole cycle. `mark_roots` itself
+stays atomic (the root set is bounded by live stack/frame/global/module count, not heap size, so it
+doesn't need splitting up); `step_mark`/`step_sweep` are the bounded, resumable halves of what
+`trace_references`/`sweep` used to do in one shot. The result: no single pause is proportional to
+heap size, at the cost of the mutator now genuinely running *between* marking and sweeping steps
+within one cycle, not just between whole cycles.
+
+That last point is what makes this nontrivial rather than a mechanical split. With the mutator live
+mid-cycle, an already-blackened object can have a field mutated to point at a still-white object —
+invisible to the rest of the cycle, so that referent would be swept while still reachable. Every
+mutation site `blacken_object`'s own switch enumerates needs a write barrier immediately after the
+write (`write_barrier`/`write_barrier_value`, no-ops outside an active cycle) — and, less obviously,
+so does every write to a *root* slot (`Set_Local`/`Set_Upvalue`/the `Set_Global`/`Define_Global`
+family, `do_foreach`/`do_next`'s iterator-variable stores): `mark_roots` only scans the stack and
+globals once, at cycle start, so a later overwrite of one of those slots is exactly as invisible to
+the rest of the cycle as a heap-field mutation would be. A freshly allocated object is "allocated
+gray" (marked *and* queued for tracing, not just marked) rather than assumed safe outright — needed
+for a real, if narrow, hazard where `module.odin`'s `load_module` splices a whole separate sub-VM's
+already-existing object subtree into the running VM's object list via one `gc_track` call, and that
+subtree's prior marked bits come from a GC history this cycle hasn't verified.
+
+Full design, the complete write-barrier site list, and what was found and corrected versus the
+original plan are in
+[`docs/plans/gc-incremental-and-surgical-fixes.md`](plans/gc-incremental-and-surgical-fixes.md).
+`vm.gc_threshold_floor` (`sys.gc_set_min_threshold(bytes)`, `vm/builtins_sys.odin`) lets a script set
+a floor under the default doubling-from-1MiB `next_gc` policy, trading memory for fewer/larger gaps
+between cycles.
+
 ### "No permanent-object exemption" — landed for two of four kinds, for a structural reason
 
 glox deliberately **never sweeps** `ClassObject`, `ModuleObject`,

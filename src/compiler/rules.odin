@@ -1,14 +1,11 @@
 package compiler
 
-// The Pratt parse-rule table: for every token kind, what to do when it's
-// seen where a prefix (start-of-expression) form is expected, what to do
-// when it's seen as an infix (continuing an expression already parsed),
-// and at what precedence the infix form binds. A switch rather than a
-// `[Token_Type]Parse_Rule` array literal, purely so each case can be
-// read next to a short note on *why* that token parses the way it does
-// where that's not obvious from the name alone; the actual prefix/infix
-// procs live in expr.odin (most of them) and stmt.odin (`func`, since a
-// lambda's body looks a lot like a statement-level function).
+// The Pratt parse-rule table: for every token kind, its prefix parse
+// action, infix parse action, and infix precedence. A switch rather than a
+// `[Token_Type]Parse_Rule` array literal so each case can carry a short
+// note on why that token parses the way it does. Prefix/infix procs live
+// in expr.odin, except `func` (stmt.odin), since a lambda's body looks
+// like a statement-level function.
 get_rule :: proc(type: Token_Type) -> Parse_Rule {
 	#partial switch type {
 	case .Left_Paren:

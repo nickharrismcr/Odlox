@@ -2,26 +2,13 @@ package compiler
 
 import "core:fmt"
 
-// The Resolver: walks the AST the parser built (parser.odin/rules.odin/
-// expr.odin/stmt.odin), annotating nodes in place with scope/local/
-// upvalue/global resolution (Var_Ref/declared_slot/is_local/local_exits/
-// etc., all declared on the relevant ast.odin node types) and running
-// every validity check that needs more than a token comparison to decide
-// (self-inheritance is pure lexeme comparison and happens at parse time
-// instead -- see stmt.odin's class_declaration). See docs/plans/
-// compiler-ast-split.md for the full design.
-//
-// A return/break/continue whose target is outside an enclosing try
-// (crosses_tries) is resolved here too; resolve_finally_for_crossing is
-// what lets a crossed try's finally be *emitted* correctly, since its own
-// local slot numbers are replay-relative -- see its own doc comment and
-// Finally_Resolve_Ctx's.
-//
-// Hard invariant: this file never touches core.Chunk. It only ever
-// assigns slot *numbers* (local index, upvalue index, global index) --
-// never bytecode-pool indices -- which is what keeps the seam clean for
-// a future type-checker to occupy the same position in the pipeline
-// (after this, before Emit).
+// The Resolver: walks the AST the parser built, annotating nodes in place
+// with scope/local/upvalue/global resolution (Var_Ref/declared_slot/
+// is_local/local_exits/etc.) and running every validity check that needs
+// more than a token comparison. A return/break/continue crossing an
+// enclosing try (crosses_tries) is resolved here too, via
+// resolve_finally_for_crossing. Hard invariant: this file never touches
+// core.Chunk -- it only assigns slot numbers, never bytecode-pool indices.
 
 // -----------------------------------------------------------------------
 // Types
@@ -51,14 +38,11 @@ Upvalue :: struct {
 }
 
 // field_slots/field_slot_names back the compile-time-baked field-slot
-// fast path (see core/chunk.odin's Get_Field_Slot/Set_Field_Slot doc
-// comment) -- populated once, by discover_field_slots, before this
-// class's members are resolved, so every `this.name` reference anywhere
-// in the class body (including textually before __init__) resolves against
-// the finished table. field_slots is name -> index; field_slot_names is
-// the same table in index -> name form, copied onto Stmt_Class_Decl at
-// the end of resolve_class_decl for the Emitter to register with the
-// Chunk.
+// fast path (core/chunk.odin's Get_Field_Slot/Set_Field_Slot). Populated
+// once by discover_field_slots before class members are resolved, so
+// every `this.name` reference resolves against the finished table.
+// field_slots is name -> index; field_slot_names is the same table in
+// index -> name form, copied onto Stmt_Class_Decl for the Emitter.
 Class_Compiler :: struct {
 	enclosing:        ^Class_Compiler,
 	has_superclass:   bool,
@@ -66,28 +50,12 @@ Class_Compiler :: struct {
 	field_slot_names: [dynamic]string,
 }
 
-// discover_field_slots scans v's own `__init__` method (Function_Type.
-// Initializer -- see stmt.odin's method(), which already sets this
-// exactly when the method is named "__init__") for top-level, unconditional,
-// plain-assignment `this.name = value` statements -- direct elements of
-// __init__'s body, not recursed into any if/while/for/nested block, which is
-// what "top level" means here, and specifically Property_Kind.Set, not
-// Compound_Set (`this.x += 1` reads before writing, so it can never be
-// treated as *defining* the field). This mirrors the real-world
-// convention already observed in every sampled fixture (a class's full
-// field set assigned unconditionally in __init__) without the compiler ever
-// enforcing it: a field assigned any other way (conditionally, in a
-// non-__init__ method, later) simply never enters this table and keeps
-// compiling through the ordinary Get_Property/Set_Property path,
-// unchanged and always correct.
-//
-// A field name that could also be a vec2/3/4 swizzle component
-// (is_swizzle_field_name, emit_expr.odin) is deliberately excluded --
-// `this.x = ...` inside init must still be eligible for swizzle
-// write-back if `this` turns out to hold something swizzle-relevant at
-// runtime (it never does for an Instance, but the compiler can't know
-// that here -- see emit_swizzle_set's own doc comment), so it stays on
-// the existing path entirely.
+// discover_field_slots scans the class's `__init__` method for top-level,
+// unconditional, plain-assignment `this.name = value` statements --
+// Property_Kind.Set only, not Compound_Set (reads before writing). A field
+// assigned any other way keeps compiling through the ordinary
+// Get_Property/Set_Property path. A name that could be a vec2/3/4 swizzle
+// component (is_swizzle_field_name) is excluded so write-back still works.
 @(private = "file")
 discover_field_slots :: proc(class_ctx: ^Class_Compiler, members: []Class_Member) {
 	init_method: ^Method
@@ -106,21 +74,12 @@ discover_field_slots :: proc(class_ctx: ^Class_Compiler, members: []Class_Member
 }
 
 // discover_field_slots_stmt handles one top-level statement of init's
-// body: a plain `this.name = value` assignment (the common case), or an
-// if/else whose *both* branches unconditionally assign the same field
-// name -- e.g. `if (cond) { this.left = X } else { this.left = nil }`,
-// exactly benchmarks/lox/binary_trees.lox's own shape (found while
-// benchmarking: without this, binary_trees' hottest fields, left/right,
-// never qualified at all, since each is only ever assigned inside one
-// if/else branch or the other, never as a bare top-level statement --
-// trees.lox's own conditional fields, by contrast, are genuinely only
-// assigned in the if-with-no-else branch and correctly stay unslotted).
-// Only one level of if/else is walked this way (each branch's own
-// top-level statements, not recursively into further nesting) --
-// deliberately bounded, not a general reachability/CFG analysis;
-// anything outside this shape simply isn't discovered, same as any
-// other unhandled statement kind, and keeps compiling through the
-// ordinary Get_Property/Set_Property path, unchanged and always correct.
+// body: a plain `this.name = value` assignment, or an if/else whose both
+// branches unconditionally assign the same field name (an if with no else
+// leaves the field unslotted). Only one level of if/else is walked, not
+// recursively -- deliberately bounded, not a general CFG analysis.
+// Anything outside this shape isn't discovered and keeps compiling through
+// the ordinary Get_Property/Set_Property path.
 @(private = "file")
 discover_field_slots_stmt :: proc(class_ctx: ^Class_Compiler, stmt: Stmt) {
 	#partial switch s in stmt {
@@ -198,48 +157,34 @@ field_slot_names_of_branch :: proc(branch: Stmt) -> map[string]bool {
 	return names
 }
 
-// Resolve_Loop tracks one enclosing loop -- just scope_depth (the depth
-// the loop's own control-variable scope lives at, same meaning as
-// compiler_state.odin's Loop.scope_depth), since that's all the Resolver
-// needs: break/continue validity (loop != nil) and, via locals_above_rs,
-// which locals a break/continue jumping out to this depth needs to pop
-// itself (see Stmt_Break/Stmt_Continue's own doc comment in ast.odin).
-// Bytecode-offset bookkeeping (start/breaks/continues/is_foreach) is
-// Emit's own concern, re-derived fresh during emission -- those don't
-// exist yet at resolve time.
+// Resolve_Loop tracks one enclosing loop -- just scope_depth, the depth
+// the loop's control-variable scope lives at. That's all the Resolver
+// needs: break/continue validity (loop != nil) and which locals a
+// break/continue jumping out to this depth needs to pop (via
+// locals_above_rs). Bytecode-offset bookkeeping is Emit's own concern.
 Resolve_Loop :: struct {
 	scope_depth: int,
 	previous:    ^Resolve_Loop,
 }
 
-// Resolve_Try tracks one enclosing try -- just enough for a return/break/
-// continue to determine which trys it crosses (implementation phase 6):
-// scope_depth_at_entry (same meaning as Try_Finally.scope_depth_at_entry
-// today, used to filter which trys a break/continue crosses vs. one that
-// merely wraps the loop from outside) and the AST node itself, so Emit
-// can read has_finally/finally_ctx directly. Stays on Resolve_Scope.tries
-// throughout body+every except clause+finally resolution, matching how
-// long Compiler.tries stays set today -- see resolve_try's own comment.
+// Resolve_Try tracks one enclosing try: scope_depth_at_entry (filters
+// which trys a break/continue crosses vs. one that merely wraps the loop
+// from outside) and the AST node itself, so Emit can read
+// has_finally/finally_ctx directly. Stays on Resolve_Scope.tries throughout
+// body + every except clause + finally resolution.
 Resolve_Try :: struct {
 	node:                 ^Stmt_Try,
 	scope_depth_at_entry: int,
 	previous:             ^Resolve_Try,
 }
 
-// Finally_Resolve_Ctx captures the ambient context that was active when
-// a Stmt_Try's finally_body was first resolved -- everything Emit needs
-// to correctly re-resolve it fresh at a later emission site (both the
-// two "normal" copies and any crossing site; implementation phase 6):
-// enclosing_scope (the try's own function scope, reused -- not climbed
-// into -- by resolve_finally_for_crossing, since finally_body is lexically
-// part of the same function as the try, not a nested one), outer_tries
-// (deliberately *excludes* this try itself -- a return/break/continue
-// written directly inside this finally_body must not try to cross this
-// same try again, matching how compile_pending_trampolines temporarily
-// swaps Compiler.tries to try_ctx.previous during a replay today),
-// current_class (for this/super), and entry_scope_depth/entry_local_count
-// (the try statement's own starting point, used for the two ordinary
-// non-crossing copies).
+// Finally_Resolve_Ctx captures the ambient context active when a
+// Stmt_Try's finally_body was first resolved, so Emit can re-resolve it
+// fresh at a later emission site. enclosing_scope is the try's own
+// function scope. outer_tries excludes this try itself, so a
+// return/break/continue inside finally_body doesn't cross this same try
+// again. entry_scope_depth/entry_local_count are the try's starting point,
+// for the two ordinary non-crossing copies.
 Finally_Resolve_Ctx :: struct {
 	resolver:          ^Resolver,
 	enclosing_scope:   ^Resolve_Scope,
@@ -296,14 +241,10 @@ resolve_error :: proc(rs: ^Resolver, tok: Token, message: string) {
 // Entry point
 
 // Repl_Seed carries a REPL session's slot-assignment bookkeeping into a
-// fresh resolve_program call -- implementation phase 7's equivalent of
-// Compile_Repl seeding Parser.globals/globals_declared/global_count
-// before the old single pass runs, moved here since global resolution
-// now happens in the Resolver, not the Parser. The caller (v2_compile.
-// odin's Compile_Repl_V2) is responsible for copying these out of its own
-// persistent state first, same as today's copy_string_int_map/
-// copy_string_bool_map -- resolve_program takes ownership of exactly
-// what's passed in.
+// fresh resolve_program call, since global resolution happens in the
+// Resolver, not the Parser. The caller is responsible for copying these
+// out of its own persistent state first; resolve_program takes ownership
+// of exactly what's passed in.
 Repl_Seed :: struct {
 	globals:          map[string]int,
 	globals_declared: map[string]bool,
@@ -701,16 +642,12 @@ resolve_var_decl :: proc(rs: ^Resolver, v: ^Stmt_Var_Decl) {
 	}
 }
 
-// resolve_implicit_assign mirrors implicit_assignment_core's local ->
-// upvalue -> already-global -> new-local -> new-global priority exactly,
-// including per-branch ordering relative to the RHS: the "new local"
-// branch declares (depth -1) *before* resolving the RHS, same as
-// implicit_assignment_core's add_local-then-expression-then-mark_
-// initialised order -- so a first-mention `x = x` *does* trip "can't read
-// local variable in its own initializer" here, unlike `var x = x` above.
+// resolve_implicit_assign follows local -> upvalue -> already-global ->
+// new-local -> new-global priority. The "new local" branch declares
+// (depth -1) before resolving the RHS, so a first-mention `x = x` trips
+// "can't read local variable in its own initializer", unlike `var x = x`.
 // The "new global" branch marks declared before the RHS too, but globals
-// have no uninitialised-sentinel state, so that has no compile-time
-// consequence -- also matching today's behavior exactly.
+// have no uninitialised-sentinel state, so that has no effect.
 @(private = "file")
 resolve_implicit_assign :: proc(rs: ^Resolver, v: ^Stmt_Implicit_Assign) {
 	sc := rs.scope
@@ -842,18 +779,11 @@ resolve_foreach :: proc(rs: ^Resolver, v: ^Stmt_Foreach) {
 
 // -----------------------------------------------------------------------
 // return
-//
-// crosses_tries collects *every* currently-open try unconditionally (see
-// collect_tries_rs) -- a return always crosses all the way to the
-// function boundary, unlike break/continue's loop-scoped filter.
-// retval_slot is anchored *after* the value expression resolves, at
-// whatever local_count is current then, matching return_statement's own
-// add_local-after-expression order exactly: the value's own emission
-// naturally leaves it sitting at that exact stack position (see
-// emit_return_stmt), so no store instruction is needed for the anchor
-// itself. local_count_at_crossing is read *after* the anchor local is
-// added, so it already includes retval_slot -- also matching today's
-// Trampoline_Site.local_count_at_crossing.
+// crosses_tries collects every currently-open try unconditionally -- a
+// return always crosses to the function boundary, unlike break/continue's
+// loop-scoped filter. retval_slot is anchored after the value expression
+// resolves, so its emission naturally leaves it at that stack position
+// (see emit_return_stmt) with no store instruction needed.
 
 @(private = "file")
 resolve_return :: proc(rs: ^Resolver, v: ^Stmt_Return) {
@@ -877,17 +807,11 @@ resolve_return :: proc(rs: ^Resolver, v: ^Stmt_Return) {
 
 // -----------------------------------------------------------------------
 // try / except / finally
-//
-// resolve_try pushes a Resolve_Try onto rs.scope.tries *before* resolving
-// the body and only pops it back after finally too -- deliberately
-// mirroring how long Compiler.tries stays set today (from before
-// try_except_statement's own try-body parse through its finally parse,
-// only reset to try_ctx.previous right at the very end). This means a
-// return/break/continue inside an except clause or even inside this same
-// try's own finally_body sees this try in its own crossing chain too,
-// same as today -- Finally_Resolve_Ctx.outer_tries (not this rs.scope.
-// tries snapshot) is what a *replay* of finally_body uses instead, to
-// avoid a return inside finally_body trying to cross its own try again.
+// resolve_try pushes a Resolve_Try onto rs.scope.tries before resolving
+// the body and pops it only after finally too, so a return/break/continue
+// inside an except clause or finally_body sees this try in its crossing
+// chain. A replay of finally_body instead uses
+// Finally_Resolve_Ctx.outer_tries, to avoid crossing its own try again.
 
 @(private = "file")
 resolve_try :: proc(rs: ^Resolver, v: ^Stmt_Try) {
@@ -979,22 +903,12 @@ local_count_at_depth_rs :: proc(rs: ^Resolver, boundary_scope_depth: int) -> int
 }
 
 // resolve_finally_for_crossing re-resolves try_node's finally_body fresh,
-// seeded with local_count_at_crossing locals already "live" but the
-// try's own fixed entry scope depth -- callable more than once against
-// the same subtree (implementation phase 6), for the two ordinary
-// non-crossing copies (pass finally_ctx.entry_local_count) or any
-// crossing site (pass that site's own local_count_at_crossing). Reuses
-// the try's own Resolve_Scope (ctx.enclosing_scope) directly rather than
-// fabricating a child scope with it as `.enclosing` -- finally_body is
-// lexically part of the SAME function as the try, not a nested one, so
-// any reference to a local declared outside the try's own immediate
-// block (e.g. a `for` loop's own control variable) must resolve as a
-// plain Local via that same scope's locals array, not climb out as an
-// Upvalue into a scope with no real function/closure backing it. Starts
-// tries at outer_tries, not this try itself -- see Finally_Resolve_Ctx's
-// own doc comment. Mutable fields on both the shared Resolver and the
-// borrowed scope are saved and restored around the replay so nothing
-// else that might read them later observes the scratch state.
+// seeded with local_count_at_crossing locals already "live" but the try's
+// fixed entry scope depth -- callable more than once, for the two
+// ordinary non-crossing copies or any crossing site. Reuses the try's own
+// Resolve_Scope directly, since finally_body is lexically part of the same
+// function as the try, so an outer local must resolve as a plain Local,
+// not an Upvalue. Mutable fields are saved and restored around the replay.
 resolve_finally_for_crossing :: proc(try_node: ^Stmt_Try, local_count_at_crossing: int) -> (exits: []Local_Exit, had_error: bool) {
 	ctx := try_node.finally_ctx
 	rs := ctx.resolver
@@ -1159,15 +1073,11 @@ resolve_expr :: proc(rs: ^Resolver, e: Expr) {
 		for a in v.args {
 			resolve_expr(rs, a)
 		}
-		// .Invoke deliberately never gets a field_slot, even when the name
-		// matches a discovered slot (e.g. a callback stored in `this.cb =
-		// fn` in init, later called as `this.cb()`): Get_Field_Slot/
-		// Set_Field_Slot only exist for the .Get/.Set/.Compound_Set shapes
-		// emit_field_slot_access handles -- see chunk.odin's opcode doc
-		// comment. this.field(...) keeps compiling through the ordinary
-		// Invoke path unconditionally; its correctness for a slotted field
-		// is handled at the vm/call.odin invoke level instead (see
-		// core.instance_get_field).
+		// .Invoke never gets a field_slot, even when the name matches a
+		// discovered slot: Get_Field_Slot/Set_Field_Slot only exist for the
+		// .Get/.Set/.Compound_Set shapes. this.field(...) keeps compiling
+		// through the ordinary Invoke path; correctness for a slotted field
+		// is handled at the vm/call.odin invoke level (core.instance_get_field).
 		v.field_slot = -1
 		if v.kind != .Invoke {
 			if _, is_this := v.object.(^Expr_This); is_this && rs.current_class != nil {

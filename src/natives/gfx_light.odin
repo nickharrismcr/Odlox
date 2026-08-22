@@ -6,15 +6,11 @@ import "core:mem"
 import rl "vendor:raylib"
 
 // gfx_light: Light_Data -- one slot in the shared instanced-drawing
-// shader's `uniform Light lights[MAX_LIGHTS]` array
-// (src/shaders/instanced/lighting.fs). Lights are bound to the
-// process-wide instanced_shader singleton (gfx_batch_instanced.odin's
-// instanced_shader_get()), not to an individual Batch_Instanced_Data --
-// adding a light affects every instanced batch drawn with that shader,
-// the same way the shader itself is already shared. Uniform naming,
-// types, and the 0-255 -> 0-1 color normalization follow raylib's own
-// rlights.h/rlights.odin convention (the upstream shaders_mesh_instancing
-// example's approach), which lighting.fs already implements.
+// shader's `uniform Light lights[MAX_LIGHTS]` array. Lights are bound to
+// the process-wide instanced_shader singleton, not to an individual
+// Batch_Instanced_Data -- adding a light affects every instanced batch
+// drawn with that shader. Uniform naming, types, and the 0-255 -> 0-1
+// color normalization follow raylib's rlights.h/rlights.odin convention.
 
 MAX_INSTANCED_LIGHTS :: 4
 LIGHT_DIRECTIONAL :: 0

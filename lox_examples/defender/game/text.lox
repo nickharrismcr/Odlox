@@ -1,12 +1,8 @@
 from gfx import *
 
-// Bitmap text drawn from the alphanumeric atlas (pngs/font.png).
-//
-// The atlas is a single row of 38 glyphs on a 30px pitch. Each glyph's ink is
-// 20px wide and 30px tall, with 10px of trailing padding in its cell -- drawing
-// the ink width rather than the full cell keeps the last glyph ('Z', which ends
-// exactly at the atlas edge) from sampling past the texture.
-//
+// Bitmap text drawn from the alphanumeric atlas (pngs/font.png): a single row of 38
+// glyphs on a 30px pitch, each 20px of ink plus 10px trailing padding. Drawing the ink
+// width (not the full cell) keeps the last glyph ('Z') from sampling past the texture.
 // A character maps to its cell by index into CHARS.
 
 const CHARS   = "0123456789:?ABCDEFGHIJKLMNOPQRSTUVWXYZ"

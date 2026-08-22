@@ -20,16 +20,10 @@ make_dict_object :: proc(items: map[^String_Object]Value = nil) -> ^Dict_Object 
 }
 
 // dict_set/dict_get/dict_remove take key as an already-interned
-// ^String_Object, not a plain string -- every real caller already has
-// one (a Lox string Value's .obj *is* the canonical interned pointer,
-// by construction -- see obj_string.odin's make_string_value/
-// intern_string). A plain-string signature here would mean re-hashing
-// the key's full content on every single dict access; see
-// vm/properties.odin's get_property doc comment for the same tradeoff
-// on property/method access. The few callers that start from a
-// genuinely uninterned plain string (regex.odin's named-capture groups,
-// pickle.odin's deserialized keys, tests) call intern_string themselves
-// once at that call site instead.
+// ^String_Object, not a plain string, since every real caller already has
+// one and a plain-string signature would mean re-hashing the key's full
+// content on every dict access. Callers starting from an uninterned
+// string call intern_string themselves at that call site instead.
 dict_set :: proc(d: ^Dict_Object, key: ^String_Object, value: Value) {
 	d.items[key] = value
 }

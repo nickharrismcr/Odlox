@@ -4,25 +4,13 @@ import "../core"
 import "../vm"
 import "core:net"
 
-// socket: raw TCP sockets for IPC with any process (not just another
-// odlox instance), as an alternative to process's pickled-value pipe
-// (process.odin). Deliberately low-level -- send/recv move raw bytes as
-// Lox strings (the same convention os.read_all() uses), no pickling.
-//
-// core:net has no Unix-domain-socket support, so "local IPC" here means
-// TCP over loopback (127.0.0.1) rather than a filesystem-path socket.
-//
-// There is no threading model anywhere in this VM (see
-// docs/ARCHITECTURE.md's Scope section), so accept()/recv() block the
-// script by default -- exactly like process.recv() already does -- and
-// try_accept()/try_recv() are the non-blocking variants, built on
-// core:net's own Would_Block error rather than a manual poll. This is a
-// different (and more direct) mechanism than process.odin's
-// PeekNamedPipe-based polling, which sidesteps the pipe-EOF race
-// documented there (see process.odin's own header comment).
-//
-// Userdata_Object object kind (see core/obj_userdata.odin and this
-// package's own README.md).
+// socket: raw TCP sockets for IPC with any process, as an alternative to
+// process's pickled-value pipe. Deliberately low-level -- send/recv move
+// raw bytes as Lox strings, no pickling. core:net has no Unix-domain-socket
+// support, so "local IPC" here means TCP over loopback (127.0.0.1). There
+// is no threading model in this VM, so accept()/recv() block the script by
+// default and try_accept()/try_recv() are the non-blocking variants, built
+// on core:net's Would_Block error rather than a manual poll.
 
 Socket_Data :: struct {
 	sock:      net.TCP_Socket,
@@ -285,19 +273,13 @@ socket_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 	return true
 }
 
-// socket_recv_impl returns an already-safe core.Value (not a raw Odin
-// string): vm.make_tracked_string_value copies the bytes into their own
-// allocation (interned if short, an ordinary gc_track'd object if long --
-// see obj_string.odin's STRING_INTERN_MAX_LEN), so that copy must happen
-// before buf is freed below -- string(buf[:nread]) is a zero-copy view
-// into buf, and returning that view as a bare string and deleting buf on
-// the way out left the caller holding a dangling pointer once buf's
-// memory was reused (silently correct for small recvs, corrupted for
-// larger ones). Using the tracked (not plain core.make_string_value)
-// path specifically here, rather than everywhere make_string_value is
-// called, because recv() is exactly the unbounded-external-data source
-// that motivated giving long strings a collectible representation at
-// all -- see docs/plans/string-interning-split.md for the writeup.
+// socket_recv_impl returns an already-safe core.Value, not a raw Odin
+// string: vm.make_tracked_string_value copies the bytes into their own
+// allocation before buf is freed below -- string(buf[:nread]) is a
+// zero-copy view into buf, and returning that view directly left the
+// caller holding a dangling pointer once buf's memory was reused. The
+// tracked (not plain core.make_string_value) path matters here since
+// recv() is an unbounded-external-data source.
 @(private = "file")
 socket_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (result: core.Value, ok: bool) {
 	buf := make([]u8, n)
@@ -310,14 +292,10 @@ socket_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (result: core.Va
 	return vm.make_tracked_string_value(v, string(buf[:nread])), true
 }
 
-// socket_try_recv_impl: non-blocking recv. Toggles the socket
-// non-blocking for the duration of the call and back to blocking
-// afterward, so accept()/recv()'s own blocking behavior (the default) is
-// unaffected between calls -- a script may freely mix recv() and
-// try_recv() on the same Socket.
-// Returns an already-safe core.Value -- see socket_recv_impl's own doc
-// comment for why that copy has to happen before buf is freed, and for
-// using the tracked (collectible-if-long) path specifically here.
+// socket_try_recv_impl: non-blocking recv. Toggles the socket non-blocking
+// for the duration of the call and back to blocking afterward, so a
+// script may freely mix recv() and try_recv() on the same Socket. Returns
+// an already-safe core.Value -- see socket_recv_impl's doc comment.
 @(private = "file")
 socket_try_recv_impl :: proc(v: ^vm.VM, s: ^Socket_Data, n: int) -> (had_data: bool, result: core.Value, ok: bool) {
 	net.set_blocking(s.sock, false)

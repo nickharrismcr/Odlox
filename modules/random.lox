@@ -1,16 +1,8 @@
 //
 // @file random.lox
-// @brief Extended random number generation utilities for odlox
-// 
-// This module extends the built-in rand() function with additional random number
-// generation utilities for common use cases including integer ranges, float ranges,
-// and random selection from collections.
-// 
-// Functions:
-// - integer(min, max) - Generate random integer in range [min, max]
-// - float(min, max) - Generate random float in range [min, max)
-// - choice(list) - Randomly select an element from a list
-// 
+// @brief Random number utilities built on rand(): integer(min, max),
+// float(min, max), choice(list).
+//
 // @author odlox Project
 // @date 2025
 //

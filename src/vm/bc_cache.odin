@@ -30,17 +30,11 @@ bc_cache_path :: proc(module_source_path: string) -> string {
 }
 
 // bc_cache_load attempts a cache hit for module_source_path, returning
-// ok=false for *any* reason a fresh compile should happen instead --
-// --force-compile set, no .lxc yet, cache not newer than source, bad
-// header, or a malformed body. Callers never need to distinguish these:
-// falling back to compiling from source is always correct -- *unless*
-// vm.force_bc_cache is set and there's no source to fall back to at all
-// (a compiled-only module load; see read_module_source/
-// compile_and_run_module in module.odin, which handle that case as a
-// real error rather than silently compiling empty source). A version
-// mismatch specifically (a real cache of ours, just from a different
-// schema) gets one non-fatal stderr line -- see core.Bc_Decode_Error's
-// own doc comment for why that case alone is worth a diagnostic.
+// ok=false for any reason a fresh compile should happen instead
+// (--force-compile, no .lxc yet, stale cache, bad header/body). Callers
+// never need to distinguish these -- falling back to compiling from source
+// is always correct, unless vm.force_bc_cache is set with no source to fall
+// back to (see module.odin's compile_and_run_module).
 bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.Environment) -> (fn: ^core.Function_Object, ok: bool) {
 	if vm.force_compile {
 		return nil, false // never even stats the file
@@ -85,16 +79,10 @@ bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.En
 
 	bc_cache_wire_environment(decoded, environment)
 
-	// Environment.global_names is a *separate* field from
-	// Chunk.global_names (the one function_deserialise itself restores)
-	// -- for a fresh compile it's populated by compiler_state.odin's own
-	// end_compiler, as a side effect of Compile actually running, which a
-	// cache hit deliberately skips. module.odin's load_module relies on
-	// Environment.global_names (not Chunk's) to know which slots to
-	// publish into the module's name-keyed vars map after running its
-	// top-level code, so a cache hit must populate it here too. Clearing
-	// before appending (rather than appending outright) keeps this
-	// correct if environment is reused across more than one load.
+	// Environment.global_names is separate from Chunk.global_names; a fresh
+	// compile populates it via end_compiler, which a cache hit skips.
+	// load_module (module.odin) needs it to publish top-level slots into the
+	// module's vars map, so it must be populated here too.
 	clear(&environment.global_names)
 	for name in decoded.chunk.global_names {
 		append(&environment.global_names, name)
@@ -104,14 +92,10 @@ bc_cache_load :: proc(vm: ^VM, module_source_path: string, environment: ^core.En
 }
 
 // bc_cache_wire_environment walks fn and every nested Function_Object
-// reachable through chunk.constants (the same shape function_serialise/
-// function_deserialise themselves recurse through), setting .environment
-// on each one. Required because Get_Global/Set_Global (run.odin) resolve
-// globals through *whichever frame's own* fn.environment is currently
-// executing, not just the top-level function's -- the compiler already
-// points every nested function at the same shared Environment, so a
-// fixup that only patched the root would leave nested functions with a
-// nil environment, crashing the first time one of them touched a global.
+// reachable through chunk.constants, setting .environment on each one.
+// Get_Global/Set_Global resolve globals through whichever frame's own
+// fn.environment is executing, so patching only the root would leave
+// nested functions with a nil environment.
 @(private = "file")
 bc_cache_wire_environment :: proc(fn: ^core.Function_Object, environment: ^core.Environment) {
 	fn.environment = environment
@@ -124,12 +108,8 @@ bc_cache_wire_environment :: proc(fn: ^core.Function_Object, environment: ^core.
 
 // bc_cache_write serializes fn and writes it to module_source_path's
 // `.lxc` cache location, creating the __loxcache__ directory if needed.
-// A failure here (encode failure, directory/file write error) is never
-// fatal -- a missed cache write just means the next import recompiles
-// from source again, exactly like every import before this feature
-// existed; it's silently skipped, not reported, since it's not a script-
-// visible condition and every real error case (a read-only filesystem,
-// a full disk) would otherwise spam stderr on every single import.
+// Failures are silently skipped, not reported -- a missed write just means
+// the next import recompiles from source, as it always did before caching.
 bc_cache_write :: proc(module_source_path: string, fn: ^core.Function_Object) {
 	data, ok := core.function_serialise(fn)
 	if !ok {

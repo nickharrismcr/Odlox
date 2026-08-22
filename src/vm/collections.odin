@@ -8,16 +8,10 @@ import "core:strings"
 // then start (Nil if open), then end (Nil if open, slices only).
 
 // dict_key coerces any Value into the (already-interned) string a dict
-// subscript should look it up by -- matches create_dict's own coercion
-// (see that proc's doc comment), so `d[10]` and a literal `{10: ...}`
-// agree on the same key. A Value that's already a string still goes
-// through intern_string (a cheap no-op map lookup for the overwhelmingly
-// common case where it's already the canonical pointer -- see
-// obj_string.odin's STRING_INTERN_MAX_LEN and core/obj_dict.odin's doc
-// comment on why every dict key must be canonical regardless of length);
-// anything else goes through value_to_string once and interns the
-// result, since there's no pre-existing interned pointer to reuse for a
-// coerced key.
+// subscript should look it up by -- matches create_dict's own coercion, so
+// `d[10]` and a literal `{10: ...}` agree on the same key. A Value that's
+// already a string still goes through intern_string; anything else goes
+// through value_to_string once and interns the result.
 @(private = "file")
 dict_key :: proc(v: core.Value) -> ^core.String_Object {
 	if core.is_string(v) {
@@ -87,6 +81,7 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 	if obj.type == .Obj && obj.obj_type == .Dict {
 		key := dict_key(idx)
 		core.dict_set(core.as_dict(obj), key, value)
+		write_barrier_value(vm, value)
 		push(vm, value)
 		return true
 	}
@@ -109,6 +104,7 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 		return false
 	}
 	l.items[i] = value
+	write_barrier_value(vm, value)
 	push(vm, value)
 	return true
 }
@@ -190,6 +186,13 @@ do_slice_assign :: proc(vm: ^VM) -> bool {
 	append(&tmp, ..l.items[end:])
 	delete(l.items)
 	l.items = tmp
+	// Only rhs's elements are genuinely new to l -- the rest of tmp is l's
+	// own already-accounted-for content, just relocated to a new backing
+	// array (marking is per-object, not per-slot, so that relocation
+	// alone can't have lost anything).
+	for v in rhs.items {
+		write_barrier_value(vm, v)
+	}
 	push(vm, value)
 	return true
 }

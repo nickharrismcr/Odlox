@@ -5,30 +5,13 @@ import "core:os"
 import "core:path/filepath"
 import "core:testing"
 
-// module.odin's read_module_source path-resolution tests. Real
-// filesystem fixtures (a temp directory tree), not just compiled-
-// bytecode shape checks, since the two real bugs this covers were both
-// filesystem-resolution bugs a shape test structurally can't catch:
-// the search order itself, and a bad free (deleting a slice view into
-// vm.script that read_module_source never owned -- see
-// find_module_in_subdirs's doc comment) that only ever surfaced once a
-// script's own directory actually needed a recursive subdirectory
-// search to find a module.
-//
-// Both tests below pass reliably in isolation
-// (-define:ODIN_TEST_NAMES=vm.test_import_..., one at a time) but the
-// *pair* of them run together reproducibly crashes even with
-// -define:ODIN_TEST_THREADS=1 -- consistent with, not a new instance
-// of, the pre-existing "many VM instances in one odin test binary"
-// toolchain issue documented at length in ROADMAP.md's Phase 4 section
-// (each of these two tests constructs two full VMs -- the importing
-// script's and the imported module's own sub-VM -- so a pair of them
-// hits roughly the same total VM count that issue's writeup already
-// found sufficient to trigger it, just via fewer, heavier tests instead
-// of many small ones). Investigated directly rather than assumed:
-// ruled out an env-var set/restore bug in this file specifically (the
-// same set/lookup/restore sequence run standalone, twice in a row, in
-// isolation from the VM/GC/compiler entirely, does not reproduce it).
+// module.odin's read_module_source path-resolution tests. Real filesystem
+// fixtures, not just compiled-bytecode shape checks, since the two real
+// bugs this covers -- the search order itself, and a bad free of a slice
+// view into vm.script -- were both filesystem-resolution bugs a shape test
+// can't catch. Both tests pass in isolation
+// (-define:ODIN_TEST_NAMES=vm.test_import_...) but crash run as a pair --
+// the "many VM instances in one odin test binary" issue (ROADMAP.md Phase 4).
 
 @(private = "file")
 write_temp_lox :: proc(t: ^testing.T, dir: string, name: string, source: string) -> string {
@@ -38,20 +21,13 @@ write_temp_lox :: proc(t: ^testing.T, dir: string, name: string, source: string)
 	return path
 }
 
-// Regression test for a real, reproduced segfault: find_module_in_subdirs
-// (module.odin) is exercised whenever the importing script's own
-// directory doesn't directly contain `<name>.lox`, forcing a recursive
-// walk of that directory tree. The first version of this walk crashed
-// every time it succeeded (not "sometimes" -- every single run),
-// because read_module_source separately called `delete()` on
-// `filepath.dir(vm.script)`'s result, which is a slice *into*
-// vm.script (see os/path.odin's split_path), not an owned allocation --
-// a bad free that silently corrupted the heap on every successful
-// module import since Phase 4 first wrote that line, without crashing
-// immediately (bad frees don't always crash where they happen). It
-// took find_module_in_subdirs' own extra allocations changing the heap
-// layout to turn that latent corruption into an actual, reliable
-// segfault. This test exists specifically to keep that path exercised.
+// Regression test for a reproduced segfault: find_module_in_subdirs is
+// exercised whenever the importing script's directory doesn't directly
+// contain `<name>.lox`, forcing a recursive walk. The bug was
+// read_module_source calling `delete()` on `filepath.dir(vm.script)`'s
+// result, a slice into vm.script (not an owned allocation) -- a bad free
+// that silently corrupted the heap until find_module_in_subdirs' own
+// allocations changed the heap layout enough to make it segfault reliably.
 @(test)
 test_import_finds_module_in_subdirectory :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)
@@ -135,19 +111,12 @@ test_import_prefers_lox_path_modules_dir :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Regression test for a real, severe, pre-existing bug found porting
-// the .lox standard library: run.odin's Get_Global/Set_Global/
-// Define_Global(_Const) all resolved through vm.environment -- the
-// *running VM instance's own* Environment field -- instead of the
-// *currently executing frame's own function*'s environment
-// (fl.fn.environment). Those only coincide for the top-level script
-// itself; the instant an *imported module's* function is called and
-// that function references any global at all (calling another
-// function in its own module, reading a module-level var, or calling
-// an underscore-prefixed native), it resolved against the *importing
-// script's* global slot space instead of its own -- wrong slot, wrong
-// value, or "Undefined variable '#N'" outright. See run.odin's own
-// doc comment on the fix for the full story.
+// Regression test: run.odin's Get_Global/Set_Global/Define_Global(_Const)
+// resolved through vm.environment (the running VM's own field) instead of
+// the currently executing frame's function's environment. Those only
+// coincide for the top-level script -- an imported module's function
+// referencing any global resolved against the importing script's slot
+// space instead of its own. See run.odin's doc comment on the fix.
 
 @(private = "file")
 run_two_module_files :: proc(t: ^testing.T, dir: string, main_source, helper_source: string) -> (result: core.Value, status: Interpret_Result, msg: string) {
@@ -225,25 +194,12 @@ func get_base_plus(x) {
 }
 
 // -----------------------------------------------------------------------
-// Regression test for `from mod import *`, which had two separate real
-// bugs found together while porting math.lox:
-//
-//  1. The scanner's Eol-suppression heuristic (scanner.odin's keep_eol)
-//     treats `*` purely by token type -- indistinguishable from the
-//     multiplication operator, which legitimately continues onto the
-//     next line -- so the Eol after `from mod import *` on its own
-//     line was never scanned at all, and from_import_statement's old
-//     unconditional consume_eol call always failed.
-//  2. Even past that, `from mod import *` iterates *every* name in the
-//     imported module's own environment, which includes free builtins
-//     the module's code merely referenced internally (e.g. math.lox
-//     calling vec2()/vec3()), not just its "real" exports -- binding
-//     one of those into the importing script raised "has no global
-//     slot" whenever the importing script's own code never happened
-//     to reference that same name itself. Fixed with
-//     bind_imported_name_soft, which (like the reference implementation's own
-//     importFunctionFromModule) silently skips the fast-slot write
-//     when none exists, rather than treating that as an error.
+// Regression test for `from mod import *`, which had two bugs: (1) the
+// scanner's Eol-suppression heuristic can't distinguish `*` from
+// multiplication, so consume_eol always failed after the statement; (2)
+// `import *` iterates every name in the module's environment, including
+// incidentally-referenced free builtins, raising "has no global slot" --
+// fixed with bind_imported_name_soft.
 @(test)
 test_from_import_star_with_module_referencing_extra_builtins :: proc(t: ^testing.T) {
 	base, _ := os.temp_dir(context.temp_allocator)

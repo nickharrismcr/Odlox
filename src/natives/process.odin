@@ -7,37 +7,22 @@ import "core:strings"
 import "core:sys/windows"
 import "core:time"
 
-// process: spawns other odlox processes and communicates with them over
-// a pipe carrying pickled values. There is no general-purpose threading
-// model exposed anywhere in this interpreter (see docs/ARCHITECTURE.md's
-// Scope section -- threads are out of scope entirely), so recv/try_recv
-// poll the pipe directly instead of blocking on a background reader
-// (Windows' PeekNamedPipe, checked before an actual read), and wait_any
-// round-robins try_recv across every still-live process with a short
-// sleep between full rounds rather than blocking on a true multi-handle
-// select. Observable behavior is what a true blocking wait would give
-// (blocks until something is ready, returns nil once every process has
-// finished, raises Process_Error on a genuine I/O problem) -- just with
-// polling latency instead of an OS-level wait, and no background thread
-// to manage.
-//
-// Userdata_Object object kind (see core/obj_userdata.odin and this
-// package's own README.md) -- data, construction, method dispatch, and
-// the pipe-framing/polling logic it all shares live together in this one
-// file.
+// process: spawns other odlox processes and communicates with them over a
+// pipe carrying pickled values. There's no general-purpose threading model
+// in this interpreter, so recv/try_recv poll the pipe directly instead of
+// blocking on a background reader, and wait_any round-robins try_recv
+// across every still-live process with a short sleep between rounds
+// instead of a true multi-handle select.
 
 FRAME_LEN_SIZE :: 4
 
 // Process_Data represents one end of a pipe-backed channel carrying
-// length-prefixed pickled values (pickle_encode/pickle_decode, framed
-// with a 4-byte little-endian length prefix -- see frame_write/frame_read
-// below). Doubles as both "the process I spawned" (child != nil, exposes
+// length-prefixed pickled values (see frame_write/frame_read below).
+// Doubles as both "the process I spawned" (child != nil, exposes
 // wait/kill/pid) and "the channel back to whoever spawned me" (child ==
-// nil, constructed wrapping this process's own stdin/stdout).
-// read_file/write_file are nil for a process.start()-launched process --
-// it has no pipe attached at all (see process_start below), as opposed
-// to process_parent's variant, which has both, just wired to this
-// process's own stdin/stdout instead of a pipe to a child.
+// nil, wrapping this process's own stdin/stdout). read_file/write_file
+// are nil for a process.start()-launched process -- it has no pipe
+// attached at all, unlike process_parent's variant.
 Process_Data :: struct {
 	read_file:  ^os.File,
 	write_file: ^os.File,
@@ -157,12 +142,9 @@ pickle_resolve_class_for_process :: proc(name: string, ctx: rawptr) -> (^core.Cl
 // try_frame_read peeks a process's read end without blocking (Windows'
 // PeekNamedPipe): returns has_data=false immediately if fewer than
 // FRAME_LEN_SIZE bytes are currently buffered, rather than reading and
-// possibly stalling on a message that hasn't fully arrived yet. Once the
-// length prefix itself is available, the payload is assumed to follow
-// shortly after (the writer already flushed it as one frame_write call)
-// and is read with an ordinary, briefly-blocking frame_read -- a
-// deliberate simplification over a byte-exact non-blocking read of the
-// whole message; see this file's own header comment.
+// possibly stalling on a message that hasn't fully arrived. Once the
+// length prefix is available, the payload is assumed to follow shortly
+// after and is read with an ordinary, briefly-blocking frame_read.
 @(private = "file")
 try_frame_read :: proc(v: ^vm.VM, f: ^os.File) -> (result: core.Value, err: string, eof: bool, has_data: bool, ok: bool) {
 	handle := windows.HANDLE(os.fd(f))
@@ -171,19 +153,13 @@ try_frame_read :: proc(v: ^vm.VM, f: ^os.File) -> (result: core.Value, err: stri
 	if peek_ok && total_avail < FRAME_LEN_SIZE {
 		return core.NIL_VALUE, "", false, false, false
 	}
-	// Either data is ready, or the peek itself failed. A failed peek is
-	// NOT treated as an immediate EOF signal here: Windows' PeekNamedPipe
-	// can report a broken pipe as soon as the writer closes its end, even
-	// while buffered data the writer already sent is still sitting
-	// unread in the pipe. Treating a failed peek as EOF would lose
-	// whichever messages hadn't been drained yet, and misreport a message
-	// that hadn't even finished being *read* as "truncated message"
-	// instead. A real (blocking) read is the actual authority on EOF vs a
-	// genuine message either way -- and since CreatePipe's anonymous pipes
-	// are ordinary blocking pipes, a read attempted here either returns
-	// already-buffered bytes immediately or discovers true EOF
-	// immediately (the write end really is gone and the buffer really is
-	// empty); it does not hang the round-robin poll this feeds into.
+	// Either data is ready, or the peek itself failed. A failed peek is not
+	// treated as EOF here: PeekNamedPipe can report a broken pipe while
+	// buffered data the writer already sent is still unread. A real
+	// (blocking) read is the actual authority on EOF vs a genuine message,
+	// and since CreatePipe's anonymous pipes are ordinary blocking pipes, a
+	// read here either returns buffered bytes or discovers true EOF
+	// immediately -- it does not hang the round-robin poll.
 	result, err, eof, ok = frame_read(v, f)
 	return result, err, eof, true, ok
 }
@@ -235,13 +211,11 @@ process_try_recv_impl :: proc(v: ^vm.VM, p: ^Process_Data) -> (had_data: bool, r
 }
 
 // process_wait_any_impl polls every not-yet-finished process in round
-// robin (a short sleep between full rounds once none are ready) until
-// one has a message, returning its index into processes plus the value.
-// A process that reports a clean EOF is dropped from consideration (not
-// an error for the wait as a whole) rather than ending the loop; once
-// every process has finished, returns ok=false with no error raised --
-// nil is the unambiguous "the whole pool is done" signal, distinct from
-// a raised ProcessError on a genuine I/O problem.
+// robin (a short sleep between full rounds once none are ready) until one
+// has a message, returning its index into processes plus the value. A
+// process reporting a clean EOF is dropped from consideration rather than
+// ending the loop; once every process has finished, returns ok=false with
+// no error raised -- nil is the "whole pool is done" signal.
 @(private = "file")
 process_wait_any_impl :: proc(v: ^vm.VM, processes: []^Process_Data) -> (index: int, result: core.Value, ok: bool) {
 	for {
@@ -380,14 +354,11 @@ process_spawn :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Val
 }
 
 // process_start launches another odlox process running script_path with
-// no pipe attached at all -- for a companion process that does its own
-// I/O (e.g. socket.listen()'d and serving) rather than talking back over
-// process.spawn()'s pickled-value pipe. The child inherits this
-// process's own stdin/stdout/stderr, so its own print()/errors are still
-// visible (useful when running a server process under a REPL/terminal).
-// Only wait()/kill()/pid() are meaningful on the returned Process --
-// send()/recv()/try_recv() raise, since read_file/write_file are left
-// nil (see process_invoke below and Process_Data's own doc comment).
+// no pipe attached -- for a companion process that does its own I/O
+// rather than talking back over process.spawn()'s pickled-value pipe. The
+// child inherits this process's stdin/stdout/stderr. Only
+// wait()/kill()/pid() are meaningful on the returned Process --
+// send()/recv()/try_recv() raise, since read_file/write_file are nil.
 @(private = "file")
 process_start :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
 	v := vm.native_vm(vm_ptr)

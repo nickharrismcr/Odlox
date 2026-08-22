@@ -3,14 +3,11 @@ package compiler
 import "../core"
 import "core:testing"
 
-// Round-trips a *real* compiler.Compile output through
-// core.function_serialise/function_deserialise -- core/bc_cache_test.odin
-// already covers the format's edge cases (bad magic/version, truncation,
-// a corrupted count) against hand-built Chunk/Function_Object trees; this
-// test exists to catch anything a hand-built fixture could hide -- a
-// shape the real compiler produces that the format doesn't actually
-// handle (e.g. an unexpected constant kind, a nesting pattern the
-// recursive encoder mishandles).
+// Round-trips a real compiler.Compile output through
+// core.function_serialise/function_deserialise. core/bc_cache_test.odin
+// covers the format's edge cases against hand-built trees; this catches
+// shapes only a real compiled program produces (an unexpected constant
+// kind, a nesting pattern the recursive encoder mishandles).
 
 @(private = "file")
 functions_structurally_equal :: proc(a, b: ^core.Function_Object) -> bool {
@@ -88,14 +85,10 @@ constants_structurally_equal :: proc(a, b: core.Value) -> bool {
 	return false
 }
 
-// A source exercising every constant kind the cache format handles: an
-// int on each side of the 32-bit boundary (a regression in the cache's
-// no-truncation guarantee -- see bc_cache.odin's own doc comment -- would
-// look exactly like the reference implementation's own acknowledged bc_cache.go bug reappearing),
-// a float, a string, and a nested closure capturing an enclosing
-// parameter (exercises the recursive Function-as-constant path that
-// vm/bc_cache.odin's environment fixup, wired up in a later stage, has
-// to walk into).
+// A source exercising every constant kind the cache format handles: an int
+// on each side of the 32-bit boundary, a float, a string, and a nested
+// closure capturing an enclosing parameter (exercises the recursive
+// Function-as-constant path).
 @(test)
 test_bc_cache_roundtrip_preserves_real_compiled_program :: proc(t: ^testing.T) {
 	env := core.make_environment("test")

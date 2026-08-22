@@ -3,22 +3,12 @@ package core
 import "core:mem"
 
 // Userdata_Object: a pluggable heap-object kind for native-extension
-// objects (gfx/physics/sound/... -- anything owned by the `natives`
-// package) that would otherwise need their own bespoke Object_Type case
-// threaded through every switch in core/object.odin and vm/gc.odin.
-// Behavior is supplied per concrete kind via a Userdata_Vtable, built and
-// owned entirely by whichever natives/*.odin file constructs the object
-// -- core and vm never learn the concrete data type, they just dispatch
-// through the function pointers stored here. This is the one Object_Type
-// case native code should ever need; see obj_sound.odin (in natives, not
-// core -- this is the prototype of the split) for a worked example.
-//
-// The vm_ctx parameter on mark/invoke mirrors Builtin_Fn's `vm: rawptr`
-// convention (see obj_native.odin's doc comment): core sits below vm in
-// the package graph and cannot spell `^vm.VM`, so the boundary is a bare
-// opaque pointer that vm's own call sites cast back before invoking the
-// vtable, and that natives casts back again via vm.native_vm/native_vm-
-// equivalent helpers on the other side of the call.
+// objects (gfx/physics/sound/...) that would otherwise need their own
+// bespoke Object_Type case threaded through every switch in core/object.odin
+// and vm/gc.odin. Behavior is supplied per concrete kind via a
+// Userdata_Vtable, owned by whichever natives/*.odin file constructs the
+// object. vm_ctx is a bare opaque pointer, same as Builtin_Fn's `vm:
+// rawptr`, since core cannot spell `^vm.VM`.
 Userdata_Vtable :: struct {
 	// tag: used for the default object_to_string rendering ("<tag>")
 	// when to_string is nil, and for debug/error output.

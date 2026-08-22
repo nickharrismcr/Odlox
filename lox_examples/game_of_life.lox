@@ -1,19 +1,10 @@
 from gfx import *
-// GPU (GLSL fragment shader) version of game_of_life.lox's full ruleset
-// cycle. Each generation runs as a fragment shader over ping-ponged
-// render_textures instead of step_generic on a CPU float_array. Six of
-// the ten rulesets (Conway/HighLife/Seeds/Day&Night/Replicator/2x2) are
-// all "count 8 neighbours, threshold" binary rules and share one GLSL
-// shader parameterised by birth/survival neighbour-count bitmasks;
-// Generations/Brian's Brain/Immigration Game/QuadLife have real
-// multi-state or multi-colour rules and get their own step + display
-// shaders. Unlike the CPU version, no strategy needs a smaller BOX_*
-// grid -- a single-pass fragment shader is cheap enough that even
-// Immigration Game/QuadLife's per-colour neighbour counts run at full
-// resolution (computed inline per-fragment, not as separate
-// neighbour_count_array() passes). Seeding stays CPU-side (one-time
-// cost). ESC quits, SPACE cycles strategy, A toggles auto-cycling
-// (every RESET_TICKS generations).
+// GPU (GLSL fragment shader) version of Conway's Game of Life and nine other rulesets,
+// each generation run as a fragment shader over ping-ponged render_textures. Six binary
+// "count 8 neighbours, threshold" rulesets share one shader parameterised by birth/survival
+// bitmasks; the rest (real multi-state/multi-colour rules) get their own step + display
+// shaders. Seeding stays CPU-side (one-time cost). ESC quits, SPACE cycles strategy,
+// A toggles auto-cycling (every RESET_TICKS generations).
 
 import random
 import colour

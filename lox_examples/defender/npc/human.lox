@@ -5,18 +5,10 @@ import colour
 from sprite import Sprite
 
 // Human colonist. A small state machine of swappable update functions:
-//
-//   walking  : strolls along the mountain surface (default)
-//   grabbed  : a lander has it; hangs just below its carrier as it is lifted
-//   dropping : the carrier was killed; falls under gravity
-//   caught   : the player scooped it up mid-fall; rides below the ship
-//   dying    : dropped from too high; explodes (disperse) then is lost
-//   eaten    : the carrier reached the top and mutated; lost instantly
-//
-// `dying` and `eaten` set `alive = false`, so EntityMgr's per-frame live-human
-// recount (humans_left) drops -- a human that lands or is caught survives and
-// returns to walking. `state` is a readable string the lander and entity
-// manager test across module boundaries.
+//   walking (default), grabbed (lander has it), dropping (carrier killed, falls),
+//   caught (player scooped it up mid-fall), dying (fell too high, disperses), eaten
+//   (carrier mutated, lost instantly). `dying`/`eaten` set `alive = false`, dropping
+//   EntityMgr's humans_left count. `state` is a readable string tested across modules.
 
 class Human < Sprite {
 

@@ -6,19 +6,12 @@ import "core:math"
 import b2 "vendor:box2d"
 
 // box2d: a thin wrapper around Odin's vendor:box2d bindings (Box2D v3.1.1,
-// the ID-handle-based C API, not the older pointer-based v2 API). Exposes a
-// convenient subset, not the full surface -- no joints, raycasting,
-// debug-draw callback, or capsule/full-polygon/chain shapes. Complements,
-// not replaces, the hand-rolled `physics` module (physics.odin) -- that one
-// is untouched by this file.
-//
-// Bodies are plain int handles issued by the World object (mirrors
-// physics.odin's own `add(...) -> id` / `get_position(id)` convention), not
-// first-class Userdata_Objects -- consistent with the existing module, and
-// sidesteps any GC-lifetime coupling with Box2D's own per-shape userData
-// pointer (see box2d_world_add_circle/add_box's use of it below, which is
-// purely an internal bookkeeping mechanism for collisions(), not something
-// Lox ever sees directly).
+// the ID-handle-based C API, not the older pointer-based v2 API). Exposes
+// a convenient subset -- no joints, raycasting, debug-draw callback, or
+// capsule/full-polygon/chain shapes. Complements, not replaces, the
+// hand-rolled `physics` module. Bodies are plain int handles issued by
+// the World object (mirrors physics.odin's `add(...) -> id` convention),
+// not first-class Userdata_Objects.
 
 Box2D_Body_Entry :: struct {
 	body_id: b2.BodyId,

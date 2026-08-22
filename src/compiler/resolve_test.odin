@@ -197,17 +197,12 @@ class Dog < Animal {
 
 @(test)
 test_resolve_finally_crossing_reference_to_for_loop_control_var_stays_local :: proc(t: ^testing.T) {
-	// Regression test: a continue crossing a try/finally *inside a for
-	// loop*, where the finally body references the for loop's own control
-	// variable, used to mis-resolve that reference as a Global (or an
-	// Upvalue into a scope with no real closure backing it) instead of a
-	// plain Local -- resolve_finally_for_crossing fabricated a brand-new
-	// Resolve_Scope pointing .enclosing at the try's real function scope,
-	// which made any local declared outside the try's own immediate block
-	// look like it belonged to a *different, enclosing function* rather
-	// than the same one being replayed. Confirmed via real script
-	// execution (not caught by any prior static test) as an "Undefined
-	// variable '#N'" runtime crash.
+	// Regression test: a continue crossing a try/finally inside a for loop,
+	// where the finally body references the loop's control variable, used
+	// to mis-resolve that reference as a Global/Upvalue instead of a plain
+	// Local -- resolve_finally_for_crossing's fabricated Resolve_Scope made
+	// locals outside the try's block look like they belonged to a
+	// different enclosing function.
 	source := `
 for var i = 0; i < 3; i = i + 1 {
 	try {

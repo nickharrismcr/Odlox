@@ -10,21 +10,12 @@ import "core:text/regex"
 import "core:text/regex/virtual_machine"
 
 // re: regular expressions, built on Odin's core:text/regex engine.
-// Userdata_Object object kind (see core/obj_userdata.odin and this
-// package's own README.md) -- pattern preprocessing (named-group
-// support, since Odin's own core:text/regex syntax has no equivalent of
-// Python/RE2's (?P<name>...)), compiling, the search/match/fullmatch/
-// sub/subn/split/findall operations, the module-level free functions,
-// and the Pattern/Match objects' own method dispatch all live together
-// in this one file.
-//
-// One accepted, narrow limitation: Odin's regex.match_and_allocate_capture
-// (and the iterator form) compact away any capture group that didn't
-// participate in a given match, rather than leaving a hole -- so a group
-// *after* one that failed to participate (e.g. one side of an
-// alternation) would be misnumbered here. Accepted rather than
-// reimplementing capture extraction against the lower-level
-// virtual_machine package directly.
+// Pattern preprocessing (named-group support, since core:text/regex lacks
+// Python/RE2's (?P<name>...)), compiling, and the search/match/fullmatch/
+// sub/subn/split/findall operations all live in this file. Known
+// limitation: Odin's regex.match_and_allocate_capture compacts away any
+// capture group that didn't participate in a match, so a group after one
+// that failed to participate would be misnumbered here.
 
 Pattern_Data :: struct {
 	regex:       regex.Regular_Expression,

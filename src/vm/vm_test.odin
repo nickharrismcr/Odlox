@@ -4,15 +4,11 @@ import "../core"
 import "core:strings"
 import "core:testing"
 
-// End-to-end VM tests: compile and *run* real source, then inspect the
-// resulting state. Unlike compile_test.odin (which only checks bytecode
-// shape, since no VM existed yet), these are what actually caught every
-// real bug found while building this phase -- see ROADMAP.md's Phase 4
-// section for the list. A top-level script's own "return value" is
-// always nil by construction (end_compiler always emits Nil+Return for
-// Function_Type.Script -- see compiler/compiler_state.odin), so these
-// tests bind a computed value to a global and inspect that directly
-// rather than relying on Interpret's returned result string.
+// End-to-end VM tests: compile and run real source, then inspect the
+// resulting state. A top-level script's "return value" is always nil by
+// construction (end_compiler always emits Nil+Return for
+// Function_Type.Script), so these tests bind a computed value to a global
+// and inspect that directly rather than relying on the result string.
 
 @(private = "file")
 run_and_get_global :: proc(t: ^testing.T, source: string, var_name: string) -> core.Value {
@@ -20,15 +16,11 @@ run_and_get_global :: proc(t: ^testing.T, source: string, var_name: string) -> c
 	status, _ := interpret(vm_instance, source)
 	testing.expectf(t, status == .Ok, "expected %q to run without error, got %v: %s", source, status, vm_instance.error_msg)
 	if status != .Ok {
-		// testing.expect* records a failure but doesn't abort the test
-		// proc (unlike a fatal assertion) -- bail out here rather than
-		// fall through to indexing environment.globals, which
-		// env_grow_globals never sized on a failed compile (interpret()
-		// returns before reaching that call), even though
-		// env_slot_for_name can still report a slot that got recorded
-		// during the *successful* part of a partially-compiled script.
-		// Found via exactly that: a bad test source crashed with an
-		// out-of-range panic instead of just failing the assertion.
+		// testing.expect* records a failure but doesn't abort the test proc
+		// -- bail out here rather than fall through to indexing
+		// environment.globals, which env_grow_globals never sized on a
+		// failed compile, even though env_slot_for_name can still report a
+		// slot recorded during the successful part of a partial compile.
 		return core.NIL_VALUE
 	}
 	slot := core.env_slot_for_name(vm_instance.environment, var_name)
@@ -287,14 +279,11 @@ test_dict_get_and_set :: proc(t: ^testing.T) {
 	testing.expect_value(t, core.as_int(v), 1)
 }
 
-// Regression test for a real, pre-existing gap: do_index (Op_Index)
-// unconditionally required an integer index *before even checking
-// what the container was* -- so `dict["key"]`, a real, expected
-// feature (the reference implementation's own index() has a full dict case), always failed
-// with "Index must be an integer.". Found porting logging.lox, whose
-// Logger.level_name does exactly this. Fixed by checking the
-// container's type first, matching the reference implementation's own per-type dispatch, not
-// by relaxing the int-index requirement for List/String.
+// Regression test: do_index (Op_Index) unconditionally required an integer
+// index before even checking what the container was, so `dict["key"]`
+// always failed with "Index must be an integer.". Fixed by checking the
+// container's type first, not by relaxing the int-index requirement for
+// List/String.
 @(test)
 test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `var d = {"a": 1}` + "\nvar result = d[\"a\"]\n", "result")
@@ -305,14 +294,9 @@ test_dict_subscript_get_and_set :: proc(t: ^testing.T) {
 }
 
 // Regression test: create_dict used to reject any non-string dict key
-// outright ("Dict keys must be strings.") instead of coercing it to
-// its string representation the way the reference implementation's own createDict does
-// (`key.String()` for anything that isn't already a StringObject).
-// Found porting logging.lox, whose Logger._LEVEL_NAMES is exactly
-// `{10: "DEBUG", 20: "INFO", ...}`, looked up later via `str(level)` --
-// so the coerced key and the lookup key need to agree, which they do
-// as long as both go through the same stringification
-// (core.value_to_string, also Op_Str's own non-__str__ fallback).
+// outright instead of coercing it to its string representation. The
+// coerced key and a later lookup key must agree, which they do as long as
+// both go through the same stringification (core.value_to_string).
 @(test)
 test_dict_literal_with_int_key_is_coerced_to_string :: proc(t: ^testing.T) {
 	v := run_and_get_global(t, `var d = {10: "ten"}` + "\nvar result = d[10]\n", "result")
@@ -349,13 +333,10 @@ test_foreach_over_string_counts_chars :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// User-level iterator protocol (__iter__/__next__ -- foreach.odin).
-// Needs a nested run(vm, .Current_Function) call to invoke each method
-// synchronously mid-opcode (unlike Op_Str's __str__ dispatch, which
-// doesn't -- see foreach.odin's call_closure_now doc comment for why
-// the two cases differ). Deferred out of Phase 4's scope originally;
-// picked up once the native iterable path (list/string/range, tested
-// above) had real coverage to build the nested-call path against.
+// User-level iterator protocol (__iter__/__next__ -- foreach.odin). Needs
+// a nested run(vm, .Current_Function) call to invoke each method
+// synchronously mid-opcode, unlike Op_Str's __str__ dispatch (see
+// foreach.odin's call_closure_now doc comment for why the two differ).
 
 @(test)
 test_foreach_over_class_with_iter_protocol :: proc(t: ^testing.T) {
@@ -490,22 +471,13 @@ try {
 `)
 }
 
-// Regression test for a real, reproduced crash in
-// exceptions.odin's match_clause_chain: when a raised exception's type
-// doesn't match a try's only except clause, the VM has to decide "is
-// there another clause to check, or is this genuinely uncaught?" by
-// reading whatever bytecode sits right after this clause's own body --
-// which previously only checked whether that position was still
-// *within the chunk's bounds*, not whether it actually held another
-// Except/Finally opcode. Real scripts almost always have *something*
-// after a try/except (this test's own `var tail = 1`, deliberately
-// placed there rather than left implicit the way
-// test_uncaught_exception_is_runtime_error above happens to via
-// end_compiler's always-emitted trailing Nil+Return), which put a real,
-// in-bounds, unrelated instruction at that position -- reading it as
-// [type_const][skip_hi][skip_lo] operand bytes crashed with an
-// out-of-range panic. Fixed by checking the opcode actually there, not
-// just the chunk bounds.
+// Regression test for a crash in exceptions.odin's match_clause_chain:
+// when a raised exception's type doesn't match a try's only except clause,
+// the VM checks whatever bytecode sits after that clause's body to decide
+// if there's another clause -- previously only checking chunk bounds, not
+// whether that position actually held an Except/Finally opcode. Real
+// trailing code (this test's `tail = 1`) put an unrelated instruction
+// there, crashing with an out-of-range panic when read as operand bytes.
 @(test)
 test_uncaught_exception_with_trailing_code_does_not_crash :: proc(t: ^testing.T) {
 	expect_runtime_error(t, `
@@ -535,19 +507,11 @@ test_repl_second_line_sees_first_lines_global :: proc(t: ^testing.T) {
 	status1, _ := interpret(vm_instance, "var x = 10\n")
 	testing.expect_value(t, status1, Interpret_Result.Ok)
 
-	// KNOWN GAP: a bare expression's value doesn't survive as
-	// Interpret's "result" -- expression_statement always emits Pop
-	// (see compiler/stmt.odin) and end_compiler always emits Nil before
-	// Return regardless of what preceded it (see
-	// compiler_state.odin's end_compiler), so a REPL line's own
-	// "result" is unconditionally "nil" today, not the last expression's
-	// value. Proper REPL "print last value" UX (`> 2 + 2` showing `4`)
-	// needs the compiler to recognize "this is the final statement of a
-	// REPL line" and skip both the Pop and the trailing Nil for that
-	// one case -- not built yet; this test asserts the *actual* current
-	// behavior (global-slot persistence across lines, which does work)
-	// rather than the UX gap, so it doesn't silently start passing for
-	// the wrong reason if that Pop/Nil interaction changes later.
+	// KNOWN GAP: a bare expression's value doesn't survive as Interpret's
+	// "result" -- expression_statement always emits Pop and end_compiler
+	// always emits Nil before Return, so a REPL line's "result" is
+	// unconditionally "nil", not the last expression's value. This test
+	// asserts that actual current behavior rather than the UX gap.
 	status2, result2 := interpret(vm_instance, "x + 5\n")
 	testing.expect_value(t, status2, Interpret_Result.Ok)
 	testing.expect_value(t, result2, "nil")

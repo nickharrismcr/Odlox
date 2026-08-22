@@ -57,21 +57,12 @@ make_user_iterator :: proc(vm: ^VM, val: core.Value) -> (core.Value, bool) {
 	return result, true
 }
 
-// call_closure_now synchronously calls a Lox method (already resolved
-// to a Closure_Object -- both __iter__ and __next__ always are, being
-// entries out of Class.methods) with its receiver/args already pushed,
-// via a nested run(vm, .Current_Function). Unlike run.odin's Op_Str
-// (__str__ dispatch), which can just push a frame and let the *outer*
-// dispatch loop carry on since its call is the very last thing that
-// opcode does, iterator_next below needs the call's result back
-// immediately, mid-opcode, to decide what happens next (nil means
-// "iteration exhausted") -- exactly the case Run_Mode.Current_Function
-// exists for. Deliberately calls the lower-level `call` (not the more
-// general `call_value`), which would also have to handle Native/Class/
-// Bound_Method receivers that a nested run() call isn't set up to
-// follow correctly -- never a real possibility here since method_val
-// only ever comes from Class.methods, but call() being Closure-only
-// makes that guarantee explicit at the type level instead of implicit.
+// call_closure_now synchronously calls a Lox method (already resolved to a
+// Closure_Object) with its receiver/args pushed, via a nested
+// run(vm, .Current_Function) -- iterator_next needs the result back
+// immediately, mid-opcode, to decide if iteration is exhausted (nil).
+// Calls the lower-level `call`, not `call_value`, since method_val only
+// ever comes from Class.methods.
 @(private = "file")
 call_closure_now :: proc(vm: ^VM, method_val: core.Value, arg_count: int) -> (core.Value, bool) {
 	if !call(vm, core.as_closure(method_val), arg_count) {
@@ -129,11 +120,13 @@ do_foreach :: proc(vm: ^VM, slots: int, var_slot, iter_slot: u8, end_offset: int
 		// not the actual error handling.
 	}
 	vm.stack[slots + int(iter_slot)] = it
+	write_barrier_value(vm, it)
 	val := iterator_next(vm, it)
 	if val.type == .Nil {
 		return end_offset
 	}
 	vm.stack[slots + int(var_slot)] = val
+	write_barrier_value(vm, val)
 	return 0
 }
 
@@ -149,5 +142,6 @@ do_next :: proc(vm: ^VM, slots: int, var_slot, iter_slot: u8) -> bool {
 		return false
 	}
 	vm.stack[slots + int(var_slot)] = val
+	write_barrier_value(vm, val)
 	return true
 }

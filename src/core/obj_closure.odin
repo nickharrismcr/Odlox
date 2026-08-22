@@ -1,24 +1,12 @@
 package core
 
-// Closure_Object wraps a compiled Function_Object with the actual
-// upvalues it captured at the point OP_CLOSURE ran -- the same function
-// compiled once can be closed over many times (e.g. once per outer call),
-// producing a distinct Closure_Object with distinct upvalue bindings each
-// time. This is why Chunk.add_constant refuses to deduplicate a
-// Closure/Function/Bound_Method constant (see chunk.odin): each
-// occurrence in the bytecode must still produce its own object at
-// runtime, not share one.
-// owner_class is set once, in vm/properties.odin's do_method, only for a
-// non-static method closure -- the Class_Object it was textually
-// declared in. Get_Field_Slot/Set_Field_Slot's VM dispatch (run.odin)
-// only trusts a baked-in field-slot index when the receiver's own class
-// matches this exactly: do_inherit copies method closures verbatim into
-// a subclass's method table, so a superclass method's closure can run
-// against a subclass instance whose field-slot table wasn't built from
-// the same init, and a mismatched slot index would be a real
-// out-of-bounds/misaligned read, not just a missed optimization. nil for
-// a closure that isn't a method at all (top-level function, lambda) or a
-// static method (this is irrelevant there).
+// Closure_Object wraps a compiled Function_Object with the actual upvalues
+// it captured at the point OP_CLOSURE ran; the same function can be closed
+// over many times with distinct upvalue bindings each time, which is why
+// Chunk.add_constant refuses to deduplicate such constants. owner_class,
+// set only for non-static method closures, must match the receiver's class
+// exactly before Get_Field_Slot/Set_Field_Slot trusts a baked-in slot
+// index, since do_inherit copies method closures verbatim into subclasses.
 Closure_Object :: struct {
 	using obj:     Obj,
 	function:      ^Function_Object,

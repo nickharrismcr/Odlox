@@ -2,25 +2,12 @@ package core
 
 import "core:fmt"
 
-// Environment is the runtime home for one compilation unit's globals --
-// a deliberate two-tier design:
-//
-//   - globals/defined: slot-indexed (compile-time-assigned integer
-//     slots), for O(1) Get_Global/Set_Global with no hashing.
-//   - vars: name-keyed (by canonical ^String_Object, see obj_string.odin),
-//     for module-export lookup by name (`from mod import x`) and
-//     `__all__`-style iteration, where the importing side has no
-//     compile-time slot of its own for the exported name.
-//   - global_names: slot -> name, for error messages and for resolving
-//     an exception class by name from an arbitrary frame (see
-//     src/vm/exceptions.odin) -- populated only on the top-level
-//     script's own chunk/Environment (see chunk.odin's Chunk doc
-//     comment), but reachable from every function in the compilation
-//     unit since they all share this one Environment.
-//
-// No mutex anywhere on this struct: `vars` is a plain, unsynchronized
-// map, since Environments are never shared across threads (see
-// docs/ARCHITECTURE.md's Scope section).
+// Environment is the runtime home for one compilation unit's globals, in
+// two tiers: globals/defined are slot-indexed for O(1) Get_Global/Set_Global,
+// while vars is name-keyed (by canonical ^String_Object) for module-export
+// lookup by name (`from mod import x`) where no compile-time slot exists.
+// global_names maps slot -> name for error messages and exception-class
+// resolution. No mutex: Environments are never shared across threads.
 Environment :: struct {
 	name:         string,
 	vars:         map[^String_Object]Value,

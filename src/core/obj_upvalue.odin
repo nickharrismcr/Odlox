@@ -1,16 +1,12 @@
 package core
 
 // Upvalue_Object is how a closure captures a variable from an enclosing
-// function's stack frame. `location` points at the live value -- either
-// straight into the VM's value stack (while "open", i.e. the enclosing
-// frame is still on the call stack) or at this object's own `closed`
-// field (once the VM detaches it on scope-exit/return, see the vm
-// package's close_upvalues). `next_open` chains every currently-open
-// upvalue into the VM's single sorted-by-slot list -- named `next_open`
-// rather than `next` because `using obj: Obj` already promotes
-// `Obj.next` (the *garbage collector's* unrelated sweep-list link) to
-// this same scope, and Odin doesn't allow two same-named fields to
-// coexist even when one arrives via embedding.
+// function's stack frame. `location` points at the live value: either
+// straight into the VM's value stack while "open", or at this object's
+// own `closed` field once the VM detaches it. `next_open` chains every
+// open upvalue into the VM's sorted-by-slot list; named `next_open` rather
+// than `next` because `using obj: Obj` already promotes the GC's unrelated
+// `Obj.next` sweep-list link into this scope.
 Upvalue_Object :: struct {
 	using obj: Obj,
 	location:  ^Value,

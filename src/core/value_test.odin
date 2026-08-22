@@ -7,14 +7,10 @@ package core
 
 import "core:testing"
 
-// Pins down the whole point of the #raw_union design: Value's size must
-// match what docs/ARCHITECTURE.md's Value representation section
-// documents -- 40 bytes as of the Vec2/3/4 inlining change
-// (docs/plans/inline-vec-value.md), up from 16 bytes in the original
-// (Obj-only-payload) design. If this regresses (e.g. a field gets added
-// without checking alignment/size first), it should fail loudly here
-// rather than silently show up later as "the VM is slower than
-// expected".
+// Pins Value's size at 40 bytes (up from 16 in the original Obj-only-payload
+// design), matching docs/ARCHITECTURE.md's Value representation section.
+// A regression here should fail loudly rather than surface later as an
+// unexplained VM slowdown.
 @(test)
 test_value_size :: proc(t: ^testing.T) {
 	testing.expect_value(t, size_of(Value), 40)

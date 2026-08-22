@@ -113,17 +113,11 @@ Scanner :: struct {
 }
 
 // tokenize scans the entire source up front and returns a Scanner
-// positioned at the first token. This is the only entry point callers
-// should use; scan_token is an internal driver.
-//
-// Implicit-semicolon suppression runs as a second pass over the raw
-// token stream (see keep_eol) rather than inline during scanning,
-// because the decision to keep or drop a given Eol needs to see both the
-// token before it (an opener/operator continues the statement) and the
-// token after it (a closing bracket means the statement isn't over
-// either, even though the preceding token was an ordinary expression
-// atom) -- a single token of look-behind alone can't express "still
-// inside an open `[`".
+// positioned at the first token; scan_token is an internal driver.
+// Implicit-semicolon suppression runs as a second pass over the raw token
+// stream (see keep_eol) rather than inline, since the decision to keep or
+// drop an Eol needs to see both the token before and after it -- a single
+// token of look-behind can't express "still inside an open `[`".
 tokenize :: proc(source: string) -> Scanner {
 	s := Scanner {
 		source = normalize_source(source),
@@ -193,13 +187,10 @@ print_tokens :: proc(s: ^Scanner) {
 // -----------------------------------------------------------------------
 // Implicit-semicolon suppression.
 //
-// An end-of-line doesn't end a statement -- so its Eol token is dropped
-// rather than kept -- in three situations: right after an opening
-// bracket/separator/`=`/binary operator (the statement clearly
-// continues), right before a closing bracket or Eof (the statement
-// can't have ended mid-`[...]`/mid-`(...)`, no matter what the
-// preceding token was), or right after another (kept) Eol (collapsing a
-// blank line into the single statement-boundary it already represents).
+// An Eol token is dropped rather than kept in three situations: right
+// after an opening bracket/separator/`=`/binary operator, right before a
+// closing bracket or Eof, or right after another (kept) Eol (collapsing a
+// blank line into one statement-boundary).
 
 @(private = "file")
 next_significant_type :: proc(raw: []Token, from: int) -> Token_Type {
@@ -480,12 +471,10 @@ scan_number :: proc(s: ^Scanner) -> Token {
 
 // -----------------------------------------------------------------------
 // String scanning, with scan-time interpolation desugaring.
-//
-// `"lit0 ${expr0} lit1"` desugars into a synthetic token stream
-// equivalent to `( "lit0 " & str(expr0) & " lit1" )`, queued in
-// s.pending and drained one-by-one by later scan_token calls. No
-// interpolation concept exists past this point -- the compiler never
-// sees it. `$$` escapes to a literal `$`.
+// `"lit0 ${expr0} lit1"` desugars into a synthetic token stream equivalent
+// to `( "lit0 " & str(expr0) & " lit1" )`, queued in s.pending and drained
+// one-by-one by later scan_token calls -- no interpolation concept exists
+// past this point. `$$` escapes to a literal `$`.
 
 @(private = "file")
 String_Part :: struct {

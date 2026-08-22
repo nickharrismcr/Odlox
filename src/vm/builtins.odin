@@ -10,10 +10,8 @@ import "core:strings"
 // in this file, plus the sys/os module functions in builtins_math.odin/
 // builtins_sys.odin/builtins_os.odin. The much larger raylib-backed
 // builtin surface lives in the separate `natives` package instead.
-//
-// define_builtins is an explicit, separate step from new_vm (see
-// vm.odin's doc comment) -- a caller can construct a VM and skip this
-// entirely.
+// define_builtins is an explicit, separate step from new_vm -- a caller
+// can construct a VM and skip this entirely.
 
 // native_vm is the one place a Builtin_Fn's raw `vm: rawptr` parameter
 // gets cast back to a concrete `^VM` -- see obj_native.odin's doc
@@ -50,23 +48,12 @@ define_builtins :: proc(vm: ^VM) {
 	// module (see module.odin's do_import).
 }
 
-// seed_builtin_globals is what actually makes `type(1)`/`len(x)`/...
-// resolvable at all: the compiler assigns every referenced name a
-// global slot purely from source (see compiler_state.odin's
-// global_slot -- "first mention wins"), with no notion that some
-// names are builtins, so a bare call to a builtin free function
-// compiles to an ordinary Op_Get_Global on a slot nothing has called
-// Define_Global for. Op_Get_Global has no map-fallback path of its
-// own (see run.odin and docs/ARCHITECTURE.md's notes on slot-indexed
-// globals) -- so after every compile, this walks the slots the
-// compilation unit's top-level chunk actually names (fn.chunk.
-// global_names is only populated there -- see chunk.odin) and seeds
-// any still-undefined slot whose name matches a registered builtin or
-// built-in module. "Still-undefined" matters for the REPL and for
-// module re-imports: a slot the script has already assigned into must
-// never be clobbered back to the builtin, or a user global that
-// happens to shadow a builtin name would silently revert on the next
-// line.
+// seed_builtin_globals is what makes `type(1)`/`len(x)`/... resolvable:
+// the compiler assigns global slots purely from source with no notion of
+// builtins, so a bare builtin call compiles to an Op_Get_Global on an
+// otherwise-undefined slot. After every compile, this seeds any
+// still-undefined slot matching a registered builtin -- "still-undefined"
+// so a user global shadowing a builtin name is never clobbered on re-import.
 seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 	for name, slot in fn.chunk.global_names {
 		if slot < len(vm.environment.defined) && vm.environment.defined[slot] {
@@ -76,12 +63,14 @@ seed_builtin_globals :: proc(vm: ^VM, fn: ^core.Function_Object) {
 		if v, ok := vm.builtins[id]; ok {
 			core.env_set_global(vm.environment, slot, v)
 			core.env_set_var(vm.environment, id, v)
+			write_barrier_value(vm, v)
 			continue
 		}
 		if mod, ok := vm.builtin_modules[id]; ok {
 			v := core.make_object_value(&mod.obj)
 			core.env_set_global(vm.environment, slot, v)
 			core.env_set_var(vm.environment, id, v)
+			write_barrier_value(vm, v)
 		}
 	}
 }
@@ -107,10 +96,12 @@ define_builtin :: proc(vm: ^VM, module: string, name: string, fn: core.Builtin_F
 	val := core.make_object_value(&native.obj)
 	if module == "" {
 		vm.builtins[core.intern_string(name)] = val
+		write_barrier_value(vm, val)
 		return
 	}
 	mod := vm.builtin_modules[core.intern_string(module)]
 	core.env_set_var(mod.environment, core.intern_string(name), val)
+	write_barrier_value(vm, val)
 }
 
 // -----------------------------------------------------------------------
@@ -156,14 +147,8 @@ type_name :: proc(v: core.Value) -> string {
 		case .File:
 			return "file"
 		case .Float_Array, .Float_Array_3D, .Userdata:
-			// Float_Array/Float_Array_3D plus every Userdata-backed kind
-			// (Sound/Music/Process/Regex Pattern+Match/PhysicsWorld/Window/
-			// Image/Texture/Render_Texture/Shader/Camera/Batch/Batch_Instanced --
-			// see natives/README.md) are all implemented as native objects
-			// under the hood, so type() reports them as "builtin" rather
-			// than a dedicated per-kind name -- consistent behavior across
-			// every native-backed object kind, not a claim that any of
-			// them literally is a bare native function.
+			// All native-object-backed kinds (see natives/README.md) report
+			// as "builtin" rather than a dedicated per-kind name.
 			return "builtin"
 		}
 	}
@@ -220,6 +205,7 @@ append_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Va
 		return core.NIL_VALUE
 	}
 	core.list_append(l, vm.stack[arg_stack_ptr + 1])
+	write_barrier_value(vm, vm.stack[arg_stack_ptr + 1])
 	return val
 }
 

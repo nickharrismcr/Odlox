@@ -1,9 +1,30 @@
 # GC optimization: surgical wins + incremental collection
 
-**Status**: design only, not yet implemented. Written in response to a "plan the GC optimizations"
-request in a conversation with no Odin toolchain available in this session (no `odin` binary, no
-prebuilt `bin/odlox`), so nothing here has been built, run, or benchmarked yet. Intended to be picked
-up in a different session — see "First step for whoever picks this up" at the end.
+**Status**: implemented (3a, 3b, and Option 1, including the write-barrier site list). Builds clean
+(`odin build src -debug -vet -strict-style`), `bin/test_odin.sh` (90/90 in `src/vm`, including new
+`src/vm/gc_test.odin` covering the incremental cycle, the write-barrier regression case, and 3a's
+size accounting) and `bin/run_tests.sh` (255 passed, 26 skipped, unchanged from before this change)
+both pass. `--trace-gc` confirms cycles now interleave with execution instead of running atomically.
+
+Two corrections made during implementation, beyond the write-barrier site list as originally
+written:
+- `gc_track`'s "allocate black" rule (mark true, don't enqueue) was changed to "allocate gray" (mark
+  *and* enqueue, i.e. reuse `mark_object`): `module.odin`'s `load_module` splices a whole separate
+  sub-VM's already-existing object subtree into the running VM's object list via a single `gc_track`
+  call on the `Module_Object` wrapping it, and that subtree's prior marked bits come from the sub-VM's
+  own unrelated GC history, not from anything this cycle's tracing has verified. Allocating it gray
+  lets the ordinary `blacken_object(Module)` pass discover it correctly instead. `load_module` also
+  now resets every spliced object's mark bit to false before linking it in, for the same reason.
+- `write_barrier` fires during `.Sweeping` as well as `.Marking`, not just `.Marking` as originally
+  specified — during Sweeping it marks *and* eagerly traces in place, since no later `step_mark` call
+  is coming to drain a deferred enqueue. Argued (but not proven by an empirical repro) to be a no-op
+  in every real call site audited for this plan; kept as a real fallback rather than an assert.
+
+The `Set_Global`-family reasoning in the original write-barrier list ("a root can also point at
+something already discovered-and-blackened elsewhere") turned out to apply identically to
+`Set_Local`/`Set_Upvalue`/`do_foreach`/`do_next` (all overwrite a `vm.stack` slot `mark_roots` only
+scanned once) and to every `env_set_global`/`env_set_var`/`vm.builtins` writer, not only the opcode
+named in the plan — see the call sites actually touched, below.
 
 ## Context
 

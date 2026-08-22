@@ -5,20 +5,11 @@ import "../vm"
 import rl "vendor:raylib"
 
 // gfx: a large raylib-dependent module surface -- window/image/texture/
-// render_texture/shader/camera/batch/batch_instanced/instanced_light.
-// Each object kind (Userdata_Object -- see core/obj_userdata.odin and
-// this package's own README.md) lives in its own sibling file:
-// gfx_window.odin, gfx_image.odin, gfx_texture.odin (Texture +
-// Render_Texture), gfx_shader.odin, gfx_camera.odin, gfx_batch.odin,
-// gfx_batch_instanced.odin, gfx_light.odin. This file holds module
-// registration plus the few plain functions
-// (encode_rgba/decode_rgba/float_array) and helpers shared across those
-// sibling files.
-//
-// gfx.window(width, height) only constructs the window object -- it
-// does *not* call raylib's InitWindow itself; that only happens inside
-// the separate win.init() method, so a script must call .init() before
-// drawing. This is a deliberate API shape, not an oversight.
+// render_texture/shader/camera/batch/batch_instanced/instanced_light. Each
+// object kind lives in its own sibling file; this file holds module
+// registration plus shared helpers. gfx.window(width, height) only
+// constructs the window object -- it does not call raylib's InitWindow
+// itself, which happens inside the separate win.init() method.
 
 @(private)
 register_gfx :: proc(v: ^vm.VM) {

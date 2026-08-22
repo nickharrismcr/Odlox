@@ -4,14 +4,10 @@ import "../core"
 import "core:testing"
 
 // Opcode-sequence tests for the Emitter, exercised end to end through
-// Compile()/Compile_Repl(). Duplicates compile_test.odin's own decode()/
-// op_sequence()/contains_op()/count_op() helpers (file-private there, so
-// can't be shared directly) and reuses several of its exact source
-// strings for direct opcode-for-opcode parity checks, plus dedicated
-// coverage for try/finally *crossing* (a return/break/continue whose
-// target is outside an enclosing try) -- something the old single-pass
-// compiler's trampoline design made hard to test deliberately, so
-// compile_test.odin has no equivalent of its own.
+// Compile()/Compile_Repl(). Duplicates compile_test.odin's file-private
+// decode()/op_sequence()/contains_op()/count_op() helpers and adds
+// dedicated coverage for try/finally crossing (a return/break/continue
+// whose target is outside an enclosing try).
 
 @(private = "file")
 Decoded :: struct {

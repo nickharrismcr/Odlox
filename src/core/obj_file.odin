@@ -37,14 +37,10 @@ file_close :: proc(f: ^File_Object) {
 	f.closed = true
 }
 
-// file_read_line reads up to and including the next '\n' (stripped,
-// along with any preceding '\r'). ok is false only once EOF has already
-// been reached with nothing left to return -- a final line with no
-// trailing newline still comes back as ok=true: a non-empty partial read
-// on EOF is still a real line, and even a file whose last byte is the
-// final '\n' (with nothing left after it) reports ok=false immediately
-// rather than one extra successful read of an empty string. Only the
-// *next* call after a real line reports EOF.
+// file_read_line reads up to and including the next '\n' (stripped, along
+// with any preceding '\r'). ok is false only once EOF has already been
+// reached with nothing left to return; a final line with no trailing
+// newline still comes back as ok=true.
 file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 	if f.eof {
 		return "", false
@@ -61,13 +57,10 @@ file_read_line :: proc(f: ^File_Object) -> (line: string, ok: bool) {
 }
 
 // file_write writes s to f, first un-escaping a literal `\n` (the two
-// characters backslash-n) into a real newline byte. This language's
-// string literals have no real backslash-escape mechanism at all (see
-// scanner.odin's scan_string, which only ever special-cases `$$` for
-// interpolation), so `"hello\n"` in Lox source is literally the six
-// characters h-e-l-l-o-backslash-n, not a newline. Writing text files
-// with real newlines from Lox therefore depends on this one write-time
-// unescape.
+// characters backslash-n) into a real newline byte. Lox string literals
+// have no backslash-escape mechanism, so `"hello\n"` in source is
+// literally six characters, not a newline; this is the one write-time
+// unescape that lets Lox produce real newlines in text files.
 file_write :: proc(f: ^File_Object, s: string) {
 	unescaped, was_allocation := strings.replace_all(s, `\n`, "\n")
 	defer if was_allocation {

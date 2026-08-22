@@ -18,25 +18,12 @@ import game_controller
 import game_sound
 
 // --- Game events -------------------------------------------------------------
-// Emitted via entities.events; subscribe with entities.events.on(name, fn).
-// For systems that want to react to gameplay events (audio, scoring, particles,
-// HUD). Payload in ( ):
-//   "lander_spawn" / "human_spawn" (entity) - materialised into the world
-//   "lander_searching"  (lander)  - began searching for a human
-//   "human_grabbed"     (lander)  - latched onto a human (lander.human)
-//   "human_caught"       (human)   - scooped up by the player
-//   "human_saved"        (human)   - reached the ground safely
-//   "lander_mutated"    (lander)  - reached the top and became a mutant
-//   "lander_killed" / "mutant_killed" (entity) - destroyed
-//   "bullet_fire"       (pos)     - an NPC fired a bullet
-//   "laser_fire"        (pos)     - the player fired the laser
-//   "player_hit"        (player)  - struck by a deadly NPC
-//   "pod_killed"        (pod)     - a pod burst open, releasing swarmers
-//   "<type>_spawn/_killed"        - also for pod, swarmer, baiter, bomber
-//   "player_die"        (player)  - death sequence began (ship freezes, flashes red)
-//   "player_explode"    (player)  - ship vanished; explosion particles burst
-//   "player_start"      (player)  - ship respawned (brief invulnerability)
-//   "player_hyperspace" (player)  - warped to a random spot; rematerialising
+// Emitted via entities.events; subscribe with entities.events.on(name, fn). Payload by type:
+//   entity: lander/human_spawn, lander/mutant_killed, and <type>_spawn/_killed for
+//     pod/swarmer/baiter/bomber
+//   lander: lander_searching, human_grabbed, lander_mutated
+//   human: human_caught, human_saved | pos: bullet_fire, laser_fire
+//   player: player_hit, player_die, player_explode, player_start, player_hyperspace
 const GAME_EVENTS = ["lander_spawn", "human_spawn", "lander_searching",
                      "human_grabbed", "human_caught", "human_saved", "lander_mutated", "lander_killed",
                      "mutant_killed", "bullet_fire", "laser_fire", "player_hit",

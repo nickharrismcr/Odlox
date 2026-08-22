@@ -387,14 +387,9 @@ class EntityMgr {
         this.events.emit("laser_fire", vec2(x, y))   // the player fired the laser
     }
 
-    // Player lasers destroy shootable NPCs; deadly NPCs hit the player, and
-    // ramming one kills it right back (humans are never deadly, so this never
-    // touches them -- they're only ever picked up, via the dropping-state
-    // check below). Driven by per-entity flags rather than type, so every NPC
-    // (and a mutated lander) takes part without special-casing. cam is used so
-    // the laser only damages NPCs that are actually on screen -- the beam can
-    // reach a screen's width into off-screen world space, and hitting things
-    // you can't see is unfair.
+    // Player lasers destroy shootable NPCs; deadly NPCs hit the player, and ramming one
+    // kills it right back. Driven by per-entity flags rather than type, so every NPC takes
+    // part without special-casing. cam restricts laser damage to NPCs actually on screen.
     check_collisions(player, cam) {
         if (this.frozen) {
             return
@@ -418,15 +413,11 @@ class EntityMgr {
                 was_dying = player.dying()
                 player.hit()
                 e.hit()
-                // If this collision is what actually killed the player (not
-                // just a graze while already invulnerable/dying), remove the
-                // entity outright rather than let it play out its own
-                // disperse-death animation -- that would otherwise sit
-                // frozen for the whole death sequence, since freeze_enemies()
-                // pauses every entity together. e.hit() already ran its
-                // normal enter_die() (score event, on_die() side effects
-                // like a pod's swarmers), so nothing is skipped, it just
-                // finishes instantly instead of over several frames.
+                // If this collision is what killed the player, remove the entity outright
+                // instead of letting it play its disperse-death animation, which would
+                // otherwise sit frozen for the death sequence (freeze_enemies() pauses
+                // every entity together). e.hit() already ran enter_die(), so nothing is
+                // skipped -- it just finishes instantly instead of over several frames.
                 if (!was_dying and player.dying()) {
                     e.alive = false
                 }

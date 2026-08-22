@@ -1,15 +1,8 @@
-// Per-level difficulty overrides, applied to Config at the start of each
-// level. Values match the original Lua reference's game/levels.lua exactly
-// (landers/pods/bombers/max_baiters directly; npc_bullet_time converted from
-// seconds to frames, *60, since odlox's aim_bullet_at() works in frames where
-// Lua's BulletMgr:fireEvent() worked in seconds -- see calc_fire() in
-// game/util.lua). Notably: no pods or bombers at all until level 2/3. Index
-// is 1-based; levels past the end of the list repeat the last one (the Lua
-// original has no such fallback and would error past level 6).
-//
-// lander_waves/lander_wave_delay/humans/swarmers_per_pod don't vary by level
-// in the Lua original either, so they stay plain Config fields rather than
-// becoming part of Level -- see config.lox.
+// Per-level difficulty overrides, applied to Config at the start of each level.
+// npc_bullet_time is in frames (*60 from the Lua reference's seconds). No pods or bombers
+// until level 2/3. Index is 1-based; levels past the end of the list repeat the last one.
+// lander_waves/lander_wave_delay/humans/swarmers_per_pod don't vary by level, so they stay
+// plain Config fields rather than becoming part of Level -- see config.lox.
 
 class Level {
     __init__(landers_per_wave, pods, bombers, npc_bullet_time, max_baiters) {
