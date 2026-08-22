@@ -341,24 +341,29 @@ both call sites in the Resolver.
 
 `Compile`/`Compile_Repl` each get the one new call the design doc's "Where it fits in the pipeline"
 section shows, inserted between the existing `resolve_program` and `emit_program` calls
-(`compile.odin:38-43` and `compile.odin:92-97`):
+(`compile.odin:38-43` and `compile.odin:92-97`) — but the two are no longer identical, per open
+question 3's resolution: `Compile_Repl` suppresses printing by default.
 
 ```odin
-globals, had_error := resolve_program(stmts[:])
-if had_error {
-	return nil, false
-}
-
+// Compile:
 diagnostics := typecheck_program(stmts[:], globals)
 print_type_diagnostics(diagnostics) // Phase 2: always warnings, never affects `ok`
 // Phase 4 adds: if StrictTypes && len(diagnostics) > 0 { return nil, false }
 
-return emit_program(stmts[:], filename, environment, globals, DebugSkipPeephole)
+// Compile_Repl: same typecheck_program call, but the print is gated:
+diagnostics := typecheck_program(stmts[:], globals)
+if StrictTypes {
+	print_type_diagnostics(diagnostics)
+}
+// Phase 4 adds the same `if StrictTypes && len(diagnostics) > 0 { return nil, false }` gate here too
 ```
 
 No signature change to `Compile`/`Compile_Repl` in Phase 2 (diagnostics print as a side effect, the
 same way `resolve_error`/`error_at` already print as a side effect rather than being returned to
-the caller) — Phase 4 is what actually changes control flow based on the result.
+the caller) — Phase 4 is what actually changes control flow based on the result. Phase 2 lands the
+`typecheck_program` call in both, but `Compile_Repl`'s print stays gated behind `StrictTypes` from
+the start (that gate is cheap to add in Phase 2 even before `StrictTypes` has any other effect, so
+Phase 2 and Phase 4 don't need to touch this call site twice).
 
 ### `src/compiler/emit.odin`/`emit_expr.odin`/`emit_stmt.odin`
 
@@ -561,24 +566,28 @@ if that's a better-sized chunk in practice, but Phase 3 should stay separate giv
 Phase 4 should never be combined with anything else given its blast radius (it's the only phase
 that changes `Compile`'s return value based on new logic).
 
-## Open questions requiring a decision before implementation starts
+## Open questions — resolved
 
-1. **`this.x: int` field-annotation syntax** — the design doc mentions it conditionally ("if this
-   syntax gets added"). This plan's Phase 3 doesn't add it, relying solely on inference from
-   `__init__`'s initializer expressions. Confirm that's sufficient for v1, or scope in the extra
-   grammar (a fourth annotation site, `Expr_Property` on the LHS of a `this.x = ` inside `__init__`
-   specifically) before Phase 1 locks down the grammar surface.
-2. **Local (non-top-level) class declarations in Phase 3's two-pass signature collection** — Lox
-   permits `class` inside a function body (`resolve_class_decl` branches on `is_local`). This plan's
-   fixpoint pass assumes collecting signatures **program-wide up front** is still correct/desirable
-   even for a class nested inside a function that might not execute, or might execute multiple
-   times with different closure state. Static typing over a locally-scoped class's signature is the
-   same either way (signatures don't depend on runtime state), so this is believed fine, but is
-   flagged since the design doc's own examples are all top-level classes.
-3. **Diagnostic sink for the REPL (`Compile_Repl`)** — a warning that prints via `fmt.printfln`
-   fires on every REPL line, which could be noisy for interactive use in a way it isn't for a
-   script. Confirm warnings print identically in both `Compile`/`Compile_Repl`, or should the REPL
-   suppress Phase 2/3 warnings (or only show them at Phase 4's `--strict-types`) as a UX call.
-4. **`--print-ast` / `ast_print.odin` output format for `Type_Expr`** — no existing convention to
-   match since nothing in `ast_print.odin` prints a type today; this plan doesn't prescribe the
-   exact textual format, just that it must exist for Phase 1 review purposes.
+1. **`this.x: int` field-annotation syntax: decided against for v1.** Phase 3 relies solely on
+   inference from `__init__`'s initializer expressions — no fourth annotation site. Simpler, ships
+   Phase 3 sooner, and stays fully compatible with adding explicit syntax later (annotations are
+   purely additive, per the design doc's type-erasure guarantee, so this is never a breaking
+   decision to revisit). Revisit only if practice shows inference alone leaves a real, common gap.
+2. **Local (non-top-level) class declarations in Phase 3's two-pass signature collection: confirmed
+   correct as planned.** A `Class_Type` built from a `Stmt_Class_Decl` node's own members (methods
+   table, `__init__` field harvest) is a purely static property of that AST node — it doesn't depend
+   on whether, or how many times, the enclosing function executes; every runtime instantiation of a
+   locally-declared class produced by the same node has an identical structure. So collecting every
+   class signature program-wide up front, including ones nested inside function bodies, is correct
+   with no special-casing needed beyond what the fixpoint pass already does.
+3. **Diagnostic sink for the REPL: decided — suppress by default, surface under `--strict-types`.**
+   `Compile` prints Phase 2/3 warnings normally (unaffected). `Compile_Repl` suppresses them unless
+   `StrictTypes` is set, so quick interactive snippets stay quiet by default while scripts behave as
+   before; `--strict-types` behaves identically in both paths once it's live in Phase 4. This is a
+   small asymmetry between `Compile`/`Compile_Repl` to implement in Phase 2's `print_type_diagnostics`
+   call site — gate it on `(!repl_mode || StrictTypes)`, threading a `repl_mode: bool` (or reusing
+   `Compile_Repl`'s existing `"__repl__"` filename sentinel already used elsewhere in `compile.odin`,
+   whichever reads cleaner at implementation time) through to the print call.
+4. **`--print-ast` output format for `Type_Expr`: mirror surface syntax.** `: int`, `-> int`,
+   `List[int]`, `int?` — the least surprising choice for anyone reading `--print-ast` output, and
+   requires no new formatting convention beyond what `ast_print.odin` already does for other nodes.
