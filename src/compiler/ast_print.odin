@@ -80,17 +80,55 @@ write_function_decl :: proc(sb: ^strings.Builder, tag: string, name: string, dec
 			strings.write_string(sb, "*")
 		}
 		strings.write_string(sb, lexeme(param.name))
+		if param.type_annotation != nil {
+			strings.write_string(sb, ": ")
+			print_type_expr(sb, param.type_annotation)
+		}
 		if param.default != nil {
 			strings.write_string(sb, "=")
 			print_expr(sb, param.default, indent)
 		}
 	}
-	strings.write_string(sb, ")\n")
+	strings.write_string(sb, ")")
+	if decl.return_type != nil {
+		strings.write_string(sb, " -> ")
+		print_type_expr(sb, decl.return_type)
+	}
+	strings.write_string(sb, "\n")
 	for s in decl.body {
 		print_stmt(sb, s, indent + 1)
 	}
 	write_indent(sb, indent)
 	strings.write_string(sb, ")")
+}
+
+// print_type_expr mirrors surface syntax (`int`, `List[int]`, `int?`)
+// rather than inventing a separate --print-ast convention for type
+// annotations -- the least surprising choice for a human reading the
+// output, per docs/plans/optional-type-checking-implementation.md's open
+// question 4.
+@(private = "file")
+print_type_expr :: proc(sb: ^strings.Builder, te: ^Type_Expr) {
+	if te == nil {
+		return
+	}
+	switch te.kind {
+	case .Named:
+		strings.write_string(sb, lexeme(te.name))
+	case .Generic:
+		strings.write_string(sb, lexeme(te.name))
+		strings.write_string(sb, "[")
+		for arg, i in te.args {
+			if i > 0 {
+				strings.write_string(sb, ", ")
+			}
+			print_type_expr(sb, arg)
+		}
+		strings.write_string(sb, "]")
+	case .Nilable:
+		print_type_expr(sb, te.inner)
+		strings.write_string(sb, "?")
+	}
 }
 
 // ---------------------------------------------------------------------
@@ -123,6 +161,10 @@ print_stmt :: proc(sb: ^strings.Builder, s: Stmt, indent: int) {
 		write_indent(sb, indent)
 		strings.write_string(sb, "(const " if v.is_const else "(var ")
 		strings.write_string(sb, lexeme(v.name))
+		if v.type_annotation != nil {
+			strings.write_string(sb, ": ")
+			print_type_expr(sb, v.type_annotation)
+		}
 		if v.init != nil {
 			strings.write_string(sb, " ")
 			print_expr(sb, v.init, indent)

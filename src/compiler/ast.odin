@@ -249,19 +249,21 @@ Expr_Lambda :: struct {
 // shared by all three today.
 
 Param :: struct {
-	name:          Token,
-	default:       Expr, // nil if this param has no default
-	is_rest:       bool, // `*rest`; must be the last param if set
-	declared_slot: int, // filled in by the Resolver
+	name:            Token,
+	default:         Expr, // nil if this param has no default
+	is_rest:         bool, // `*rest`; must be the last param if set
+	declared_slot:   int, // filled in by the Resolver
+	type_annotation: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
 }
 
 Function_Decl :: struct {
-	using base: Node_Base,
-	name:       Token, // empty/synthetic token for a lambda
-	params:     []Param,
-	body:       []Stmt,
-	fn_type:    Function_Type,
-	upvalues:   []Upvalue, // filled in by the Resolver
+	using base:  Node_Base,
+	name:        Token, // empty/synthetic token for a lambda
+	params:      []Param,
+	body:        []Stmt,
+	fn_type:     Function_Type,
+	upvalues:    []Upvalue, // filled in by the Resolver
+	return_type: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
 }
 
 // ---------------------------------------------------------------------
@@ -312,12 +314,13 @@ Stmt_Breakpoint :: struct {
 // Stmt_Var_Decl unifies var/const declarations, which already share
 // finish_declare today.
 Stmt_Var_Decl :: struct {
-	using base:    Node_Base,
-	name:          Token,
-	init:          Expr, // nil if no initializer (the parser requires one when is_const)
-	is_const:      bool,
-	declared_slot: int, // filled in by the Resolver
-	is_local:      bool, // filled in by the Resolver; local vs. global determines which opcode family Emit uses
+	using base:      Node_Base,
+	name:            Token,
+	init:            Expr, // nil if no initializer (the parser requires one when is_const)
+	is_const:        bool,
+	declared_slot:   int, // filled in by the Resolver
+	is_local:        bool, // filled in by the Resolver; local vs. global determines which opcode family Emit uses
+	type_annotation: ^Type_Expr, // nil = untyped; parsed but not checked until Phase 2
 }
 
 // Stmt_Implicit_Assign is a bare `x = expr` at statement level for a name
@@ -527,4 +530,25 @@ Stmt_From_Import :: struct {
 	module:     Token,
 	wildcard:   bool, // `from mod import *`
 	names:      []From_Import_Name, // meaningful only if !wildcard
+}
+
+// ---------------------------------------------------------------------
+// Type expressions -- optional annotations parsed at the three sites
+// above (Param.type_annotation, Stmt_Var_Decl.type_annotation,
+// Function_Decl.return_type). Phase 1 only: parsed and printable, never
+// consulted by Resolve or Emit -- type erasure is already the status quo
+// (see docs/plans/optional-type-checking.md), so an unannotated program's
+// bytecode is unaffected either way. See type_expr.odin for the parser.
+Type_Expr_Kind :: enum {
+	Named, // `int`, `float`, `string`, `bool`, or a class name
+	Generic, // `Name[Name, ...]` -- args recorded, never checked in v1
+	Nilable, // `Name?`
+}
+
+Type_Expr :: struct {
+	using base: Node_Base,
+	kind:       Type_Expr_Kind,
+	name:       Token, // meaningful for .Named and .Generic (the outer name) and .Nilable (delegates to inner's name)
+	args:       []^Type_Expr, // meaningful only for .Generic
+	inner:      ^Type_Expr, // meaningful only for .Nilable
 }

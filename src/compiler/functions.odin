@@ -24,6 +24,10 @@ parse_function_decl :: proc(p: ^Parser, fn_type: Function_Type, name_tok: Token)
 
 			consume(p, .Identifier, "Expect parameter name.")
 			param_name := p.previous
+			type_annotation: ^Type_Expr
+			if match(p, .Colon) {
+				type_annotation = parse_type_expr(p)
+			}
 			default_expr: Expr
 			if match(p, .Equal) {
 				saw_default = true
@@ -31,7 +35,7 @@ parse_function_decl :: proc(p: ^Parser, fn_type: Function_Type, name_tok: Token)
 			} else if saw_default {
 				error(p, "Non-default parameter can't follow a default parameter.")
 			}
-			append(&params, Param{name = param_name, default = default_expr})
+			append(&params, Param{name = param_name, default = default_expr, type_annotation = type_annotation})
 
 			if !match(p, .Comma) {
 				break
@@ -41,6 +45,11 @@ parse_function_decl :: proc(p: ^Parser, fn_type: Function_Type, name_tok: Token)
 	match(p, .Eol) // allow EOL before ')' (e.g. a trailing comma's own line)
 	consume(p, .Right_Paren, "Expect ')' after parameters.")
 
+	return_type: ^Type_Expr
+	if match(p, .Arrow) {
+		return_type = parse_type_expr(p)
+	}
+
 	// A `{` on its own line after the parameter list is valid -- see
 	// compile_function_body's own comment on why this Eol survives into
 	// the token stream and must be tolerated explicitly here too.
@@ -48,5 +57,14 @@ parse_function_decl :: proc(p: ^Parser, fn_type: Function_Type, name_tok: Token)
 	consume(p, .Left_Brace, "Expect '{' before function body.")
 	body := block(p)
 
-	return new_clone(Function_Decl{base = Node_Base{token = name_tok}, name = name_tok, params = params[:], body = body, fn_type = fn_type})
+	return new_clone(
+		Function_Decl{
+			base = Node_Base{token = name_tok},
+			name = name_tok,
+			params = params[:],
+			body = body,
+			fn_type = fn_type,
+			return_type = return_type,
+		},
+	)
 }

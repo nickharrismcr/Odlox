@@ -109,6 +109,41 @@ test_two_char_operators :: proc(t: ^testing.T) {
 	})
 }
 
+// Arrow (`->`, Phase 1 of optional type annotations -- return-type
+// annotation syntax) shares its lead character with Minus/Minus_Equal, so
+// this pins down all three of scan_token's '-' branches individually: a
+// lone '-' still scans as Minus, '-=' still scans as Minus_Equal, and
+// only '->' scans as the new Arrow token.
+@(test)
+test_arrow_and_minus_variants :: proc(t: ^testing.T) {
+	expect_types(t, "- -= ->", []Token_Type{.Minus, .Minus_Equal, .Arrow, .Eof})
+}
+
+// Colon and Question are reused (not re-tokenized) for `x: int` param/var
+// annotations and `int?` nilable suffixes respectively -- confirms adding
+// Arrow didn't disturb either existing token, and that a type-annotation-
+// shaped fragment (`x: int?`) scans as the same tokens a dict-literal-key
+// or ternary-operator use of `:`/`?` already would.
+@(test)
+test_colon_and_question_unaffected_by_arrow :: proc(t: ^testing.T) {
+	expect_types(t, "x: int?", []Token_Type{.Identifier, .Colon, .Identifier, .Question, .Eof})
+}
+
+// Regression test: keep_eol's "prev continues" rule originally treated
+// Question as always meaning "a ternary's `?` is coming, don't terminate
+// yet" -- true for `cond ?\n a : b`, but wrong for a nilable-type
+// annotation ending a line (`var c: string?`), which is a complete
+// statement. See keep_eol's own comment for why Question was removed
+// from that list; this pins down the Eol surviving right after a
+// line-ending `?` now that the fix is in.
+@(test)
+test_eol_kept_after_nilable_type_annotation :: proc(t: ^testing.T) {
+	expect_types(t, "var c: string?\nvar d = 1", []Token_Type{
+		.Var, .Identifier, .Colon, .Identifier, .Question, .Eol,
+		.Var, .Identifier, .Equal, .Int, .Eof,
+	})
+}
+
 // -----------------------------------------------------------------------
 // Numbers
 //

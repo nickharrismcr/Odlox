@@ -163,6 +163,10 @@ raise_statement :: proc(p: ^Parser) -> Stmt {
 parse_var_decl :: proc(p: ^Parser, is_const: bool) -> ^Stmt_Var_Decl {
 	consume(p, .Identifier, "Expect variable name.")
 	name_tok := p.previous
+	type_annotation: ^Type_Expr
+	if match(p, .Colon) {
+		type_annotation = parse_type_expr(p)
+	}
 	init: Expr
 	if is_const {
 		consume(p, .Equal, "Const variable must have an initializer.")
@@ -170,7 +174,9 @@ parse_var_decl :: proc(p: ^Parser, is_const: bool) -> ^Stmt_Var_Decl {
 	} else if match(p, .Equal) {
 		init = expression(p)
 	}
-	return new_clone(Stmt_Var_Decl{base = Node_Base{token = name_tok}, name = name_tok, init = init, is_const = is_const})
+	return new_clone(
+		Stmt_Var_Decl{base = Node_Base{token = name_tok}, name = name_tok, init = init, is_const = is_const, type_annotation = type_annotation},
+	)
 }
 
 var_declaration :: proc(p: ^Parser) -> Stmt {

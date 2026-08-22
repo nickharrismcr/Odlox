@@ -57,6 +57,42 @@ test_ast_var_and_const_decl_shape :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_ast_var_decl_type_annotation_shape :: proc(t: ^testing.T) {
+	untyped := parse_one(t, "var x = 1")
+	uvd, uvd_ok := untyped.(^Stmt_Var_Decl)
+	testing.expect(t, uvd_ok, "expected Stmt_Var_Decl")
+	testing.expect(t, uvd.type_annotation == nil, "expected no annotation to leave type_annotation nil")
+
+	typed := parse_one(t, "var x: int = 1")
+	tvd, tvd_ok := typed.(^Stmt_Var_Decl)
+	testing.expect(t, tvd_ok, "expected Stmt_Var_Decl")
+	testing.expect(t, tvd.type_annotation != nil, "expected annotation to be captured")
+	testing.expect_value(t, tvd.type_annotation.kind, Type_Expr_Kind.Named)
+	testing.expect_value(t, lexeme(tvd.type_annotation.name), "int")
+
+	no_init := parse_one(t, "var y: string")
+	nvd, nvd_ok := no_init.(^Stmt_Var_Decl)
+	testing.expect(t, nvd_ok, "expected Stmt_Var_Decl")
+	testing.expect(t, nvd.type_annotation != nil, "expected annotation without an initializer to still be captured")
+	testing.expect(t, nvd.init == nil)
+}
+
+// Regression test, at the parser level, for the same bug
+// test_eol_kept_after_nilable_type_annotation exercises at the scanner
+// level: a nilable annotation ending a var decl (no initializer) must
+// terminate as its own complete statement, not swallow the next line.
+@(test)
+test_ast_nilable_var_decl_terminates_before_next_statement :: proc(t: ^testing.T) {
+	stmts := parse_program(t, "var c: string?\nvar d = 1")
+	testing.expect(t, len(stmts) == 2, "expected two separate statements")
+	vd, ok := stmts[0].(^Stmt_Var_Decl)
+	testing.expect(t, ok, "expected Stmt_Var_Decl")
+	testing.expect(t, vd.type_annotation != nil)
+	testing.expect_value(t, vd.type_annotation.kind, Type_Expr_Kind.Nilable)
+	testing.expect(t, vd.init == nil)
+}
+
+@(test)
 test_ast_implicit_assignment_shape :: proc(t: ^testing.T) {
 	s := parse_one(t, "x = 1")
 	a, ok := s.(^Stmt_Implicit_Assign)
@@ -195,6 +231,27 @@ test_ast_function_declaration_shape :: proc(t: ^testing.T) {
 	testing.expect(t, fd.decl.params[1].default != nil, "expected b's default to be captured")
 	testing.expect(t, fd.decl.params[2].is_rest, "expected *rest to be marked is_rest")
 	testing.expect(t, len(fd.decl.body) == 1)
+}
+
+@(test)
+test_ast_function_declaration_type_annotations_shape :: proc(t: ^testing.T) {
+	untyped := parse_one(t, "func add(a, b) { return a + b }")
+	ufd, ufd_ok := untyped.(^Stmt_Function_Decl)
+	testing.expect(t, ufd_ok, "expected Stmt_Function_Decl")
+	testing.expect(t, ufd.decl.params[0].type_annotation == nil)
+	testing.expect(t, ufd.decl.return_type == nil)
+
+	// Annotation must parse before the default expression: `a: int = 5`.
+	typed := parse_one(t, "func add(a: int, b: int = 5) -> int { return a + b }")
+	tfd, tfd_ok := typed.(^Stmt_Function_Decl)
+	testing.expect(t, tfd_ok, "expected Stmt_Function_Decl")
+	testing.expect(t, len(tfd.decl.params) == 2)
+	testing.expect(t, tfd.decl.params[0].type_annotation != nil, "expected a's annotation to be captured")
+	testing.expect_value(t, lexeme(tfd.decl.params[0].type_annotation.name), "int")
+	testing.expect(t, tfd.decl.params[1].type_annotation != nil, "expected b's annotation to be captured")
+	testing.expect(t, tfd.decl.params[1].default != nil, "expected b's default to still be captured alongside its annotation")
+	testing.expect(t, tfd.decl.return_type != nil, "expected the return-type annotation to be captured")
+	testing.expect_value(t, lexeme(tfd.decl.return_type.name), "int")
 }
 
 @(test)

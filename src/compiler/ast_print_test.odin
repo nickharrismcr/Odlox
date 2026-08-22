@@ -63,6 +63,26 @@ test_print_ast_var_and_const_decl :: proc(t: ^testing.T) {
 	testing.expect_value(t, print_ast(stmts3), "(const z 2)\n")
 }
 
+// Type_Expr printing mirrors surface syntax (`: int`, `-> int`,
+// `List[int]`, `int?`) at all three annotation sites -- see this file's
+// header comment and docs/plans/optional-type-checking-implementation.md's
+// open question 4.
+@(test)
+test_print_ast_var_decl_type_annotation :: proc(t: ^testing.T) {
+	stmts := parse_program(t, "var x: int = 1")
+	testing.expect_value(t, print_ast(stmts), "(var x: int 1)\n")
+
+	stmts2 := parse_program(t, "var y: List[int]")
+	testing.expect_value(t, print_ast(stmts2), "(var y: List[int])\n")
+}
+
+@(test)
+test_print_ast_function_decl_type_annotations :: proc(t: ^testing.T) {
+	stmts := parse_program(t, "func add(a: int, b: int?) -> int { return a }")
+	expected := "(func add (a: int b: int?) -> int\n  (return a)\n)\n"
+	testing.expect_value(t, print_ast(stmts), expected)
+}
+
 @(test)
 test_print_ast_class_decl_with_superclass_and_static_member :: proc(t: ^testing.T) {
 	stmts := parse_program(t, "class Dog < Animal { static count = 0\n bark() { print 1 } }")

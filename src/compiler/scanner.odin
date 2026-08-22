@@ -21,7 +21,7 @@ Token_Type :: enum {
 
 	// one/two-char operators
 	Percent, Percent_Equal,
-	Minus, Minus_Equal,
+	Minus, Minus_Equal, Arrow,
 	Plus, Plus_Equal, Plus_Plus,
 	Star, Star_Equal,
 	Slash, Slash_Equal,
@@ -216,6 +216,17 @@ keep_eol :: proc(prev, next: Token_Type) -> bool {
 	if prev == .Eol {
 		return false // collapse consecutive blank lines
 	}
+	// Question is deliberately absent from the "prev continues" list
+	// below, even though it leads the ternary operator (`cond ? a : b`)
+	// the same way And/Or/Ampersand lead their own binary forms: `?` is
+	// also reused postfix for a nilable type annotation (`int?`, see
+	// type_expr.odin), and a line commonly *ends* right after one (`var
+	// c: string?`). Since this pass has no parser context to tell the two
+	// uses apart, always suppressing here would break every such
+	// annotation; a ternary's `?` genuinely spanning a line break (`x ?\n
+	// a : b`) is unsupported as a result -- not exercised anywhere in
+	// lox_examples/tests today, and recoverable by keeping `?` and its
+	// then-branch on the same line, which every existing script already does.
 	#partial switch prev {
 	case .Eof: // start of file (or of a re-scanned fragment): nothing to terminate yet
 		return false
@@ -224,7 +235,7 @@ keep_eol :: proc(prev, next: Token_Type) -> bool {
 	     .Plus, .Minus, .Star, .Slash, .Percent,
 	     .Plus_Equal, .Minus_Equal, .Star_Equal, .Slash_Equal, .Percent_Equal,
 	     .Bang_Equal, .Equal_Equal, .Greater, .Greater_Equal, .Less, .Less_Equal,
-	     .And, .Or, .Question, .Ampersand, .Plus_Plus:
+	     .And, .Or, .Ampersand, .Plus_Plus:
 		return false
 	}
 	#partial switch next {
@@ -404,7 +415,10 @@ scan_token :: proc(s: ^Scanner) -> Token {
 		}
 		return make_token(s, .Plus_Equal if match_char(s, '=') else .Plus)
 	case '-':
-		return make_token(s, .Minus_Equal if match_char(s, '=') else .Minus)
+		if match_char(s, '=') {
+			return make_token(s, .Minus_Equal)
+		}
+		return make_token(s, .Arrow if match_char(s, '>') else .Minus)
 	case '"':
 		return scan_string(s, '"')
 	case '\'':
