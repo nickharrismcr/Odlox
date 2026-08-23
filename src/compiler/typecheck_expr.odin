@@ -513,18 +513,12 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 		append(&arg_types, typecheck_expr(tc, a))
 	}
 
-	// A call on a built-in module with no .lox source of its own (sys/os
-	// -- see nativesig's own module-keyed entries) can never get a real
-	// .Module Type the ordinary way (resolve_module_signature has no
-	// source to typecheck for a builtin, so the import degrades to
-	// Dynamic -- see Stmt_Import's own doc comment, typecheck_stmt.odin).
-	// Recognized here by bare receiver name instead, gated on the name
-	// still resolving to Dynamic (a genuine shadow, e.g. a local variable
-	// named `sys`, must never be checked against the builtin's shape) --
-	// the same pattern typecheck_call uses for a bare native function
-	// name, one property-access level deeper. Only .Invoke: reading
-	// `sys.sleep` as a bare value (never calling it) has no call shape to
-	// check, so it stays Dynamic like any other unannotated reference.
+	// sys/os have no .lox source, so their import degrades to Dynamic
+	// (Stmt_Import, typecheck_stmt.odin) and never gets a real .Module
+	// Type. Recognized by bare receiver name instead, same pattern and
+	// shadow-safety gate as typecheck_call's native lookup, one property
+	// level deeper. Only .Invoke: a bare `sys.sleep` reference has no call
+	// shape to check.
 	if v.kind == .Invoke {
 		if ov, is_var := v.object.(^Expr_Variable); is_var {
 			if sig, ok := nativesig.lookup(lexeme(ov.name), lexeme(v.name)); ok {

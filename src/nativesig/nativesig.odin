@@ -1,34 +1,25 @@
 package nativesig
 
 // Static signatures for native/builtin functions -- the data the type
-// checker (src/compiler/typecheck_native.odin) consults to check calls to
-// things registered via vm.define_builtin, which are plain Odin procs
-// with no reflectable Lox-level type info of their own (a Builtin_Fn is
-// always `(argc, arg_stack_ptr, vm) -> Value`; real per-argument
-// validation only exists as runtime checks inside each function body).
-// See nativesig_methods.odin for the parallel table covering built-in
-// list/dict/string *methods* (vm/call.odin's invoke_builtin_list/dict/
-// string), a different dispatch shape keyed by (receiver kind, method
-// name) rather than (module, name).
+// checker (src/compiler/typecheck_native.odin) consults to check calls
+// to things registered via vm.define_builtin, which are plain Odin procs
+// with no reflectable Lox-level type info of their own. See nativesig_
+// methods.odin for the parallel table covering built-in list/dict/string
+// *methods* (vm/call.odin's invoke_builtin_list/dict/string), keyed by
+// (receiver kind, method name) rather than (module, name).
 //
-// This package has zero imports of its own and sits below compiler in
-// the dependency graph, deliberately: the real import direction here is
-// compiler <- vm <- natives (vm imports compiler, natives imports vm),
-// so compiler can never import vm or natives without a cycle. Every
-// signature below is keyed by (module, name) to match define_builtin's
-// own registration key exactly -- module == "" is a global builtin
-// (`len(x)`), a named module ("sys", "os", a natives module like "gfx")
-// matches a member of that built-in module. Any Odin package that
-// registers builtins through vm.define_builtin can import this one to
-// declare its own signatures alongside its function definitions, once
-// that's wired up -- see this file's own entries as the pattern.
+// Zero imports of its own, deliberately: compiler <- vm <- natives (vm
+// imports compiler, natives imports vm), so compiler can never import vm
+// or natives without a cycle. Keyed by (module, name) to match
+// define_builtin's own registration key -- module == "" is a global
+// builtin (`len(x)`), a named module ("sys", "os", a natives module like
+// "gfx") matches a member of that built-in module.
 //
-// Every entry here is hand-verified against its real implementation
-// (currently vm/builtins.odin, builtins_math.odin, builtins_sys.odin,
-// builtins_os.odin), not guessed from the name -- see each proc's own
-// runtime argc/type checks for the source of truth this table mirrors.
-// Not yet covered: the `natives` package (raylib/gfx/sound/os/re/json/
-// pickle/physics/...) -- a much larger surface, left for a future pass.
+// Every entry is verified against its real implementation (currently
+// vm/builtins.odin, builtins_math.odin, builtins_sys.odin, builtins_
+// os.odin) -- see each proc's own runtime argc/type checks. Not yet
+// covered: the `natives` package (raylib/gfx/sound/os/re/json/pickle/
+// physics/...).
 
 // Kind mirrors the subset of compiler.Type_Kind meaningful to a native's
 // arguments/return value. compiler.typecheck_native.odin translates Kind
@@ -73,16 +64,13 @@ Param :: struct {
 //
 // Min_Args/Max_Args bound the argument count; Max_Args == -1 means
 // unbounded. Arity_Message, when non-empty, is the native's own runtime
-// error text, reused verbatim for a wrong-arg-count diagnostic so the
-// message matches whether it's caught at compile time or, for an
-// untypeable call site, only later at runtime -- the same precedent
-// vec2()/vec3()/vec4()'s own former hand-written special case
-// (typecheck_expr.odin, before this table existed) established. An
-// empty Arity_Message means arity is never diagnosed for this
-// signature, because the real implementation doesn't enforce it either
-// (e.g. rand(), which silently ignores any arguments passed to it) --
-// diagnosing a mismatch the runtime itself tolerates would be a false
-// positive, exactly what this whole feature is designed to avoid.
+// error text, reused verbatim so the message matches whether it's caught
+// at compile time or, for an untypeable call site, only later at
+// runtime. An empty Arity_Message means arity is never diagnosed for
+// this signature, because the real implementation doesn't enforce it
+// either (e.g. rand(), which silently ignores any arguments passed to
+// it) -- diagnosing a mismatch the runtime itself tolerates would be a
+// false positive.
 Signature :: struct {
 	module:        string,
 	name:          string,

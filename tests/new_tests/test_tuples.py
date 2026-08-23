@@ -5,9 +5,9 @@ from lox_helper import run_lox
 @pytest.mark.parametrize("script", ["tuples.lox", "tuples_ns.lox"])
 def test_tuples(script):
     lines = run_lox(script)
-    # append(2, a)'s first argument is a bare int, not a list -- the native-
-    # signature-checked append() (compiler/typecheck_native.odin) now warns
-    # about this at compile time, printed before any program output.
+    # append(2, a)'s first argument is a bare int, not a list -- append()'s
+    # signature (compiler/typecheck_native.odin) diagnoses this at compile
+    # time, printed before any program output.
     assert "argument 1" in lines[0].lower() and "list" in lines[0].lower()
     # foreach over (1,2,3,4,5,6)
     assert lines[1:7] == ["1", "2", "3", "4", "5", "6"]

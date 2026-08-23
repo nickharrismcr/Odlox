@@ -4,22 +4,17 @@ import "../nativesig"
 import "core:fmt"
 import "core:strings"
 
-// typecheck_native_call generalizes what used to be typecheck_expr.odin's
-// one-off vec2()/vec3()/vec4() special case into a table-driven lookup
-// against nativesig.signatures -- see that package's own header comment
-// for why the table has to live in a separate, dependency-free package
-// rather than alongside the native functions it describes (vm/natives
-// import compiler transitively, so compiler can never import either).
+// typecheck_native_call checks a call against a table-driven lookup in
+// nativesig.signatures -- see that package's own header comment for why
+// the table lives in a separate, dependency-free package rather than
+// alongside the native functions it describes.
 //
-// Called from typecheck_call (typecheck_expr.odin) under the exact same
-// gate the old vec-only special case used: a bare Expr_Variable whose
-// name matches a registered signature *and* whose own resolved type is
-// still Dynamic (nothing in this program declared/imported a name by
-// that spelling) -- see typecheck_call's own doc comment for why that
-// ordering matters (a genuine user shadow must never be checked against
-// the builtin's shape instead of their own). call.args aren't
-// typechecked yet at this point (this runs before typecheck_call's own
-// ordinary arg loop), so this proc does that itself, unlike
+// Called from typecheck_call (typecheck_expr.odin), gated on a bare
+// Expr_Variable whose name matches a registered signature *and* whose
+// own resolved type is still Dynamic, so a genuine user shadow is never
+// checked against the builtin's shape instead of their own. call.args
+// aren't typechecked yet at this point (this runs before typecheck_
+// call's own ordinary arg loop), so this proc does that itself, unlike
 // typecheck_native_method_call below.
 typecheck_native_call :: proc(tc: ^Type_Checker, call: ^Expr_Call, sig: nativesig.Signature) -> ^Type {
 	arg_types := make([dynamic]^Type, 0, len(call.args))
@@ -34,18 +29,14 @@ typecheck_native_call :: proc(tc: ^Type_Checker, call: ^Expr_Call, sig: nativesi
 
 // typecheck_native_module_call is typecheck_property's early-recognition
 // case (typecheck_expr.odin) for a call on a built-in module with no real
-// Module_Signature (sys.sleep(...)/os.exists(...) -- see that call site's
-// own doc comment for why module-qualified builtins need this separate
-// path rather than reusing the ordinary Func-type/types_compatible
-// machinery typecheck_module_property uses for a real module: a
-// nativesig.Param can accept *several* kinds (sys.sleep's argument is
-// int-or-float), which a single-declared-type Func param can't represent
-// without either picking one arbitrarily (a false-positive risk exactly
-// like vec2()/vec3()/vec4()'s own former mismodeling this feature
-// deliberately avoids -- see nativesig's own header comment) or widening
-// to Dynamic (which would mean no checking at all). Takes arg_types
-// already computed by typecheck_property, same reasoning as
-// typecheck_native_method_call below.
+// Module_Signature (sys.sleep(...)/os.exists(...)). A separate path from
+// typecheck_module_property's ordinary Func-type/types_compatible check:
+// a nativesig.Param can accept several kinds (sys.sleep's argument is
+// int-or-float), which a single-declared-type Func param can't
+// represent without either a false positive on one arm or widening to
+// Dynamic (no checking at all). Takes arg_types already computed by
+// typecheck_property, same reasoning as typecheck_native_method_call
+// below.
 typecheck_native_module_call :: proc(tc: ^Type_Checker, v: ^Expr_Property, sig: nativesig.Signature, arg_types: []^Type) -> ^Type {
 	arg_tokens := make([dynamic]Token, 0, len(v.args))
 	for a in v.args {
@@ -75,16 +66,14 @@ typecheck_native_method_call :: proc(tc: ^Type_Checker, v: ^Expr_Property, sig: 
 // (typecheck_expr.odin) for a List/Dict/String receiver -- the only
 // built-in kinds with both a real method surface and a Type_Kind of
 // their own (Float_Array/Float_Array_3D/Userdata have neither, so their
-// own methods stay fully unchecked, same as before this feature
-// existed). None of the three have any real *field* surface -- append/
-// remove/get/... are always called, never read as bound values -- so
-// .Get/.Set/.Compound_Set are left permissive; only .Invoke does
-// anything. A miss against nativesig_methods.odin's table is a genuine
-// diagnosed error, not a permissive fallback: the switch it mirrors
+// methods stay unchecked). None of the three have a real *field*
+// surface -- append/remove/get/... are always called, never read as
+// bound values -- so .Get/.Set/.Compound_Set are left permissive; only
+// .Invoke does anything. A miss against nativesig_methods.odin's table
+// is a diagnosed error, not a permissive fallback: the switch it mirrors
 // (vm/call.odin's invoke_builtin_list/dict/string) is a closed,
-// unconditional runtime error on any other name, so there's no
-// "resolution gap" this needs an escape hatch for, unlike a Class's own
-// methods_uncertain flag.
+// unconditional runtime error on any other name, unlike a Class's own
+// methods_uncertain escape hatch.
 typecheck_builtin_method_property :: proc(tc: ^Type_Checker, v: ^Expr_Property, kind: Type_Kind, arg_types: []^Type) -> ^Type {
 	if v.kind != .Invoke {
 		return dynamic_type()
@@ -251,16 +240,11 @@ native_kind_to_type_kind :: proc(k: nativesig.Kind) -> Type_Kind {
 }
 
 // native_kind_to_type builds a fully-formed ^Type for a native's return
-// kind -- NOT just new_clone(Type{kind = native_kind_to_type_kind(k)}):
-// a .List/.Dict Type is never valid with a nil list_elem/dict_key/
-// dict_value elsewhere in this package (e.g. typecheck_expr.odin's own
-// Expr_Index case returns obj_type.list_elem directly, no nil check --
-// indexing a native's returned List with a nil list_elem segfaults). All
-// element/key/value types here are Dynamic (v1 generics aren't
-// propagated past one level anyway, same as types.odin's own List/Dict
-// doc comment already says for every other List/Dict Type in this
-// package), matching the same dynamic_type() convention typecheck_expr.
-// odin's own List/Dict literal cases use.
+// kind -- not just new_clone(Type{kind = native_kind_to_type_kind(k)}):
+// a .List/.Dict Type must always carry a non-nil list_elem/dict_key/
+// dict_value (Expr_Index reads obj_type.list_elem with no nil check, see
+// typecheck_expr.odin), so both are set to Dynamic here, matching every
+// other List/Dict Type this package constructs.
 @(private = "file")
 native_kind_to_type :: proc(k: nativesig.Kind) -> ^Type {
 	#partial switch k {

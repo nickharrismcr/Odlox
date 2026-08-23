@@ -1005,13 +1005,9 @@ test_typecheck_string_method_accepts_correct_types :: proc(t: ^testing.T) {
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
 }
 
-// Regression test: a native/module function whose declared return kind
-// is List or Dict must synthesize a real, usable ^Type (list_elem/
-// dict_key/dict_value set to Dynamic, never left nil) -- indexing
-// sys.args()'s returned list used to segfault the compiler outright
-// (typecheck_expr.odin's Expr_Index case reads obj_type.list_elem with
-// no nil check), not just mistype. See native_kind_to_type,
-// typecheck_native.odin.
+// A native/module function whose declared return kind is List or Dict
+// must synthesize a ^Type with list_elem/dict_key/dict_value set (never
+// nil) -- see native_kind_to_type, typecheck_native.odin.
 @(test)
 test_typecheck_native_list_return_type_is_indexable_without_crashing :: proc(t: ^testing.T) {
 	_, diags := parse_resolve_typecheck(t, "import sys\nprint sys.args()[0]")

@@ -3,19 +3,15 @@ package vm
 import "../core"
 
 // Mark-and-sweep collector -- design in docs/ARCHITECTURE.md's Garbage
-// collector section. A full cycle (start_gc_cycle -> drain marking ->
-// drain sweeping) now runs atomically from a single maybe_collect_garbage
-// call: an earlier version spread marking/sweeping across many calls,
-// with the mutator running in between, but that interleaving turned out
-// to be an unresolved data-race hazard in real (long-running, allocation-
-// heavy) programs -- see git history around the "GC surgical fixes +
-// incremental mark-sweep" and its revert for the full story. The
-// GC_Phase state machine, step_mark/step_sweep, and write_barrier/
-// write_barrier_value stay in place (maybe_collect_garbage just loops
-// each to completion instead of returning after one bounded chunk) since
-// they're still correct machinery, just no longer required for
-// correctness now that nothing runs between steps -- ripping them out
-// is a separate, larger cleanup, not needed for this fix.
+// collector section. Collection is atomic: a full cycle (start_gc_cycle
+// -> drain marking -> drain sweeping) completes within one
+// maybe_collect_garbage call. Spreading marking/sweeping across many
+// calls with the mutator running in between is a real, unresolved data
+// race in long-running allocation-heavy programs -- don't reintroduce
+// that interleaving without root-causing it first. GC_Phase/step_mark/
+// step_sweep/write_barrier* stay in place as correct building blocks;
+// maybe_collect_garbage just drains each to completion instead of
+// returning after one bounded chunk.
 // Function_Object/String_Object have no VM in scope at construction to
 // register with, so they stay structurally permanent (still fully
 // traced).
