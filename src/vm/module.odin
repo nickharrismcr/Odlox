@@ -173,6 +173,7 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	sub.builtin_modules = vm.builtin_modules
 	sub.force_compile = vm.force_compile
 	sub.force_bc_cache = vm.force_bc_cache
+	sub.module_resolver = vm.module_resolver
 	status := compile_and_run_module(sub, path, string(data), data == nil)
 	if status != .Ok {
 		// Propagate the sub-VM's own, more specific message (a nested
@@ -254,7 +255,8 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string, cache_onl
 		return .Compile_Error
 	}
 
-	fn, ok := compiler.Compile(source, sub.script, sub.environment)
+	resolve_module, resolve_module_ctx := module_resolve_proc(sub)
+	fn, ok := compiler.Compile(source, sub.script, sub.environment, resolve_module, resolve_module_ctx)
 	if !ok {
 		return .Compile_Error
 	}
@@ -271,56 +273,86 @@ compile_and_run_module :: proc(sub: ^VM, path: string, source: string, cache_onl
 // vm.force_bc_cache is set, the first two (non-recursive) locations also
 // accept a cache-only match -- a `__loxcache__/<name>.lxc` with no
 // matching `.lox` (see cache_only_module_path); data is nil in that case.
-// The recursive search isn't extended to cache-only matches.
+// The recursive search isn't extended to cache-only matches. Each tier is
+// its own proc (find_module_lox_path_tier/find_module_alongside_root_tier/
+// find_module_recursive_tier, just below) so module_typecheck.odin's
+// Module_Resolver can reuse the exact same search order (with
+// force_bc_cache always false -- a signature lookup needs real source to
+// typecheck, never a cache-only match) without duplicating it and
+// risking the two searches drifting apart.
 @(private = "file")
 read_module_source :: proc(vm: ^VM, name: string) -> (data: []byte, path: string, found: bool) {
 	filename := strings.concatenate({name, ".lox"})
 	defer delete(filename)
 
-	if lox_path, ok := os.lookup_env_alloc("LOX_PATH", context.allocator); ok {
-		defer delete(lox_path)
-		modules_dir, _ := filepath.join({lox_path, "modules"})
-		defer delete(modules_dir)
-		candidate, _ := filepath.join({modules_dir, filename})
-		if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
-			return d, candidate, true
-		}
-		if vm.force_bc_cache {
-			if p, cache_ok := cache_only_module_path(candidate); cache_ok {
-				delete(candidate)
-				return nil, p, true
-			}
-		}
-		delete(candidate)
+	if d, p, ok := find_module_lox_path_tier(filename, vm.force_bc_cache); ok {
+		return d, p, true
 	}
+	if d, p, ok := find_module_alongside_root_tier(vm.root_script, filename, vm.force_bc_cache); ok {
+		return d, p, true
+	}
+	if d, p, ok := find_module_recursive_tier(vm.root_script, filename); ok {
+		return d, p, true
+	}
+	return nil, "", false
+}
 
-	// filepath.dir (os.dir) returns a slice *into* vm.root_script, not a
+find_module_lox_path_tier :: proc(filename: string, force_bc_cache: bool) -> (data: []byte, path: string, found: bool) {
+	lox_path, ok := os.lookup_env_alloc("LOX_PATH", context.allocator)
+	if !ok {
+		return nil, "", false
+	}
+	defer delete(lox_path)
+	modules_dir, _ := filepath.join({lox_path, "modules"})
+	defer delete(modules_dir)
+	candidate, _ := filepath.join({modules_dir, filename})
+	if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
+		return d, candidate, true
+	}
+	if force_bc_cache {
+		if p, cache_ok := cache_only_module_path(candidate); cache_ok {
+			delete(candidate)
+			return nil, p, true
+		}
+	}
+	delete(candidate)
+	return nil, "", false
+}
+
+find_module_alongside_root_tier :: proc(root_script: string, filename: string, force_bc_cache: bool) -> (data: []byte, path: string, found: bool) {
+	// filepath.dir (os.dir) returns a slice *into* root_script, not a
 	// fresh allocation (see os/path.odin's split_path) -- deleting it
 	// would be a bad free of memory this proc doesn't own.
-	dir := filepath.dir(vm.root_script)
+	dir := filepath.dir(root_script)
 	if dir == "" {
 		dir = "."
 	}
 
-	candidate2, _ := filepath.join({dir, filename})
-	if d, err := os.read_entire_file_from_path(candidate2, context.allocator); err == nil {
-		return d, candidate2, true
+	candidate, _ := filepath.join({dir, filename})
+	if d, err := os.read_entire_file_from_path(candidate, context.allocator); err == nil {
+		return d, candidate, true
 	}
-	if vm.force_bc_cache {
-		if p, ok := cache_only_module_path(candidate2); ok {
-			delete(candidate2)
+	if force_bc_cache {
+		if p, ok := cache_only_module_path(candidate); ok {
+			delete(candidate)
 			return nil, p, true
 		}
 	}
-	delete(candidate2)
+	delete(candidate)
+	return nil, "", false
+}
 
+find_module_recursive_tier :: proc(root_script: string, filename: string) -> (data: []byte, path: string, found: bool) {
+	dir := filepath.dir(root_script)
+	if dir == "" {
+		dir = "."
+	}
 	if found_path, ok := find_module_in_subdirs(dir, filename); ok {
 		defer delete(found_path)
 		if d, err := os.read_entire_file_from_path(found_path, context.allocator); err == nil {
 			return d, strings.clone(found_path), true
 		}
 	}
-
 	return nil, "", false
 }
 

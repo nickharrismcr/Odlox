@@ -18,12 +18,14 @@ interpret :: proc(vm: ^VM, source: string) -> (Interpret_Result, string) {
 	// (exceptions.odin's append_stack_trace).
 	vm.source = source
 
+	resolve_module, resolve_module_ctx := module_resolve_proc(vm)
+
 	fn: ^core.Function_Object
 	ok: bool
 	if vm.repl {
-		fn, ok = compiler.Compile_Repl(source, &vm.repl_state)
+		fn, ok = compiler.Compile_Repl(source, &vm.repl_state, resolve_module, resolve_module_ctx)
 	} else {
-		fn, ok = compiler.Compile(source, vm.script, vm.environment)
+		fn, ok = compiler.Compile(source, vm.script, vm.environment, resolve_module, resolve_module_ctx)
 	}
 	if !ok {
 		return .Compile_Error, ""

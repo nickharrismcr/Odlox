@@ -1,0 +1,11 @@
+from xm_shapes import Shape
+
+class Circle < Shape {
+	describe() {
+		return this.area()
+	}
+}
+
+var c = Circle()
+print c.area()
+print c.notAMethod()

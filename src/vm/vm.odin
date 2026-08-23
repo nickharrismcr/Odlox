@@ -128,6 +128,18 @@ VM :: struct {
 	// for compiled-only library distribution. Never affects the entry
 	// script, same as force_compile.
 	force_bc_cache: bool,
+
+	// module_resolver backs cross-module type checking (module_typecheck.
+	// odin) -- nil unless main.odin's run_file/repl explicitly construct
+	// one (compile_file, the --compile-only/--disassemble/--info path,
+	// deliberately never does: it builds a throwaway Environment with no
+	// ^VM at all, so it has nothing to build a resolver from). Shared,
+	// not rebuilt, across every nested module import (module.odin's
+	// load_module aliases this straight onto each sub-VM, same as
+	// .builtins/.builtin_modules just above) -- one resolver, one cache,
+	// per top-level run, per the plan's "lazy, callback-driven, memoized
+	// on first need" design.
+	module_resolver: ^Module_Resolver,
 }
 
 // new_vm_raw constructs a bare VM with no exception hierarchy bootstrapped

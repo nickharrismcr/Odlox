@@ -79,11 +79,27 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 			// when the module can't be reached at all (unset resolver,
 			// not found, a builtin, a cycle), same degrade-gracefully
 			// rule every other consultation site in this file follows.
+			//
+			// record_inferred_type (unpinned), not record_decl_type: the
+			// programmer never wrote an explicit annotation here (no
+			// `import radar: SomeType` syntax exists), the type is purely
+			// compiler-synthesized -- same reasoning record_inferred_
+			// type's own doc comment already gives for an unannotated
+			// var's initializer. `import mod; mod = mod.Class(...)`
+			// (rebind the namespace name to an instance built from it) is
+			// a real, common idiom (confirmed against lox_examples/
+			// defender's own radar.lox usage) that pinning this would
+			// falsely flag -- and worse, since a pinned slot keeps
+			// reporting its *original* type forever after an incompatible
+			// write (record_decl_type's own doc comment), every later use
+			// of the rebound name would keep being checked as a Module,
+			// not the instance it actually now holds, compounding one
+			// false positive into more.
 			t := dynamic_type()
 			if sig, found := resolve_module_signature(tc, lexeme(item.module)); found {
 				t = new_clone(Type{kind = .Module, module_sig = sig})
 			}
-			record_decl_type(tc, false, item.declared_slot, t)
+			record_inferred_type(tc, false, item.declared_slot, t)
 		}
 	case ^Stmt_From_Import:
 		if !v.wildcard {
@@ -164,7 +180,12 @@ typecheck_from_import :: proc(tc: ^Type_Checker, v: ^Stmt_From_Import) {
 				diagnose(tc, n.name, fmt.tprintf("module '%s' has no export '%s'", module_name, name))
 			}
 		}
-		record_decl_type(tc, false, n.declared_slot, t)
+		// record_inferred_type (unpinned), not record_decl_type -- same
+		// reasoning as Stmt_Import just above: a from-import names no
+		// explicit type of its own either, so a later reassignment of the
+		// imported name must widen rather than diagnose, exactly like an
+		// unannotated var's initializer.
+		record_inferred_type(tc, false, n.declared_slot, t)
 	}
 }
 

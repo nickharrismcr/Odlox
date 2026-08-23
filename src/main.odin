@@ -157,6 +157,7 @@ run_file :: proc(path: string, opts: Options, script_args: []string) {
 	vm_instance.force_bc_cache = opts.force_bc_cache
 	vm.define_builtins(vm_instance)
 	natives.define_natives(vm_instance)
+	vm_instance.module_resolver = vm.make_module_resolver(vm_instance.root_script, vm_instance.builtin_modules)
 	if opts.trace {
 		vm_instance.debug_hook = debug.Trace_Hook
 	} else if opts.instrument {
@@ -275,6 +276,7 @@ repl :: proc() {
 	vm_instance := vm.new_vm("__repl__")
 	vm.define_builtins(vm_instance)
 	natives.define_natives(vm_instance)
+	vm_instance.module_resolver = vm.make_module_resolver(vm_instance.root_script, vm_instance.builtin_modules)
 	vm.set_repl(vm_instance, true)
 
 	reader: bufio.Reader

@@ -1,0 +1,3 @@
+import xm_greet
+
+print xm_greet.hello(42)

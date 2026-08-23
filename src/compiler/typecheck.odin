@@ -118,11 +118,14 @@ diagnose :: proc(tc: ^Type_Checker, tok: Token, message: string) {
 // (a function/class binding is a deliberate, strong declaration, not an
 // ordinary var -- reassigning `f` after `func f() {}` to something
 // incompatible is still flagged), Stmt_Destructure/Stmt_Foreach's hidden
-// locals/Except_Clause's binding/Stmt_Import (always Dynamic regardless,
-// so pinning it has no observable effect either way -- see typecheck_
-// stmt.odin's Stmt_Import case)/Stmt_From_Import (a real, resolved type
-// when tc.resolve_module reaches the module, Dynamic otherwise -- see
-// typecheck_from_import, typecheck_stmt.odin). Marks the slot
+// locals/Except_Clause's binding. Deliberately *not* used for Stmt_Import/
+// Stmt_From_Import, even though both can carry a real, resolved type now
+// (typecheck_stmt.odin) -- an import names no explicit type of its own
+// either, the same reasoning that keeps an unannotated var's initializer
+// off this proc too (see record_inferred_type just below), and pinning
+// it produced a real false positive against lox_examples/defender's own
+// `import radar; radar = radar.Radar(...)` idiom during this feature's
+// own verification. Marks the slot
 // *pinned*: Expr_Assign/Stmt_Implicit_Assign's reassignment checks
 // (typecheck_expr.odin/typecheck_stmt.odin) diagnose an incompatible
 // write to a pinned slot and never change what's recorded there. See
@@ -142,9 +145,11 @@ record_decl_type :: proc(tc: ^Type_Checker, is_local: bool, slot: int, t: ^Type)
 // record_inferred_type is the unpinned counterpart, for a slot whose type
 // was never promised by an explicit annotation -- an unannotated Stmt_
 // Var_Decl (records the initializer's own synthesized type rather than
-// forcing Dynamic) and an unannotated Param, plus Stmt_Implicit_Assign's
+// forcing Dynamic), an unannotated Param, Stmt_Implicit_Assign's
 // new-binding branch (which has no annotation surface of its own at
-// all). Unlike record_decl_type, a slot recorded
+// all), and Stmt_Import/Stmt_From_Import (typecheck_stmt.odin) -- an
+// import names no explicit type either, it's purely compiler-synthesized
+// from whatever the resolver finds. Unlike record_decl_type, a slot recorded
 // this way is *never* checked on reassignment -- Expr_Assign/Stmt_
 // Implicit_Assign instead call this again to *widen* it to whatever the
 // new value's type is, so later reads between here and the next

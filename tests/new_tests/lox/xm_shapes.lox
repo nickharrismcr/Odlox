@@ -1,0 +1,5 @@
+class Shape {
+	area() -> int {
+		return 0
+	}
+}
