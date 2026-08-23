@@ -22,13 +22,15 @@ import "core:fmt"
 // only unique *within* one function activation, reused across sibling
 // blocks once each one's locals go out of scope.
 Type_Checker :: struct {
-	globals:        map[int]^Type, // one map for the whole program, keyed by Var_Ref.slot -- global slots are unique program-wide (see resolve.odin's global_slot_rs), so no chaining needed here the way locals need it
-	pinned_globals: map[int]bool, // which of the above came from an explicit annotation -- see record_decl_type/record_inferred_type's own doc comments for what "pinned" means and why it exists
-	locals:         ^Local_Type_Scope, // current function activation's own scope
-	fn_return:      ^Type, // current function's declared return type; nil if untyped or at top level -- Stmt_Return skips checking entirely when nil, see typecheck_stmt.odin
-	classes:        map[string]^Class_Type, // every class's signature, name-keyed -- built once, program-wide, before anything else (see typecheck_class.odin's typecheck_collect_class_signatures), since a class can be referenced anywhere regardless of where (or whether yet) it's declared
-	current_class:  ^Class_Type, // pushed/popped around a class's own member checking (typecheck_stmt.odin's typecheck_class_decl), mirroring Resolver.current_class bracketing resolve_class_decl -- nil outside any class body, consulted by Expr_This/Expr_Super
-	diagnostics:    [dynamic]Type_Diagnostic,
+	globals:            map[int]^Type, // one map for the whole program, keyed by Var_Ref.slot -- global slots are unique program-wide (see resolve.odin's global_slot_rs), so no chaining needed here the way locals need it
+	pinned_globals:     map[int]bool, // which of the above came from an explicit annotation -- see record_decl_type/record_inferred_type's own doc comments for what "pinned" means and why it exists
+	locals:             ^Local_Type_Scope, // current function activation's own scope
+	fn_return:          ^Type, // current function's declared return type; nil if untyped or at top level -- Stmt_Return skips checking entirely when nil, see typecheck_stmt.odin
+	classes:            map[string]^Class_Type, // every class's signature, name-keyed -- built once, program-wide, before anything else (see typecheck_class.odin's typecheck_collect_class_signatures), since a class can be referenced anywhere regardless of where (or whether yet) it's declared
+	current_class:      ^Class_Type, // pushed/popped around a class's own member checking (typecheck_stmt.odin's typecheck_class_decl), mirroring Resolver.current_class bracketing resolve_class_decl -- nil outside any class body, consulted by Expr_This/Expr_Super
+	resolve_module:     Resolve_Module_Proc, // nil unless the caller supplied one (see typecheck_program) -- consulted as a fallback tier by Stmt_Import/Stmt_From_Import (typecheck_stmt.odin), type_from_expr (types.odin), and flatten_class's superclass lookup (typecheck_class.odin) before any of them give up to Dynamic/methods_uncertain
+	resolve_module_ctx: rawptr, // opaque state resolve_module casts back to a concrete type -- see Resolve_Module_Proc's own doc comment (module_signature.odin) for why this exists instead of a captured closure
+	diagnostics:        [dynamic]Type_Diagnostic,
 }
 
 // Local_Type_Scope.upvalues is decl.upvalues (already filled in by the
@@ -56,11 +58,30 @@ Type_Diagnostic :: struct {
 // local genuinely never declared -- can't happen, the Resolver would have
 // already errored) synthesizes Dynamic rather than needing a name to look
 // anything up by.
-typecheck_program :: proc(stmts: []Stmt) -> []Type_Diagnostic {
-	tc := new(Type_Checker)
+//
+// resolve_module/resolve_module_ctx default to nil for every ordinary
+// single-file caller (Compile/Compile_Repl, and the whole existing
+// typecheck_test.odin suite) -- with no resolver, every cross-module
+// consultation site degrades to exactly today's Dynamic-everywhere
+// behavior, so this is a strictly additive capability. Returns the
+// populated ^Type_Checker itself alongside diagnostics so a caller
+// building a Module_Signature (module_signature.odin's
+// Typecheck_Module_Signature) can read the finished globals/classes maps
+// straight back out -- ordinary callers just discard it.
+typecheck_program :: proc(
+	stmts: []Stmt,
+	resolve_module: Resolve_Module_Proc = nil,
+	resolve_module_ctx: rawptr = nil,
+) -> (
+	diagnostics: []Type_Diagnostic,
+	tc: ^Type_Checker,
+) {
+	tc = new(Type_Checker)
 	tc.globals = make(map[int]^Type)
 	tc.pinned_globals = make(map[int]bool)
 	tc.classes = make(map[string]^Class_Type)
+	tc.resolve_module = resolve_module
+	tc.resolve_module_ctx = resolve_module_ctx
 	root := new(Local_Type_Scope)
 	root.slots = make(map[int]^Type)
 	root.pinned = make(map[int]bool)
@@ -76,7 +97,7 @@ typecheck_program :: proc(stmts: []Stmt) -> []Type_Diagnostic {
 	// Pass 2.
 	typecheck_stmt_list(tc, stmts)
 
-	return tc.diagnostics[:]
+	return tc.diagnostics[:], tc
 }
 
 diagnose :: proc(tc: ^Type_Checker, tok: Token, message: string) {

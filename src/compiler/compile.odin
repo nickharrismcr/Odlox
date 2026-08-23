@@ -20,8 +20,21 @@ StrictTypes: bool
 // messages and Chunk.filename; environment is the runtime home for this
 // compilation unit's globals (fresh per script run, or the same
 // Environment reused across import-caching/module boundaries -- see
-// docs/ARCHITECTURE.md's Environment & globals section).
-Compile :: proc(source: string, filename: string, environment: ^core.Environment) -> (fn: ^core.Function_Object, ok: bool) {
+// docs/ARCHITECTURE.md's Environment & globals section). resolve_module/
+// resolve_module_ctx are optional (nil for every caller that doesn't need
+// cross-module type checking, including the entire existing test suite)
+// -- threaded straight into typecheck_program, see that proc's own doc
+// comment and module_signature.odin's Resolve_Module_Proc.
+Compile :: proc(
+	source: string,
+	filename: string,
+	environment: ^core.Environment,
+	resolve_module: Resolve_Module_Proc = nil,
+	resolve_module_ctx: rawptr = nil,
+) -> (
+	fn: ^core.Function_Object,
+	ok: bool,
+) {
 	scn := tokenize(source)
 	defer destroy_scanner(&scn)
 
@@ -44,7 +57,7 @@ Compile :: proc(source: string, filename: string, environment: ^core.Environment
 		return nil, false
 	}
 
-	diagnostics := typecheck_program(stmts[:])
+	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
 	print_type_diagnostics(diagnostics) // always printed, warnings by default
 	if StrictTypes && len(diagnostics) > 0 {
 		return nil, false
@@ -75,8 +88,17 @@ make_repl_state :: proc(environment: ^core.Environment) -> Repl_State {
 // (possibly grown) slot tables are committed back into st; on failure,
 // st is left untouched -- resolve_program only ever mutates the *copy*
 // seeded into it (see Repl_Seed), never st's own maps directly -- so a
-// bad line can't corrupt the session for subsequent ones.
-Compile_Repl :: proc(source: string, st: ^Repl_State) -> (fn: ^core.Function_Object, ok: bool) {
+// bad line can't corrupt the session for subsequent ones. resolve_module/
+// resolve_module_ctx: see Compile's own doc comment.
+Compile_Repl :: proc(
+	source: string,
+	st: ^Repl_State,
+	resolve_module: Resolve_Module_Proc = nil,
+	resolve_module_ctx: rawptr = nil,
+) -> (
+	fn: ^core.Function_Object,
+	ok: bool,
+) {
 	scn := tokenize(source)
 	defer destroy_scanner(&scn)
 
@@ -104,7 +126,7 @@ Compile_Repl :: proc(source: string, st: ^Repl_State) -> (fn: ^core.Function_Obj
 		return nil, false
 	}
 
-	diagnostics := typecheck_program(stmts[:])
+	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
 	if StrictTypes {
 		print_type_diagnostics(diagnostics)
 		if len(diagnostics) > 0 {

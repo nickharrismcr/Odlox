@@ -24,7 +24,7 @@ parse_resolve_typecheck :: proc(t: ^testing.T, source: string) -> (stmts: []Stmt
 	stmts = list[:]
 	_, had_error := resolve_program(stmts)
 	testing.expectf(t, !had_error, "expected %q to resolve without error", source)
-	diagnostics = typecheck_program(stmts)
+	diagnostics, _ = typecheck_program(stmts)
 	return
 }
 
