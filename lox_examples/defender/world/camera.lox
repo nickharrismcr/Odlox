@@ -1,10 +1,10 @@
 class Camera {
-    __init__(screenwidth,width,pos ) {
+    __init__(screenwidth: int, width: int, pos: float) {
         this.width = width
         this.x = pos
         this.screenwidth = screenwidth
     }
-    move(x) {
+    move(x: float) {
         this.x = x
     }
     // Translate a world x to a screen x, or nil if off-screen. The world
@@ -14,7 +14,7 @@ class Camera {
     // wrapped to a low x near 0 (or vice versa). Try all three; screenwidth is
     // always far smaller than the world width, so at most one wrap can ever
     // land in range.
-    translate(wp) {
+    translate(wp: float) -> float? {
         p = wp - this.x
         if (p >= 0 and p <= this.screenwidth) {
             return p

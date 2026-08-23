@@ -38,7 +38,7 @@ func explosion_update(p) {
 // Queue a one-shot burst at world (x, y). Once its particles die, particle_sys
 // drops the emitter automatically. Uses square particles for a chunky,
 // pixel-debris look.
-func explosion(emitters, x, y, count) {
+func explosion(emitters, x: float, y: float, count: int) {
     em = particle_sys.Emitter(vec2(x, y), explosion_init, explosion_update)
     em.shape = "square"
     emitters.queue(em, count, 0)

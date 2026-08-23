@@ -32,7 +32,7 @@ const GAME_EVENTS = ["lander_spawn", "human_spawn", "lander_searching",
                      "player_die", "player_explode", "player_start", "player_hyperspace"]
 
 // Debug: log every game event to the console.  
-func make_event_logger(name) {
+func make_event_logger(name: string) {
     func log(data) {
         print("[event] ${name} ${data}")
     }
@@ -61,10 +61,10 @@ input = controller.Controller()
 // play area within it.
 play_area = render_texture(width, height)
 
-cam=camera.Camera(width, worldwidth, 0)
+cam=camera.Camera(width, worldwidth, 0.0)
 
 mountain=mountains.Mountain(worldwidth, height*0.3)
-starfield=stars.Stars(width, height*0.7, 30)
+starfield=stars.Stars(width, int(height*0.7), 30)
 entities= entity_mgr.EntityMgr(cfg)
 entities.mountains = mountain
 entities.cam = cam
@@ -91,7 +91,7 @@ game = game_controller.GameController(cfg, entities, ship, ship_img, smartbomb_i
 
 // HUD: score driven by the NPC kill events, drawn from the font atlas
 font = text.Font(image("pngs/font.png"))
-hud_score = score.Score(font, 10, 10)  // left of the radar strip
+hud_score = score.Score(font, 10.0, 10.0)  // left of the radar strip
 hud_score.attach(entities.events)
 
 snd = game_sound.GameSound(cfg.mute_sound)

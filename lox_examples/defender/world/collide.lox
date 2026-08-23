@@ -6,11 +6,11 @@
 
 import math
 
-func entity_box(e) {
+func entity_box(e) -> List[float] {
     return [e.pos.x, e.pos.y, e.pos.x + e.width, e.pos.y + e.height]
 }
 
-func laser_box(l) {
+func laser_box(l) -> List[float] {
     x1 = l.pos.x
     x2 = l.pos.x + l.len
     if (x2 < x1) {
@@ -22,7 +22,7 @@ func laser_box(l) {
 }
 
 // Do two boxes overlap, allowing the world to wrap horizontally at worldwidth?
-func overlap(a, b, worldwidth) {
+func overlap(a: List[float], b: List[float], worldwidth: int) -> bool {
     // vertical ranges must overlap
     if (!(a[1] < b[3] and b[1] < a[3])) {
         return false

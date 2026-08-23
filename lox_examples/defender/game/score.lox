@@ -19,7 +19,7 @@ const SCORES = {
 
 class Score {
 
-    __init__(font, x, y) {
+    __init__(font, x: float, y: float) {
         this.value = 0
         this.font = font
         this.x = x
@@ -37,14 +37,14 @@ class Score {
     }
 
     // Returns a listener closed over `this` and this event's point value.
-    handler_for(points) {
+    handler_for(points: int) {
         func on_kill(entity) {
             this.add(points)
         }
         return on_kill
     }
 
-    add(points) {
+    add(points: int) {
         this.value = this.value + points
     }
 

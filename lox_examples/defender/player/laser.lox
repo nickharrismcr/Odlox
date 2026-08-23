@@ -17,13 +17,13 @@ class Laser {
         this.active = false
         this.pos = vec2(0, 0)
         this.dir = 1
-        this.len = 0
-        this.speed = 0
+        this.len = 0.0
+        this.speed = 0.0
         this.alive = 0
         this.color = colour.YELLOW
         this.gaps = []
     }
-    dead() {
+    dead() -> bool {
         return !this.active
     }
     // struck an NPC: die immediately and free up this slot in the pool, so a
@@ -31,11 +31,11 @@ class Laser {
     kill() {
         this.active = false
     }
-    reset(x, y, dir, speed, color) {
+    reset(x: float, y: float, dir: int, speed: float, color) {
         this.active = true
         this.pos = vec2(x, y)
         this.dir = dir
-        this.len = 20 * dir
+        this.len = 20.0 * dir
         this.speed = speed + 14        // beam travels faster than the ship
         this.alive = 0
         this.color = color
@@ -56,7 +56,7 @@ class Laser {
         }
         this.gaps = gaps
     }
-    update(width, height) {
+    update(width: int, height: int) {
         if (!this.active) {
             return
         }
@@ -106,7 +106,7 @@ class Laser {
 }
 
 class LaserPool {
-    __init__(size) {
+    __init__(size: int) {
         this.lasers = []
         this.colors = [colour.YELLOW, colour.CYAN, colour.GREEN, colour.BLUE]
         this.ci = 0
@@ -114,7 +114,7 @@ class LaserPool {
             this.lasers.append(Laser())
         }
     }
-    fire(x, y, dir, speed) {
+    fire(x: float, y: float, dir: int, speed: float) {
         foreach (var l in this.lasers) {
             if (l.dead()) {
                 this.ci = (this.ci + 1) % 4
@@ -123,7 +123,7 @@ class LaserPool {
             }
         }
     }
-    update(width, height) {
+    update(width: int, height: int) {
         foreach (var l in this.lasers) {
             l.update(width, height)
         }

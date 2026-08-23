@@ -50,9 +50,9 @@ class Player < Sprite {
         // accelerates in the facing direction; reverse flips facing and zeroes speed.
         // vx is the derived signed velocity (used for parallax / laser inheritance).
         this.dir = 1
-        this.speed = 0
-        this.vx = 0
-        this.vy = 0
+        this.speed = 0.0
+        this.vx = 0.0
+        this.vy = 0.0
         this.maxspeed = config.player_maxspeed
         this.accel = config.player_accel
         this.friction = config.player_friction   // closer to 1 => less friction, longer coast
@@ -92,7 +92,7 @@ class Player < Sprite {
         this.invuln = 0              // frames of blink-protected grace once state_play resumes
     }
 
-    dying() {
+    dying() -> bool {
         return this.update_func != state_play
     }
 
@@ -112,7 +112,7 @@ class Player < Sprite {
         // reverse (edge-triggered): flip facing and kill speed
         if (input.reverse) {
             this.dir = -this.dir
-            this.speed = 0
+            this.speed = 0.0
         }
 
         // thrust (held): accelerate in the facing direction, else coast to a stop

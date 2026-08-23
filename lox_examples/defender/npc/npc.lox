@@ -14,7 +14,7 @@ import colour
 
 class NPC < Sprite {
 
-    __init__(pos, img, frames, start_frame, end_frame, type) {
+    __init__(pos, img, frames: int, start_frame: int, end_frame: int, type: string) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = type
         this.width = this.texture.frame_width()
@@ -35,7 +35,7 @@ class NPC < Sprite {
         this.disperse_max = 60
     }
 
-    update(width, height) {
+    update(width: int, height: int) {
         if (!this.alive) {
             return
         }
@@ -71,7 +71,7 @@ class NPC < Sprite {
 
     // Fire a bullet that homes in on player -- see aim_bullet_at(). time_mult
     // scales the configured time-to-target (e.g. a slower, more lenient shot).
-    fire_bullet_at(player, time_mult=1.0) {
+    fire_bullet_at(player, time_mult: float = 1.0) {
         aim_bullet_at(this, player, time_mult)
     }
 }
@@ -109,7 +109,7 @@ func enter_die(e) {
     e.mgr.events.emit(e.type & "_killed", e)
 }
 
-func state_die(e, width, height) {
+func state_die(e, width: int, height: int) {
     e.disperse = e.disperse + e.disperse_rate
     if (e.disperse >= e.disperse_max) {
         e.alive = false
@@ -124,7 +124,7 @@ func state_die(e, width, height) {
 // distance/t (tx = player.pos.x + player.vx * t led; ty = player.pos.y unled), so x and y
 // arrive together regardless of player motion. time_mult scales t: > 1 gives a slower,
 // more lenient shot (e.g. a lander's search state); 1.0 (default) is the configured value.
-func aim_bullet_at(e, player, time_mult=1.0) {
+func aim_bullet_at(e, player, time_mult: float = 1.0) {
     cfg = e.mgr.config
     t = random.float(cfg.npc_bullet_time / 2, cfg.npc_bullet_time) * time_mult
 
@@ -138,7 +138,7 @@ func aim_bullet_at(e, player, time_mult=1.0) {
 }
 
 // Signed x-distance from a to b, taking the shorter way around the wrapped world.
-func shortest_dx(from_x, to_x, worldwidth) {
+func shortest_dx(from_x: float, to_x: float, worldwidth: int) -> float {
     d = to_x - from_x
     half = worldwidth / 2
     if (d > half)  { d = d - worldwidth }
@@ -146,13 +146,13 @@ func shortest_dx(from_x, to_x, worldwidth) {
     return d
 }
 
-func clamp(v, lo, hi) {
+func clamp(v: float, lo: float, hi: float) -> float {
     return math.max(lo, math.min(v, hi))
 }
 
 // Per-frame velocity toward where the player will be in `lead` frames, clamped to
 // maxspeed.
-func seek_player(e, player, maxspeed, lead, xoff, yoff) {
+func seek_player(e, player, maxspeed: float, lead: float, xoff: float, yoff: float) {
     tx = player.pos.x + player.vx * lead + xoff
     ty = player.pos.y + yoff
     dx = shortest_dx(e.pos.x, tx, e.mgr.worldwidth) / lead

@@ -128,11 +128,11 @@ class EntityMgr {
     get_all() {
         return this.entities
     }
-    add_to_queue(entity,delay) {
+    add_to_queue(entity,delay: int) {
         entity.mgr = this                  // set the entity's mgr so it can call back to the manager (e.g. to spawn swarmers)
         this.queue.append([entity,delay])
     }
-    add_landers(num,delay) {
+    add_landers(num: int,delay: int) {
         foreach (var i in range(0, num)) {
             e = lander.Lander(vec2(random.integer(0, this.worldwidth), random.integer(100, this.height/2)), this.img_lander, 3, 1, 3)
             this.add_to_queue(e,delay)
@@ -141,14 +141,14 @@ class EntityMgr {
     }
     // Spawn a single lander near world-x cx, so at least one materialises within
     // the player's view rather than somewhere off in the 10k-wide world.
-    add_lander_near(cx, delay) {
+    add_lander_near(cx: float, delay: int) {
         x = cx + random.integer(-60, 60)
         e = lander.Lander(vec2(x, random.integer(120, this.height/2)), this.img_lander, 3, 1, 3)
         this.add_to_queue(e, delay)
         this.landers_alive   += 1
     }
     // Pods drift near the player, waiting to be shot open.
-    add_pods(num, cx) {
+    add_pods(num: int, cx: float) {
         foreach (var i in range(0, num)) {
             x = cx + random.integer(0, 1500)
             y = random.integer(this.top, this.height - 400)
@@ -156,13 +156,13 @@ class EntityMgr {
         }
     }
     // Released when a pod is destroyed; they burst out from the pod's position.
-    add_swarmers(num, x, y) {
+    add_swarmers(num: int, x: float, y: float) {
         foreach (var i in range(0, num)) {
             p = vec2(x + random.integer(-20, 20), y + random.integer(-20, 20))
             this.add_to_queue(swarmer.Swarmer(p, this.img_swarmer), 0)
         }
     }
-    add_bombers(num) {
+    add_bombers(num: int) {
         foreach (var i in range(0, num)) {
             x = random.integer(0, this.worldwidth)
             y = random.integer(this.top, this.height - 200)
@@ -170,10 +170,10 @@ class EntityMgr {
         }
     }
     // A baiter lurks invisibly, then materialises next to the player.
-    add_baiter(wait_frames) {
+    add_baiter(wait_frames: int) {
         this.add_to_queue(baiter.Baiter(vec2(0, 0), this.img_baiter, wait_frames), 0)
     }
-    add_humans(num) {
+    add_humans(num: int) {
         foreach ( i in range ( 0,num )) {
             e = human.Human(vec2(random.integer(0, this.worldwidth), this.height ), this.img_human, 1, 1, 1)
             this.add_to_queue(e,0)
@@ -181,7 +181,7 @@ class EntityMgr {
     }
     // Nearest unchosen human to from_x (a hunting lander's own position),
     // wrap-aware, matching the original game's behaviour.
-    pick_a_human(from_x) {
+    pick_a_human(from_x: float) {
         best = nil
         best_dist = 0
         foreach (var e in this.entities) {
@@ -199,7 +199,7 @@ class EntityMgr {
         return best
     }
 
-    count_type(type) {
+    count_type(type: string) -> int {
 
         func check(e) {
             return e.type == type
@@ -229,7 +229,7 @@ class EntityMgr {
     // Baiters currently in play: alive plus queued-but-not-yet-materialised
     // (the latter matters if baiter_delay is ever set low enough that more than
     // one could be queued before the first actually spawns).
-    baiter_count() {
+    baiter_count() -> int {
         n = 0
         foreach (var e in this.entities) {
             if (e.alive and e.type == "baiter") {
@@ -277,7 +277,7 @@ class EntityMgr {
     // No-ops while the player's death sequence plays out (see on_player_die/
     // on_player_start above) -- everything freezes in place until they
     // respawn.
-    update(worldwidth,height) {
+    update(worldwidth: int,height: int) {
         if (this.frozen) {
             return
         }
@@ -375,14 +375,14 @@ class EntityMgr {
         this.bomb_flash = BOMB_FLASH_FRAMES
     }
     // One-shot explosion burst at a world position.
-    explode_at(x, y) {
+    explode_at(x: float, y: float) {
         fx.explosion(this.particles, x, y, this.explosion_particles)
     }
-    fire_bullet(p,v,life=100) {
+    fire_bullet(p,v,life: int = 100) {
         this.bullets.fire(p,v,life)
         this.events.emit("bullet_fire", p)      // an NPC fired a bullet
     }
-    fire_laser(x, y, dir, speed) {
+    fire_laser(x: float, y: float, dir: int, speed: float) {
         this.lasers.fire(x, y, dir, speed)
         this.events.emit("laser_fire", vec2(x, y))   // the player fired the laser
     }

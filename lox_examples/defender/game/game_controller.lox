@@ -115,7 +115,7 @@ class GameController {
 
     // Gameplay (ship/entities update, collisions) runs during level_start and
     // level; it's frozen during intro, the level_finish pause, and game_over.
-    gameplay_active() {
+    gameplay_active() -> bool {
         return this.state == "level_start" or this.state == "level"
     }
 
@@ -125,7 +125,7 @@ class GameController {
         f(this, win, input)
     }
 
-    draw(win, width, height, font) {
+    draw(win, width: int, height: int, font) {
         if (this.state == "intro") {
             this.draw_intro(win, width, height, font)
         } else if (this.state == "level_finish") {
@@ -139,7 +139,7 @@ class GameController {
         }
     }
 
-    draw_intro(win, width, height, font) {
+    draw_intro(win, width: int, height: int, font) {
         flash_on = (this.intro_timer / INTRO_WILLIAMS_FLASH_FRAMES) % 2 == 0
         will_tint = colour.RED
         if (!flash_on) {
@@ -184,7 +184,7 @@ class GameController {
 
     // A column of small bomb icons, one per remaining smart bomb (capped at
     // BOMB_ICON_MAX), sitting flush against the radar's left edge.
-    draw_bombs(win, width) {
+    draw_bombs(win, width: int) {
         n = this.entities.bombs
         if (n > BOMB_ICON_MAX) {
             n = BOMB_ICON_MAX
@@ -200,7 +200,7 @@ class GameController {
     }
 }
 
-func draw_centered(win, font, s, cx, y, col, scale = 1.0) {
+func draw_centered(win, font, s: string, cx: float, y: float, col, scale: float = 1.0) {
     font.draw(win, s, cx - font.width(s, scale) / 2, y, col, scale)
 }
 

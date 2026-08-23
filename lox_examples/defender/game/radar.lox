@@ -1,7 +1,7 @@
 import colour
 
 class Radar {
-    __init__(screenwidth, screenheight, worldwidth ) {
+    __init__(screenwidth: int, screenheight: int, worldwidth: int) {
         this.width= screenwidth/2
         this.screenwidth = screenwidth
         this.pos= screenwidth/2 - this.width/2

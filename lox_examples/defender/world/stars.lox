@@ -13,13 +13,13 @@ class Star {
     }   
 }
 
-class Stars { 
-    __init__(width,height,num_stars) {
+class Stars {
+    __init__(width: int, height: int, num_stars: int) {
         this.width = width
         this.height = height
         this.num_stars = num_stars
         this.stars = []
-        this.add_stars()  
+        this.add_stars()
     }
     add_stars() {
         foreach (var i in range(0,this.num_stars)) {
@@ -29,7 +29,7 @@ class Stars {
         }
     }
 
-    update(dx){
+    update(dx: float){
         a = random.integer(0, 10)
         if (a < 1) {
             x = random.integer(0, this.width)

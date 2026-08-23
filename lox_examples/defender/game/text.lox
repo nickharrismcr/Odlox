@@ -27,7 +27,7 @@ class Font {
     // pass a smaller value to shrink a line that would otherwise overflow the
     // screen (see game_controller.lox's draw_intro, which scales the controls
     // line down to fit the play area width).
-    width(s, scale = 1.0) {
+    width(s: string, scale: float = 1.0) -> float {
         return len(s) * ADVANCE * scale
     }
 
@@ -36,7 +36,7 @@ class Font {
     // still advance the pen. Uses draw_texture_pro (not the fixed-size
     // draw_texture_rect every other atlas draw in this file used) since only
     // draw_texture_pro supports a dest size that differs from the source.
-    draw(win, s, x, y, col, scale = 1.0) {
+    draw(win, s: string, x: float, y: float, col, scale: float = 1.0) {
         cx = x
         ink_w = INK_W * scale
         ink_h = INK_H * scale
@@ -52,7 +52,7 @@ class Font {
 
 // Smoothly cycles a colour through a palette, taking `steps` frames per leg.
 class ColourCycle {
-    __init__(palette, steps) {
+    __init__(palette, steps: int) {
         this.palette = palette
         this.steps = steps
         this.i = 0
@@ -80,7 +80,7 @@ class ColourCycle {
 }
 
 // Left-pad n with zeros to width w.
-func zero_pad(n, w) {
+func zero_pad(n: int, w: int) -> string {
     s = str(n)
     while (len(s) < w) {
         s = "0" & s

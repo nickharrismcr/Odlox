@@ -8,7 +8,7 @@ from npc import aim_bullet_at, shortest_dx
 
 class Lander < Sprite {
 
-    __init__(pos, img, frames, start_frame, end_frame) { 
+    __init__(pos, img, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "lander"
         this.animate(10)
@@ -32,10 +32,10 @@ class Lander < Sprite {
     position() {
         return this.pos 
     }
-    update(width,height) {
+    update(width: int,height: int) {
         if (!this.alive) {
             return
-        }   
+        }
         this.counter = this.counter + 1
         f=this.update_func 
         f(this,width,height) 
@@ -54,14 +54,14 @@ class Lander < Sprite {
         f=this.draw_func 
         f(this,win,cam) 
     }
-    near(x1, x2) {
+    near(x1: float, x2: float) -> bool {
         return (math.abs(x1 - x2) < 5)
-    }   
+    }
     // Fires a shot aimed at the player, gated by a small random per-frame
     // chance. time_mult scales the aim's time-to-target (used by search() for
     // a slower, more lenient shot while wandering) -- see npc.aim_bullet_at().
     // Never fires while off-screen.
-    maybe_fire_bullet(time_mult=1.0) {
+    maybe_fire_bullet(time_mult: float = 1.0) {
         if (this.mgr.cam != nil and this.mgr.cam.translate(this.pos.x) == nil) {
             return
         }
@@ -83,7 +83,7 @@ class Lander < Sprite {
 // Every transition into a state (other than the initial one, set in __init__()) goes
 // through a matching enter_<state>(e) function.
 
-func state_materialize(e, width, height) {
+func state_materialize(e, width: int, height: int) {
     // converge the dispersed tiles into the assembled sprite (disperse 50 -> 1)
     e.disperse = e.disperse - 0.7
     if (e.disperse <= 1) {
@@ -99,7 +99,7 @@ func enter_descend(e) {
     e.update_func = state_descend
 }
 
-func state_descend(e, width, height) {
+func state_descend(e, width: int, height: int) {
     e.pos = e.pos ++ e.dp
 
     mh = e.mgr.mountains.get(e.pos.x)
@@ -120,7 +120,7 @@ func enter_search(e) {
     e.mgr.events.emit("lander_searching", e)
 }
 
-func state_search(e, width, height) {
+func state_search(e, width: int, height: int) {
     e.pos = e.pos ++ e.dp
     mh = e.mgr.mountains.get(e.pos.x)
     msh = e.mgr.height - mh
@@ -151,7 +151,7 @@ func enter_grab(e) {
     }
 }
 
-func state_grab(e,width, height) {
+func state_grab(e,width: int, height: int) {
     e.pos = e.pos ++ e.dp
     if (e.human == nil or e.human.state == "dying" or !e.human.alive) {
         enter_search(e)   // target died before being grabbed -- find another
@@ -170,7 +170,7 @@ func enter_abduct(e) {
     e.update_func = state_abduct
 }
 
-func state_abduct(e,width, height) {
+func state_abduct(e,width: int, height: int) {
     // the human tracks us itself now (its `grabbed` state), so just ascend
     e.pos.y = e.pos.y + e.dp.y
     if (e.pos.y < 150 ) {
@@ -203,7 +203,7 @@ func enter_mutated(e) {
     e.mgr.events.emit("lander_mutated", e)        // lander reached the top and became a mutant
 }
 
-func state_mutated(e,width, height) {
+func state_mutated(e,width: int, height: int) {
     e.radar = random.choice([e.r,e.g,e.b,e.m])
     // chase the player horizontally, taking the shorter way around the world
     // wrap rather than a naive x1-x2 (which breaks near the seam)
@@ -267,7 +267,7 @@ func enter_die(e) {
     e.mgr.events.emit(e.type & "_killed", e)     // lander_killed / mutant_killed
 }
 
-func state_die(e,width, height) {
+func state_die(e,width: int, height: int) {
     // scatter the tiles apart (disperse 1 -> 60), then the entity is gone
     e.disperse = e.disperse + 1.3
     if (e.disperse >= 60) {

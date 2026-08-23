@@ -22,7 +22,7 @@ class Swarmer < NPC {
     }
 }
 
-func state_chase(e, width, height) {
+func state_chase(e, width: int, height: int) {
     player = e.mgr.player
     if (player == nil) {
         return

@@ -70,7 +70,7 @@ class Config {
     }
 
     // Total world width in pixels. Derived so changing width/world_scale is enough.
-    worldwidth() {
+    worldwidth() -> int {
         return this.width * this.world_scale
     }
 }

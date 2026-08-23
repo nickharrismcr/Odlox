@@ -66,7 +66,7 @@ const SOUND_PATHS = {
 // `entities.sound`. mute is applied to this file's own imported sound_mgr, since each
 // module import gets its own independent copy.
 class GameSound {
-    __init__(mute) {
+    __init__(mute: bool) {
         sound_mgr.SoundManager.no_sound = mute
         this.mgr = sound_mgr.SoundManager()
         foreach (var name in SOUND_PATHS.keys()) {
@@ -97,7 +97,7 @@ class GameSound {
 
     // Returns a listener closed over `this` and this event's mapped
     // sound name.
-    handler_for(sound_name) {
+    handler_for(sound_name: string) {
         func on_event(data) {
             this.mgr.play(sound_name)
         }
@@ -117,7 +117,7 @@ class GameSound {
     // tracks the ship's thrust input edge. Call once per frame,
     // unconditionally (not just during active gameplay), or streamed
     // playback stalls and the ambience cuts out on non-gameplay screens.
-    update(thrusting) {
+    update(thrusting: bool) {
         this.mgr.update()
         if (thrusting) {
             this.mgr.play_music_if_not("thruster")
@@ -126,19 +126,19 @@ class GameSound {
         }
     }
 
-    play(name) {
+    play(name: string) {
         this.mgr.play(name)
     }
 
-    play_if_not(name) {
+    play_if_not(name: string) {
         this.mgr.play_if_not(name)
     }
 
-    stop(name) {
+    stop(name: string) {
         this.mgr.stop(name)
     }
 
-    stop_music(key) {
+    stop_music(key: string) {
         this.mgr.stop_music(key)
     }
 

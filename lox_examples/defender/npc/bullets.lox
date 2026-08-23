@@ -4,14 +4,14 @@ import random
 import bullet
 
 class BulletPool {
-    __init__(size) {
+    __init__(size: int) {
         img = image("pngs/bullet.png")
         this.bullets = []
         for (i = 0; i < size; i=i+1) {
             this.bullets.append(bullet.Bullet(vec2(0,0), img, 2,1,2))
         }
     }
-    fire(p,v,life=100) {
+    fire(p,v,life: int = 100) {
         foreach (var b in this.bullets) {
             if (b.dead()) {
                 b.reset(p,v,life)
@@ -19,7 +19,7 @@ class BulletPool {
             }
         }
     }
-    update(width, height) {
+    update(width: int, height: int) {
         foreach (var b in this.bullets) {
             b.update(width, height)
         }

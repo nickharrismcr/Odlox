@@ -5,7 +5,7 @@
 // plain Config fields rather than becoming part of Level -- see config.lox.
 
 class Level {
-    __init__(landers_per_wave, pods, bombers, npc_bullet_time, max_baiters) {
+    __init__(landers_per_wave: int, pods: int, bombers: int, npc_bullet_time: int, max_baiters: int) {
         this.landers_per_wave = landers_per_wave
         this.pods = pods
         this.bombers = bombers
@@ -24,7 +24,7 @@ const LEVELS = [
 ]
 
 // Apply level n's overrides onto cfg.
-func apply_level(cfg, n) {
+func apply_level(cfg, n: int) {
     idx = n - 1
     if (idx >= len(LEVELS)) {
         idx = len(LEVELS) - 1

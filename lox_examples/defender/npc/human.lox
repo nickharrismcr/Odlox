@@ -12,7 +12,7 @@ from sprite import Sprite
 
 class Human < Sprite {
 
-    __init__(pos,img, frames, start_frame, end_frame) {
+    __init__(pos,img, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "human"
         this.img = img
@@ -78,11 +78,11 @@ class Human < Sprite {
         }
     }
 
-    ground_y() {
+    ground_y() -> int {
         return this.mgr.height - this.mgr.mountains.get(this.pos.x)
     }
 
-    update(width,height) {
+    update(width: int,height: int) {
         if (!this.alive) {
             return
         }
@@ -120,7 +120,7 @@ func draw_dispersed(e, win, cam) {
 
 // --- states -------------------------------------------------------------------
 
-func state_walk(e, width, height) {
+func state_walk(e, width: int, height: int) {
     if (e.counter % 10 == 0) {
         e.pos.x = e.pos.x + e.dx
         e.pos.y = e.ground_y()
@@ -133,7 +133,7 @@ func enter_grabbed(e) {
     e.mgr.events.emit("human_grabbed", e)
 }
 
-func state_grabbed(e, width, height) {
+func state_grabbed(e, width: int, height: int) {
     // hang centred below the carrier lander (sprites are top-left anchored, so
     // the lander's own centre is offset by half its width) as it lifts us
     if (e.carrier != nil) {
@@ -150,7 +150,7 @@ func enter_dropping(e) {
     e.mgr.events.emit("human_dropped", e)
 }
 
-func state_dropping(e, width, height) {
+func state_dropping(e, width: int, height: int) {
     e.dy = e.dy + e.mgr.config.human_drop_accel     // gravity
     e.pos.y = e.pos.y + e.dy
     ground = e.ground_y()
@@ -170,7 +170,7 @@ func enter_caught(e) {
     e.mgr.events.emit("human_caught", e)
 }
 
-func state_caught(e, width, height) {
+func state_caught(e, width: int, height: int) {
     // ride below the ship until we reach the ground, then walk free
     if (e.carrier != nil) {
         e.pos.x = e.carrier.pos.x
@@ -203,7 +203,7 @@ func enter_dying(e) {
     e.mgr.events.emit("human_killed", e)
 }
 
-func state_dying(e, width, height) {
+func state_dying(e, width: int, height: int) {
     e.disperse = e.disperse + 1.3
     if (e.disperse >= 60) {
         e.alive = false

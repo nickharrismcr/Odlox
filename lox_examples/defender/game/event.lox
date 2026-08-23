@@ -6,19 +6,19 @@ class EventDispatcher {
     // Add an event listener
     // event: string, the name of the event
     // listener: function, the function to call when the event is emitted
-    on(event, listener) {
+    on(event: string, listener) {
         if (! (event in this.listeners.keys())) {
-            this.listeners[event] = [];          
+            this.listeners[event] = [];
         }
         this.listeners[event].append(listener);
     }
     // Remove an event listener
     // event: string, the name of the event
     // listener: function, the function to remove from the event
-    off(event, listener) {
+    off(event: string, listener) {
         if (! event in this.listeners.keys()){
-            return 
-        } 
+            return
+        }
         idx = this.listeners[event].find(listener);
         if (idx != -1) {
             this.listeners[event].remove(idx);
@@ -27,7 +27,7 @@ class EventDispatcher {
     // Emit an event
     // event: string, the name of the event
     // data: any, the data to pass to the event listener
-    emit(event, data) {
+    emit(event: string, data) {
         if (! (event in this.listeners.keys())) {
             return;
         } 

@@ -7,7 +7,7 @@ import colour
 
 class Baiter < NPC {
 
-    __init__(pos, img, wait_frames) {
+    __init__(pos, img, wait_frames: int) {
         super.__init__(pos, img, 2, 1, 2, "baiter")   // baiter.png = 2 frames of 44x16
         this.animate(10)
         this.radar = colour.GREEN
@@ -24,7 +24,7 @@ class Baiter < NPC {
     }
 }
 
-func state_wait(e, width, height) {
+func state_wait(e, width: int, height: int) {
     if (e.mgr.player == nil or e.counter < e.wait_frames) {
         return
     }
@@ -41,7 +41,7 @@ func enter_materialize(e) {
     e.update_func = state_materialize
 }
 
-func state_materialize(e, width, height) {
+func state_materialize(e, width: int, height: int) {
     // re-anchors x to the player every frame while coalescing
     e.pos.x = e.mgr.player.pos.x + e.x_to_player
     e.disperse = e.disperse - 0.67
@@ -59,7 +59,7 @@ func enter_chase(e) {
     e.nextthink = 0
 }
 
-func state_chase(e, width, height) {
+func state_chase(e, width: int, height: int) {
     player = e.mgr.player
     if (player == nil) {
         return

@@ -11,7 +11,7 @@ const EXPLODE_COLLAPSE_CHANCE = 40     // 1-in-N chance per touched point of van
 const EXPLODE_COLLAPSE_HEIGHT = 100000 // sentinel: draws far off the top of the screen
 
 class Mountain {
-    __init__(width,max_height) {
+    __init__(width: int, max_height: float) {
         this.width = width
         this.max_height = max_height
         this.points = []
@@ -86,10 +86,10 @@ class Mountain {
             h = h + dh     
         }
     }
-    get(x){
-        return this.points[int(x)%len(this.points)] 
-    }    
-    draw(win,height,cam,width){
+    get(x: float) -> int {
+        return this.points[int(x)%len(this.points)]
+    }
+    draw(win,height: int,cam,width: int){
         if (this.hidden) {
             return
         }
