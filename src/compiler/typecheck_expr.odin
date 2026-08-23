@@ -445,6 +445,10 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 		append(&arg_types, typecheck_expr(tc, a))
 	}
 
+	if object_type.kind == .Module {
+		return typecheck_module_property(tc, v, object_type.module_sig, value_type, arg_types[:])
+	}
+
 	if object_type.kind != .Class || object_type.class_type == nil {
 		return dynamic_type()
 	}
@@ -520,6 +524,88 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 			}
 		}
 		return method_type.func_return
+	}
+	return dynamic_type()
+}
+
+// typecheck_module_property is typecheck_property's branch for a
+// namespace-style `import mod` receiver (object_type.kind == .Module,
+// Stmt_Import's own successful-resolution case, typecheck_stmt.odin) --
+// mirrors the .Class handling just above it, but looking `name` up in
+// sig.vars directly instead of a Class_Type's separate fields/methods
+// tables: sig.vars already covers a class's own top-level binding too
+// (module_signature.odin's build_module_signature), so `mod.SomeClass(...)`
+// (a namespace-qualified constructor call) and `mod.someFunc(...)` both
+// go through the one lookup. `.Set`/`.Compound_Set` (`mod.attr = x`) are
+// left permissive on purpose, unlike .Get/.Invoke below -- a module's
+// Environment-backed state doesn't carry the same "closed set of
+// exports" guarantee an annotated function/class signature does (core/
+// obj_module.odin's own header comment documents writing a module
+// attribute as an ordinary, always-available pattern, not something
+// gated on it already being a known export).
+@(private = "file")
+typecheck_module_property :: proc(tc: ^Type_Checker, v: ^Expr_Property, sig: ^Module_Signature, value_type: ^Type, arg_types: []^Type) -> ^Type {
+	if sig == nil {
+		return dynamic_type()
+	}
+	name := lexeme(v.name)
+	member_type, found := sig.vars[name]
+
+	switch v.kind {
+	case .Get:
+		if !found {
+			diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			return dynamic_type()
+		}
+		return member_type
+	case .Set, .Compound_Set:
+		if !found || v.kind != .Compound_Set {
+			return value_type
+		}
+		return compound_result_type(tc, v.token, v.compound_op, member_type, value_type)
+	case .Invoke:
+		if !found {
+			diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			return dynamic_type()
+		}
+		if member_type.kind == .Class {
+			init_type, has_init := member_type.class_type.methods["__init__"]
+			for a, i in v.args {
+				if has_init && i < len(init_type.func_params) {
+					if !types_compatible(init_type.func_params[i], arg_types[i]) {
+						diagnose(
+							tc,
+							expr_token(a),
+							fmt.tprintf(
+								"argument %d: expected %s, got %s",
+								i + 1,
+								type_string(init_type.func_params[i]),
+								type_string(arg_types[i]),
+							),
+						)
+					}
+				}
+			}
+			return member_type
+		}
+		if member_type.kind == .Func {
+			for i in 0 ..< min(len(v.args), len(member_type.func_params)) {
+				if !types_compatible(member_type.func_params[i], arg_types[i]) {
+					diagnose(
+						tc,
+						expr_token(v.args[i]),
+						fmt.tprintf(
+							"argument %d: expected %s, got %s",
+							i + 1,
+							type_string(member_type.func_params[i]),
+							type_string(arg_types[i]),
+						),
+					)
+				}
+			}
+			return member_type.func_return
+		}
+		return dynamic_type()
 	}
 	return dynamic_type()
 }

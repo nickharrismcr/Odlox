@@ -26,6 +26,7 @@ Type_Kind :: enum {
 	Dict, // key/value types in .dict_key/.dict_value; Dynamic in v1
 	Func, // .func_params/.func_return
 	Class, // .class_type -- represents *both* "the class itself" (a bare class-name reference, e.g. Expr_Call's callee -- see typecheck_expr.odin's typecheck_call) and "an instance of this class" (this/super, a constructor call's own result, an annotation naming a class), one shared representation per the design doc; nothing needs to tell the two apart, since the only things that ever consult a .Class Type are a callee-kind check (constructor-call detection) and field/method lookups (only ever meaningful for an instance) -- see typecheck_class.odin.
+	Module, // .module_sig -- a namespace-style `import mod` binding (Stmt_Import, typecheck_stmt.odin), when the resolver reaches the named module; unlike .Class there's no "instance" reading, only ever "the module itself" -- consulted by typecheck_property's Module branch (typecheck_expr.odin) for `mod.name`/`mod.name(...)` access, looking `name` up in .module_sig.vars directly (which already covers a class's own top-level binding too, so a namespace-qualified constructor call needs no separate lookup -- see module_signature.odin's build_module_signature).
 }
 
 Type :: struct {
@@ -37,6 +38,7 @@ Type :: struct {
 	func_params: []^Type, // meaningful only for .Func
 	func_return: ^Type, // meaningful only for .Func; never nil for a .Func Type (Dynamic when the function's own return type is unannotated -- see typecheck_stmt.odin's build_func_type)
 	class_type:  ^Class_Type, // meaningful only for .Class
+	module_sig:  ^Module_Signature, // meaningful only for .Module
 }
 
 // -----------------------------------------------------------------------
@@ -248,6 +250,8 @@ type_string :: proc(t: ^Type) -> string {
 		base = fmt.tprintf("func(%s) -> %s", strings.join(parts[:], ", "), type_string(t.func_return))
 	case .Class:
 		base = t.class_type.name if t.class_type != nil else "class"
+	case .Module:
+		base = fmt.tprintf("module '%s'", t.module_sig.name) if t.module_sig != nil else "module"
 	}
 	return fmt.tprintf("%s?", base) if t.nilable else base
 }

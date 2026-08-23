@@ -660,9 +660,10 @@ c.notAMethod()
 }
 
 // A from-imported class used directly as a parameter annotation
-// (type_from_expr's resolver fallback, types.odin) is checked nominally
-// against the real, resolved Class_Type -- not left as Dynamic (which
-// would accept anything) nor treated as an unrelated/unknown type.
+// (typecheck_register_imported_classes' pre-pass merge into tc.classes,
+// typecheck_stmt.odin) is checked nominally against the real, resolved
+// Class_Type -- not left as Dynamic (which would accept anything) nor
+// treated as an unrelated/unknown type.
 @(test)
 test_typecheck_from_import_class_used_as_parameter_annotation :: proc(t: ^testing.T) {
 	reg := make_fake_registry(t, map[string]string{"shapes" = "class Shape {\n}\nclass Widget {\n}\n"})
@@ -675,4 +676,63 @@ takesShape(Widget())
 `
 	_, diags := parse_resolve_typecheck_with_resolver(t, source, reg)
 	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (a Widget doesn't satisfy a Shape-typed parameter), got %d: %v", len(diags), diags)
+}
+
+// -----------------------------------------------------------------------
+// Namespace-style `import mod` typing (Type_Kind.Module, typecheck_
+// property's Module branch) -- same fake-resolver harness as the from-
+// import tests just above.
+
+// The direct namespace-style equivalent of the from-import wrong-argument
+// test above: `mod.func(...)` is checked against the real, resolved
+// signature, not left as Dynamic.
+@(test)
+test_typecheck_namespace_import_function_call_wrong_argument_type :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"mathmod" = "func add(x: int, y: int) -> int {\nreturn x + y\n}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "import mathmod\nmathmod.add(1, \"two\")", reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the bad argument), got %d: %v", len(diags), diags)
+}
+
+// `mod.SomeClass(...)` is a namespace-qualified constructor call --
+// checked against that class's real __init__ signature exactly like a
+// bare (from-imported or same-file) constructor call would be.
+@(test)
+test_typecheck_namespace_import_constructor_call_wrong_argument_type :: proc(t: ^testing.T) {
+	reg := make_fake_registry(
+		t,
+		map[string]string{"shapes" = "class Circle {\n\t__init__(radius: float) {\n\t\tthis.radius = radius\n\t}\n}\n"},
+	)
+	_, diags := parse_resolve_typecheck_with_resolver(t, "import shapes\nshapes.Circle(\"not a float\")", reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the bad constructor argument), got %d: %v", len(diags), diags)
+}
+
+// A name genuinely absent from a reachable module's exports is the same
+// "no export" diagnostic Stmt_From_Import already raises, whether read
+// (`mod.missing`) or called (`mod.missing()`).
+@(test)
+test_typecheck_namespace_import_unknown_member_diagnoses :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"mathmod" = "func add(x: int, y: int) -> int {\nreturn x + y\n}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "import mathmod\nprint mathmod.subtract\n", reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (no such export), got %d: %v", len(diags), diags)
+}
+
+// A module the resolver can't reach must degrade to Dynamic for a
+// namespace-style import too -- the same backward-compat gate as the
+// from-import unreachable-module test, now for Stmt_Import.
+@(test)
+test_typecheck_namespace_import_unreachable_module_stays_dynamic :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "import missing\nmissing.whatever(1, 2, 3)\n", reg)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- an unreachable module must stay Dynamic, got %v", diags)
+}
+
+// Writing a module attribute (`mod.attr = x`) is left permissive by
+// design (see typecheck_module_property's own doc comment) -- must never
+// diagnose, even for a name that isn't one of the module's declared
+// top-level exports.
+@(test)
+test_typecheck_namespace_import_attribute_write_never_diagnoses :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"mathmod" = "func add(x: int, y: int) -> int {\nreturn x + y\n}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "import mathmod\nmathmod.total = 5\nmathmod.newAttr = \"anything\"\n", reg)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- module attribute writes are always permissive, got %v", diags)
 }

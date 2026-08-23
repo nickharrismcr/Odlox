@@ -71,10 +71,19 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 		typecheck_try(tc, v)
 	case ^Stmt_Import:
 		for item in v.items {
-			// Always global (see resolve_import) and always Dynamic --
-			// no cross-module type information exists (see the
-			// implementation plan's Stmt_Import/Stmt_From_Import note).
-			record_decl_type(tc, false, item.declared_slot, dynamic_type())
+			// Always global (see resolve_import). A namespace-style
+			// import's bound name gets a real .Module Type (types.odin)
+			// when the resolver reaches the module, so typecheck_property
+			// (typecheck_expr.odin) can check `name.member`/`name.member(
+			// ...)` against the module's real exports -- Dynamic only
+			// when the module can't be reached at all (unset resolver,
+			// not found, a builtin, a cycle), same degrade-gracefully
+			// rule every other consultation site in this file follows.
+			t := dynamic_type()
+			if sig, found := resolve_module_signature(tc, lexeme(item.module)); found {
+				t = new_clone(Type{kind = .Module, module_sig = sig})
+			}
+			record_decl_type(tc, false, item.declared_slot, t)
 		}
 	case ^Stmt_From_Import:
 		if !v.wildcard {
