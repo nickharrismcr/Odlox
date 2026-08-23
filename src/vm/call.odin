@@ -262,6 +262,7 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			return false
 		}
 		core.list_append(l, peek(vm, 0))
+		vm.bytes_allocated += size_of(core.Value)
 		write_barrier_value(vm, peek(vm, 0))
 		result = core.NIL_VALUE
 	case "remove":
@@ -269,7 +270,9 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			runtime_error(vm, "remove takes one argument.")
 			return false
 		}
+		before := len(l.items)
 		core.list_remove(l, core.as_int(peek(vm, 0)))
+		vm.bytes_allocated -= (before - len(l.items)) * size_of(core.Value)
 		result = core.NIL_VALUE
 	case "find":
 		if arg_count != 1 {
@@ -296,6 +299,7 @@ invoke_builtin_list :: proc(vm: ^VM, l: ^core.List_Object, name: string, arg_cou
 			runtime_error(vm, "clear takes no arguments.")
 			return false
 		}
+		vm.bytes_allocated -= len(l.items) * size_of(core.Value)
 		core.list_clear(l)
 		result = core.NIL_VALUE
 	case:
@@ -499,7 +503,10 @@ invoke_builtin_dict :: proc(vm: ^VM, d: ^core.Dict_Object, name: string, arg_cou
 			runtime_error(vm, "Argument to remove must be a string key.")
 			return false
 		}
-		v, _ := core.dict_remove(d, core.intern_string(core.string_get(core.as_string(key_val))))
+		v, removed := core.dict_remove(d, core.intern_string(core.string_get(core.as_string(key_val))))
+		if removed {
+			vm.bytes_allocated -= size_of(^core.String_Object) + size_of(core.Value)
+		}
 		result = v
 	case:
 		runtime_error(vm, "Undefined dict method '%s'.", name)

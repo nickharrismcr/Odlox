@@ -3,21 +3,31 @@ package vm
 import "../core"
 
 // Mark-and-sweep collector -- design in docs/ARCHITECTURE.md's Garbage
-// collector section. Marking/sweeping are incremental (GC_WORK_UNIT per
-// maybe_collect_garbage call); only root scanning stays atomic.
+// collector section. A full cycle (start_gc_cycle -> drain marking ->
+// drain sweeping) now runs atomically from a single maybe_collect_garbage
+// call: an earlier version spread marking/sweeping across many calls,
+// with the mutator running in between, but that interleaving turned out
+// to be an unresolved data-race hazard in real (long-running, allocation-
+// heavy) programs -- see git history around the "GC surgical fixes +
+// incremental mark-sweep" and its revert for the full story. The
+// GC_Phase state machine, step_mark/step_sweep, and write_barrier/
+// write_barrier_value stay in place (maybe_collect_garbage just loops
+// each to completion instead of returning after one bounded chunk) since
+// they're still correct machinery, just no longer required for
+// correctness now that nothing runs between steps -- ripping them out
+// is a separate, larger cleanup, not needed for this fix.
 // Function_Object/String_Object have no VM in scope at construction to
 // register with, so they stay structurally permanent (still fully
-// traced). write_barrier/write_barrier_value must run after any write
-// the collector won't otherwise revisit this cycle.
+// traced).
 
 INITIAL_GC_THRESHOLD :: 1 << 20 // 1 MiB, matches clox's starting nextGC
 GC_HEAP_GROW_FACTOR :: 2
 
 // GC_WORK_UNIT bounds how many gray-stack entries step_mark drains, or
-// how many objects step_sweep walks, per maybe_collect_garbage call -- a
-// fixed per-call budget. Not attempting a Go-style adaptive pacer in
-// this pass; a fixed constant is the right first cut and can be tuned
-// from real --trace-gc measurements afterward.
+// how many objects step_sweep walks, per call -- maybe_collect_garbage
+// now calls each in a loop until the phase changes, so this only
+// controls internal batching granularity, not overall boundedness (see
+// this file's header comment).
 GC_WORK_UNIT :: 64
 
 GC_Phase :: enum {
@@ -98,21 +108,22 @@ make_tracked_string_value :: proc(vm: ^VM, s: string, immutable := false) -> cor
 	return val
 }
 
-// maybe_collect_garbage advances the collector by one bounded step,
-// starting a new cycle first if the allocation threshold has been crossed
-// and none is already running. Called once per dispatch-loop iteration,
-// between opcodes, never inside a single opcode's own handler -- so the
-// value stack is always in a fully consistent state whenever a cycle can
-// start, and a handler that transiently pops values before combining them
-// never has a cycle interleaved into that window.
+// maybe_collect_garbage runs a full cycle (start to Idle) if the
+// allocation threshold has been crossed, atomically within this one
+// call -- see this file's header comment for why. Called once per
+// dispatch-loop iteration, between opcodes, never inside a single
+// opcode's own handler -- so the value stack is always in a fully
+// consistent state whenever a cycle can start, and a handler that
+// transiently pops values before combining them never has a cycle
+// interleaved into that window.
 maybe_collect_garbage :: proc(vm: ^VM) {
 	if vm.gc_phase == .Idle && vm.bytes_allocated > vm.next_gc {
 		start_gc_cycle(vm)
 	}
-	#partial switch vm.gc_phase {
-	case .Marking:
+	for vm.gc_phase == .Marking {
 		step_mark(vm)
-	case .Sweeping:
+	}
+	for vm.gc_phase == .Sweeping {
 		step_sweep(vm)
 	}
 }

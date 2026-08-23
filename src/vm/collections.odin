@@ -79,8 +79,13 @@ do_index_assign :: proc(vm: ^VM) -> bool {
 	obj := pop(vm)
 
 	if obj.type == .Obj && obj.obj_type == .Dict {
+		d := core.as_dict(obj)
 		key := dict_key(idx)
-		core.dict_set(core.as_dict(obj), key, value)
+		_, existed := core.dict_get(d, key)
+		core.dict_set(d, key, value)
+		if !existed {
+			vm.bytes_allocated += size_of(^core.String_Object) + size_of(core.Value)
+		}
 		write_barrier_value(vm, value)
 		push(vm, value)
 		return true
@@ -180,12 +185,14 @@ do_slice_assign :: proc(vm: ^VM) -> bool {
 	rhs := core.as_list(value)
 	start, end := resolve_slice_bounds(start_v, end_v, len(l.items))
 
+	before := len(l.items)
 	tmp := make([dynamic]core.Value, 0, start + len(rhs.items) + (len(l.items) - end))
 	append(&tmp, ..l.items[:start])
 	append(&tmp, ..rhs.items[:])
 	append(&tmp, ..l.items[end:])
 	delete(l.items)
 	l.items = tmp
+	vm.bytes_allocated += (len(tmp) - before) * size_of(core.Value)
 	// Only rhs's elements are genuinely new to l -- the rest of tmp is l's
 	// own already-accounted-for content, just relocated to a new backing
 	// array (marking is per-object, not per-slot, so that relocation

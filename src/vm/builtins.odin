@@ -205,6 +205,7 @@ append_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Va
 		return core.NIL_VALUE
 	}
 	core.list_append(l, vm.stack[arg_stack_ptr + 1])
+	vm.bytes_allocated += size_of(core.Value)
 	write_barrier_value(vm, vm.stack[arg_stack_ptr + 1])
 	return val
 }
