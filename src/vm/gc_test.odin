@@ -3,12 +3,13 @@ package vm
 import "../core"
 import "core:testing"
 
-// Incremental-GC-specific tests (gc.odin's GC_Phase state machine and
-// write barrier) plus 3a's object_size accounting -- see
-// docs/plans/gc-incremental-and-surgical-fixes.md. vm_test.odin's
-// end-to-end style (compile+run real source) doesn't give fine enough
-// control over exactly when a cycle starts/how many bounded steps it
-// takes, so these drive the gc.odin procs directly instead.
+// Tests for gc.odin's resumable GC_Phase state machine and write barrier
+// (correct, resumable building blocks that maybe_collect_garbage now
+// drains to completion in one call rather than spreading across many --
+// see gc.odin's header comment) plus 3a's object_size accounting.
+// vm_test.odin's end-to-end style (compile+run real source) doesn't give
+// fine enough control over exactly when a cycle starts/how many bounded
+// steps it takes, so these drive the gc.odin procs directly instead.
 
 // -----------------------------------------------------------------------
 // 3a: object_size backing-storage accounting
@@ -40,13 +41,13 @@ test_object_size_counts_dict_backing_storage :: proc(t: ^testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Incremental cycle: bounded per-call work, spans multiple calls
+// Resumable cycle: bounded per-call work, spans multiple calls
 
 // test_marking_spans_multiple_step_mark_calls proves step_mark actually
-// bounds its work -- the whole point of this plan. A root list holding
-// more than GC_WORK_UNIT sub-list objects means blackening the root
-// alone (one step_mark call's first dequeue) enqueues far more gray
-// work than a single call's budget allows draining.
+// bounds its work. A root list holding more than GC_WORK_UNIT sub-list
+// objects means blackening the root alone (one step_mark call's first
+// dequeue) enqueues far more gray work than a single call's budget
+// allows draining.
 @(test)
 test_marking_spans_multiple_step_mark_calls :: proc(t: ^testing.T) {
 	vm := new_vm("test")
@@ -82,13 +83,12 @@ test_marking_spans_multiple_step_mark_calls :: proc(t: ^testing.T) {
 	testing.expect_value(t, vm.gc_phase, GC_Phase.Sweeping)
 }
 
-// test_incremental_cycle_reclaims_dead_and_keeps_live drives a whole
-// cycle (start_gc_cycle, then step_mark/step_sweep repeatedly, exactly
-// as maybe_collect_garbage would across many opcodes) and checks the
-// end result: an object reachable only via the stack survives, one with
-// no root at all gets swept.
+// test_gc_cycle_reclaims_dead_and_keeps_live drives a whole cycle
+// (start_gc_cycle, then step_mark/step_sweep repeatedly until Idle) and
+// checks the end result: an object reachable only via the stack
+// survives, one with no root at all gets swept.
 @(test)
-test_incremental_cycle_reclaims_dead_and_keeps_live :: proc(t: ^testing.T) {
+test_gc_cycle_reclaims_dead_and_keeps_live :: proc(t: ^testing.T) {
 	vm := new_vm("test")
 
 	dead := core.make_list_object(make([dynamic]core.Value))
@@ -120,8 +120,8 @@ test_incremental_cycle_reclaims_dead_and_keeps_live :: proc(t: ^testing.T) {
 			found_dead = true
 		}
 	}
-	testing.expect(t, found_live, "object reachable from the stack should survive an incremental cycle")
-	testing.expect(t, !found_dead, "object with no root should be swept by an incremental cycle")
+	testing.expect(t, found_live, "object reachable from the stack should survive a gc cycle")
+	testing.expect(t, !found_dead, "object with no root should be swept by a gc cycle")
 }
 
 // -----------------------------------------------------------------------

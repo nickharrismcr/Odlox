@@ -518,39 +518,38 @@ just-allocated, not-yet-reachable-from-anywhere object needs artificial
 protection at all. This removed a whole mechanism glox needed, not just
 simplified it.
 
-### Incremental collection — the cycle above is no longer atomic
+### Collection is atomic, not spread across opcodes
 
-**Status: implemented, in `vm/gc.odin`.** The `collect_garbage` pseudocode above (root scan → drain
-gray stack → sweep, all in one call) described the collector through Phase 7. It's since been split
-into a resumable `GC_Phase` state machine — `Idle` / `Marking` / `Sweeping` — so that a single
-`maybe_collect_garbage` call (still only ever made between opcodes, per the section above) does at
-most `GC_WORK_UNIT` (64) objects' worth of marking or sweeping, not a whole cycle. `mark_roots` itself
-stays atomic (the root set is bounded by live stack/frame/global/module count, not heap size, so it
-doesn't need splitting up); `step_mark`/`step_sweep` are the bounded, resumable halves of what
-`trace_references`/`sweep` used to do in one shot. The result: no single pause is proportional to
-heap size, at the cost of the mutator now genuinely running *between* marking and sweeping steps
-within one cycle, not just between whole cycles.
+**Status: implemented, in `vm/gc.odin`.** A single `maybe_collect_garbage` call (still only ever made
+between opcodes, per the section above) runs a full cycle — `start_gc_cycle`, then `step_mark` until
+marking is done, then `step_sweep` until sweeping is done — before returning. Nothing else runs
+in between: `collect_garbage`'s pseudocode at the top of this section (root scan → drain gray stack →
+sweep) is accurate as a description of what one `maybe_collect_garbage` call actually does end to end.
 
-That last point is what makes this nontrivial rather than a mechanical split. With the mutator live
-mid-cycle, an already-blackened object can have a field mutated to point at a still-white object —
-invisible to the rest of the cycle, so that referent would be swept while still reachable. Every
-mutation site `blacken_object`'s own switch enumerates needs a write barrier immediately after the
-write (`write_barrier`/`write_barrier_value`, no-ops outside an active cycle) — and, less obviously,
-so does every write to a *root* slot (`Set_Local`/`Set_Upvalue`/the `Set_Global`/`Define_Global`
-family, `do_foreach`/`do_next`'s iterator-variable stores): `mark_roots` only scans the stack and
-globals once, at cycle start, so a later overwrite of one of those slots is exactly as invisible to
-the rest of the cycle as a heap-field mutation would be. A freshly allocated object is "allocated
-gray" (marked *and* queued for tracing, not just marked) rather than assumed safe outright — needed
-for a real, if narrow, hazard where `module.odin`'s `load_module` splices a whole separate sub-VM's
-already-existing object subtree into the running VM's object list via one `gc_track` call, and that
-subtree's prior marked bits come from a GC history this cycle hasn't verified.
+The `GC_Phase` state machine (`Idle`/`Marking`/`Sweeping`) and the bounded `step_mark`/`step_sweep`
+halves (each draining at most `GC_WORK_UNIT` (64) objects' worth of work per internal call) still
+exist as correct, independently-testable building blocks — `maybe_collect_garbage` just loops each to
+completion instead of returning after one bounded chunk, so `GC_WORK_UNIT` now only controls internal
+batching granularity, not whether a whole call can return early. The write barriers
+(`write_barrier`/`write_barrier_value`) and the "allocate gray, not black" rule in `gc_track` also
+remain in place, for the same reason: with no mutator code running between marking and sweeping steps,
+they're inert today, but they're what a resumable, mutator-interleaved cycle would need to be correct,
+and reintroducing that interleaving without re-deriving those invariants would reopen the same class of
+bug documented next.
 
-Full design, the complete write-barrier site list, and what was found and corrected versus the
-original plan are in
-[`docs/plans/gc-incremental-and-surgical-fixes.md`](plans/gc-incremental-and-surgical-fixes.md).
-`vm.gc_threshold_floor` (`sys.gc_set_min_threshold(bytes)`, `vm/builtins_sys.odin`) lets a script set
-a floor under the default doubling-from-1MiB `next_gc` policy, trading memory for fewer/larger gaps
-between cycles.
+This is a deliberate reversion, not the original design: an earlier version of this collector *did*
+resume across opcodes, genuinely interleaving mutator execution with marking/sweeping. That
+interleaving turned out to hide a real, unresolved memory-corruption bug in long-running,
+allocation-heavy programs (surfaced by real gameplay, not a synthetic stress test) — undiagnosed
+precisely because the mutator run in between steps, not the mark-sweep algorithm itself, was the
+suspect. Full design for the incremental version, the complete write-barrier site list, and what was
+found and corrected versus the original plan are preserved in
+[`docs/plans/gc-incremental-and-surgical-fixes.md`](plans/gc-incremental-and-surgical-fixes.md) as a
+historical record — that document describes the state before this reversion and should not be taken as
+a description of the collector today. `vm.gc_threshold_floor` (`sys.gc_set_min_threshold(bytes)`,
+`vm/builtins_sys.odin`) lets a script set a floor under the default doubling-from-1MiB `next_gc`
+policy, trading memory for fewer/larger gaps between cycles — this part is unaffected by atomic vs.
+incremental collection.
 
 ### "No permanent-object exemption" — landed for two of four kinds, for a structural reason
 

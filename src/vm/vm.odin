@@ -106,8 +106,8 @@ VM :: struct {
 	// have it stick.
 	gc_threshold_floor: int,
 
-	// gc_phase/sweep_cursor/sweep_prev: incremental-collection state --
-	// see gc.odin's header comment.
+	// gc_phase/sweep_cursor/sweep_prev: the resumable mark/sweep state
+	// machine's fields -- see gc.odin's header comment.
 	gc_phase:     GC_Phase,
 	sweep_cursor: ^core.Obj,
 	sweep_prev:   ^core.Obj,

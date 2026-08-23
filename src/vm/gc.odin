@@ -124,11 +124,12 @@ maybe_collect_garbage :: proc(vm: ^VM) {
 	}
 }
 
-// start_gc_cycle begins a new cycle: fires .Gc_Start (still exactly
-// once per cycle, so debug/trace.odin's Gc_Hook before/after byte
-// accounting keeps working unmodified), scans roots -- atomically,
-// unlike the marking/sweeping this hands off to; see this file's header
-// comment for why that's safe -- then starts marking.
+// start_gc_cycle begins a new cycle: fires .Gc_Start (once per cycle, so
+// debug/trace.odin's Gc_Hook before/after byte accounting keeps working
+// unmodified), scans roots in one unbounded pass -- the root set is
+// bounded by live stack/frame/global/module count, not heap size, so it
+// doesn't need the chunking step_mark/step_sweep use -- then starts
+// marking.
 start_gc_cycle :: proc(vm: ^VM) {
 	if vm.debug_hook != nil {
 		vm.debug_hook(vm, .Gc_Start)

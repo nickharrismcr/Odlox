@@ -1,5 +1,13 @@
 # GC optimization: surgical wins + incremental collection
 
+**Historical**: the incremental collection this plan describes (Option 1, mutator running between
+marking/sweeping steps) was later reverted back to atomic collection after it turned out to hide a
+real, unresolved memory-corruption bug in long-running programs. `vm/gc.odin`'s own header comment and
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) describe the collector as it stands today; this document
+is kept as a record of the incremental design and its write-barrier site list, not as current behavior.
+The `GC_Phase` state machine and write barriers this plan added are still present in the code as
+resumable building blocks, just no longer driven across more than one call.
+
 **Status**: implemented (3a, 3b, and Option 1, including the write-barrier site list). Builds clean
 (`odin build src -debug -vet -strict-style`), `bin/test_odin.sh` (90/90 in `src/vm`, including new
 `src/vm/gc_test.odin` covering the incremental cycle, the write-barrier regression case, and 3a's
