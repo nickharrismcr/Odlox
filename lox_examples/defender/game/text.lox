@@ -36,7 +36,7 @@ class Font {
     // still advance the pen. Uses draw_texture_pro (not the fixed-size
     // draw_texture_rect every other atlas draw in this file used) since only
     // draw_texture_pro supports a dest size that differs from the source.
-    draw(win, s: string, x: float, y: float, col, scale: float = 1.0) {
+    draw(win, s: string, x: float, y: float, col: vec4, scale: float = 1.0) {
         cx = x
         ink_w = INK_W * scale
         ink_h = INK_H * scale
@@ -68,7 +68,7 @@ class ColourCycle {
     }
 
     // linear blend from the current palette entry toward the next
-    get() {
+    get() -> vec4 {
         a = this.palette[this.i]
         b = this.palette[(this.i + 1) % len(this.palette)]
         f = float(this.t) / float(this.steps)     // float(): int/int would truncate to 0

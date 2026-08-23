@@ -200,7 +200,7 @@ class GameController {
     }
 }
 
-func draw_centered(win, font, s: string, cx: float, y: float, col, scale: float = 1.0) {
+func draw_centered(win, font, s: string, cx: float, y: float, col: vec4, scale: float = 1.0) {
     font.draw(win, s, cx - font.width(s, scale) / 2, y, col, scale)
 }
 

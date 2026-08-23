@@ -31,7 +31,7 @@ class Laser {
     kill() {
         this.active = false
     }
-    reset(x: float, y: float, dir: int, speed: float, color) {
+    reset(x: float, y: float, dir: int, speed: float, color: vec4) {
         this.active = true
         this.pos = vec2(x, y)
         this.dir = dir

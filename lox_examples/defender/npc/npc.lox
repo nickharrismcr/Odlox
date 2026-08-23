@@ -14,7 +14,7 @@ import colour
 
 class NPC < Sprite {
 
-    __init__(pos, img, frames: int, start_frame: int, end_frame: int, type: string) {
+    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int, type: string) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = type
         this.width = this.texture.frame_width()
@@ -152,7 +152,7 @@ func clamp(v: float, lo: float, hi: float) -> float {
 
 // Per-frame velocity toward where the player will be in `lead` frames, clamped to
 // maxspeed.
-func seek_player(e, player, maxspeed: float, lead: float, xoff: float, yoff: float) {
+func seek_player(e, player, maxspeed: float, lead: float, xoff: float, yoff: float) -> vec2 {
     tx = player.pos.x + player.vx * lead + xoff
     ty = player.pos.y + yoff
     dx = shortest_dx(e.pos.x, tx, e.mgr.worldwidth) / lead

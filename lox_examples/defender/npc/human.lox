@@ -12,7 +12,7 @@ from sprite import Sprite
 
 class Human < Sprite {
 
-    __init__(pos,img, frames: int, start_frame: int, end_frame: int) {
+    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "human"
         this.img = img

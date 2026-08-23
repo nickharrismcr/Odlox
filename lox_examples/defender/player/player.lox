@@ -30,7 +30,7 @@ const SAFE_START_FRAMES = 60   // 1s at 60fps
 
 class Player < Sprite {
 
-    __init__(pos, img, thrust_img, shipw_img, config) {
+    __init__(pos: vec2, img, thrust_img, shipw_img, config) {
         // ship.png is a 5-frame animation strip; thrust.png is a 2-frame flame;
         // shipw.png is an all-white ship silhouette (2 frames, same 60px frame
         // width as ship.png). Being pure white it can be tinted to any colour, so
@@ -332,7 +332,7 @@ func state_hyperspace(e, input) {
 // Random world position at least HYPERSPACE_MIN_NPC_DIST from every alive,
 // non-human NPC, giving up after HYPERSPACE_MAX_ATTEMPTS and using the last
 // candidate (better than looping forever if the world is crowded).
-func random_hyperspace_pos(e) {
+func random_hyperspace_pos(e) -> vec2 {
     x = random.integer(0, e.worldwidth)
     y = random.integer(e.top, e.bottom)
     attempts = 0

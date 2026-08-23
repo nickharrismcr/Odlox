@@ -4,7 +4,7 @@ import colour
  
 
 class Bullet < Sprite {
-    __init__(pos, img, frames: int, start_frame: int, end_frame: int) {
+    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.animate(10)
         this.ticks_to_live = 0
@@ -21,7 +21,7 @@ class Bullet < Sprite {
     kill() {
         this.ticks_to_live = 0
     }
-    reset(p,v,life: int = 100) {
+    reset(p: vec2, v: vec2, life: int = 100) {
 
         this.pos = vec2(p.x, p.y)
         this.dp = vec2(v.x, v.y)

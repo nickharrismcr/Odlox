@@ -4,7 +4,7 @@ import colour
 import math
 
 class Star {
-    __init__(pos,col){
+    __init__(pos: vec2, col: vec4){
         this.pos = pos
         this.col = col
     }

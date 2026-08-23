@@ -11,7 +11,7 @@ class BulletPool {
             this.bullets.append(bullet.Bullet(vec2(0,0), img, 2,1,2))
         }
     }
-    fire(p,v,life: int = 100) {
+    fire(p: vec2, v: vec2, life: int = 100) {
         foreach (var b in this.bullets) {
             if (b.dead()) {
                 b.reset(p,v,life)

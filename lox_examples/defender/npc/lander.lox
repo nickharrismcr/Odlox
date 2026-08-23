@@ -8,7 +8,7 @@ from npc import aim_bullet_at, shortest_dx
 
 class Lander < Sprite {
 
-    __init__(pos, img, frames: int, start_frame: int, end_frame: int) {
+    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "lander"
         this.animate(10)

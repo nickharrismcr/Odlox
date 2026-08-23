@@ -378,7 +378,7 @@ class EntityMgr {
     explode_at(x: float, y: float) {
         fx.explosion(this.particles, x, y, this.explosion_particles)
     }
-    fire_bullet(p,v,life: int = 100) {
+    fire_bullet(p: vec2, v: vec2, life: int = 100) {
         this.bullets.fire(p,v,life)
         this.events.emit("bullet_fire", p)      // an NPC fired a bullet
     }

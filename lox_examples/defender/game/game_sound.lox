@@ -105,7 +105,7 @@ class GameSound {
     }
 
     on_bullet_fire() {
-        func on_event(pos) {
+        func on_event(pos: vec2) {
             if (this.cam == nil or this.cam.translate(pos.x) != nil) {
                 this.mgr.play("bullet")
             }

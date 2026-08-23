@@ -11,7 +11,7 @@ import random
 
 class Bomber < NPC {
 
-    __init__(pos, img, top: float) {
+    __init__(pos: vec2, img, top: float) {
         super.__init__(pos, img, 3, 1, 3, "bomber")
         this.animate(8)
         this.radar = vec4(0, 150, 255, 255)

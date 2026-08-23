@@ -7,7 +7,7 @@ import colour
 
 class Baiter < NPC {
 
-    __init__(pos, img, wait_frames: int) {
+    __init__(pos: vec2, img, wait_frames: int) {
         super.__init__(pos, img, 2, 1, 2, "baiter")   // baiter.png = 2 frames of 44x16
         this.animate(10)
         this.radar = colour.GREEN
