@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""PostToolUse hook: flags debug-session narration in newly written comments.
+"""PostToolUse hook: flags debug-session narration and overlong comments.
 
 Scans only the text a just-completed Edit/MultiEdit/Write tool call actually
-introduced (not the whole file) for comments that narrate how a piece of code
-came to be -- a bug hunt, a discussion, a prior version -- instead of stating
-the current design/invariant as fact. See CLAUDE.md's comment conventions.
+introduced (not the whole file) for two problems: (1) comments that narrate
+how a piece of code came to be -- a bug hunt, a discussion, a prior version
+-- instead of stating the current design/invariant as fact, and (2) comments
+that are too long, either a single overlong line or a multi-line block,
+where the project convention is one short line stating a non-obvious WHY.
+See CLAUDE.md's comment conventions.
 
-Trigger list is heuristic and intentionally editable: add/remove patterns in
-TRIGGERS below as new phrasing habits show up. False positives are expected
-occasionally (e.g. a legitimate "now" in unrelated prose) -- that's fine,
-the cost of a false positive here is Claude re-reading one comment.
+Trigger list and length thresholds are heuristic and intentionally
+editable: adjust as new phrasing habits or false positives show up.
 """
 import json
 import re
@@ -35,6 +36,9 @@ TRIGGERS = [
 
 COMMENT_PREFIXES = ("//", "#", "--", "/*", "*", ";")
 
+MAX_COMMENT_LINE_CHARS = 100
+MAX_COMMENT_BLOCK_LINES = 3
+
 
 def comment_lines(text):
     for i, line in enumerate(text.splitlines(), start=1):
@@ -43,13 +47,46 @@ def comment_lines(text):
             yield i, s
 
 
-def scan(text, pattern):
+def comment_blocks(text):
+    """Groups consecutive comment lines into blocks (start, end, lines)."""
+    lines = text.splitlines()
+    blocks = []
+    current = []
+    current_start = None
+    for i, line in enumerate(lines, start=1):
+        s = line.strip()
+        if s.startswith(COMMENT_PREFIXES):
+            if not current:
+                current_start = i
+            current.append(s)
+        else:
+            if current:
+                blocks.append((current_start, i - 1, current))
+                current = []
+    if current:
+        blocks.append((current_start, len(lines), current))
+    return blocks
+
+
+def scan_triggers(text, pattern):
     hits = []
     for lineno, line in comment_lines(text):
         m = pattern.search(line)
         if m:
             hits.append((lineno, line, m.group(0)))
     return hits
+
+
+def scan_overlong(text):
+    long_lines = []
+    long_blocks = []
+    for lineno, line in comment_lines(text):
+        if len(line) > MAX_COMMENT_LINE_CHARS:
+            long_lines.append((lineno, len(line), line))
+    for start, end, lines in comment_blocks(text):
+        if len(lines) > MAX_COMMENT_BLOCK_LINES:
+            long_blocks.append((start, end, len(lines)))
+    return long_lines, long_blocks
 
 
 def texts_from_input(data):
@@ -82,26 +119,60 @@ def main():
     file_path = (data.get("tool_input", {}) or {}).get("file_path", "<unknown>")
     pattern = re.compile("|".join(TRIGGERS), re.IGNORECASE)
 
-    all_hits = []
+    trigger_hits = []
+    long_lines = []
+    long_blocks = []
     for text in texts_from_input(data):
-        all_hits.extend(scan(text, pattern))
+        trigger_hits.extend(scan_triggers(text, pattern))
+        ll, lb = scan_overlong(text)
+        long_lines.extend(ll)
+        long_blocks.extend(lb)
 
-    if not all_hits:
+    if not trigger_hits and not long_lines and not long_blocks:
         return 0
 
-    lines_report = "\n".join(
-        f"  line ~{n}: matched {trig!r} in: {line}" for n, line, trig in all_hits
-    )
-    message = (
-        f"Comment style check flagged {file_path}:\n{lines_report}\n\n"
-        "Rewrite these comments to state the current design/invariant as "
-        "fact -- not how it was found, discussed, or changed. No 'used to "
-        "X', 'an earlier version', 'see git history', 'we discussed', "
-        "'now warns'. State what IS true, not the history of how it got "
-        "that way. See CLAUDE.md / feedback_comment_style_odlox memory."
+    sections = []
+    total = 0
+
+    if trigger_hits:
+        total += len(trigger_hits)
+        lines_report = "\n".join(
+            f"  line ~{n}: matched {trig!r} in: {line}" for n, line, trig in trigger_hits
+        )
+        sections.append(
+            "Narration (states history, not current design):\n" + lines_report + "\n"
+            "Rewrite to state the current design/invariant as fact -- not how it "
+            "was found, discussed, or changed. No 'used to X', 'an earlier "
+            "version', 'see git history', 'we discussed', 'now warns'."
+        )
+
+    if long_lines:
+        total += len(long_lines)
+        lines_report = "\n".join(
+            f"  line {n}: {length} chars: {line}" for n, length, line in long_lines
+        )
+        sections.append(
+            f"Overlong comment line(s) (>{MAX_COMMENT_LINE_CHARS} chars):\n" + lines_report + "\n"
+            "Trim to a single short line, or drop the comment if it's not "
+            "stating a genuinely non-obvious WHY."
+        )
+
+    if long_blocks:
+        total += len(long_blocks)
+        lines_report = "\n".join(
+            f"  lines {start}-{end}: {n} consecutive comment lines" for start, end, n in long_blocks
+        )
+        sections.append(
+            f"Overlong comment block(s) (>{MAX_COMMENT_BLOCK_LINES} lines):\n" + lines_report + "\n"
+            "Convention is one short line max stating a non-obvious WHY, not a "
+            "multi-line explanation. Cut it down."
+        )
+
+    message = f"Comment style check flagged {file_path}:\n\n" + "\n\n".join(sections) + (
+        "\n\nSee CLAUDE.md / feedback_comment_style_odlox memory."
     )
     print(json.dumps({
-        "systemMessage": f"Comment style check: {len(all_hits)} flagged line(s) in {file_path}",
+        "systemMessage": f"Comment style check: {total} flagged item(s) in {file_path}",
         "additionalContext": message,
     }))
     return 0
