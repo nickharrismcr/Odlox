@@ -736,3 +736,197 @@ test_typecheck_namespace_import_attribute_write_never_diagnoses :: proc(t: ^test
 	_, diags := parse_resolve_typecheck_with_resolver(t, "import mathmod\nmathmod.total = 5\nmathmod.newAttr = \"anything\"\n", reg)
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- module attribute writes are always permissive, got %v", diags)
 }
+
+// -----------------------------------------------------------------------
+// vec2/vec3/vec4 (Type_Kind.Vec2/.Vec3/.Vec4, typecheck_expr.odin's
+// typecheck_vec_constructor_call/typecheck_vec_property/shared_vec_kind).
+// No resolver needed -- these are plain VM builtins, not imports.
+
+@(test)
+test_typecheck_vec_constructor_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "vec2(\"x\", 1)")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the non-numeric argument), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_vec_constructor_wrong_arity_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "vec2(1)")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (wrong arity), got %d: %v", len(diags), diags)
+}
+
+// The regression case that motivated reusing check_numeric_operand
+// (int-or-float) instead of types_compatible(float_type(), ...) for
+// constructor arguments -- vec2(0, 0)-shaped int-literal calls are the
+// overwhelmingly common real-world spelling (confirmed against both the
+// existing pytest corpus and lox_examples/defender).
+@(test)
+test_typecheck_vec_constructor_accepts_int_args :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "vec2(1, 2)\nvec3(1, 2, 3)\nvec4(1, 2, 3, 4)")
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- vec constructors accept int args, got %v", diags)
+}
+
+@(test)
+test_typecheck_vec_swizzle_read_all_kinds_and_rgba_aliases :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+print a.x
+print a.y
+var b = vec3(1, 2, 3)
+print b.x
+print b.y
+print b.z
+var c = vec4(1, 2, 3, 4)
+print c.x
+print c.y
+print c.z
+print c.w
+print c.r
+print c.g
+print c.b
+print c.a
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- every field/alias read here is real, got %v", diags)
+}
+
+@(test)
+test_typecheck_vec_swizzle_read_unknown_field_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+print a.z
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (vec2 has no 'z'), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_vec_swizzle_set_unknown_field_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+a.z = 5
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (vec2 has no 'z'), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_vec_swizzle_invoke_unknown_field_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+a.z()
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (vec2 has no 'z'), got %d: %v", len(diags), diags)
+}
+
+// set_vec_swizzle/vec_with_field_set (vm/properties.odin) accept int or
+// float exactly like the constructors -- must not be flagged as a
+// mismatch against a strict float requirement.
+@(test)
+test_typecheck_vec_swizzle_set_accepts_int_value :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+a.x = 5
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a vector component accepts an int value, got %v", diags)
+}
+
+@(test)
+test_typecheck_vec_plus_plus_same_kind_returns_usable_vec_type :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+var b = vec2(3, 4)
+var c = a ++ b
+print c.x
+print c.q
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (c.q, proving c is really typed Vec2 from the ++), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_vec_plus_plus_mismatched_kinds_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+var b = vec3(1, 2, 3)
+var c = a ++ b
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (mismatched vec kinds), got %d: %v", len(diags), diags)
+}
+
+// The specific regression this feature must not reintroduce: `-` on a
+// matching vec pair is real, VM-supported component-wise subtraction
+// (vm/arithmetic.odin's numeric_binop Subtract case) and must never be
+// flagged by check_numeric_operand the way a genuinely non-numeric
+// operand would be.
+@(test)
+test_typecheck_vec_minus_same_kind_never_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+var b = vec2(3, 4)
+var c = a - b
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- vec2 - vec2 is real, supported subtraction, got %v", diags)
+}
+
+// The compound-assignment counterpart of the test above -- compound_
+// result_type's own .Minus_Equal case needs the identical fix, a real
+// regression this exact scenario caught during this feature's own
+// verification (tests/new_tests/lox/peephole_sub_mul_div.lox's `p -= v`).
+@(test)
+test_typecheck_vec_minus_equal_same_kind_never_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+var b = vec2(3, 4)
+a -= b
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- vec2 -= vec2 is real, supported subtraction, got %v", diags)
+}
+
+// `+`/`*` never support vector operands at the VM level (vm/
+// arithmetic.odin) -- proving the design claim that these need no
+// special-casing is actually true, not just assumed: once real Vec kinds
+// exist, check_numeric_operand's existing rejection already catches this
+// real mistake class (writing `+` where `++` was meant) instead of
+// silently passing as Dynamic.
+@(test)
+test_typecheck_vec_plus_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+print a + 1
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (vec2 doesn't support +, only ++), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_vec_star_diagnoses :: proc(t: ^testing.T) {
+	source := `
+var a = vec2(1, 2)
+print a * 2
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (vec2 doesn't support *), got %d: %v", len(diags), diags)
+}
+
+// A genuine user shadow of the name "vec2" must never be misidentified
+// as the vec2() builtin constructor -- typecheck_call's own gate
+// (lookup_var_type(...).kind == .Dynamic) defers to the real declaration
+// instead. If this test ever starts failing, the gate is misfiring: a
+// wrong-arity call to the user's own 1-param vec2 would otherwise get
+// nonsensically checked against the *builtin's* fixed 2-arg shape.
+@(test)
+test_typecheck_vec_constructor_special_case_never_shadows_user_function :: proc(t: ^testing.T) {
+	source := `
+func vec2(a) {
+	return a
+}
+print vec2(1, 2, 3)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a user's own vec2() must never be checked against the builtin's arity, got %v", diags)
+}

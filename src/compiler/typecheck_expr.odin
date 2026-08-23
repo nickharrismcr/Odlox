@@ -129,30 +129,41 @@ expr_token :: proc(e: Expr) -> Token {
 // Unary / binary / compound-assignment arithmetic
 //
 // Checked directly against vm/arithmetic.odin's actual runtime dispatch
-// (add_numeric/numeric_binop/negate), not assumed from the design doc's
-// prose -- two of its claims don't hold for this VM and were caught by a
-// full-corpus regression run: `+` (add_numeric) is numeric-only, no
-// string-concatenation case (that's `&`/concat's job exclusively, a
-// separate operator -- odlox has no `+`-as-concat the way some Lox
-// dialects do); `*` (numeric_binop) additionally accepts (String, Int) or
-// (Int, String) for string repetition (`"-" * 50`), checked *before* the
-// plain-numeric fallback there. `-`'s vm-level vector case (`Vec2 - Vec2`
-// etc.) is deliberately not special-cased here: no Type_Kind models a
-// vector, so any expression that's actually vector-valued at runtime is
-// already Dynamic in this lattice (there's no annotation surface that
-// produces anything else for one), which already always passes
-// check_numeric_operand's Dynamic escape hatch. `!` synthesizes Bool
-// unconditionally (matches runtime truthiness coercion -- every value has
-// a truthiness, so there's nothing to check). Comparisons (`== != < <= >
-// >= in`) synthesize Bool unconditionally too: equality and `in`-
-// membership are defined for any pair of types at runtime, and `<`/`>`
-// etc. accept either two numbers or two strings (see arithmetic.odin's
-// compare), so there's no single "wrong type" rule that wouldn't
-// misfire on the string-comparison case -- not checked here. `++`
-// (vector in-place-shaped add) and `&` (string/list concat) aren't
-// modeled by this v1 lattice at all -- always Dynamic, never diagnosed,
-// the same "don't model it, don't flag it" treatment Expr_Tuple/Expr_This
-// get elsewhere in this file.
+// (add_numeric/numeric_binop/negate/add_vector), not assumed from the
+// design doc's prose -- two of its claims don't hold for this VM and were
+// caught by a full-corpus regression run: `+` (add_numeric) is
+// numeric-only, no string-concatenation case (that's `&`/concat's job
+// exclusively, a separate operator -- odlox has no `+`-as-concat the way
+// some Lox dialects do) *and* no vector case either (a real, separate
+// operator, `++`, exists for that -- see below); `*` (numeric_binop)
+// additionally accepts (String, Int) or (Int, String) for string
+// repetition (`"-" * 50`), checked *before* the plain-numeric fallback
+// there. Neither `*`, `/`, nor `%` support vector operands at runtime
+// either (numeric_binop's Multiply/Divide only special-case the string
+// repeat above; Percent is plain numeric) -- so once Type_Kind models a
+// vector at all (see types.odin's Vec2/Vec3/Vec4), the plain
+// check_numeric_operand rejection below is already correct for all four
+// of `+`/`*`/`/`/`%`, and newly starts catching a real, common mistake
+// (writing `v1 + v2` where `v1 ++ v2` was meant) that used to pass
+// silently as Dynamic. `-` is the one arithmetic operator that *is*
+// genuinely overloaded for vectors at the VM level (numeric_binop's
+// Subtract case: component-wise subtraction when both operands are the
+// same vec kind, ordinary numeric subtraction otherwise) -- see its own
+// case below, split out from the other three numeric-only operators
+// specifically so a same-kind vector pair doesn't get wrongly flagged by
+// check_numeric_operand. `!` synthesizes Bool unconditionally (matches
+// runtime truthiness coercion -- every value has a truthiness, so there's
+// nothing to check). Comparisons (`== != < <= > >= in`) synthesize Bool
+// unconditionally too: equality and `in`-membership are defined for any
+// pair of types at runtime, and `<`/`>` etc. accept either two numbers or
+// two strings (see arithmetic.odin's compare), so there's no single
+// "wrong type" rule that wouldn't misfire on the string-comparison case
+// -- not checked here. `++` (add_vector: real vector addition, requiring
+// both operands to be the exact same vec kind) gets its own case below,
+// same shape as `-`'s new vector branch. `&` (string/list concat) isn't
+// modeled by this lattice at all -- always Dynamic, never diagnosed, the
+// same "don't model it, don't flag it" treatment Expr_Tuple/Expr_This get
+// elsewhere in this file.
 
 @(private = "file")
 typecheck_unary :: proc(tc: ^Type_Checker, v: ^Expr_Unary) -> ^Type {
@@ -171,10 +182,25 @@ typecheck_binary :: proc(tc: ^Type_Checker, v: ^Expr_Binary) -> ^Type {
 	right := typecheck_expr(tc, v.right)
 
 	#partial switch v.op {
-	case .Plus, .Minus, .Slash, .Percent:
+	case .Plus, .Slash, .Percent:
 		check_numeric_operand(tc, expr_token(v.left), left)
 		check_numeric_operand(tc, expr_token(v.right), right)
 		return numeric_result(left, right)
+	case .Minus:
+		if kind, ok := shared_vec_kind(left, right); ok {
+			return new_clone(Type{kind = kind})
+		}
+		check_numeric_operand(tc, expr_token(v.left), left)
+		check_numeric_operand(tc, expr_token(v.right), right)
+		return numeric_result(left, right)
+	case .Plus_Plus:
+		if kind, ok := shared_vec_kind(left, right); ok {
+			return new_clone(Type{kind = kind})
+		}
+		if left.kind != .Dynamic && right.kind != .Dynamic {
+			diagnose(tc, v.token, fmt.tprintf("++ requires two vectors of the same type, got %s and %s", type_string(left), type_string(right)))
+		}
+		return dynamic_type()
 	case .Star:
 		if left.kind == .Dynamic || right.kind == .Dynamic {
 			// Can't rule out a valid (String, Int)/(Int, String) repeat
@@ -194,8 +220,27 @@ typecheck_binary :: proc(tc: ^Type_Checker, v: ^Expr_Binary) -> ^Type {
 	case .Bang_Equal, .Equal_Equal, .Greater, .Greater_Equal, .Less, .Less_Equal, .In:
 		return bool_type()
 	}
-	// .Plus_Plus, .Ampersand
+	// .Ampersand
 	return dynamic_type()
+}
+
+// shared_vec_kind reports whether a and b are the same Vec2/Vec3/Vec4 kind
+// -- the shared gate for `-`'s and `++`'s vector-typed cases above,
+// mirroring add_vector's own `a.type == b.type` requirement (vm/
+// arithmetic.odin) and numeric_binop's identical requirement for `-`'s
+// vector case. Mismatched vec kinds (or a vec paired with anything else)
+// fall through to whatever the caller does next -- ok=false is not a
+// diagnostic on its own.
+@(private = "file")
+shared_vec_kind :: proc(a, b: ^Type) -> (kind: Type_Kind, ok: bool) {
+	if a.kind != b.kind {
+		return .Dynamic, false
+	}
+	#partial switch a.kind {
+	case .Vec2, .Vec3, .Vec4:
+		return a.kind, true
+	}
+	return .Dynamic, false
 }
 
 @(private = "file")
@@ -277,7 +322,14 @@ typecheck_assign :: proc(tc: ^Type_Checker, v: ^Expr_Assign) -> ^Type {
 @(private = "file")
 compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left, right: ^Type) -> ^Type {
 	#partial switch op {
-	case .Plus_Equal, .Minus_Equal, .Slash_Equal, .Percent_Equal:
+	case .Plus_Equal, .Slash_Equal, .Percent_Equal:
+		check_numeric_operand(tc, tok, left)
+		check_numeric_operand(tc, tok, right)
+		return numeric_result(left, right)
+	case .Minus_Equal:
+		if kind, ok := shared_vec_kind(left, right); ok {
+			return new_clone(Type{kind = kind})
+		}
 		check_numeric_operand(tc, tok, left)
 		check_numeric_operand(tc, tok, right)
 		return numeric_result(left, right)
@@ -308,9 +360,23 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 // declared params (absorbed by a `*rest` parameter) or fewer (covered by
 // defaults) is never flagged as an arity mismatch -- only positions that
 // exist on both sides are compared, matching the implementation plan's
-// own scope for this feature.
+// own scope for this feature. vec2()/vec3()/vec4() are the one deliberate
+// exception to all of the above (see typecheck_vec_constructor_call,
+// just below) -- they're plain VM builtins (vm/builtins.odin), never a
+// Stmt_Function_Decl, so there's no Func Type anywhere for the ordinary
+// path to find; recognized by bare name instead, gated on the name still
+// resolving to Dynamic so a genuine user shadow (`from x import vec2`,
+// or a local `func vec2(...)`) is never misidentified.
 @(private = "file")
 typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
+	if ev, is_var := call.callee.(^Expr_Variable); is_var {
+		if kind, arity, is_vec_name := vec_constructor_info(lexeme(ev.name)); is_vec_name {
+			if lookup_var_type(tc, ev.resolved).kind == .Dynamic {
+				return typecheck_vec_constructor_call(tc, call, kind, arity)
+			}
+		}
+	}
+
 	callee_type := typecheck_expr(tc, call.callee)
 
 	// A callee whose own synthesized type is .Class (an Expr_Variable
@@ -367,6 +433,65 @@ typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 		return callee_type.func_return
 	}
 	return dynamic_type()
+}
+
+// vec_constructor_info maps a bare identifier spelling to the Type_Kind/
+// arity of the vec2()/vec3()/vec4() builtin it names, if any -- the one
+// hardcoded table typecheck_call's own special case (above) consults.
+@(private = "file")
+vec_constructor_info :: proc(name: string) -> (kind: Type_Kind, arity: int, ok: bool) {
+	switch name {
+	case "vec2":
+		return .Vec2, 2, true
+	case "vec3":
+		return .Vec3, 3, true
+	case "vec4":
+		return .Vec4, 4, true
+	}
+	return .Dynamic, 0, false
+}
+
+// typecheck_vec_constructor_call checks a vec2()/vec3()/vec4() call
+// against the real native implementation (vm/builtins.odin's vec2_builtin/
+// vec3_builtin/vec4_builtin): each argument must be numeric (int or
+// float -- core.is_number/core.as_float accept and coerce either, so this
+// reuses check_numeric_operand rather than types_compatible(float_type(),
+// ...), which would wrongly flag the overwhelmingly common `vec2(0, 0)`-
+// shaped int-literal call every one of these natives is normally called
+// with), and the argument *count* must match exactly -- a deliberate,
+// narrow exception to this feature's usual "argument count is never
+// checked" rule (typecheck_call's own doc comment): unlike an ordinary
+// Lox function, these three have no defaults/`*rest` to absorb a mismatch
+// with, and a wrong arity is a hard, unconditional runtime error (see
+// vec_arity_message below) every single time, not a gracefully-tolerated
+// shape.
+@(private = "file")
+typecheck_vec_constructor_call :: proc(tc: ^Type_Checker, call: ^Expr_Call, kind: Type_Kind, arity: int) -> ^Type {
+	for a in call.args {
+		arg_type := typecheck_expr(tc, a)
+		check_numeric_operand(tc, expr_token(a), arg_type)
+	}
+	if len(call.args) != arity {
+		diagnose(tc, call.token, vec_arity_message(kind, arity))
+	}
+	return new_clone(Type{kind = kind})
+}
+
+// vec_arity_message reuses vec2_builtin/vec3_builtin/vec4_builtin's own
+// runtime error text verbatim (vm/builtins.odin) -- a wrong-arity call
+// gets the identical message whether it's caught here at compile time or,
+// for an unannotated/untypeable call site, only later at runtime.
+@(private = "file")
+vec_arity_message :: proc(kind: Type_Kind, arity: int) -> string {
+	#partial switch kind {
+	case .Vec2:
+		return "vec2 expects 2 arguments (x,y)"
+	case .Vec3:
+		return "vec3 expects 3 arguments (x,y,z)"
+	case .Vec4:
+		return "vec4 expects 4 arguments (x,y,z,w)"
+	}
+	return fmt.tprintf("expects %d arguments", arity)
 }
 
 // -----------------------------------------------------------------------
@@ -449,6 +574,11 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 		return typecheck_module_property(tc, v, object_type.module_sig, value_type, arg_types[:])
 	}
 
+	#partial switch object_type.kind {
+	case .Vec2, .Vec3, .Vec4:
+		return typecheck_vec_property(tc, v, object_type.kind, value_type)
+	}
+
 	if object_type.kind != .Class || object_type.class_type == nil {
 		return dynamic_type()
 	}
@@ -524,6 +654,73 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 			}
 		}
 		return method_type.func_return
+	}
+	return dynamic_type()
+}
+
+// vec_field_valid mirrors vm/properties.odin's get_vec_swizzle switch
+// exactly -- x/y for every vec kind, z added for vec3/vec4, w and the r/
+// g/b/a colour-channel aliases for vec4 only. Unlike a class's own
+// fields (open -- Instance_Object genuinely accepts arbitrary runtime
+// writes), a vector's component set is closed: get_vec_swizzle/
+// vec_with_field_set hard-error on anything outside this table, so every
+// miss below is diagnosed, never silently permissive.
+@(private = "file")
+vec_field_valid :: proc(kind: Type_Kind, name: string) -> bool {
+	switch name {
+	case "x", "y":
+		return true
+	case "z":
+		return kind == .Vec3 || kind == .Vec4
+	case "w", "r", "g", "b", "a":
+		return kind == .Vec4
+	}
+	return false
+}
+
+// typecheck_vec_property is typecheck_property's branch for a vector
+// receiver (object_type.kind == .Vec2/.Vec3/.Vec4) -- a closed swizzle
+// field set (vec_field_valid, above) rather than a Class_Type's open
+// fields/closed methods split. `.Get` always yields a real float
+// (get_vec_swizzle always returns one regardless of how the component was
+// last set). `.Set`/`.Compound_Set` check the incoming value is numeric
+// (check_numeric_operand, not types_compatible(float_type(), ...)) --
+// set_vec_swizzle/vec_with_field_set (vm/properties.odin) accept int or
+// float exactly like the vec2()/vec3()/vec4() constructors do (see
+// typecheck_vec_constructor_call's own doc comment for why that
+// asymmetry with a plain float-annotated parameter matters in practice).
+// `.Invoke` still validates the field name (catches a typo the same as
+// `.Get` would) but doesn't try to model "not callable" as its own
+// diagnostic -- vectors have no methods at all, and no diagnostic class
+// for that shape exists anywhere else in this file either.
+@(private = "file")
+typecheck_vec_property :: proc(tc: ^Type_Checker, v: ^Expr_Property, kind: Type_Kind, value_type: ^Type) -> ^Type {
+	name := lexeme(v.name)
+	valid := vec_field_valid(kind, name)
+
+	switch v.kind {
+	case .Get:
+		if !valid {
+			diagnose(tc, v.name, fmt.tprintf("%s has no field '%s'", type_string(new_clone(Type{kind = kind})), name))
+			return dynamic_type()
+		}
+		return float_type()
+	case .Set, .Compound_Set:
+		if !valid {
+			diagnose(tc, v.name, fmt.tprintf("%s has no field '%s'", type_string(new_clone(Type{kind = kind})), name))
+			return value_type
+		}
+		result_type := value_type
+		if v.kind == .Compound_Set {
+			result_type = compound_result_type(tc, v.token, v.compound_op, float_type(), value_type)
+		}
+		check_numeric_operand(tc, v.token, result_type)
+		return result_type
+	case .Invoke:
+		if !valid {
+			diagnose(tc, v.name, fmt.tprintf("%s has no field '%s'", type_string(new_clone(Type{kind = kind})), name))
+		}
+		return dynamic_type()
 	}
 	return dynamic_type()
 }

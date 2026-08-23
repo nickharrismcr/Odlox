@@ -27,6 +27,9 @@ Type_Kind :: enum {
 	Func, // .func_params/.func_return
 	Class, // .class_type -- represents *both* "the class itself" (a bare class-name reference, e.g. Expr_Call's callee -- see typecheck_expr.odin's typecheck_call) and "an instance of this class" (this/super, a constructor call's own result, an annotation naming a class), one shared representation per the design doc; nothing needs to tell the two apart, since the only things that ever consult a .Class Type are a callee-kind check (constructor-call detection) and field/method lookups (only ever meaningful for an instance) -- see typecheck_class.odin.
 	Module, // .module_sig -- a namespace-style `import mod` binding (Stmt_Import, typecheck_stmt.odin), when the resolver reaches the named module; unlike .Class there's no "instance" reading, only ever "the module itself" -- consulted by typecheck_property's Module branch (typecheck_expr.odin) for `mod.name`/`mod.name(...)` access, looking `name` up in .module_sig.vars directly (which already covers a class's own top-level binding too, so a namespace-qualified constructor call needs no separate lookup -- see module_signature.odin's build_module_signature).
+	Vec2, // native fixed-size float vector (core.Value_Type.Vec2, core/value.odin) -- no auxiliary Type field, same as Int/Float/Bool: the kind alone is the whole type. A `vec2`-annotated site or a `vec2(x, y)` constructor call (typecheck_expr.odin's typecheck_call) produces this; `.x`/`.y` swizzle field access (typecheck_property's Vec branch) is the only property surface, always float, never a method.
+	Vec3, // same shape as .Vec2, one more component (`.z` too)
+	Vec4, // same shape as .Vec2, two more components (`.z`/`.w`, plus `.r`/`.g`/`.b`/`.a` as colour-channel aliases -- see vm/properties.odin's get_vec_swizzle, which this feature's vec_field_valid table (typecheck_expr.odin) mirrors exactly)
 }
 
 Type :: struct {
@@ -73,6 +76,12 @@ primitive_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
 		return .String, true
 	case "bool":
 		return .Bool, true
+	case "vec2":
+		return .Vec2, true
+	case "vec3":
+		return .Vec3, true
+	case "vec4":
+		return .Vec4, true
 	}
 	return .Dynamic, false
 }
@@ -252,6 +261,12 @@ type_string :: proc(t: ^Type) -> string {
 		base = t.class_type.name if t.class_type != nil else "class"
 	case .Module:
 		base = fmt.tprintf("module '%s'", t.module_sig.name) if t.module_sig != nil else "module"
+	case .Vec2:
+		base = "vec2"
+	case .Vec3:
+		base = "vec3"
+	case .Vec4:
+		base = "vec4"
 	}
 	return fmt.tprintf("%s?", base) if t.nilable else base
 }
