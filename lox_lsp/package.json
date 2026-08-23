@@ -2,7 +2,7 @@
     "name": "lox-lsp",
     "displayName": "odlox LSP",
     "description": "LSP server for odlox's extended Lox dialect",
-    "version": "0.0.14",
+    "version": "0.0.15",
     "publisher": "fabianjakobs",
     "license": "Apache-2.0",
     "icon": "images/logo.png",
