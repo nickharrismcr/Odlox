@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python D:/odin/odlox/.claude/hooks/check_comment_style.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
