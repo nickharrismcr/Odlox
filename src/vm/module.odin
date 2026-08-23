@@ -42,6 +42,19 @@ module_source_cache: map[string]string
 @(private = "file")
 module_source_allocator: mem.Allocator
 
+// modules_loading tracks module names currently in the middle of their own
+// load_module call, process-wide like module_cache (same "no threads,
+// plain map, no lock" reasoning) -- a genuine circular import (A's own
+// top-level code does `import B`, B's does `import A`) would otherwise
+// recurse load_module -> compile_and_run_module -> do_import -> load_module
+// unboundedly: module_cache is only populated *after* a module's load
+// fully completes (see load_module below), so nothing else would ever
+// see the cycle. Cleared via defer the moment this module's own
+// load_module call returns, successfully or not, so it only ever reflects
+// modules genuinely mid-load right now, not everything ever loaded.
+@(private)
+modules_loading: map[string]bool
+
 @(init)
 init_module_source_cache :: proc() {
 	module_source_allocator = context.allocator
@@ -124,6 +137,13 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 		return builtin, true
 	}
 
+	if modules_loading[name] {
+		runtime_error(vm, "Circular import detected for module '%s'.", name)
+		return nil, false
+	}
+	modules_loading[name] = true
+	defer delete_key(&modules_loading, name)
+
 	data, path, found := read_module_source(vm, name)
 	if !found {
 		runtime_error(vm, "Module '%s' not found.", name)
@@ -155,7 +175,17 @@ load_module :: proc(vm: ^VM, name: string) -> (^core.Module_Object, bool) {
 	sub.force_bc_cache = vm.force_bc_cache
 	status := compile_and_run_module(sub, path, string(data), data == nil)
 	if status != .Ok {
-		runtime_error(vm, "Failed to import module '%s'.", name)
+		// Propagate the sub-VM's own, more specific message (a nested
+		// compile error, or -- see modules_loading above -- a circular
+		// import detected further down the chain) rather than always
+		// discarding it for a generic wrapper: without this, every
+		// failure reason collapses to the same uninformative text no
+		// matter how deep in the import graph it actually happened.
+		if sub.error_msg != "" {
+			runtime_error(vm, "Failed to import module '%s': %s", name, sub.error_msg)
+		} else {
+			runtime_error(vm, "Failed to import module '%s'.", name)
+		}
 		return nil, false
 	}
 

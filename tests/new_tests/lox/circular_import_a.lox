@@ -1,0 +1,2 @@
+import circular_import_b
+print "a loaded"
