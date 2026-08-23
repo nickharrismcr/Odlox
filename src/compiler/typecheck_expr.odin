@@ -1,5 +1,6 @@
 package compiler
 
+import "../nativesig"
 import "core:fmt"
 
 // Bottom-up type synthesis, one case per Expr variant -- mirrors resolve_
@@ -360,9 +361,10 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 // declared params (absorbed by a `*rest` parameter) or fewer (covered by
 // defaults) is never flagged as an arity mismatch -- only positions that
 // exist on both sides are compared, matching the implementation plan's
-// own scope for this feature. vec2()/vec3()/vec4() are the one deliberate
-// exception to all of the above (see typecheck_vec_constructor_call,
-// just below) -- they're plain VM builtins (vm/builtins.odin), never a
+// own scope for this feature. A registered native (nativesig.lookup,
+// currently vec2()/vec3()/vec4() and the core free functions in
+// vm/builtins.odin -- see typecheck_native.odin) is the one deliberate
+// exception to all of the above: these are plain VM builtins, never a
 // Stmt_Function_Decl, so there's no Func Type anywhere for the ordinary
 // path to find; recognized by bare name instead, gated on the name still
 // resolving to Dynamic so a genuine user shadow (`from x import vec2`,
@@ -370,9 +372,9 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 @(private = "file")
 typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 	if ev, is_var := call.callee.(^Expr_Variable); is_var {
-		if kind, arity, is_vec_name := vec_constructor_info(lexeme(ev.name)); is_vec_name {
+		if sig, ok := nativesig.lookup("", lexeme(ev.name)); ok {
 			if lookup_var_type(tc, ev.resolved).kind == .Dynamic {
-				return typecheck_vec_constructor_call(tc, call, kind, arity)
+				return typecheck_native_call(tc, call, sig)
 			}
 		}
 	}
@@ -433,65 +435,6 @@ typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 		return callee_type.func_return
 	}
 	return dynamic_type()
-}
-
-// vec_constructor_info maps a bare identifier spelling to the Type_Kind/
-// arity of the vec2()/vec3()/vec4() builtin it names, if any -- the one
-// hardcoded table typecheck_call's own special case (above) consults.
-@(private = "file")
-vec_constructor_info :: proc(name: string) -> (kind: Type_Kind, arity: int, ok: bool) {
-	switch name {
-	case "vec2":
-		return .Vec2, 2, true
-	case "vec3":
-		return .Vec3, 3, true
-	case "vec4":
-		return .Vec4, 4, true
-	}
-	return .Dynamic, 0, false
-}
-
-// typecheck_vec_constructor_call checks a vec2()/vec3()/vec4() call
-// against the real native implementation (vm/builtins.odin's vec2_builtin/
-// vec3_builtin/vec4_builtin): each argument must be numeric (int or
-// float -- core.is_number/core.as_float accept and coerce either, so this
-// reuses check_numeric_operand rather than types_compatible(float_type(),
-// ...), which would wrongly flag the overwhelmingly common `vec2(0, 0)`-
-// shaped int-literal call every one of these natives is normally called
-// with), and the argument *count* must match exactly -- a deliberate,
-// narrow exception to this feature's usual "argument count is never
-// checked" rule (typecheck_call's own doc comment): unlike an ordinary
-// Lox function, these three have no defaults/`*rest` to absorb a mismatch
-// with, and a wrong arity is a hard, unconditional runtime error (see
-// vec_arity_message below) every single time, not a gracefully-tolerated
-// shape.
-@(private = "file")
-typecheck_vec_constructor_call :: proc(tc: ^Type_Checker, call: ^Expr_Call, kind: Type_Kind, arity: int) -> ^Type {
-	for a in call.args {
-		arg_type := typecheck_expr(tc, a)
-		check_numeric_operand(tc, expr_token(a), arg_type)
-	}
-	if len(call.args) != arity {
-		diagnose(tc, call.token, vec_arity_message(kind, arity))
-	}
-	return new_clone(Type{kind = kind})
-}
-
-// vec_arity_message reuses vec2_builtin/vec3_builtin/vec4_builtin's own
-// runtime error text verbatim (vm/builtins.odin) -- a wrong-arity call
-// gets the identical message whether it's caught here at compile time or,
-// for an unannotated/untypeable call site, only later at runtime.
-@(private = "file")
-vec_arity_message :: proc(kind: Type_Kind, arity: int) -> string {
-	#partial switch kind {
-	case .Vec2:
-		return "vec2 expects 2 arguments (x,y)"
-	case .Vec3:
-		return "vec3 expects 3 arguments (x,y,z)"
-	case .Vec4:
-		return "vec4 expects 4 arguments (x,y,z,w)"
-	}
-	return fmt.tprintf("expects %d arguments", arity)
 }
 
 // -----------------------------------------------------------------------
@@ -570,6 +513,28 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 		append(&arg_types, typecheck_expr(tc, a))
 	}
 
+	// A call on a built-in module with no .lox source of its own (sys/os
+	// -- see nativesig's own module-keyed entries) can never get a real
+	// .Module Type the ordinary way (resolve_module_signature has no
+	// source to typecheck for a builtin, so the import degrades to
+	// Dynamic -- see Stmt_Import's own doc comment, typecheck_stmt.odin).
+	// Recognized here by bare receiver name instead, gated on the name
+	// still resolving to Dynamic (a genuine shadow, e.g. a local variable
+	// named `sys`, must never be checked against the builtin's shape) --
+	// the same pattern typecheck_call uses for a bare native function
+	// name, one property-access level deeper. Only .Invoke: reading
+	// `sys.sleep` as a bare value (never calling it) has no call shape to
+	// check, so it stays Dynamic like any other unannotated reference.
+	if v.kind == .Invoke {
+		if ov, is_var := v.object.(^Expr_Variable); is_var {
+			if sig, ok := nativesig.lookup(lexeme(ov.name), lexeme(v.name)); ok {
+				if lookup_var_type(tc, ov.resolved).kind == .Dynamic {
+					return typecheck_native_module_call(tc, v, sig, arg_types[:])
+				}
+			}
+		}
+	}
+
 	if object_type.kind == .Module {
 		return typecheck_module_property(tc, v, object_type.module_sig, value_type, arg_types[:])
 	}
@@ -577,6 +542,8 @@ typecheck_property :: proc(tc: ^Type_Checker, v: ^Expr_Property) -> ^Type {
 	#partial switch object_type.kind {
 	case .Vec2, .Vec3, .Vec4:
 		return typecheck_vec_property(tc, v, object_type.kind, value_type)
+	case .List, .Dict, .String:
+		return typecheck_builtin_method_property(tc, v, object_type.kind, arg_types[:])
 	}
 
 	if object_type.kind != .Class || object_type.class_type == nil {
@@ -687,8 +654,9 @@ vec_field_valid :: proc(kind: Type_Kind, name: string) -> bool {
 // (check_numeric_operand, not types_compatible(float_type(), ...)) --
 // set_vec_swizzle/vec_with_field_set (vm/properties.odin) accept int or
 // float exactly like the vec2()/vec3()/vec4() constructors do (see
-// typecheck_vec_constructor_call's own doc comment for why that
-// asymmetry with a plain float-annotated parameter matters in practice).
+// typecheck_native_call's own doc comment, typecheck_native.odin, for why
+// that asymmetry with a plain float-annotated parameter matters in
+// practice).
 // `.Invoke` still validates the field name (catches a typo the same as
 // `.Get` would) but doesn't try to model "not callable" as its own
 // diagnostic -- vectors have no methods at all, and no diagnostic class

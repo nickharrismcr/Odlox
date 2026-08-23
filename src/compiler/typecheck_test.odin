@@ -738,9 +738,11 @@ test_typecheck_namespace_import_attribute_write_never_diagnoses :: proc(t: ^test
 }
 
 // -----------------------------------------------------------------------
-// vec2/vec3/vec4 (Type_Kind.Vec2/.Vec3/.Vec4, typecheck_expr.odin's
-// typecheck_vec_constructor_call/typecheck_vec_property/shared_vec_kind).
-// No resolver needed -- these are plain VM builtins, not imports.
+// vec2/vec3/vec4 (Type_Kind.Vec2/.Vec3/.Vec4; constructors go through
+// typecheck_native.odin's typecheck_native_call via nativesig's table,
+// swizzle fields through typecheck_expr.odin's typecheck_vec_property/
+// shared_vec_kind). No resolver needed -- these are plain VM builtins,
+// not imports.
 
 @(test)
 test_typecheck_vec_constructor_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
@@ -929,4 +931,89 @@ print vec2(1, 2, 3)
 `
 	_, diags := parse_resolve_typecheck(t, source)
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a user's own vec2() must never be checked against the builtin's arity, got %v", diags)
+}
+
+// -----------------------------------------------------------------------
+// nativesig-driven checking: built-in module functions (typecheck_expr.
+// odin's typecheck_property early-recognition case, typecheck_native.
+// odin's typecheck_native_module_call) and List/Dict/String methods
+// (typecheck_property's .List/.Dict/.String branch, typecheck_native_
+// method_call). See nativesig/nativesig.odin and nativesig_methods.odin
+// for the tables these consult.
+
+@(test)
+test_typecheck_builtin_module_call_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "import sys\nsys.sleep(\"one\")")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_builtin_module_call_accepts_correct_type :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "import sys\nimport os\nsys.sleep(1)\nos.exists(\"a\")")
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+// A local variable named sys/os must never be checked against the
+// built-in module's own call shape -- same shadow-safety gate as the
+// bare-native-function and vec-constructor special cases.
+@(test)
+test_typecheck_builtin_module_call_never_shadows_user_variable :: proc(t: ^testing.T) {
+	source := `
+func sleep(a) {
+	return a
+}
+sys = sleep
+print sys(1, 2, 3)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a local binding named sys must never be checked against the builtin's shape, got %v", diags)
+}
+
+@(test)
+test_typecheck_list_method_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "var l = [1, 2, 3]\nl.remove(\"x\")")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_list_method_unknown_name_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "var l = [1, 2, 3]\nl.frobnicate()")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (unknown method), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_list_method_append_accepts_any_value_type :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "var l = [1, 2, 3]\nl.append(\"x\")\nl.append(1)\nl.append(nil)")
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- append's value argument is unconstrained, got %v", diags)
+}
+
+@(test)
+test_typecheck_dict_method_get_requires_string_key :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "var d = {}\nd.get(1)")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_string_method_replace_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "\"hi\".replace(1, \"y\")")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_string_method_accepts_correct_types :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "\"hi\".replace(\"h\", \"y\")\nprint \"hi\".length()")
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+// Regression test: a native/module function whose declared return kind
+// is List or Dict must synthesize a real, usable ^Type (list_elem/
+// dict_key/dict_value set to Dynamic, never left nil) -- indexing
+// sys.args()'s returned list used to segfault the compiler outright
+// (typecheck_expr.odin's Expr_Index case reads obj_type.list_elem with
+// no nil check), not just mistype. See native_kind_to_type,
+// typecheck_native.odin.
+@(test)
+test_typecheck_native_list_return_type_is_indexable_without_crashing :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "import sys\nprint sys.args()[0]")
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
 }
