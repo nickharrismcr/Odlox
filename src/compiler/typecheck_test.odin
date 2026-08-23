@@ -1,3 +1,4 @@
+#+feature dynamic-literals
 package compiler
 
 import "core:testing"
@@ -538,4 +539,140 @@ a.next = b
 `
 	_, diags := parse_resolve_typecheck(t, source)
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- nil-initialized fields must not be pinned to always-nil, got %v", diags)
+}
+
+// -----------------------------------------------------------------------
+// Cross-module consultation sites (Stmt_From_Import in typecheck_stmt.odin,
+// type_from_expr in types.odin, flatten_class's superclass lookup in
+// typecheck_class.odin), exercised with a fake in-memory Resolve_Module_Proc
+// -- no file I/O, no vm package, no real module loader. Fake_Module_Registry
+// builds each fake module's own Module_Signature via the real
+// Typecheck_Module_Signature (module_signature.odin), so these signatures
+// are exactly as real as a genuine module's would be; only *finding* the
+// module's source is faked.
+
+@(private = "file")
+Fake_Module_Registry :: struct {
+	modules: map[string]^Module_Signature,
+}
+
+@(private = "file")
+fake_resolve_module :: proc(ctx: rawptr, name: string) -> (^Module_Signature, bool) {
+	reg := (^Fake_Module_Registry)(ctx)
+	sig, ok := reg.modules[name]
+	return sig, ok
+}
+
+@(private = "file")
+make_fake_registry :: proc(t: ^testing.T, modules: map[string]string) -> ^Fake_Module_Registry {
+	reg := new(Fake_Module_Registry)
+	reg.modules = make(map[string]^Module_Signature)
+	for name, src in modules {
+		sig, _, ok := Typecheck_Module_Signature(name, src, name)
+		testing.expectf(t, ok, "expected fake module %q to typecheck cleanly", name)
+		reg.modules[name] = sig
+	}
+	return reg
+}
+
+@(private = "file")
+parse_resolve_typecheck_with_resolver :: proc(
+	t: ^testing.T,
+	source: string,
+	reg: ^Fake_Module_Registry,
+) -> (
+	stmts: []Stmt,
+	diagnostics: []Type_Diagnostic,
+) {
+	scn := tokenize(source)
+	p := Parser{scn = &scn, filename = "test.lox"}
+	advance(&p)
+	list: [dynamic]Stmt
+	for !match(&p, .Eof) {
+		s := declaration(&p)
+		if s != nil {
+			append(&list, s)
+		}
+	}
+	testing.expectf(t, !p.had_error, "expected %q to parse without error", source)
+	stmts = list[:]
+	_, had_error := resolve_program(stmts)
+	testing.expectf(t, !had_error, "expected %q to resolve without error", source)
+	diagnostics, _ = typecheck_program(stmts, fake_resolve_module, reg)
+	return
+}
+
+// The direct fix for the bug that opened this whole cross-module effort:
+// a from-imported function's real, resolved signature is now checked at
+// its call site, not silently treated as Dynamic.
+@(test)
+test_typecheck_from_import_wrong_argument_type_uses_resolved_signature :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"mathmod" = "func add(x: int, y: int) -> int {\nreturn x + y\n}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "from mathmod import add\nadd(1, \"two\")", reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the bad argument), got %d: %v", len(diags), diags)
+}
+
+// A name genuinely absent from a *reachable* module's exports is a new
+// diagnostic class -- narrowly scoped to fire only once the module itself
+// was successfully reached (see the plan's own "New diagnostic, narrowly
+// scoped" design note).
+@(test)
+test_typecheck_from_import_unknown_export_diagnoses :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"mathmod" = "func add(x: int, y: int) -> int {\nreturn x + y\n}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "from mathmod import subtract\n", reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (no such export), got %d: %v", len(diags), diags)
+}
+
+// A module the resolver genuinely can't reach (unregistered here, exactly
+// mirroring a real "not found on LOX_PATH" outcome) must degrade to
+// today's Dynamic-everywhere behavior -- the concrete backward-compat
+// gate: having a resolver installed at all must never itself change
+// behavior for a module it can't resolve.
+@(test)
+test_typecheck_from_import_unreachable_module_stays_dynamic :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "from missing import whatever\nwhatever(1, 2, 3)\n", reg)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- an unreachable module must stay Dynamic, got %v", diags)
+}
+
+// The direct regression test for the bug this whole effort opened with:
+// a from-imported class used as a superclass must flatten for real
+// (methods_uncertain == false), so both an inherited-and-misspelled
+// method call *and* a genuinely missing method declared on the subclass
+// itself are caught -- neither fired before this work, since any
+// cross-module superclass unconditionally set methods_uncertain = true.
+@(test)
+test_typecheck_cross_module_superclass_flattens_and_diagnoses_missing_methods :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"shapes" = "class Shape {\n\tarea() -> int {\n\t\treturn 0\n\t}\n}\n"})
+	source := `
+from shapes import Shape
+class Circle < Shape {
+	describe() {
+		return this.area()
+	}
+}
+var c = Circle()
+c.area()
+c.notAMethod()
+`
+	_, diags := parse_resolve_typecheck_with_resolver(t, source, reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the genuinely missing method), got %d: %v", len(diags), diags)
+}
+
+// A from-imported class used directly as a parameter annotation
+// (type_from_expr's resolver fallback, types.odin) is checked nominally
+// against the real, resolved Class_Type -- not left as Dynamic (which
+// would accept anything) nor treated as an unrelated/unknown type.
+@(test)
+test_typecheck_from_import_class_used_as_parameter_annotation :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"shapes" = "class Shape {\n}\nclass Widget {\n}\n"})
+	source := `
+from shapes import Shape, Widget
+func takesShape(s: Shape) {
+	return s
+}
+takesShape(Widget())
+`
+	_, diags := parse_resolve_typecheck_with_resolver(t, source, reg)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (a Widget doesn't satisfy a Shape-typed parameter), got %d: %v", len(diags), diags)
 }

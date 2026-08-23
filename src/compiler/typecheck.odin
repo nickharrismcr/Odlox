@@ -87,6 +87,14 @@ typecheck_program :: proc(
 	root.pinned = make(map[int]bool)
 	tc.locals = root
 
+	// Pass 0: merge every top-level from-imported class into tc.classes
+	// up front, before pass 1 needs to resolve any same-file class's
+	// superclass/param/return annotations that might name one -- same
+	// forward-reference guarantee pass 1's own step 1 already gives
+	// same-file classes (see typecheck_register_imported_classes' own
+	// doc comment, typecheck_stmt.odin).
+	typecheck_register_imported_classes(tc, stmts)
+
 	// Pass 1: every class's full signature (fields/methods/superclass),
 	// program-wide, before pass 2 (the ordinary statement walk just
 	// below) checks a single statement -- a class can be called/
@@ -111,7 +119,10 @@ diagnose :: proc(tc: ^Type_Checker, tok: Token, message: string) {
 // ordinary var -- reassigning `f` after `func f() {}` to something
 // incompatible is still flagged), Stmt_Destructure/Stmt_Foreach's hidden
 // locals/Except_Clause's binding/Stmt_Import (always Dynamic regardless,
-// so pinning them has no observable effect either way). Marks the slot
+// so pinning it has no observable effect either way -- see typecheck_
+// stmt.odin's Stmt_Import case)/Stmt_From_Import (a real, resolved type
+// when tc.resolve_module reaches the module, Dynamic otherwise -- see
+// typecheck_from_import, typecheck_stmt.odin). Marks the slot
 // *pinned*: Expr_Assign/Stmt_Implicit_Assign's reassignment checks
 // (typecheck_expr.odin/typecheck_stmt.odin) diagnose an incompatible
 // write to a pinned slot and never change what's recorded there. See
@@ -253,6 +264,20 @@ lookup_upvalue_type :: proc(scope: ^Local_Type_Scope, upvalue_index: int) -> ^Ty
 		return nil
 	}
 	return lookup_upvalue_type(scope.enclosing, int(uv.index))
+}
+
+// resolve_module_signature is every cross-module consultation site's own
+// entry point into the resolver, if one was supplied (typecheck_program's
+// resolve_module param) -- returns ok=false uniformly whether no resolver
+// was ever supplied (the whole existing single-file test suite) or the
+// resolver itself couldn't reach the named module (not found, a builtin,
+// a cycle -- see module_signature.odin's Resolve_Module_Proc), so callers
+// never need to check tc.resolve_module != nil separately.
+resolve_module_signature :: proc(tc: ^Type_Checker, name: string) -> (^Module_Signature, bool) {
+	if tc.resolve_module == nil {
+		return nil, false
+	}
+	return tc.resolve_module(tc.resolve_module_ctx, name)
 }
 
 // print_type_diagnostics mirrors parser.odin's error_at/resolve.odin's

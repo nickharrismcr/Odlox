@@ -336,11 +336,14 @@ flatten_class :: proc(
 		super_name := lexeme(decl.superclass)
 		super_ct, ok := tc.classes[super_name]
 		if !ok {
-			// Not a known class in *this* compilation unit -- either a
-			// genuine typo/non-class name, or (just as likely in
-			// practice, see methods_uncertain's own doc comment) a class
-			// imported from another module file. Either way, .methods
-			// can't be trusted as complete for this class.
+			// Not a known class in *this* compilation unit, and not a
+			// from-imported one either -- typecheck_register_imported_
+			// classes (typecheck_stmt.odin) already merged every top-level
+			// from-imported class into tc.classes before this pass ever
+			// runs, so this is either a genuine typo/non-class name, or a
+			// module the resolver couldn't reach at all (unset resolver,
+			// module not found, ...). Either way, .methods can't be
+			// trusted as complete for this class.
 			ct.methods_uncertain = true
 		} else {
 			if super_decl, has_decl := class_decls[super_name]; has_decl {

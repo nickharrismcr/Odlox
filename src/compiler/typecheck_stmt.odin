@@ -78,10 +78,84 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 		}
 	case ^Stmt_From_Import:
 		if !v.wildcard {
-			for n in v.names {
-				record_decl_type(tc, false, n.declared_slot, dynamic_type())
+			typecheck_from_import(tc, v)
+		}
+	}
+}
+
+// typecheck_register_imported_classes is typecheck_program's pass 0
+// (typecheck.odin) -- merges every top-level, non-wildcard from-imported
+// class straight into tc.classes, keyed by its local bound name, before
+// pass 1 (typecheck_collect_class_signatures) or pass 2 ever runs. This
+// is what makes a from-imported class usable as a superclass
+// (flatten_class's ordinary tc.classes[super_name] lookup, typecheck_
+// class.odin) or a type annotation (type_from_expr's ordinary
+// tc.classes[name] lookup, types.odin) -- *neither* of those sites needs
+// its own separate resolver consultation, since both already just read
+// tc.classes by name and this pass is what gets a cross-module class
+// into that table in the first place. Deliberately restricted to
+// *top-level* Stmt_From_Import: tc.classes is one program-wide name
+// space, unlike a local variable's own scoped slot, so registering a
+// class imported inside a function/block body here would leak that name
+// into every other scope's annotations, wider than the import's own
+// real visibility. Non-class exports (functions, plain vars) need no
+// equivalent pre-pass -- typecheck_from_import (just below) already
+// resolves those correctly regardless of statement order, since a
+// variable read/annotation always goes through its own declared_slot,
+// never a name-keyed table the way a class annotation does. Not file-
+// private -- called from typecheck_program (typecheck.odin) as pass 0.
+typecheck_register_imported_classes :: proc(tc: ^Type_Checker, stmts: []Stmt) {
+	for s in stmts {
+		v, is_from_import := s.(^Stmt_From_Import)
+		if !is_from_import || v.wildcard {
+			continue
+		}
+		sig, found := resolve_module_signature(tc, lexeme(v.module))
+		if !found {
+			continue
+		}
+		for n in v.names {
+			name := lexeme(n.name)
+			if ct, has_class := sig.classes[name]; has_class {
+				tc.classes[name] = ct
 			}
 		}
+	}
+}
+
+// typecheck_from_import looks each named import up in its module's own
+// Module_Signature (resolve_module_signature, typecheck.odin) -- a real
+// type on success, Dynamic with no diagnostic if the module itself
+// couldn't be reached at all (not found, a builtin, a cycle -- a
+// different, unrelated problem class from "reached it and the name is
+// missing"), or Dynamic *with* a diagnostic when the module was reached
+// but genuinely doesn't export this name -- mirrors the runtime error of
+// identical shape (vm/module.odin's do_import_from:
+// "Module '%s' has no export '%s'."), moving a subset of that mistake
+// class from "crashes the first time this code runs" to "flagged at
+// compile time". `from mod import *` (wildcard) is a deliberate,
+// documented non-goal: it declares no From_Import_Name entries at all
+// (see resolve_from_import's own wildcard early return), so there's no
+// declared_slot here to hang a resolved type on -- fixing it needs a
+// materially different mechanism (binding every one of the target's
+// exported names into the importer's own scope at typecheck time,
+// mirroring what the runtime wildcard branch already does), not
+// something this consultation site can cover incidentally.
+@(private = "file")
+typecheck_from_import :: proc(tc: ^Type_Checker, v: ^Stmt_From_Import) {
+	module_name := lexeme(v.module)
+	sig, found := resolve_module_signature(tc, module_name)
+	for n in v.names {
+		name := lexeme(n.name)
+		t := dynamic_type()
+		if found {
+			if vt, ok := sig.vars[name]; ok {
+				t = vt
+			} else {
+				diagnose(tc, n.name, fmt.tprintf("module '%s' has no export '%s'", module_name, name))
+			}
+		}
+		record_decl_type(tc, false, n.declared_slot, t)
 	}
 }
 

@@ -88,6 +88,10 @@ type_from_expr :: proc(tc: ^Type_Checker, te: ^Type_Expr) -> ^Type {
 		if ct, ok := tc.classes[name]; ok {
 			return new_clone(Type{kind = .Class, class_type = ct})
 		}
+		// A from-imported class is registered into tc.classes directly, up
+		// front, by typecheck_register_imported_classes (typecheck_stmt.
+		// odin) before this ever runs -- so no separate resolver
+		// consultation belongs here; the lookup above already covers it.
 		return dynamic_type()
 	case .Generic:
 		elem := type_from_expr(tc, te.args[0]) if len(te.args) > 0 else dynamic_type()
