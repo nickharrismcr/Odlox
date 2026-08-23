@@ -969,6 +969,34 @@ print sys(1, 2, 3)
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a local binding named sys must never be checked against the builtin's shape, got %v", diags)
 }
 
+// The natives package's own modules (gfx/colour_utils/sound/box2d/socket/
+// pickle/process/physics/re/inspect) go through the exact same lookup as
+// sys/os -- these cases spot-check a representative few rather than
+// re-testing every signature in the table.
+@(test)
+test_typecheck_natives_module_call_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "import gfx\ngfx.window(\"w\", \"h\")")
+	testing.expectf(t, len(diags) == 2, "expected exactly two diagnostics (one per bad argument), got %d: %v", len(diags), diags)
+}
+
+@(test)
+test_typecheck_natives_module_call_accepts_correct_type :: proc(t: ^testing.T) {
+	source := `
+import colour_utils
+import physics
+colour_utils.fade(255, 0, 0, 1)
+physics.physics_world(vec3(0, 0, 0), vec3(1, 1, 1), 1.0, vec3(0, -9.8, 0))
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+@(test)
+test_typecheck_natives_module_call_variadic_tail_checked :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "import process\nprocess.spawn(\"worker.lox\", 1)")
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the non-string extra arg), got %d: %v", len(diags), diags)
+}
+
 @(test)
 test_typecheck_list_method_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
 	_, diags := parse_resolve_typecheck(t, "var l = [1, 2, 3]\nl.remove(\"x\")")

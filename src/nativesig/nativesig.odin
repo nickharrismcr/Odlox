@@ -15,11 +15,16 @@ package nativesig
 // builtin (`len(x)`), a named module ("sys", "os", a natives module like
 // "gfx") matches a member of that built-in module.
 //
-// Every entry is verified against its real implementation (currently
-// vm/builtins.odin, builtins_math.odin, builtins_sys.odin, builtins_
-// os.odin) -- see each proc's own runtime argc/type checks. Not yet
-// covered: the `natives` package (raylib/gfx/sound/os/re/json/pickle/
-// physics/...).
+// Every entry is verified against its real implementation (vm/builtins*.
+// odin and natives/*.odin) -- see each proc's own runtime argc/type
+// checks. Covers every natives-package module's own free functions
+// (gfx/colour_utils/sound/box2d/socket/pickle/process/physics/re/
+// inspect), matching sys/os. Not covered: the *methods* natives-package
+// constructors return (Window.rectangle, Texture.draw, Sound.play,
+// Socket.recv, Box2DWorld.add_circle, and so on) -- those objects have no
+// Type_Kind of their own (only the fixed set typecheck_expr.odin's Type_
+// Kind models), so a call through one is unrecognized and left Dynamic,
+// same as an ordinary untyped value.
 
 // Kind mirrors the subset of compiler.Type_Kind meaningful to a native's
 // arguments/return value. compiler.typecheck_native.odin translates Kind
@@ -152,6 +157,89 @@ signatures := []Signature {
 	{module = "os", name = "dirname", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .String, arity_message = "Invalid argument type to dirname, expected string."},
 	{module = "os", name = "basename", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .String, arity_message = "Invalid argument type to basename, expected string."},
 	{module = "os", name = "splitext", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .List, arity_message = "Invalid argument type to splitext, expected string."},
+
+	// --- natives/gfx.odin, gfx_window/image/texture/camera/shader/batch*/
+	// light.odin: object-constructor free functions. Every constructed
+	// object (Window, Image, Texture, Shader, Camera, Batch, Light, ...)
+	// returns Dynamic -- none has a Type_Kind of its own. A parameter that
+	// itself must be one of those object kinds (gfx.texture's image,
+	// gfx.batch_instanced's texture) is left unconstrained for the same
+	// reason. gfx.shader's real arity is "0 or 2", which Min/Max_Args
+	// can't express without also accepting 1 -- Arity_Message is left
+	// empty so a 1-argument call isn't misdiagnosed. ---
+	{module = "gfx", name = "encode_rgba", min_args = 3, max_args = 3, params = {{accepted = {.Int}}, {accepted = {.Int}}, {accepted = {.Int}}}, returns = .Float, arity_message = "encode_rgba expects 3 arguments"},
+	{module = "gfx", name = "decode_rgba", min_args = 1, max_args = 1, params = {{accepted = STRICT_FLOAT}}, returns = .List, arity_message = "decode_rgba expects 1 float argument"},
+	{module = "gfx", name = "float_array", min_args = 2, max_args = 2, params = {{accepted = {.Int}}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "Invalid argument count to float_array."},
+	{module = "gfx", name = "float_array_3d", min_args = 3, max_args = 3, params = {{accepted = {.Int}}, {accepted = {.Int}}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "Invalid argument count to float_array_3d."},
+	{module = "gfx", name = "window", min_args = 2, max_args = 2, params = {{accepted = {.Int}}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "window() expects 2 arguments (width, height)."},
+	{module = "gfx", name = "image", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .Dynamic, arity_message = "image() expects 1 argument (filename)."},
+	{module = "gfx", name = "texture", min_args = 4, max_args = 4, params = {{}, {accepted = {.Int}}, {accepted = {.Int}}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "texture() expects 4 arguments (image, frames, start_frame, end_frame)."},
+	{module = "gfx", name = "render_texture", min_args = 2, max_args = 2, params = {{accepted = {.Int}}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "render_texture() expects 2 arguments (width, height)."},
+	{module = "gfx", name = "shader", min_args = 0, max_args = 2, params = {{accepted = STRING}, {accepted = STRING}}, returns = .Dynamic, arity_message = ""},
+	{module = "gfx", name = "camera", min_args = 3, max_args = 3, params = {{accepted = {.Vec3}}, {accepted = {.Vec3}}, {accepted = {.Vec3}}}, returns = .Dynamic, arity_message = "camera() expects 3 arguments: position(vec3), target(vec3), up(vec3)."},
+	{module = "gfx", name = "batch", min_args = 1, max_args = 1, params = {{accepted = {.Int}}}, returns = .Dynamic, arity_message = "batch() expects 1 argument (a win.BATCH_* constant)."},
+	{module = "gfx", name = "batch2d", min_args = 1, max_args = 1, params = {{accepted = {.Int}}}, returns = .Dynamic, arity_message = "batch2d() expects 1 argument (a win.BATCH2D_* constant)."},
+	{module = "gfx", name = "batch_instanced", min_args = 3, max_args = 3, params = {{}, {accepted = STRICT_FLOAT}, {accepted = {.Int}}}, returns = .Dynamic, arity_message = "batch_instanced() expects 3 arguments (texture, cube_size, max_instances)."},
+	{module = "gfx", name = "instanced_light", min_args = 4, max_args = 4, params = {{accepted = {.Int}}, {accepted = {.Vec3}}, {accepted = {.Vec3}}, {accepted = {.Vec4}}}, returns = .Dynamic, arity_message = "instanced_light() expects 4 arguments (type, position, target, color)."},
+	{module = "gfx", name = "instanced_ambient", min_args = 1, max_args = 1, params = {{accepted = {.Vec4}}}, returns = .Dynamic, arity_message = "instanced_ambient() expects 1 argument (color)."},
+
+	// --- natives/colour_utils.odin: every function accepts int-or-float
+	// components (coerced via core.as_float) and returns a vec4. ---
+	{module = "colour_utils", name = "fade", min_args = 4, max_args = 4, params = {{accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Vec4, arity_message = "fade expects 4 arguments (r, g, b, alpha)"},
+	{module = "colour_utils", name = "tint", min_args = 6, max_args = 6, params = {{accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Vec4, arity_message = "tint expects 6 arguments (r1, g1, b1, r2, g2, b2)"},
+	{module = "colour_utils", name = "brightness", min_args = 4, max_args = 4, params = {{accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Vec4, arity_message = "brightness expects 4 arguments (r, g, b, factor)"},
+	{module = "colour_utils", name = "lerp", min_args = 7, max_args = 7, params = {{accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Vec4, arity_message = "lerp expects 7 arguments (r1, g1, b1, r2, g2, b2, amount)"},
+	{module = "colour_utils", name = "hsv_to_rgb", min_args = 3, max_args = 3, params = {{accepted = NUMERIC}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Vec4, arity_message = "hsv_to_rgb expects 3 arguments (h, s, v)"},
+	{module = "colour_utils", name = "random", min_args = 0, max_args = 0, params = {}, returns = .Vec4, arity_message = "random expects 0 arguments"},
+
+	// --- natives/sound.odin: module-level device/asset functions. Sound/
+	// Music (the objects load/load_music return) have no Type_Kind. ---
+	{module = "sound", name = "init", min_args = 0, max_args = 0, params = {}, returns = .Dynamic, arity_message = "init() takes no arguments."},
+	{module = "sound", name = "close", min_args = 0, max_args = 0, params = {}, returns = .Dynamic, arity_message = "close() takes no arguments."},
+	{module = "sound", name = "is_ready", min_args = 0, max_args = 0, params = {}, returns = .Bool, arity_message = "is_ready() takes no arguments."},
+	{module = "sound", name = "set_master_volume", min_args = 1, max_args = 1, params = {{accepted = NUMERIC}}, returns = .Dynamic, arity_message = "set_master_volume() expects 1 argument (volume)."},
+	{module = "sound", name = "get_master_volume", min_args = 0, max_args = 0, params = {}, returns = .Float, arity_message = "get_master_volume() takes no arguments."},
+	{module = "sound", name = "load", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .Dynamic, arity_message = "load() expects 1 argument (filename)."},
+	{module = "sound", name = "load_music", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .Dynamic, arity_message = "load_music() expects 1 argument (filename)."},
+
+	// --- natives/box2d.odin ---
+	{module = "box2d", name = "world", min_args = 1, max_args = 1, params = {{accepted = {.Vec2}}}, returns = .Dynamic, arity_message = "world() expects 1 argument (gravity)."},
+
+	// --- natives/socket.odin ---
+	{module = "socket", name = "connect", min_args = 2, max_args = 2, params = {{accepted = STRING}, {accepted = NUMERIC}}, returns = .Dynamic, arity_message = "connect() expects 2 arguments (host, port)."},
+	{module = "socket", name = "listen", min_args = 2, max_args = 3, params = {{accepted = STRING}, {accepted = NUMERIC}, {accepted = NUMERIC}}, returns = .Dynamic, arity_message = "listen() expects 2 or 3 arguments (host, port, backlog=1000)."},
+
+	// --- natives/pickle.odin: dumps() accepts any value, unconstrained. ---
+	{module = "pickle", name = "dumps", min_args = 1, max_args = 1, params = {{}}, returns = .String, arity_message = "Invalid argument count to dumps."},
+	{module = "pickle", name = "loads", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .Dynamic, arity_message = "Invalid argument count to loads."},
+
+	// --- natives/process.odin: spawn/start's extra args (script's own
+	// sys.args()) must all be strings, checked via Variadic_Tail. ---
+	{module = "process", name = "spawn", min_args = 1, max_args = -1, params = {{accepted = STRING}}, variadic_tail = STRING, returns = .Dynamic, arity_message = "spawn() expects at least 1 argument (script path)."},
+	{module = "process", name = "start", min_args = 1, max_args = -1, params = {{accepted = STRING}}, variadic_tail = STRING, returns = .Dynamic, arity_message = "start() expects at least 1 argument (script path)."},
+	{module = "process", name = "parent", min_args = 0, max_args = 0, params = {}, returns = .Dynamic, arity_message = "parent() expects no arguments."},
+	{module = "process", name = "wait_any", min_args = 1, max_args = 1, params = {{accepted = {.List}}}, returns = .Dynamic, arity_message = "wait_any() expects 1 argument (a list of processes)."},
+
+	// --- natives/physics.odin ---
+	{module = "physics", name = "physics_world", min_args = 4, max_args = 4, params = {{accepted = {.Vec3}}, {accepted = {.Vec3}}, {accepted = NUMERIC}, {accepted = {.Vec3}}}, returns = .Dynamic, arity_message = "physics_world() expects 4 arguments (min, max, cell_size, gravity)."},
+
+	// --- natives/re.odin. sub's trailing count is strictly checked
+	// (Int); subn/split's trailing count/maxsplit are read via core.as_int
+	// with no type check in the real implementation, so left unconstrained
+	// to match. ---
+	{module = "re", name = "search", min_args = 2, max_args = 2, params = {{accepted = STRING}, {accepted = STRING}}, returns = .Dynamic, arity_message = "Invalid argument count to re.search."},
+	{module = "re", name = "match", min_args = 2, max_args = 2, params = {{accepted = STRING}, {accepted = STRING}}, returns = .Dynamic, arity_message = "Invalid argument count to re.match."},
+	{module = "re", name = "fullmatch", min_args = 2, max_args = 2, params = {{accepted = STRING}, {accepted = STRING}}, returns = .Dynamic, arity_message = "Invalid argument count to re.fullmatch."},
+	{module = "re", name = "sub", min_args = 3, max_args = 4, params = {{accepted = STRING}, {accepted = STRING}, {accepted = STRING}, {accepted = {.Int}}}, returns = .String, arity_message = "re.sub expects 3 or 4 arguments."},
+	{module = "re", name = "subn", min_args = 3, max_args = 4, params = {{accepted = STRING}, {accepted = STRING}, {accepted = STRING}, {}}, returns = .List, arity_message = "re.subn expects 3 or 4 arguments."},
+	{module = "re", name = "split", min_args = 2, max_args = 3, params = {{accepted = STRING}, {accepted = STRING}, {}}, returns = .List, arity_message = "re.split expects 2 or 3 arguments."},
+	{module = "re", name = "findall", min_args = 2, max_args = 2, params = {{accepted = STRING}, {accepted = STRING}}, returns = .List, arity_message = "Invalid argument count to re.findall."},
+	{module = "re", name = "compile", min_args = 1, max_args = 1, params = {{accepted = STRING}}, returns = .Dynamic, arity_message = "Invalid argument count to re.compile."},
+
+	// --- natives/inspect.odin: neither function checks argc at runtime,
+	// so arity is left undiagnosed here too (same rationale as rand()). ---
+	{module = "inspect", name = "get_frame", min_args = 0, max_args = -1, params = {}, returns = .Dict, arity_message = ""},
+	{module = "inspect", name = "dump_frame", min_args = 0, max_args = -1, params = {}, returns = .Dynamic, arity_message = ""},
 }
 
 // lookup finds the signature for a (module, name) pair, if one is
