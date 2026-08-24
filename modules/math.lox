@@ -10,7 +10,7 @@
 
 // TODO move all vector stuff into native  
 
-func rotate2d(v2, angle) {
+func rotate2d(v2: vec2, angle: float) -> vec2 {
     cosA = _cos(angle);
     sinA = _sin(angle);
     xNew = v2.x * cosA - v2.y * sinA;
@@ -18,34 +18,34 @@ func rotate2d(v2, angle) {
     return vec2(xNew, yNew)
 }
  
-func scale2(v2, scalar) {
+func scale2(v2: vec2, scalar) -> vec2 {
     return vec2(v2.x * scalar, v2.y * scalar);
 }
 
-func scale3(v3, scalar) {
+func scale3(v3: vec3, scalar) -> vec3 {
     return vec3(v3.x * scalar, v3.y * scalar, v3.z * scalar);
-} 
+}
 
-func length2(v2) {
+func length2(v2: vec2) -> float {
     // Calculate the length of a 2D vector
 
     return _sqrt(v2.x * v2.x + v2.y * v2.y);
 }
 
-func length3(v3) {
+func length3(v3: vec3) -> float {
     // Calculate the length of a 3D vector
     return _sqrt(v3.x * v3.x + v3.y * v3.y + v3.z * v3.z);
-} 
+}
 
 
-func floor(n) {
+func floor(n) -> int {
   if (n < 0 and n != int(n)) {
     return int(n) - 1;
   }
   return int(n);
-} 
+}
 
-func round(n) {
+func round(n) -> int {
   if (n >= 0) {
     return floor(n + 0.5);
   } else {
@@ -74,51 +74,51 @@ func abs(n) {
   return n;
 } 
 
-func sin(angle) {
+func sin(angle: float) -> float {
     // Use native sine function for better performance
     return _sin(angle);
-} 
+}
 
-func cos(angle) {
+func cos(angle: float) -> float {
     // Use native cosine function for better performance
     return _cos(angle);
-} 
+}
 
-func tan(angle) {
+func tan(angle: float) -> float {
     // Use native tangent function for better performance
     return _tan(angle);
 }
 
-func atan2(y, x) {
+func atan2(y, x) -> float {
     // Two-argument arctangent function for better performance
     return _atan2(float(y), float(x));
 }
 
-func sqrt(n){
+func sqrt(n: float) -> float {
     // Use native square root function for better performance
     return _sqrt(n);
 }
 var PI = 3.141592653589793238462643383279;
 
-func normalize2(v2) {
+func normalize2(v2: vec2) -> vec2 {
     // Normalize a 2D vector
     len = length2(v2);
     if (len == 0) {
         return vec2(0, 0); // Avoid division by zero
     }
     return vec2(v2.x / len, v2.y / len);
-} 
+}
 
-func normalize3(v3) {
+func normalize3(v3: vec3) -> vec3 {
     // Normalize a 3D vector
     len = length3(v3);
     if (len == 0) {
         return vec3(0, 0, 0); // Avoid division by zero
     }
     return vec3(v3.x / len, v3.y / len, v3.z / len);
-}   
+}
 
-func sign(v) {
+func sign(v) -> int {
     // Return -1, 0, or 1 based on the sign of the value
     if (v > 0) {
         return 1;
@@ -128,26 +128,26 @@ func sign(v) {
     return 0; // Zero case
 }
 
-func radians(degrees) {
+func radians(degrees) -> float {
     // Convert degrees to radians
     return degrees * PI / 180.0;
 }
 
-func degrees(radians_val) {
+func degrees(radians_val) -> float {
     // Convert radians to degrees
     return radians_val * 180.0 / PI;
-} 
+}
 
-func pow(base, exponent) {
+func pow(base, exponent) -> float {
     // Calculate base raised to the power of exponent
     base= float(base);
     exponent= float(exponent);
     return _pow(base, exponent);
 }
 
-func round_places(n, places) {
+func round_places(n, places) -> float {
     // Round a number to a specified number of decimal places
-    fn=float(n) 
+    fn=float(n)
     fplaces=float(places)
     ffactor = _pow(10.0, fplaces);
     return floor(fn * ffactor + 0.5) / ffactor;

@@ -10,7 +10,7 @@ import colour
 
 // snap rounds pos down to the nearest grid_size multiple on both axes --
 // e.g. for a level editor placing objects on a tile grid.
-func snap(pos, grid_size) {
+func snap(pos: vec2, grid_size) -> vec2 {
     return vec2(int(pos.x / grid_size) * grid_size, int(pos.y / grid_size) * grid_size)
 }
 
@@ -58,20 +58,20 @@ class Widget {
         this.on_drag_end = nil
     }
 
-    contains(px, py) {
+    contains(px, py) -> bool {
         return px >= this.x and px <= this.x + this.w and py >= this.y and py <= this.y + this.h
     }
 
     // is_draggable lets Screen.update() decide whether a left-click on this
     // widget should start a drag, without a native type check.
-    is_draggable() {
+    is_draggable() -> bool {
         return false
     }
 
     // drag_anchor/set_drag_position let Screen.update() drag something
     // other than the widget's own x/y -- overridden by Segmented_Line to
     // drag a single handle point instead of the whole widget.
-    drag_anchor() {
+    drag_anchor() -> vec2 {
         return vec2(this.x, this.y)
     }
 
@@ -200,7 +200,7 @@ class Draggable < Widget {
         this.texture = texture
     }
 
-    is_draggable() {
+    is_draggable() -> bool {
         return true
     }
 
@@ -232,7 +232,7 @@ class Slider < Widget {
         this.on_change = nil // (slider, value) -> _, fired whenever value changes via drag
     }
 
-    is_draggable() {
+    is_draggable() -> bool {
         return true
     }
 
@@ -251,13 +251,13 @@ class Slider < Widget {
         return this.y + this.h / 2.0
     }
 
-    contains(px, py) {
+    contains(px, py) -> bool {
         var dx = px - this.handle_x()
         var dy = py - this.handle_y()
         return dx * dx + dy * dy <= this.handle_radius * this.handle_radius
     }
 
-    drag_anchor() {
+    drag_anchor() -> vec2 {
         return vec2(this.handle_x(), this.handle_y())
     }
 
@@ -286,7 +286,7 @@ class Slider < Widget {
 class Segmented_Line < Widget {
     // points: a list of >= 2 vec2 vertices. handle_radius: hit-test/draw
     // radius, in pixels, for each vertex handle.
-    __init__(points, handle_radius=8) {
+    __init__(points: List[vec2], handle_radius=8) {
         super.__init__(points[0].x, points[0].y, 0, 0) // x/y/w/h unused -- see contains()
         this.points = points
         this.handle_radius = handle_radius
@@ -298,7 +298,7 @@ class Segmented_Line < Widget {
         this.active_handle = 0
     }
 
-    contains(px, py) {
+    contains(px, py) -> bool {
         for (var i = 0; i < len(this.points); i = i + 1) {
             var p = this.points[i]
             var dx = px - p.x
@@ -311,20 +311,20 @@ class Segmented_Line < Widget {
         return false
     }
 
-    is_draggable() {
+    is_draggable() -> bool {
         return true
     }
 
-    drag_anchor() {
+    drag_anchor() -> vec2 {
         return this.points[this.active_handle]
     }
 
-    set_drag_position(pos) {
+    set_drag_position(pos: vec2) {
         this.points[this.active_handle] = pos
     }
 
     // add_point appends a new vertex, extending the line by one segment.
-    add_point(p) {
+    add_point(p: vec2) {
         this.points.append(p)
     }
 
@@ -333,7 +333,7 @@ class Segmented_Line < Widget {
     // drop below 2 points (a line needs at least one segment); returns
     // whether the point was actually removed, so the caller can tell
     // "now empty enough to discard the whole line" from "just shortened".
-    remove_point(index) {
+    remove_point(index: int) -> bool {
         if (len(this.points) <= 2) {
             return false
         }
@@ -514,7 +514,7 @@ class Rect {
         this.h = h
     }
 
-    contains(px, py) {
+    contains(px, py) -> bool {
         return px >= this.x and px <= this.x + this.w and py >= this.y and py <= this.y + this.h
     }
 }
@@ -534,13 +534,13 @@ class Marquee {
         this.colour = colour.WHITE
     }
 
-    begin(pos) {
+    begin(pos: vec2) {
         this.active = true
         this.start = pos
         this.current = pos
     }
 
-    update(pos) {
+    update(pos: vec2) {
         if (this.active) {
             this.current = pos
         }
@@ -548,12 +548,12 @@ class Marquee {
 
     // end finishes the drag and returns the final Rect, normalised
     // regardless of which corner the drag started from.
-    end() {
+    end() -> Rect {
         this.active = false
         return this.rect()
     }
 
-    rect() {
+    rect() -> Rect {
         var x = this.start.x
         if (this.current.x < x) {
             x = this.current.x
@@ -617,7 +617,7 @@ class Button_Group {
         return btn
     }
 
-    select(index) {
+    select(index: int) {
         this.selected_index = index
         for (var i = 0; i < len(this.buttons); i = i + 1) {
             this.buttons[i].selected = i == index

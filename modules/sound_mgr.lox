@@ -24,7 +24,7 @@ class SoundManager {
 	// given and nonzero, makes this sound mutually exclusive with every
 	// other sound sharing that group: playing one stops every other
 	// currently-playing sound in the same group first.
-	load(name, path, group=0) {
+	load(name: string, path: string, group: int=0) {
 		if (SoundManager.no_sound) { return }
 		this.sounds[name] = sound.load(path)
 		if group != 0 {
@@ -32,12 +32,12 @@ class SoundManager {
 		}
 	}
 
-	load_music(key, path) {
+	load_music(key: string, path: string) {
 		if (SoundManager.no_sound) { return }
 		this.music[key] = sound.load_music(path)
 	}
 
-	play(name) {
+	play(name: string) {
 		if (SoundManager.no_sound or this.muted) { return }
 		group = this.groups.get(name, 0)
 		if group != 0 {
@@ -54,19 +54,19 @@ class SoundManager {
 	// play_if_not re-triggers name only if it isn't already playing --
 	// keeps a one-shot clip effectively looping for as long as it's
 	// called every frame some condition holds.
-	play_if_not(name) {
+	play_if_not(name: string) {
 		if (SoundManager.no_sound) { return }
 		if !this.muted and !this.sounds[name].is_playing() {
 			this.sounds[name].play()
 		}
 	}
 
-	stop(name) {
+	stop(name: string) {
 		if (SoundManager.no_sound) { return }
 		this.sounds[name].stop()
 	}
 
-	play_music(key) {
+	play_music(key: string) {
 		if (SoundManager.no_sound) { return }
 		if !this.muted {
 			this.music[key].play()
@@ -75,12 +75,12 @@ class SoundManager {
 
 	// Routed through the manager rather than the raw Music object so
 	// callers don't need their own no_sound check.
-	set_music_looping(key, looping) {
+	set_music_looping(key: string, looping: bool) {
 		if (SoundManager.no_sound) { return }
 		this.music[key].set_looping(looping)
 	}
 
-	set_music_volume(key, volume) {
+	set_music_volume(key: string, volume: float) {
 		if (SoundManager.no_sound) { return }
 		this.music[key].set_volume(volume)
 	}
@@ -90,14 +90,14 @@ class SoundManager {
 	// per-frame "should this loop be running right now" check (e.g. a
 	// thruster tied to a held input) doesn't restart it from the top
 	// every single frame the condition holds.
-	play_music_if_not(key) {
+	play_music_if_not(key: string) {
 		if (SoundManager.no_sound) { return }
 		if !this.muted and !this.music[key].is_playing() {
 			this.music[key].play()
 		}
 	}
 
-	stop_music(key) {
+	stop_music(key: string) {
 		if (SoundManager.no_sound) { return }
 		this.music[key].stop()
 	}
@@ -114,7 +114,7 @@ class SoundManager {
 	// set_muted(true) stops everything currently playing and silences
 	// future play()/play_music() calls; set_muted(false) just lifts the
 	// silence -- nothing resumes automatically.
-	set_muted(m) {
+	set_muted(m: bool) {
 		if (SoundManager.no_sound) { return }
 		this.muted = m
 		if m {
@@ -127,7 +127,7 @@ class SoundManager {
 		}
 	}
 
-	is_muted() {
+	is_muted() -> bool {
 		return this.muted
 	}
 }

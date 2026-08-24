@@ -28,7 +28,7 @@ func reverse(s) {
     raise RunTimeError("Invalid argument to reverse().");
 }
 
-func stringsorter(a,b){
+func stringsorter(a: string, b: string) -> int {
     if (a < b) return -1
     if (a > b) return 1
     return 0
@@ -59,7 +59,7 @@ func sort(list, cmp) {
  
 
 class Bouncer {
-    __init__(min,max,dx) {
+    __init__(min: int,max: int,dx: int) {
         this.x= random.integer(min, max)
         this.dx = dx
         this.min=min

@@ -21,7 +21,7 @@ import math;
 // Particle allocation.
 var _pool = [];
 
-func _acquire(pos, init_function, update_function) {
+func _acquire(pos: vec2, init_function, update_function) {
     if (len(_pool) > 0) {
         var p = _pool[len(_pool) - 1];
         _pool.remove(len(_pool) - 1);   // pop last: O(1), no shift
@@ -36,20 +36,20 @@ func _release(p) {
 }
 
 class Particle {
-    __init__(pos,init_function, update_function) {
+    __init__(pos: vec2,init_function, update_function) {
         this.reset(pos, init_function, update_function);
     }
     // reset re-initialises a (possibly recycled) particle in place. Every field
     // is overwritten here or by init_function, so a pooled particle carries no
     // stale state.
-    reset(pos,init_function, update_function) {
+    reset(pos: vec2,init_function, update_function) {
         this.pos = pos; // Position of the particle
         this.dpos = vec2(0, 0); // Change in position
         init_function(this);
         this.function = update_function;
         this.age = 0;
     }
-    next() {
+    next() -> bool {
         this.age = this.age + 1;
         if (this.age >= this.life) {
             return false; // Particle is dead
@@ -69,7 +69,7 @@ class Particle {
 }
 
 class Emitter {
-    __init__(pos,init_function, update_function) {
+    __init__(pos: vec2,init_function, update_function) {
         this.pos = pos; // Position of the emitter
         this.init_function = init_function;
         this.update_function = update_function;
@@ -80,8 +80,8 @@ class Emitter {
         // carrying the shape here lets a shared draw routine pick per emitter.
         this.shape = "circle";
     }
- 
-    emit(num_particles) {
+
+    emit(num_particles: int) {
         for (var i = 0; i < num_particles; i = i + 1) {
             this.emit_particle();
         }
@@ -90,7 +90,7 @@ class Emitter {
         var particle = _acquire(vec2(this.pos.x, this.pos.y),this.init_function, this.update_function);
         this.particles.append(particle);
     }
-    update() {
+    update() -> bool {
         // Swap-with-last removal keeps this O(n) instead of O(n^2): remove(i) in
         // the middle shifts every following element, whereas removing the last
         // index is a no-shift pop. Reordering is safe under additive blending.
@@ -109,6 +109,7 @@ class Emitter {
         }
         return len(this.particles) >= 1;
     }
+
     get_particles() {
         return this.particles;
     }
@@ -124,7 +125,7 @@ class Emitters {
     }
     // Queue an emitter to fire `particles` particles after `delay` frames. Good for
     // one-shot bursts: once its particles all die, the emitter is dropped.
-    queue(emitter,particles,delay) {
+    queue(emitter: Emitter,particles: int,delay: int) {
         this.pending.append([emitter, particles, delay]);
     }
     queue_length(){
@@ -153,7 +154,7 @@ class Emitters {
             }
         }
     }
-    update_emitters() {
+    update_emitters() -> bool {
         var i = 0;
         var n = len(this.emitters);
         while (i < n) {

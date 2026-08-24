@@ -38,17 +38,17 @@ class JSONEncodeError < Exception {
 var _NUMBER_RE = re.compile("-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?");
 
 class _Decoder {
-    __init__(s) {
+    __init__(s: string) {
         this.s = s;
         this.i = 0;
         this.n = len(s);
     }
 
-    fail(msg) {
+    fail(msg: string) {
         raise JSONDecodeError(msg & " at position " & str(this.i));
     }
 
-    peek() {
+    peek() -> string? {
         if (this.i >= this.n) {
             return nil;
         }
@@ -96,7 +96,7 @@ class _Decoder {
         this.fail("Unexpected character '" & c & "'");
     }
 
-    parse_literal(text, value) {
+    parse_literal(text: string, value) {
         var end = this.i + len(text);
         if (end > this.n or this.s[this.i:end] != text) {
             this.fail("Invalid literal");
@@ -118,7 +118,7 @@ class _Decoder {
         return int(text);
     }
 
-    parse_string() {
+    parse_string() -> string {
         this.i = this.i + 1;
         var frags = [];
         var start = this.i;
@@ -149,7 +149,7 @@ class _Decoder {
         return "".join(frags);
     }
 
-    decode_escape(e) {
+    decode_escape(e: string) -> string {
         if (e == _QUOTE) {
             return _QUOTE;
         }
@@ -171,7 +171,7 @@ class _Decoder {
         this.fail("Unsupported escape sequence '" & _BACKSLASH & e & "'");
     }
 
-    parse_object() {
+    parse_object() -> Dict[string] {
         this.i = this.i + 1;
         var result = {};
         this.skip_ws();
@@ -234,7 +234,7 @@ class _Decoder {
     }
 }
 
-func decode(s) {
+func decode(s: string) {
     var d = _Decoder(s);
     var value = d.parse_value();
     d.skip_ws();
@@ -244,11 +244,11 @@ func decode(s) {
     return value;
 }
 
-func load(path) {
+func load(path: string) {
     return decode(os.read_all(path));
 }
 
-func encode_string(s) {
+func encode_string(s: string) -> string {
     var frags = [_QUOTE];
     var n = len(s);
     var start = 0;
@@ -285,7 +285,7 @@ func encode_string(s) {
     return "".join(frags);
 }
 
-func _wrap(frags, indent, depth, open, close) {
+func _wrap(frags: List[string], indent: int?, depth: int, open: string, close: string) -> string {
     if (len(frags) == 0) {
         return open & close;
     }
@@ -301,7 +301,7 @@ func _wrap(frags, indent, depth, open, close) {
     return open & _NL & (("," & _NL).join(padded)) & _NL & closepad & close;
 }
 
-func _encode_list(lst, indent, depth) {
+func _encode_list(lst, indent: int?, depth: int) -> string {
     var frags = [];
     foreach (item in lst) {
         frags.append(_encode(item, indent, depth + 1));
@@ -309,7 +309,7 @@ func _encode_list(lst, indent, depth) {
     return _wrap(frags, indent, depth, "[", "]");
 }
 
-func _encode_dict(d, indent, depth) {
+func _encode_dict(d, indent: int?, depth: int) -> string {
     var frags = [];
     foreach (k in d.keys()) {
         var sep = ":";
@@ -321,7 +321,7 @@ func _encode_dict(d, indent, depth) {
     return _wrap(frags, indent, depth, "{", "}");
 }
 
-func _encode(value, indent, depth) {
+func _encode(value, indent: int?, depth: int) -> string {
     var t = type(value);
     if (t == "nil") {
         return "null";
@@ -347,6 +347,6 @@ func _encode(value, indent, depth) {
     raise JSONEncodeError("Cannot encode value of type '" & t & "' to JSON");
 }
 
-func encode(value, indent=nil) {
+func encode(value, indent: int? = nil) -> string {
     return _encode(value, indent, 0);
 }

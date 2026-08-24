@@ -12,7 +12,7 @@
 import random;
 import colour_utils;
 
-func scale_colour(colour, scalar) {
+func scale_colour(colour: vec4, scalar) -> vec4 {
     colour.r = int(colour.r * scalar);
     colour.g = int(colour.g * scalar);
     colour.b = int(colour.b * scalar);
@@ -58,7 +58,7 @@ const GOLD       = vec4(255, 203, 0, 255);
 const RAYWHITE   = vec4(245, 245, 245, 255);
 
 
-func primary_colours() {
+func primary_colours() -> Dict[string, vec4] {
     return {
         "red":     RED,
         "green":   GREEN,
@@ -72,7 +72,7 @@ func primary_colours() {
 }
 
 
-func random_rgb(){
+func random_rgb() -> vec4 {
     // Use native builtin for better performance - returns vec4 directly
     return colour_utils.random();
 }
@@ -80,27 +80,27 @@ func random_rgb(){
 // Enhanced color manipulation functions
 // These will use native Raylib functions once implemented
 
-func fade(color, alpha) {
+func fade(color: vec4, alpha) -> vec4 {
     // Use native builtin with direct RGB values for better performance - returns vec4 directly
     return colour_utils.fade(int(color.x), int(color.y), int(color.z), alpha);
 }
 
-func lerp(color1, color2, t) {
+func lerp(color1: vec4, color2: vec4, t) -> vec4 {
     // Use native builtin with direct RGB values for better performance - returns vec4 directly
     return colour_utils.lerp(int(color1.x), int(color1.y), int(color1.z), int(color2.x), int(color2.y), int(color2.z), t);
 }
 
-func brightness(color, factor) {
+func brightness(color: vec4, factor) -> vec4 {
     // Use native builtin for better performance - returns vec4 directly
     return colour_utils.brightness(int(color.x), int(color.y), int(color.z), factor);
 }
 
-func tint(color, tint_color) {
+func tint(color: vec4, tint_color: vec4) -> vec4 {
     // Use native builtin for better performance - returns vec4 directly
     return colour_utils.tint(int(color.x), int(color.y), int(color.z), int(tint_color.x), int(tint_color.y), int(tint_color.z));
 }
 
-func hsv_to_rgb(h, s, v) {
+func hsv_to_rgb(h, s, v) -> vec4 {
     // Use native builtin for HSV to RGB conversion - returns vec4 directly
     return colour_utils.hsv_to_rgb(h, s, v);
 }

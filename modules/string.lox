@@ -6,7 +6,7 @@
 // @date 2025
 //
 
-func split(s,delim) {
+func split(s: string, delim: string) -> List[string] {
     var rv=[];
     var w="";
 

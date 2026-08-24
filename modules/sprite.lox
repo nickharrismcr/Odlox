@@ -10,16 +10,16 @@ from gfx import *
 
 class Sprite {
 
-    __init__(pos, img, frames, start_frame, end_frame) { 
+    __init__(pos: vec2, img: Image, frames: int, start_frame: int, end_frame: int) {
         this.pos = pos
         this.width = img.width()
-        this.height = img.height() 
+        this.height = img.height()
         this.texture = texture(img,frames,start_frame,end_frame)
     }
-    move(newpos) {
-      this.pos=newpos 
+    move(newpos: vec2) {
+      this.pos=newpos
     }
-    animate(ticksperframe) {
+    animate(ticksperframe: int) {
         this.texture.animate(ticksperframe)
     }
     get_texture() {
@@ -30,7 +30,7 @@ class Sprite {
     // larger values scatter it. Ported from pixeldraw_disperse() in the Lua
     // original; used for NPC materialise (disperse falling 50 -> 1) and explode
     // (disperse rising 1 -> 60). (sx, sy) is the assembled sprite's top-left on screen.
-    draw_disperse(win, sx, sy, disperse, tint) {
+    draw_disperse(win: Window, sx, sy, disperse, tint: vec4) {
         var w = this.texture.frame_width()
         var h = this.texture.height()
         var cols = 8
