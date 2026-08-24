@@ -30,6 +30,34 @@ Type_Kind :: enum {
 	Vec2, // native fixed-size float vector (core.Value_Type.Vec2, core/value.odin) -- no auxiliary Type field, same as Int/Float/Bool: the kind alone is the whole type. A `vec2`-annotated site or a `vec2(x, y)` constructor call (typecheck_expr.odin's typecheck_call) produces this; `.x`/`.y` swizzle field access (typecheck_property's Vec branch) is the only property surface, always float, never a method.
 	Vec3, // same shape as .Vec2, one more component (`.z` too)
 	Vec4, // same shape as .Vec2, two more components (`.z`/`.w`, plus `.r`/`.g`/`.b`/`.a` as colour-channel aliases -- see vm/properties.odin's get_vec_swizzle, which this feature's vec_field_valid table (typecheck_expr.odin) mirrors exactly)
+
+	// Native object kinds -- one per distinct core.Userdata_Vtable.tag
+	// registered across src/natives/*.odin. No auxiliary Type field, same
+	// as Vec2/3/4: the kind alone is the whole type, since none of these
+	// need subtyping or generics. Method calls on a value of one of these
+	// kinds (win.rectangle(...), tex.draw(...), ...) are deliberately left
+	// unchecked -- typecheck_property's dispatch (typecheck_expr.odin) has
+	// no case for any of them, so they fall through to its permissive
+	// default, exactly like Dynamic. Only object *identity* is checked:
+	// does this value's kind match an annotated parameter/variable's.
+	Window,
+	Image,
+	Texture,
+	Render_Texture,
+	Shader,
+	Camera3D, // not Camera -- lox_examples/defender has its own Lox `class Camera` (a 2D scroll camera, world/camera.lox); primitive_kind is consulted before tc.classes in type_from_expr, so a same-named primitive would permanently shadow it
+	Batch,
+	Batch2D,
+	Batch_Instanced,
+	Light,
+	Sound,
+	Music,
+	Socket,
+	Process,
+	Box2D_World,
+	Physics_World,
+	Pattern,
+	Match,
 }
 
 Type :: struct {
@@ -82,6 +110,42 @@ primitive_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
 		return .Vec3, true
 	case "vec4":
 		return .Vec4, true
+	case "Window":
+		return .Window, true
+	case "Image":
+		return .Image, true
+	case "Texture":
+		return .Texture, true
+	case "RenderTexture":
+		return .Render_Texture, true
+	case "Shader":
+		return .Shader, true
+	case "Camera3D":
+		return .Camera3D, true
+	case "Batch":
+		return .Batch, true
+	case "Batch2D":
+		return .Batch2D, true
+	case "BatchInstanced":
+		return .Batch_Instanced, true
+	case "Light":
+		return .Light, true
+	case "Sound":
+		return .Sound, true
+	case "Music":
+		return .Music, true
+	case "Socket":
+		return .Socket, true
+	case "Process":
+		return .Process, true
+	case "Box2DWorld":
+		return .Box2D_World, true
+	case "PhysicsWorld":
+		return .Physics_World, true
+	case "Pattern":
+		return .Pattern, true
+	case "Match":
+		return .Match, true
 	}
 	return .Dynamic, false
 }
@@ -267,6 +331,42 @@ type_string :: proc(t: ^Type) -> string {
 		base = "vec3"
 	case .Vec4:
 		base = "vec4"
+	case .Window:
+		base = "Window"
+	case .Image:
+		base = "Image"
+	case .Texture:
+		base = "Texture"
+	case .Render_Texture:
+		base = "RenderTexture"
+	case .Shader:
+		base = "Shader"
+	case .Camera3D:
+		base = "Camera3D"
+	case .Batch:
+		base = "Batch"
+	case .Batch2D:
+		base = "Batch2D"
+	case .Batch_Instanced:
+		base = "BatchInstanced"
+	case .Light:
+		base = "Light"
+	case .Sound:
+		base = "Sound"
+	case .Music:
+		base = "Music"
+	case .Socket:
+		base = "Socket"
+	case .Process:
+		base = "Process"
+	case .Box2D_World:
+		base = "Box2DWorld"
+	case .Physics_World:
+		base = "PhysicsWorld"
+	case .Pattern:
+		base = "Pattern"
+	case .Match:
+		base = "Match"
 	}
 	return fmt.tprintf("%s?", base) if t.nilable else base
 }

@@ -208,6 +208,42 @@ native_kind_name :: proc(k: nativesig.Kind) -> string {
 		return "vec3"
 	case .Vec4:
 		return "vec4"
+	case .Window:
+		return "Window"
+	case .Image:
+		return "Image"
+	case .Texture:
+		return "Texture"
+	case .Render_Texture:
+		return "RenderTexture"
+	case .Shader:
+		return "Shader"
+	case .Camera3D:
+		return "Camera3D"
+	case .Batch:
+		return "Batch"
+	case .Batch2D:
+		return "Batch2D"
+	case .Batch_Instanced:
+		return "BatchInstanced"
+	case .Light:
+		return "Light"
+	case .Sound:
+		return "Sound"
+	case .Music:
+		return "Music"
+	case .Socket:
+		return "Socket"
+	case .Process:
+		return "Process"
+	case .Box2D_World:
+		return "Box2DWorld"
+	case .Physics_World:
+		return "PhysicsWorld"
+	case .Pattern:
+		return "Pattern"
+	case .Match:
+		return "Match"
 	}
 	return "unknown"
 }
@@ -235,6 +271,42 @@ native_kind_to_type_kind :: proc(k: nativesig.Kind) -> Type_Kind {
 		return .Vec3
 	case .Vec4:
 		return .Vec4
+	case .Window:
+		return .Window
+	case .Image:
+		return .Image
+	case .Texture:
+		return .Texture
+	case .Render_Texture:
+		return .Render_Texture
+	case .Shader:
+		return .Shader
+	case .Camera3D:
+		return .Camera3D
+	case .Batch:
+		return .Batch
+	case .Batch2D:
+		return .Batch2D
+	case .Batch_Instanced:
+		return .Batch_Instanced
+	case .Light:
+		return .Light
+	case .Sound:
+		return .Sound
+	case .Music:
+		return .Music
+	case .Socket:
+		return .Socket
+	case .Process:
+		return .Process
+	case .Box2D_World:
+		return .Box2D_World
+	case .Physics_World:
+		return .Physics_World
+	case .Pattern:
+		return .Pattern
+	case .Match:
+		return .Match
 	}
 	return .Dynamic
 }

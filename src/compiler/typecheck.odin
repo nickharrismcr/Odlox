@@ -31,6 +31,7 @@ Type_Checker :: struct {
 	resolve_module:     Resolve_Module_Proc, // nil unless the caller supplied one (see typecheck_program) -- consulted as a fallback tier by Stmt_Import/Stmt_From_Import (typecheck_stmt.odin), type_from_expr (types.odin), and flatten_class's superclass lookup (typecheck_class.odin) before any of them give up to Dynamic/methods_uncertain
 	resolve_module_ctx: rawptr, // opaque state resolve_module casts back to a concrete type -- see Resolve_Module_Proc's own doc comment (module_signature.odin) for why this exists instead of a captured closure
 	diagnostics:        [dynamic]Type_Diagnostic,
+	native_modules:     map[string]bool, // every module name wildcard-imported (`from X import *`) in this program that couldn't resolve to a real Module_Signature -- i.e. a native/builtin module. Consulted by typecheck_call (typecheck_expr.odin) as a fallback tier so a bare call to one of that module's own nativesig-registered functions is still recognized even though the general wildcard-import case is a documented non-goal (Stmt_From_Import, typecheck_stmt.odin).
 }
 
 // Local_Type_Scope.upvalues is decl.upvalues (already filled in by the
@@ -82,6 +83,7 @@ typecheck_program :: proc(
 	tc.classes = make(map[string]^Class_Type)
 	tc.resolve_module = resolve_module
 	tc.resolve_module_ctx = resolve_module_ctx
+	tc.native_modules = make(map[string]bool)
 	root := new(Local_Type_Scope)
 	root.slots = make(map[int]^Type)
 	root.pinned = make(map[int]bool)

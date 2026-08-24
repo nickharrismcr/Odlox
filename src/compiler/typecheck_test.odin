@@ -997,6 +997,98 @@ test_typecheck_natives_module_call_variadic_tail_checked :: proc(t: ^testing.T) 
 	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic (the non-string extra arg), got %d: %v", len(diags), diags)
 }
 
+// Native object types (Window, Texture, Sound, ...): a constructor
+// returns a real kind now, so an annotated parameter naming one is
+// actually checked, not just parseable.
+@(test)
+test_typecheck_native_object_type_accepts_matching_constructor :: proc(t: ^testing.T) {
+	source := `
+import gfx
+func draw(win: Window) {
+	return win
+}
+draw(gfx.window(800, 600))
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+@(test)
+test_typecheck_native_object_type_diagnoses_wrong_argument :: proc(t: ^testing.T) {
+	source := `
+func draw(win: Window) {
+	return win
+}
+draw(5)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+// A bare call to a wildcard-imported native module's own function
+// (`from gfx import *` then `window(...)`) must be recognized too --
+// this is the gap tc.native_modules exists to close (typecheck.odin/
+// typecheck_stmt.odin/typecheck_expr.odin).
+@(test)
+test_typecheck_native_object_type_wildcard_import_accepts_matching_call :: proc(t: ^testing.T) {
+	source := `
+from gfx import *
+func draw(win: Window) {
+	return win
+}
+win = window(800, 600)
+draw(win)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+@(test)
+test_typecheck_native_object_type_wildcard_import_diagnoses_wrong_argument :: proc(t: ^testing.T) {
+	source := `
+from gfx import *
+func draw(win: Window) {
+	return win
+}
+draw(5)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 1, "expected exactly one diagnostic, got %d: %v", len(diags), diags)
+}
+
+// A user's own function named the same as a wildcard-imported native
+// module's export must never be checked against the native's shape --
+// same shadow-safety gate as every other native-recognition special
+// case in this file.
+@(test)
+test_typecheck_native_object_type_wildcard_import_never_shadows_user_function :: proc(t: ^testing.T) {
+	source := `
+from gfx import *
+func window(a) {
+	return a
+}
+print window(1, 2, 3)
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- a local function named window must never be checked against gfx.window's shape, got %v", diags)
+}
+
+// Method calls on a native-object-typed value stay fully unchecked --
+// typecheck_property has no dispatch case for any native object kind,
+// so this must never diagnose "no such method" the way a genuine
+// closed-set miss (a List/Dict/String/class method) would.
+@(test)
+test_typecheck_native_object_type_method_call_stays_unchecked :: proc(t: ^testing.T) {
+	source := `
+import gfx
+win = gfx.window(800, 600)
+win.rectangle(0, 0, 10, 10, vec4(0, 0, 0, 255))
+win.frobnicate_not_a_real_method()
+`
+	_, diags := parse_resolve_typecheck(t, source)
+	testing.expectf(t, len(diags) == 0, "expected zero diagnostics -- native object methods are deliberately unchecked, got %v", diags)
+}
+
 @(test)
 test_typecheck_list_method_wrong_argument_type_diagnoses :: proc(t: ^testing.T) {
 	_, diags := parse_resolve_typecheck(t, "var l = [1, 2, 3]\nl.remove(\"x\")")

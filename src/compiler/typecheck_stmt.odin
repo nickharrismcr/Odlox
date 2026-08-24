@@ -104,6 +104,13 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 	case ^Stmt_From_Import:
 		if !v.wildcard {
 			typecheck_from_import(tc, v)
+		} else if _, found := resolve_module_signature(tc, lexeme(v.module)); !found {
+			// A native/builtin module (no .lox source, same condition
+			// sys/os degrade to Dynamic on elsewhere) -- see typecheck_
+			// call's (typecheck_expr.odin) own use of tc.native_modules
+			// for why this narrow case doesn't need the general wildcard-
+			// import mechanism the doc comment below describes.
+			tc.native_modules[lexeme(v.module)] = true
 		}
 	}
 }
@@ -165,7 +172,14 @@ typecheck_register_imported_classes :: proc(tc: ^Type_Checker, stmts: []Stmt) {
 // materially different mechanism (binding every one of the target's
 // exported names into the importer's own scope at typecheck time,
 // mirroring what the runtime wildcard branch already does), not
-// something this consultation site can cover incidentally.
+// something this consultation site can cover incidentally. A *native*
+// module's wildcard import (`from gfx import *`) is the one narrow
+// exception -- see the Stmt_From_Import case just above this proc, and
+// typecheck_call's (typecheck_expr.odin) own tc.native_modules
+// consultation: nativesig's table is already a small, static, fully
+// known list of every such module's exports, so recognizing a bare call
+// into it needs no per-name binding at all, unlike an arbitrary user
+// module's genuinely dynamic export set.
 @(private = "file")
 typecheck_from_import :: proc(tc: ^Type_Checker, v: ^Stmt_From_Import) {
 	module_name := lexeme(v.module)

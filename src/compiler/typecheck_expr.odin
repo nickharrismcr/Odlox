@@ -368,14 +368,26 @@ compound_result_type :: proc(tc: ^Type_Checker, tok: Token, op: Token_Type, left
 // Stmt_Function_Decl, so there's no Func Type anywhere for the ordinary
 // path to find; recognized by bare name instead, gated on the name still
 // resolving to Dynamic so a genuine user shadow (`from x import vec2`,
-// or a local `func vec2(...)`) is never misidentified.
+// or a local `func vec2(...)`) is never misidentified. A bare call to a
+// *wildcard*-imported native module's own function (`from gfx import *`
+// then `window(...)`) gets the same recognition via tc.native_modules --
+// see that field's own doc comment (typecheck.odin) and the Stmt_From_
+// Import handling that populates it (typecheck_stmt.odin).
 @(private = "file")
 typecheck_call :: proc(tc: ^Type_Checker, call: ^Expr_Call) -> ^Type {
 	if ev, is_var := call.callee.(^Expr_Variable); is_var {
-		if sig, ok := nativesig.lookup("", lexeme(ev.name)); ok {
-			if lookup_var_type(tc, ev.resolved).kind == .Dynamic {
-				return typecheck_native_call(tc, call, sig)
+		name := lexeme(ev.name)
+		sig, ok := nativesig.lookup("", name)
+		if !ok {
+			for mod in tc.native_modules {
+				if s, found := nativesig.lookup(mod, name); found {
+					sig, ok = s, true
+					break
+				}
 			}
+		}
+		if ok && lookup_var_type(tc, ev.resolved).kind == .Dynamic {
+			return typecheck_native_call(tc, call, sig)
 		}
 	}
 
