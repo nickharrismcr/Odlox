@@ -571,8 +571,10 @@ foreach (x in Range2(3)) { print x }   // 0, 1, 2</code></pre>
 var count: int = 0
 
 print add(1, 2)        // 3
-print add(1, "two")    // [line 7] Warning at '"two"': argument 2: expected int, got string
-                        // ...still compiles and runs; crashes at the real type error inside add()</code></pre>
+print add(1, "two")
+// [add.lox:7] Warning at '"two"': argument 2: expected int, got string
+//     print add(1, "two")
+// ...still compiles and runs; crashes at the real type error inside add()</code></pre>
 <p>An annotation goes after the name with a colon; a function's return type follows the parameter list with <code>-&gt;</code>:</p>
 <table>
 <thead><tr><th>Site</th><th>Syntax</th></tr></thead>
@@ -585,14 +587,16 @@ print add(1, "two")    // [line 7] Warning at '"two"': argument 2: expected int,
 <tr><td>Class name</td><td>Any declared class is itself a valid type: <code>func adopt(a: Animal) { … }</code></td></tr>
 </tbody>
 </table>
-<p>Recognised primitive names are <code>int</code>, <code>float</code>, <code>string</code>, and <code>bool</code>; any other identifier is looked up against the classes declared in the same file.</p>
+<p>Recognised primitive names are <code>int</code>, <code>float</code>, <code>string</code>, and <code>bool</code>; any other identifier is looked up against the classes declared in the same file, plus any class reached via <code>from mod import ClassName</code> (see "Cross-module usage" below).</p>
 <h3>Gradual typing: annotated sites are checked, everything else stays dynamic</h3>
 <p>An <strong>unannotated</strong> site is never checked, no matter what flows through it — this is what keeps annotations opt-in rather than an all-or-nothing switch. <code>var x = 1</code> may be freely reassigned to a string, a list, anything, with no warning, exactly as today. Only a site that was actually given a <code>: Type</code> is held to that promise:</p>
 <pre><code class="lox">var a = 1        // unannotated -- inferred, but the inference is never enforced
 a = "now a string"    // fine, no warning
 
 var b: int = 1   // annotated -- a real promise
-b = "now a string"    // [line 5] Warning at 'b': cannot assign string to 'b' of type int</code></pre>
+b = "now a string"
+// [reassign.lox:5] Warning at 'b': cannot assign string to 'b' of type int
+//     b = "now a string"</code></pre>
 <p>An unannotated variable's <em>current</em> type is still tracked between assignments — so <code>var c = Circle(); c.speek()</code> (a typo for <code>speak</code>) is still caught, even though <code>c</code> itself was never annotated — reassigning <code>c</code> just never fails, matching the "gradual" half of gradual typing.</p>
 <h3>What gets checked</h3>
 <ul>
@@ -602,10 +606,11 @@ b = "now a string"    // [line 5] Warning at 'b': cannot assign string to 'b' of
 <li>A class instance's fields, inferred from the plain <code>this.x = …</code> assignments in its own <code>__init__</code> — fields are otherwise open (an instance genuinely accepts arbitrary new fields at runtime), so only a field <code>__init__</code> actually assigns gets checked, wherever else it's later touched.</li>
 <li>Method overrides in a subclass, checked against the superclass's own signature (<code>__init__</code> is exempt — a constructor is never called polymorphically, so a subclass's own constructor may take entirely different parameters).</li>
 <li>A subclass instance satisfies a superclass-typed parameter (ordinary substitutability) — but two unrelated classes with identically-shaped methods are still incompatible with each other, since class types are nominal, not structural.</li>
+<li>Cross-module usage, when running a script normally (<code>odlox script.lox</code> or the REPL): a <code>from mod import name</code> binding and a namespace-style <code>import mod; mod.name(...)</code> call are both checked against the real signature of <code>mod</code>'s own exports — argument types, an unknown export (<code>module 'mod' has no export 'name'</code>), and a class used as a superclass across the import all get the same checking as a same-file class, including its inherited methods.</li>
 </ul>
 <h3>What's deliberately not checked</h3>
-<p>A uniform list/dict literal infers a real element type, checked structurally through <code>List[…]</code>/<code>Dict[…, …]</code> to any nesting depth (<code>List[List[int]]</code> included) — but a <em>mixed</em>-element literal (e.g. <code>[1, "two", 3]</code>) degrades its element type to fully dynamic rather than flagging the mismatch, matching this feature's "never over-tighten" rule. Argument <em>count</em> is never checked (only positions both the call and the declaration have), so default parameters and <code>*rest</code> are unaffected. <code>static</code> class variables (as opposed to instance fields) aren't type-tracked. There's no separate field-annotation syntax (<code>this.x: int</code>) — a field's type always comes from how <code>__init__</code> assigns it. A class name only resolves against classes declared in the <em>same file</em>: used as an annotation, a class imported from another module is simply treated as fully dynamic (no warning either way); used as a superclass (<code>class Foo &lt; Imported</code>), <code>Foo</code>'s own inherited methods are left unchecked too, rather than wrongly flagged as missing.</p>
-<div class="note"><strong>Warnings, not errors, by default</strong>Every diagnostic prints in the same <code>[line …]</code> format as a compile error but never stops the script from compiling or running — this is deliberate, so adding an annotation to an existing script is always safe to try. Pass <code>--strict-types</code> (see <a href="#running">Command-line flags</a>) to fail the build on any of them instead, e.g. in CI.</div>
+<p>A uniform list/dict literal infers a real element type, checked structurally through <code>List[…]</code>/<code>Dict[…, …]</code> to any nesting depth (<code>List[List[int]]</code> included) — but a <em>mixed</em>-element literal (e.g. <code>[1, "two", 3]</code>) degrades its element type to fully dynamic rather than flagging the mismatch, matching this feature's "never over-tighten" rule. Argument <em>count</em> is never checked (only positions both the call and the declaration have), so default parameters and <code>*rest</code> are unaffected. <code>static</code> class variables (as opposed to instance fields) aren't type-tracked. There's no separate field-annotation syntax (<code>this.x: int</code>) — a field's type always comes from how <code>__init__</code> assigns it. Cross-module checking (see above) needs a real module resolver, which only <code>odlox script.lox</code> and the REPL build; <code>--compile-only</code> has no VM to build one from, so under it every cross-module name — an annotation, a superclass, a namespace member — degrades to fully dynamic with no warning either way, the same as a bare parse/type check always did.</p>
+<div class="note"><strong>Warnings, not errors, by default</strong>Every diagnostic prints in the same <code>[file:line]</code> format (with the offending source line echoed beneath it) as a compile error but never stops the script from compiling or running — this is deliberate, so adding an annotation to an existing script is always safe to try. Pass <code>--strict-types</code> (see <a href="#running">Command-line flags</a>) to fail the build on any of them instead, e.g. in CI.</div>
 
 <!-- ==================== EXCEPTIONS ==================== -->
 <h2 class="section" id="exceptions">Exceptions</h2>
