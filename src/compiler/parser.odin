@@ -124,11 +124,13 @@ error_at :: proc(p: ^Parser, tok: Token, message: string) {
 	// consistent with how main.odin reports Runtime_Error from run_file,
 	// and with what the test harness's output-capturing helpers expect.
 	if tok.type == .Eof {
-		fmt.printfln("[line %d] Error at end: %s", tok.line, message)
+		fmt.printfln("[%s:%d] Error at end: %s", p.filename, tok.line, message)
+		fmt.printfln("    %s", token_line_text(tok))
 	} else if tok.type == .Error {
-		fmt.printfln("[line %d] Error: %s", tok.line, message)
+		fmt.printfln("[%s:%d] Error: %s", p.filename, tok.line, message)
 	} else {
-		fmt.printfln("[line %d] Error at '%s': %s", tok.line, lexeme(tok), message)
+		fmt.printfln("[%s:%d] Error at '%s': %s", p.filename, tok.line, lexeme(tok), message)
+		fmt.printfln("    %s", token_line_text(tok))
 	}
 }
 

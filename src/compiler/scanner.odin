@@ -97,6 +97,27 @@ lexeme :: proc(t: Token) -> string {
 	return t.source[t.start:t.start + t.length]
 }
 
+// token_line_text returns the full source line t.start falls on, found
+// by scanning t.source outward from t.start to the nearest newline (or
+// string boundary) on each side -- for a diagnostic printer to show
+// alongside a "[file:line] ... at 'x'" message. For a synthetic token
+// (synthetic_token/error_token), t.source is that token's own small
+// standalone string rather than a whole file, so this simply returns it
+// unchanged.
+token_line_text :: proc(t: Token) -> string {
+	src := t.source
+	start := min(t.start, len(src))
+	line_start := start
+	for line_start > 0 && src[line_start - 1] != '\n' {
+		line_start -= 1
+	}
+	line_end := start
+	for line_end < len(src) && src[line_end] != '\n' {
+		line_end += 1
+	}
+	return src[line_start:line_end]
+}
+
 Scanner :: struct {
 	source:  string, // normalised: \r\n and \r folded to \n, trailing \n guaranteed
 	start:   int,

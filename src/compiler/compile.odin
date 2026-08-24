@@ -52,13 +52,13 @@ Compile :: proc(
 		return nil, false
 	}
 
-	globals, had_error := resolve_program(stmts[:])
+	globals, had_error := resolve_program(stmts[:], nil, filename)
 	if had_error {
 		return nil, false
 	}
 
 	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
-	print_type_diagnostics(diagnostics) // always printed, warnings by default
+	print_type_diagnostics(diagnostics, filename) // always printed, warnings by default
 	if StrictTypes && len(diagnostics) > 0 {
 		return nil, false
 	}
@@ -121,14 +121,14 @@ Compile_Repl :: proc(
 		globals_declared = copy_string_bool_map(st.globals_declared),
 		global_count     = st.global_count,
 	}
-	globals, had_error := resolve_program(stmts[:], &seed)
+	globals, had_error := resolve_program(stmts[:], &seed, "__repl__")
 	if had_error {
 		return nil, false
 	}
 
 	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
 	if StrictTypes {
-		print_type_diagnostics(diagnostics)
+		print_type_diagnostics(diagnostics, "__repl__")
 		if len(diagnostics) > 0 {
 			return nil, false
 		}

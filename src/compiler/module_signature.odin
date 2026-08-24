@@ -106,7 +106,7 @@ Typecheck_Module_Signature :: proc(
 		return nil, nil, false
 	}
 
-	globals, had_error := resolve_program(stmts[:])
+	globals, had_error := resolve_program(stmts[:], nil, filename)
 	if had_error {
 		return nil, nil, false
 	}

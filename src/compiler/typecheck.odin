@@ -289,15 +289,22 @@ resolve_module_signature :: proc(tc: ^Type_Checker, name: string) -> (^Module_Si
 // resolve_error formatting exactly (just "Warning" in place of "Error"),
 // for visual consistency -- see compile.odin for where/how this gets
 // called (always for Compile, gated behind StrictTypes for Compile_Repl).
-print_type_diagnostics :: proc(diagnostics: []Type_Diagnostic) {
+// filename identifies which file diagnostics belongs to -- every caller
+// already has it in scope (it's the same filename passed to Compile/
+// Compile_Repl), since a Type_Diagnostic's own token carries a line
+// number but nothing identifying which of possibly several files (the
+// main script plus every module it transitively imports) it came from.
+print_type_diagnostics :: proc(diagnostics: []Type_Diagnostic, filename: string) {
 	for d in diagnostics {
 		tok := d.token
 		if tok.type == .Eof {
-			fmt.printfln("[line %d] Warning at end: %s", tok.line, d.message)
+			fmt.printfln("[%s:%d] Warning at end: %s", filename, tok.line, d.message)
+			fmt.printfln("    %s", token_line_text(tok))
 		} else if tok.type == .Error {
-			fmt.printfln("[line %d] Warning: %s", tok.line, d.message)
+			fmt.printfln("[%s:%d] Warning: %s", filename, tok.line, d.message)
 		} else {
-			fmt.printfln("[line %d] Warning at '%s': %s", tok.line, lexeme(tok), d.message)
+			fmt.printfln("[%s:%d] Warning at '%s': %s", filename, tok.line, lexeme(tok), d.message)
+			fmt.printfln("    %s", token_line_text(tok))
 		}
 	}
 }

@@ -218,6 +218,7 @@ Resolver :: struct {
 	scope:         ^Resolve_Scope,
 	current_class: ^Class_Compiler,
 	had_error:     bool,
+	filename:      string, // for resolve_error's own diagnostic printing only -- not consulted anywhere else
 
 	globals:              map[string]int,
 	globals_declared:     map[string]bool,
@@ -229,11 +230,13 @@ Resolver :: struct {
 resolve_error :: proc(rs: ^Resolver, tok: Token, message: string) {
 	rs.had_error = true
 	if tok.type == .Eof {
-		fmt.printfln("[line %d] Error at end: %s", tok.line, message)
+		fmt.printfln("[%s:%d] Error at end: %s", rs.filename, tok.line, message)
+		fmt.printfln("    %s", token_line_text(tok))
 	} else if tok.type == .Error {
-		fmt.printfln("[line %d] Error: %s", tok.line, message)
+		fmt.printfln("[%s:%d] Error: %s", rs.filename, tok.line, message)
 	} else {
-		fmt.printfln("[line %d] Error at '%s': %s", tok.line, lexeme(tok), message)
+		fmt.printfln("[%s:%d] Error at '%s': %s", rs.filename, tok.line, lexeme(tok), message)
+		fmt.printfln("    %s", token_line_text(tok))
 	}
 }
 
@@ -251,8 +254,9 @@ Repl_Seed :: struct {
 	global_count:     int,
 }
 
-resolve_program :: proc(stmts: []Stmt, seed: ^Repl_Seed = nil) -> (globals: Global_Table, had_error: bool) {
+resolve_program :: proc(stmts: []Stmt, seed: ^Repl_Seed = nil, filename: string = "") -> (globals: Global_Table, had_error: bool) {
 	rs := new(Resolver)
+	rs.filename = filename
 	if seed != nil {
 		rs.globals = seed.globals
 		rs.globals_declared = seed.globals_declared
