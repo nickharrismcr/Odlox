@@ -13,7 +13,7 @@ class Controller {
         this.hyperspace = false    // edge-triggered: warp to a random spot
     }
 
-    update(win) {
+    update(win: Window) {
         this.thrust = win.key_down(win.KEY_RIGHT_SHIFT)
         this.reverse = win.key_pressed(win.KEY_SPACE)
         this.up = win.key_down(win.KEY_Q)

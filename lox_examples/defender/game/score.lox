@@ -52,7 +52,7 @@ class Score {
         this.cycle.update()
     }
 
-    draw(win) {
+    draw(win: Window) {
         this.font.draw(win, text.zero_pad(this.value, 7), this.x, this.y, this.cycle.get())
     }
 }

@@ -30,7 +30,7 @@ class BulletPool {
         }
     }
 
-    draw(win,cam) {
+    draw(win: Window,cam) {
         foreach (var b in this.bullets) {
             b.draw(win, cam)
         }

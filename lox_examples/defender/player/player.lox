@@ -155,7 +155,7 @@ class Player < Sprite {
         return this.pos.x - this.offset
     }
 
-    draw(win, cam) {
+    draw(win: Window, cam) {
         if (!this.visible) {
             return
         }

@@ -119,13 +119,13 @@ class GameController {
         return this.state == "level_start" or this.state == "level"
     }
 
-    update(win, input) {
+    update(win: Window, input) {
         this.banner_cycle.update()
         f = this.update_func
         f(this, win, input)
     }
 
-    draw(win, width: int, height: int, font) {
+    draw(win: Window, width: int, height: int, font) {
         if (this.state == "intro") {
             this.draw_intro(win, width, height, font)
         } else if (this.state == "level_finish") {
@@ -139,7 +139,7 @@ class GameController {
         }
     }
 
-    draw_intro(win, width: int, height: int, font) {
+    draw_intro(win: Window, width: int, height: int, font) {
         flash_on = (this.intro_timer / INTRO_WILLIAMS_FLASH_FRAMES) % 2 == 0
         will_tint = colour.RED
         if (!flash_on) {
@@ -170,7 +170,7 @@ class GameController {
 
     // A row of small ship icons, one per life (capped at LIVES_ICON_MAX),
     // under the score.
-    draw_lives(win) {
+    draw_lives(win: Window) {
         n = this.lives
         if (n > LIVES_ICON_MAX) {
             n = LIVES_ICON_MAX
@@ -184,7 +184,7 @@ class GameController {
 
     // A column of small bomb icons, one per remaining smart bomb (capped at
     // BOMB_ICON_MAX), sitting flush against the radar's left edge.
-    draw_bombs(win, width: int) {
+    draw_bombs(win: Window, width: int) {
         n = this.entities.bombs
         if (n > BOMB_ICON_MAX) {
             n = BOMB_ICON_MAX
@@ -200,7 +200,7 @@ class GameController {
     }
 }
 
-func draw_centered(win, font, s: string, cx: float, y: float, col: vec4, scale: float = 1.0) {
+func draw_centered(win: Window, font, s: string, cx: float, y: float, col: vec4, scale: float = 1.0) {
     font.draw(win, s, cx - font.width(s, scale) / 2, y, col, scale)
 }
 
@@ -208,7 +208,7 @@ func enter_intro(g) {
     g.state = "intro"
     g.update_func = state_intro
 }
-func state_intro(g, win, input) {
+func state_intro(g, win: Window, input) {
     g.intro_timer = g.intro_timer + 1
     g.presents_cycle.update()
     g.hilite_cycle.update()
@@ -252,7 +252,7 @@ func enter_level_start(g) {
     g.update_func = state_level_start
     g.entities.events.emit("level_start", nil)
 }
-func state_level_start(g, win, input) {
+func state_level_start(g, win: Window, input) {
     enter_level(g)
 }
 
@@ -260,7 +260,7 @@ func enter_level(g) {
     g.state = "level"
     g.update_func = state_level
 }
-func state_level(g, win, input) {
+func state_level(g, win: Window, input) {
     if (g.lives >= 0 and g.landers_killed >= g.level_landers) {
         enter_level_finish(g)
     }
@@ -275,7 +275,7 @@ func enter_level_finish(g) {
     g.update_func = state_level_finish
     g.entities.events.emit("level_finish", nil)
 }
-func state_level_finish(g, win, input) {
+func state_level_finish(g, win: Window, input) {
     if (g.timer > 0) {
         g.timer = g.timer - 1
         return
@@ -288,7 +288,7 @@ func enter_game_over(g) {
     g.state = "game_over"
     g.update_func = state_game_over
 }
-func state_game_over(g, win, input) {
+func state_game_over(g, win: Window, input) {
     if (g.timer > 0) {
         g.timer = g.timer - 1
         if (g.timer <= 0) {

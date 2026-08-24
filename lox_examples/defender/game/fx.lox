@@ -44,7 +44,7 @@ func explosion(emitters, x: float, y: float, count: int) {
     emitters.queue(em, count, 0)
 }
 
-func draw(emitters, win, cam) {
+func draw(emitters, win: Window, cam) {
     win.begin_blend_mode("BLEND_ADD")
     foreach (var e in emitters.get()) {
         square = e.shape == "square"

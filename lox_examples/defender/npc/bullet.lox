@@ -38,7 +38,7 @@ class Bullet < Sprite {
             this.ticks_to_live = 0
         }   
     }
-    draw(win,cam) {
+    draw(win: Window,cam) {
         if (this.dead()) {
             return;
         }

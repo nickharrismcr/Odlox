@@ -47,7 +47,7 @@ class Lander < Sprite {
             this.pos.x = this.mgr.worldwidth
         }
     }
-    draw(win,cam) {
+    draw(win: Window,cam) {
         if (!this.alive) {
             return
         }
@@ -275,14 +275,14 @@ func state_die(e,width: int, height: int) {
     }
 }
 
-func draw_exp(e,win,cam) {
+func draw_exp(e,win: Window,cam) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)
     }
 }
 
-func draw_(e,win,cam){
+func draw_(e,win: Window,cam){
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)

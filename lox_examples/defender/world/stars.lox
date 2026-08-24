@@ -51,7 +51,7 @@ class Stars {
             star.pos = pos
         }
     }
-    draw(win ) {
+    draw(win: Window ) {
         foreach (var star in this.stars) {
             s= star.get()
             pos=s[0]

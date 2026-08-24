@@ -93,7 +93,7 @@ class Human < Sprite {
         }
     }
 
-    draw(win,cam) {
+    draw(win: Window,cam) {
         if (!this.alive) {
             return
         }
@@ -104,14 +104,14 @@ class Human < Sprite {
 
 // --- draw functions -----------------------------------------------------------
 
-func draw_normal(e, win, cam) {
+func draw_normal(e, win: Window, cam) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
     }
 }
 
-func draw_dispersed(e, win, cam) {
+func draw_dispersed(e, win: Window, cam) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)

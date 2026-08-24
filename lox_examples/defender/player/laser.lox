@@ -73,7 +73,7 @@ class Laser {
             this.active = false
         }
     }
-    draw(win, cam) {
+    draw(win: Window, cam) {
         if (!this.active) {
             return
         }
@@ -133,7 +133,7 @@ class LaserPool {
             l.kill()
         }
     }
-    draw(win, cam) {
+    draw(win: Window, cam) {
         foreach (var l in this.lasers) {
             l.draw(win, cam)
         }

@@ -89,7 +89,7 @@ class Mountain {
     get(x: float) -> int {
         return this.points[int(x)%len(this.points)]
     }
-    draw(win,height: int,cam,width: int){
+    draw(win: Window,height: int,cam,width: int){
         if (this.hidden) {
             return
         }

@@ -50,7 +50,7 @@ class NPC < Sprite {
         if (this.pos.x < 0)  { this.pos.x = this.pos.x + ww }
     }
 
-    draw(win, cam) {
+    draw(win: Window, cam) {
         if (!this.alive or !this.visible) {
             return
         }
@@ -78,7 +78,7 @@ class NPC < Sprite {
 
 // --- shared state functions ---------------------------------------------------
 
-func draw_normal(e, win, cam) {
+func draw_normal(e, win: Window, cam) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
@@ -86,7 +86,7 @@ func draw_normal(e, win, cam) {
 }
 
 // Used for both materialise (disperse falling to 1) and explode (rising).
-func draw_dispersed(e, win, cam) {
+func draw_dispersed(e, win: Window, cam) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)

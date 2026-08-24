@@ -7,7 +7,7 @@ import colour
 // whole life.
 
 class Bonus {
-    __init__(tex, dy: float, life: int) {
+    __init__(tex: Texture, dy: float, life: int) {
         this.tex = tex
         this.dy = dy          // vertical offset above the player; staggers stacked popups
         this.life = life
@@ -22,7 +22,7 @@ class Bonus {
         this.pos.y = player.pos.y + this.dy
         this.life = this.life - 1
     }
-    draw(win, cam) {
+    draw(win: Window, cam) {
         spos = cam.translate(this.pos.x)
         if (spos != nil) {
             win.draw_texture(this.tex, spos, this.pos.y, colour.WHITE)
@@ -92,7 +92,7 @@ class BonusDisplay {
         }
     }
 
-    draw(win, cam) {
+    draw(win: Window, cam) {
         foreach (var b in this.bonuses) {
             b.draw(win, cam)
         }
