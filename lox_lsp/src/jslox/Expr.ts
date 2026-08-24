@@ -12,7 +12,7 @@ export interface Stmt {
 // `int?` -- mirroring odlox's own Type_Expr (../../src/compiler/ast.odin)
 // and its three annotation sites exactly: Param.typeAnnotation,
 // VariableDeclaration.typeAnnotation, FunctionStmt/Lambda.returnType (see
-// ../../docs/plans/optional-type-checking-implementation.md). Not part of
+// ../../docs/plans/done/optional-type-checking-implementation.md). Not part of
 // the Visitor<R> dispatch (like Param/ExceptClause/ImportName below):
 // nothing on this LSP-only front end consults an annotation's *meaning*,
 // only its shape -- parsed purely so annotated scripts don't produce

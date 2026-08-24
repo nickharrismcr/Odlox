@@ -96,7 +96,7 @@ write_function_decl :: proc(sb: ^strings.Builder, tag: string, name: string, dec
 // print_type_expr mirrors surface syntax (`int`, `List[int]`, `int?`)
 // rather than inventing a separate --print-ast convention for type
 // annotations -- the least surprising choice for a human reading the
-// output, per docs/plans/optional-type-checking-implementation.md's open
+// output, per docs/plans/done/optional-type-checking-implementation.md's open
 // question 4.
 @(private = "file")
 print_type_expr :: proc(sb: ^strings.Builder, te: ^Type_Expr) {

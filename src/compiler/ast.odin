@@ -508,7 +508,7 @@ Stmt_From_Import :: struct {
 // above (Param.type_annotation, Stmt_Var_Decl.type_annotation,
 // Function_Decl.return_type) and consumed by the Type_Checker (types.odin/
 // typecheck*.odin). Never consulted by Resolve or Emit -- type erasure is
-// already the status quo (see docs/plans/optional-type-checking.md), so
+// already the status quo (see docs/plans/done/optional-type-checking.md), so
 // an unannotated program's bytecode is unaffected either way. See
 // type_expr.odin for the parser.
 Type_Expr_Kind :: enum {

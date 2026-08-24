@@ -65,7 +65,7 @@ test_print_ast_var_and_const_decl :: proc(t: ^testing.T) {
 
 // Type_Expr printing mirrors surface syntax (`: int`, `-> int`,
 // `List[int]`, `int?`) at all three annotation sites -- see this file's
-// header comment and docs/plans/optional-type-checking-implementation.md's
+// header comment and docs/plans/done/optional-type-checking-implementation.md's
 // open question 4.
 @(test)
 test_print_ast_var_decl_type_annotation :: proc(t: ^testing.T) {

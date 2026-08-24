@@ -1,7 +1,7 @@
 // Phase 1 of optional type annotations: annotations at all three sites
 // (param, var decl, return type), plus generic and nilable forms, parse
 // and are silently ignored -- runtime behaviour must be identical to the
-// unannotated equivalent. See docs/plans/optional-type-checking-implementation.md.
+// unannotated equivalent. See docs/plans/done/optional-type-checking-implementation.md.
 
 var a: int = 1
 var b: List[int] = [1, 2, 3]
