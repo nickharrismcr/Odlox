@@ -29,7 +29,7 @@ func state_chase(e, width: int, height: int) {
     }
     e.nextthink = e.nextthink - 1
     if (e.nextthink < 0) {
-        e.dp = seek_player(e, player, e.maxspeed, 60,
+        e.dp = seek_player(e, player, e.maxspeed, 60.0,
                            random.integer(-500, 500), random.integer(-300, 300))
         e.nextthink = 12                       // re-aim every 0.2s
         if (e.counter > 60 and random.integer(0, 100) == 1) {

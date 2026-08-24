@@ -47,7 +47,7 @@ class BonusDisplay {
             tex = this.tex500
         }
         // stack multiple simultaneous popups above the ship rather than overlapping
-        dy = -60 - len(this.bonuses) * 24
+        dy = -60.0 - len(this.bonuses) * 24
         this.bonuses.append(Bonus(tex, dy, this.life))
     }
 
