@@ -1,10 +1,5 @@
 from gfx import *
 
-// Erase colour for clearing a sprite's last drawn position -- assumes a
-// black room background. Revisit once rooms have their own backgrounds
-// (erasing would need to know the paper underneath, not just black).
-const BLACK = encode_rgba(0, 0, 0)
-
 //
 // @file game_sprite.lox
 // @brief An animated, optionally moving sprite: cycles through
@@ -61,6 +56,9 @@ class Sprite {
         this.last_y = nil
         this.blank = nil      // lazily sized to the first frame drawn, reused every erase
 
+        this.erase_ink = nil    // the room's own ink/paper under the last drawn position,
+        this.erase_paper = nil  // captured just before it was painted over -- see draw()
+
         this.pending_flip = false  // see update(): defers a boundary reversal by one cycle
     }
 
@@ -100,6 +98,9 @@ class Sprite {
         this.last_x = nil
         this.last_y = nil
         this.blank = nil
+
+        this.erase_ink = nil
+        this.erase_paper = nil
 
         this.pending_flip = false
     }
@@ -174,6 +175,14 @@ class Sprite {
     // travelling left (dx < 0) indexes into image_list's second half, and
     // counts down through it (2*frames-1 .. frames) as this.frame counts
     // up (0 .. frames-1) -- see the class comment.
+    //
+    // The erase blit uses erase_ink/erase_paper, not a fixed colour: they
+    // were captured from disp's own attribute grid at this same spot on
+    // the *previous* draw() call, just before that call painted over it --
+    // so erasing restores the room's actual background there rather than
+    // assuming black. Approximated as one colour per erase (the cell the
+    // sprite's top-left corner sits in), same granularity the erase blit
+    // already had.
     draw(disp, lib) {
         var index = this.frame
         if (this.movement_type == "horizontal" and this.dx < 0) {
@@ -186,8 +195,13 @@ class Sprite {
             this.blank = float_array(img.width(), img.height())
         }
         if (this.last_x != nil) {
-            disp.blit_sprite(this.blank, this.last_x, this.last_y, BLACK, BLACK)
+            disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
         }
+
+        var cx = int(this.x / 8)
+        var cy = int(this.y / 8)
+        this.erase_ink = disp.get_ink(cx, cy)
+        this.erase_paper = disp.get_paper(cx, cy)
 
         disp.blit_sprite(img, int(this.x), int(this.y), this.colour, this.paper)
 
