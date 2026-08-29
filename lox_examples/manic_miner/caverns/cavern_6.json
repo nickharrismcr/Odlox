@@ -1,5 +1,57 @@
 {
-  "item_sprite": "cavern6_item",
+  "clock": 128,
+  "height": 16,
+  "border_colour": 4,
+  "tile_colours": [
+    {
+      "name": "cavern6_tile_background",
+      "ink": 0,
+      "paper": 0,
+      "bright": false
+    },
+    {
+      "name": "cavern6_tile_floor",
+      "ink": 6,
+      "paper": 0,
+      "bright": true
+    },
+    {
+      "name": "cavern6_tile_crumbling_floor",
+      "bright": false,
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "name": "cavern6_tile_wall",
+      "bright": true,
+      "paper": 1,
+      "ink": 5
+    },
+    {
+      "bright": false,
+      "ink": 4,
+      "paper": 0,
+      "name": "cavern6_tile_conveyor"
+    },
+    {
+      "paper": 2,
+      "ink": 5,
+      "name": "cavern6_tile_nasty1",
+      "bright": false
+    },
+    {
+      "name": "cavern6_tile_nasty2",
+      "bright": false,
+      "paper": 2,
+      "ink": 6
+    },
+    {
+      "bright": false,
+      "ink": 0,
+      "paper": 0,
+      "name": "cavern6_tile_extra"
+    }
+  ],
   "layout": [
     "30000000000000333333333333333333",
     "30000000000000000000000000000003",
@@ -18,80 +70,117 @@
     "30000000000000300000000000000003",
     "31111111111111333333333333333333"
   ],
-  "tile_names": [
-    "cavern6_tile_background",
-    "cavern6_tile_floor",
-    "cavern6_tile_crumbling_floor",
-    "cavern6_tile_wall",
-    "cavern6_tile_conveyor",
-    "cavern6_tile_nasty1",
-    "cavern6_tile_nasty2",
-    "cavern6_tile_extra"
-  ],
+  "vertical_guardians": [],
+  "item_sprite": "cavern6_item",
+  "name": "            The Vat             ",
   "willy_start": {
     "frame": 0,
-    "jump_counter": 0,
+    "y": 104,
     "y_times_2": 208,
     "airborne": 0,
-    "x": 16,
+    "jump_counter": 0,
     "direction": 0,
-    "y": 104
+    "x": 16
+  },
+  "horizontal_guardians": [
+    {
+      "paper": 0,
+      "ink": 5,
+      "min_x": 120,
+      "bright": true,
+      "x": 120,
+      "y": 8,
+      "max_x": 232
+    },
+    {
+      "bright": true,
+      "x": 80,
+      "y": 64,
+      "max_x": 80,
+      "paper": 0,
+      "ink": 3,
+      "min_x": 16
+    },
+    {
+      "x": 136,
+      "min_x": 136,
+      "paper": 0,
+      "ink": 6,
+      "y": 104,
+      "max_x": 232,
+      "bright": false
+    }
+  ],
+  "portal": {
+    "x": 120,
+    "y": 104,
+    "sprite": "cavern6_portal",
+    "bright": false,
+    "paper": 1,
+    "ink": 3
+  },
+  "conveyor": {
+    "direction": 0,
+    "y": 40,
+    "length": 5,
+    "x": 56
   },
   "width": 32,
+  "air": 63,
   "items": [
     {
-      "init_ink": 7,
-      "init_paper": 7,
-      "ink": 0,
-      "init_bright": true,
+      "type": 19,
       "y": 24,
-      "bright": true,
+      "init_ink": 7,
+      "init_bright": true,
       "paper": 4,
       "x": 240,
-      "type": 19
+      "bright": true,
+      "init_paper": 7,
+      "ink": 0
     },
     {
+      "x": 160,
       "paper": 4,
-      "type": 20,
-      "ink": 0,
-      "init_ink": 7,
       "init_paper": 7,
-      "init_bright": true,
+      "ink": 0,
+      "type": 20,
+      "init_ink": 7,
       "y": 48,
       "bright": true,
-      "x": 160
+      "init_bright": true
     },
     {
-      "init_ink": 7,
       "init_paper": 7,
-      "ink": 0,
-      "init_bright": true,
+      "type": 21,
+      "init_ink": 7,
       "y": 56,
+      "ink": 0,
       "bright": true,
-      "paper": 4,
       "x": 216,
-      "type": 21
+      "init_bright": true,
+      "paper": 4
     },
     {
       "x": 152,
-      "ink": 0,
+      "init_ink": 7,
+      "y": 80,
+      "init_bright": true,
+      "type": 22,
       "bright": true,
       "init_paper": 7,
-      "init_bright": true,
-      "y": 80,
-      "paper": 5,
-      "type": 22,
-      "init_ink": 7
+      "ink": 0,
+      "paper": 5
     },
     {
-      "x": 240,
-      "bright": true,
-      "paper": 5,
       "init_paper": 7,
-      "ink": 0,
       "type": 19,
-      "init_ink": 7,
+      "ink": 0,
+      "bright": true,
+      "x": 240,
       "init_bright": true,
+      "init_ink": 7,
+      "paper": 5,
       "y": 88
     }
   ],
@@ -105,103 +194,14 @@
     "cavern6_guardian_6",
     "cavern6_guardian_7"
   ],
-  "tile_colours": [
-    {
-      "paper": 0,
-      "ink": 0,
-      "bright": false,
-      "name": "cavern6_tile_background"
-    },
-    {
-      "ink": 6,
-      "paper": 0,
-      "name": "cavern6_tile_floor",
-      "bright": true
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "name": "cavern6_tile_crumbling_floor",
-      "bright": false
-    },
-    {
-      "name": "cavern6_tile_wall",
-      "bright": true,
-      "ink": 5,
-      "paper": 1
-    },
-    {
-      "name": "cavern6_tile_conveyor",
-      "bright": false,
-      "ink": 4,
-      "paper": 0
-    },
-    {
-      "ink": 5,
-      "bright": false,
-      "paper": 2,
-      "name": "cavern6_tile_nasty1"
-    },
-    {
-      "bright": false,
-      "paper": 2,
-      "name": "cavern6_tile_nasty2",
-      "ink": 6
-    },
-    {
-      "ink": 0,
-      "bright": false,
-      "paper": 0,
-      "name": "cavern6_tile_extra"
-    }
-  ],
-  "clock": 128,
-  "height": 16,
-  "border_colour": 4,
-  "conveyor": {
-    "direction": 0,
-    "x": 56,
-    "length": 5,
-    "y": 40
-  },
-  "air": 63,
-  "vertical_guardians": [],
-  "horizontal_guardians": [
-    {
-      "min_x": 120,
-      "y": 8,
-      "ink": 5,
-      "x": 120,
-      "bright": true,
-      "paper": 0,
-      "max_x": 232
-    },
-    {
-      "bright": true,
-      "min_x": 16,
-      "ink": 3,
-      "max_x": 80,
-      "x": 80,
-      "y": 64,
-      "paper": 0
-    },
-    {
-      "x": 136,
-      "max_x": 232,
-      "min_x": 136,
-      "bright": false,
-      "paper": 0,
-      "ink": 6,
-      "y": 104
-    }
-  ],
-  "name": "            The Vat             ",
-  "portal": {
-    "sprite": "cavern6_portal",
-    "paper": 1,
-    "ink": 3,
-    "bright": false,
-    "x": 120,
-    "y": 104
-  }
+  "tile_names": [
+    "cavern6_tile_background",
+    "cavern6_tile_floor",
+    "cavern6_tile_crumbling_floor",
+    "cavern6_tile_wall",
+    "cavern6_tile_conveyor",
+    "cavern6_tile_nasty1",
+    "cavern6_tile_nasty2",
+    "cavern6_tile_extra"
+  ]
 }

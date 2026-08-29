@@ -10,14 +10,13 @@ from gfx import *
 // sprite's ink/paper -- paper is a real attribute colour, not just a
 // transparent backdrop, so this doubles as how walls get drawn.
 //
-// A horizontally moving sprite needs distinct left/right art -- Manic
-// Miner's own guardians (and Willy) do, rather than a mirrored single
-// set -- so image_list always holds 2x frames entries: the first `frames`
-// for moving right (dx >= 0), the next `frames` for moving left (dx < 0).
-// draw() picks which half to index into, and within the left half counts
-// down (last entry first) as the animation counts up, so frame 0 of each
-// direction's cycle lines up with the other direction's last entry rather
-// than its first. There is no runtime mirroring.
+// A horizontally moving sprite needs distinct left/right art (no
+// runtime mirroring) -- image_list always holds 2x frames entries: the
+// first `frames` for moving right (dx >= 0), the next `frames` for
+// moving left (dx < 0). draw() indexes into the right half normally, and
+// into the left half counting down (last entry first) as the animation
+// counts up, so frame 0 of each direction lines up with the other's last
+// entry.
 //
 // step_movement covers guardians that hold their on-screen position for a
 // full animation cycle, then jump movement_speed pixels in one go (the
@@ -42,6 +41,8 @@ class Sprite {
         this.start_y = 0
         this.end_x = 0
         this.end_y = 0
+        this.init_x = nil            // nil: spawn at start_x/start_y (the usual case)
+        this.init_y = nil
         this.colour = nil
         this.paper = nil
 
@@ -60,11 +61,14 @@ class Sprite {
         this.erase_paper = nil  // captured just before it was painted over -- see draw()
 
         this.pending_flip = false  // see update(): defers a boundary reversal by one cycle
+        this.crash_respawn = false // see update(): Skylab Landing Bay's fall/disintegrate/respawn cycle
     }
 
     // Sets every named field present in `d` (anything absent keeps its
     // current value), then re-derives position/delta from start_x/y and
     // movement_type/speed -- the same setup __init__ used to do inline.
+    // init_x/init_y let a "moving" sprite spawn somewhere other than
+    // start_x/start_y (e.g. mid-range, not right at a bounce bound).
     load_from_dict(d) {
         this.type = d.get("type", this.type)
         this.frames = d.get("frames", this.frames)
@@ -77,11 +81,14 @@ class Sprite {
         this.start_y = d.get("start_y", this.start_y)
         this.end_x = d.get("end_x", this.end_x)
         this.end_y = d.get("end_y", this.end_y)
+        this.init_x = d.get("init_x", this.start_x)
+        this.init_y = d.get("init_y", this.start_y)
+        this.crash_respawn = d.get("crash_respawn", this.crash_respawn)
         this.colour = d.get("colour", this.colour)
         this.paper = d.get("paper", this.paper)
 
-        this.x = this.start_x
-        this.y = this.start_y
+        this.x = this.init_x
+        this.y = this.init_y
         this.dx = 0
         this.dy = 0
         if (this.type == "moving") {
@@ -115,7 +122,29 @@ class Sprite {
     // full animation cycle wraps back to frame 0 -- otherwise it holds,
     // so the sprite stays put through frames 1..frames-1 and only jumps
     // once every `frames` animation frames.
+    //
+    // crash_respawn replaces all of the above with Skylab Landing Bay's
+    // own fall/crash/respawn cycle: y increases by dy each tick until it
+    // reaches end_y (no bounce), then holds there while frame advances
+    // through the full cycle once; on wrap, x jumps 8 columns (64px,
+    // wrapping at the screen edge -- the real routine adds 8 to the raw
+    // 0-31 column byte, not to a pixel x) and y resets to start_y to
+    // fall again.
     update() {
+        if (this.crash_respawn) {
+            if (this.y >= this.end_y) {
+                this.frame = this.frame + 1
+                if (this.frame >= this.frames) {
+                    this.frame = 0
+                    this.y = this.start_y
+                    this.x = (this.x + 64) % 256
+                }
+            } else {
+                this.y = this.y + this.dy
+            }
+            return
+        }
+
         this.tick = this.tick + 1
         var wrapped = false
         if (this.tick >= this.animation_speed) {
@@ -136,14 +165,12 @@ class Sprite {
         }
 
         // Horizontal movement defers a boundary reversal by a full cycle:
-        // the cycle that reaches start/end clamps exactly onto it and
-        // plays out fully there (so the sprite genuinely reaches the
-        // boundary instead of stopping short), and only the cycle after
-        // that actually flips direction -- on its own first tick, moving
-        // nowhere that tick. Without this, step_movement's hold means the
-        // last cycle before a bounce never gets to land exactly on
-        // start_x/end_x, and the new facing switches in immediately
-        // instead of after that cycle's final frame.
+        // the cycle that reaches start/end clamps onto it and plays out
+        // fully there, so the sprite genuinely reaches the boundary
+        // instead of stopping short; only the cycle after that flips
+        // direction, moving nowhere on its own first tick. Without this,
+        // step_movement's hold would switch facing immediately instead of
+        // after landing exactly on start_x/end_x.
         if (this.movement_type == "horizontal") {
             if (this.pending_flip) {
                 this.dx = -this.dx

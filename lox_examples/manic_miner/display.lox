@@ -98,16 +98,13 @@ class Display {
         }
     }
 
-    // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits) with
-    // its top-left at (x, y), then colours every attribute cell its
-    // bounding box overlaps with ink/paper. That colouring covers the
-    // whole cell, not just the sprite's own pixels within it -- a sprite
-    // that isn't 8px-aligned bleeds its colour onto whatever else shares
-    // that cell, same as real Spectrum attribute clash.
-    //
-    // reverse mirrors the sprite left-right as it's blitted -- a sprite
-    // drawn once facing right can be reused facing left without a second,
-    // premirrored set of frames.
+    // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits)
+    // with its top-left at (x, y), then colours every attribute cell its
+    // bounding box overlaps with ink/paper -- covering the whole cell,
+    // not just the sprite's own pixels, so an unaligned sprite bleeds
+    // colour onto its neighbours (real Spectrum attribute clash). reverse
+    // mirrors the sprite left-right as it's blitted, so one set of frames
+    // covers both facings.
     blit_sprite(sprite, x, y, ink, paper, reverse: bool = false) {
         var sw = sprite.width()
         var sh = sprite.height()

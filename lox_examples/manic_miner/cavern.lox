@@ -6,69 +6,87 @@ import game_sprite
 // @file cavern.lox
 // @brief Holds one Manic Miner cavern's layout and metadata, as produced
 // by extract_cavern.lox. Graphics are never owned here -- layout cells,
-// item_sprite, and portal.sprite are all asset name *pointers*, resolved
+// item_sprite, and portal.sprite are asset name *pointers*, resolved
 // through a SpriteAssets instance (every draw method takes one).
 // Guardians are the exception: load_from_dict() builds a real
-// game_sprite.Sprite per guardian (guardian_sprites), driven by
-// update_guardians()/draw_guardians(). Portal gameplay (collision,
-// opening once all items are collected) isn't implemented yet.
+// game_sprite.Sprite per guardian, driven by update_guardians()/
+// draw_guardians(). Portal gameplay isn't implemented yet.
 //
 // Same __init__-defaults + load_from_dict(d) convention as
 // game_sprite.Sprite, plus load(path) to read straight from a JSON file.
 //
 
-// Per the disassembly, an uncollected item's ink cycles through these
-// four palette values once per tick -- magenta, green, cyan, yellow --
-// while its paper stays fixed at the item's own decoded paper. That's
-// the actual "twinkle," not an alternation between the extracted
-// colour/init_colour bytes (see draw_items()).
+// An uncollected item's ink cycles through these four palette values
+// once per tick -- magenta, green, cyan, yellow -- while its paper stays
+// whatever the underlying room tile's paper is (see draw_items()), not
+// the item's own decoded paper or an alternation with init_colour.
 const ITEM_INK_CYCLE = [3, 4, 5, 6]
 
-// Per the disassembly (routine at 37125), the conveyor doesn't cycle
-// through separate frames either: each tick it bit-rotates pixel row 0
-// of every belt tile by this many positions one way, and pixel row 2 the
-// other way (rows 1 and 3-7 are never touched) -- see animate_conveyor().
+// Each tick, animate_conveyor() bit-rotates pixel row 0 of every belt
+// tile by this many positions one way, and row 2 the other way (rows 1
+// and 3-7 are untouched) -- there are no separate animation frames.
 const CONVEYOR_ROTATE = 2
 
-// Guardian movement/animation parameters aren't part of the extracted
-// per-guardian data (the 7-byte record has no speed/frame-rate byte) --
-// these match the block-movement convention already established and
-// tested for Willy (game_sprite.lox): a full 4-frame cycle per 8px jump,
-// one animation tick per game tick.
+// Horizontal guardians hold their on-screen position for a full 4-frame
+// animation cycle then jump 8px in one go, the block-movement convention
+// already established and tested for Willy (game_sprite.lox) -- the
+// 7-byte horizontal record has no speed byte, so movement_speed/
+// animation_speed are fixed constants, not extracted data. Vertical
+// guardians instead move continuously, 1 tick's animation speed and its
+// own signed per-tick delta (g["dy"]) at a time -- see extract_cavern.lox.
 const GUARDIAN_FRAMES = 4
 const GUARDIAN_MOVEMENT_SPEED = 8
 const GUARDIAN_ANIMATION_SPEED = 1
+const SKYLAB_FRAMES = 8
 
 // Builds a game_sprite.Sprite for one guardian record. g's min_x/max_x
-// are reused as the bound pair for whichever axis movement_type is --
-// for "vertical" that means (unverified, since no cavern's
-// vertical_guardians has real data yet) they'd be read as a min/max y
-// range instead.
-func make_guardian_sprite(g, movement_type, image_list) {
+// are reused as the bound pair for whichever axis movement_type is
+// (min/max y for "vertical"). Horizontal guardians always spawn exactly
+// on one bound (g["x"] == min_x or max_x), so start_x doubles as the
+// spawn point same as before; vertical guardians can spawn mid-range, so
+// init_y overrides that with g["y"] instead. A vertical guardian tagged
+// "style": "skylab" (Skylab Landing Bay only) uses crash_respawn instead
+// of bouncing -- see game_sprite.lox's update(). `frames` and
+// `image_list` are caller-supplied (not fixed constants) because a
+// cavern with both horizontal and vertical guardians splits the shared
+// 8-frame sheet between them -- see load_from_dict().
+func make_guardian_sprite(g, movement_type, image_list, frames) {
     var ink = spectrum_attr.colour_to_rgba(g["ink"], g["bright"])
     var paper = spectrum_attr.colour_to_rgba(g["paper"], g["bright"])
     var start_x = g["x"]
     var end_x = g["x"]
     var start_y = g["y"]
     var end_y = g["y"]
+    var init_y = g["y"]
+    var movement_speed = GUARDIAN_MOVEMENT_SPEED
+    var step_movement = true
+    var crash_respawn = false
     if (movement_type == "horizontal") {
         start_x = g["min_x"]
         end_x = g["max_x"]
     } else {
         start_y = g["min_x"]
         end_y = g["max_x"]
+        movement_speed = g["dy"]
+        step_movement = false
+        if (g.get("style", "") == "skylab") {
+            frames = SKYLAB_FRAMES
+            crash_respawn = true
+        }
     }
     var spr = game_sprite.Sprite()
     spr.load_from_dict({
         "type": "moving",
-        "frames": GUARDIAN_FRAMES,
+        "frames": frames,
         "movement_type": movement_type,
-        "movement_speed": GUARDIAN_MOVEMENT_SPEED,
+        "movement_speed": movement_speed,
         "animation_speed": GUARDIAN_ANIMATION_SPEED,
-        "step_movement": true,
+        "step_movement": step_movement,
+        "crash_respawn": crash_respawn,
         "image_list": image_list,
         "start_x": start_x, "start_y": start_y,
         "end_x": end_x, "end_y": end_y,
+        "init_y": init_y,
         "colour": ink, "paper": paper
     })
     return spr
@@ -117,12 +135,25 @@ class Cavern {
         this.vertical_guardians = d.get("vertical_guardians", this.vertical_guardians)
         this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
 
+        // The 8-frame guardian sheet is a fixed-size, per-cavern resource:
+        // a cavern with only one guardian type gives it all 8 (frames=4,
+        // right+left); a cavern with both splits it in half, frames 0-3
+        // for vertical (already how vertical indexes, frames=4 unchanged)
+        // and 4-7 for horizontal (frames=2, so still right+left within
+        // its half).
+        var horizontal_image_list = this.guardian_sprite_names
+        var horizontal_frames = GUARDIAN_FRAMES
+        if (len(this.vertical_guardians) > 0) {
+            horizontal_image_list = this.guardian_sprite_names[4:8]
+            horizontal_frames = 2
+        }
+
         this.guardian_sprites = []
         foreach (var g in this.horizontal_guardians) {
-            this.guardian_sprites.append(make_guardian_sprite(g, "horizontal", this.guardian_sprite_names))
+            this.guardian_sprites.append(make_guardian_sprite(g, "horizontal", horizontal_image_list, horizontal_frames))
         }
         foreach (var g in this.vertical_guardians) {
-            this.guardian_sprites.append(make_guardian_sprite(g, "vertical", this.guardian_sprite_names))
+            this.guardian_sprites.append(make_guardian_sprite(g, "vertical", this.guardian_sprite_names, GUARDIAN_FRAMES))
         }
     }
 
@@ -164,19 +195,13 @@ class Cavern {
         }
     }
 
-    // Draws every (uncollected) item using the shared item_sprite icon,
-    // ink cycling through ITEM_INK_CYCLE once per tick (tick increases by
-    // 1 every call -- the caller owns the counter, same as
-    // game_sprite.Sprite's callers own theirs). Each item's cycle is
-    // offset by its own index, per the original game -- items shimmer in
-    // a staggered wave rather than all flashing the same colour at once.
-    // Paper/bright come from whatever room tile actually occupies the
-    // item's cell, not from the item's own extracted paper/bright -- the
-    // real engine only pokes the ink bits into that cell's existing
-    // attribute byte, leaving its paper as the room's own background
-    // rather than a fixed colour baked into the item data. No erase step
-    // needed: items never move, so redrawing the same cell each tick
-    // just overwrites its ink.
+    // Draws every (uncollected) item using the shared item_sprite icon.
+    // Ink cycles through ITEM_INK_CYCLE once per tick, offset by each
+    // item's own index so items shimmer in a staggered wave rather than
+    // flashing in unison; tick is owned by the caller (game_sprite.Sprite
+    // callers do the same). Paper/bright come from the room tile
+    // occupying the item's cell, not the item's own extracted paper/
+    // bright. Items never move, so no erase step is needed.
     draw_items(disp, lib, tick) {
         var img = lib.get(this.item_sprite)
         for (var i = 0; i < len(this.items); i = i + 1) {
@@ -192,15 +217,12 @@ class Cavern {
         }
     }
 
-    // Animates the conveyor belt by directly bit-rotating pixel rows 0
-    // and 2 of every belt tile already on the display, per the
-    // disassembly (routine at 37125) -- no separate animation frames are
-    // involved, so this needs no frame/tick state of its own, just the
-    // display's own persistent bitmap to rotate in place. direction 0
-    // ("moving left") rotates row 0 left and row 2 right; any other
-    // value ("moving right") does the opposite. this.conveyor must have
-    // already been drawn (its tiles blitted via the normal tile layout)
-    // before this runs, and does nothing if length is 0 (no conveyor).
+    // Bit-rotates pixel rows 0 and 2 of every belt tile already on the
+    // display -- no separate animation frames, no frame/tick state of its
+    // own. direction 0 ("moving left") rotates row 0 left and row 2
+    // right; any other value ("moving right") does the opposite. Requires
+    // this.conveyor's tiles to already be drawn, and does nothing if
+    // length is 0.
     animate_conveyor(disp) {
         var length = this.conveyor.get("length", 0)
         if (length <= 0) {

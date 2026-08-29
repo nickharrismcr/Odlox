@@ -1,96 +1,106 @@
 {
-  "portal": {
-    "y": 40,
-    "sprite": "cavern19_portal",
-    "bright": false,
-    "paper": 3,
-    "x": 152,
-    "ink": 6
+  "willy_start": {
+    "airborne": 0,
+    "y": 104,
+    "y_times_2": 208,
+    "x": 216,
+    "direction": 1,
+    "frame": 0,
+    "jump_counter": 0
   },
-  "border_colour": 2,
   "name": "        The Final Barrier       ",
-  "guardian_sprite_names": [
-    "cavern19_guardian_0",
-    "cavern19_guardian_1",
-    "cavern19_guardian_2",
-    "cavern19_guardian_3",
-    "cavern19_guardian_4",
-    "cavern19_guardian_5",
-    "cavern19_guardian_6",
-    "cavern19_guardian_7"
+  "horizontal_guardians": [
+    {
+      "max_x": 176,
+      "ink": 6,
+      "min_x": 56,
+      "paper": 0,
+      "y": 104,
+      "x": 56,
+      "bright": true
+    }
   ],
+  "portal": {
+    "paper": 3,
+    "ink": 6,
+    "bright": false,
+    "sprite": "cavern19_portal",
+    "x": 152,
+    "y": 40
+  },
+  "width": 32,
+  "conveyor": {
+    "length": 22,
+    "x": 8,
+    "y": 80,
+    "direction": 1
+  },
+  "air": 63,
+  "vertical_guardians": [
+    {
+      "dy": 1,
+      "paper": 0,
+      "ink": 7,
+      "min_x": 40,
+      "bright": false,
+      "x": 192,
+      "y": 48,
+      "max_x": 103
+    }
+  ],
+  "clock": 252,
+  "item_sprite": "cavern19_item",
+  "border_colour": 2,
   "tile_colours": [
     {
-      "paper": 0,
+      "bright": false,
       "ink": 0,
-      "name": "cavern19_tile_background",
-      "bright": false
+      "paper": 0,
+      "name": "cavern19_tile_background"
+    },
+    {
+      "bright": true,
+      "ink": 2,
+      "paper": 0,
+      "name": "cavern19_tile_floor"
     },
     {
       "paper": 0,
-      "ink": 2,
-      "name": "cavern19_tile_floor",
-      "bright": true
-    },
-    {
-      "ink": 2,
-      "paper": 0,
+      "bright": false,
       "name": "cavern19_tile_crumbling_floor",
+      "ink": 2
+    },
+    {
+      "name": "cavern19_tile_wall",
+      "ink": 6,
+      "paper": 4,
       "bright": false
     },
     {
-      "bright": false,
-      "name": "cavern19_tile_wall",
-      "paper": 4,
-      "ink": 6
-    },
-    {
-      "name": "cavern19_tile_conveyor",
-      "bright": false,
+      "paper": 0,
       "ink": 5,
-      "paper": 0
+      "name": "cavern19_tile_conveyor",
+      "bright": false
     },
     {
       "ink": 4,
-      "paper": 0,
+      "bright": true,
       "name": "cavern19_tile_nasty1",
-      "bright": true
+      "paper": 0
     },
     {
       "name": "cavern19_tile_nasty2",
       "bright": false,
-      "ink": 2,
-      "paper": 1
+      "paper": 1,
+      "ink": 2
     },
     {
-      "name": "cavern19_tile_extra",
+      "paper": 0,
       "bright": false,
-      "ink": 0,
-      "paper": 0
+      "name": "cavern19_tile_extra",
+      "ink": 0
     }
   ],
-  "willy_start": {
-    "y": 104,
-    "airborne": 0,
-    "frame": 0,
-    "x": 216,
-    "jump_counter": 0,
-    "y_times_2": 208,
-    "direction": 1
-  },
-  "tile_names": [
-    "cavern19_tile_background",
-    "cavern19_tile_floor",
-    "cavern19_tile_crumbling_floor",
-    "cavern19_tile_wall",
-    "cavern19_tile_conveyor",
-    "cavern19_tile_nasty1",
-    "cavern19_tile_nasty2",
-    "cavern19_tile_extra"
-  ],
-  "width": 32,
-  "air": 63,
-  "item_sprite": "cavern19_item",
   "layout": [
     "00000000000000000000000000000000",
     "00000000000000000000000000000000",
@@ -109,81 +119,82 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
+  "guardian_sprite_names": [
+    "cavern19_guardian_0",
+    "cavern19_guardian_1",
+    "cavern19_guardian_2",
+    "cavern19_guardian_3",
+    "cavern19_guardian_4",
+    "cavern19_guardian_5",
+    "cavern19_guardian_6",
+    "cavern19_guardian_7"
+  ],
+  "height": 16,
+  "tile_names": [
+    "cavern19_tile_background",
+    "cavern19_tile_floor",
+    "cavern19_tile_crumbling_floor",
+    "cavern19_tile_wall",
+    "cavern19_tile_conveyor",
+    "cavern19_tile_nasty1",
+    "cavern19_tile_nasty2",
+    "cavern19_tile_extra"
+  ],
   "items": [
     {
+      "type": 3,
+      "y": 40,
+      "init_ink": 7,
+      "init_bright": true,
+      "paper": 4,
       "x": 184,
       "bright": true,
-      "paper": 4,
-      "init_bright": true,
-      "y": 40,
-      "ink": 0,
       "init_paper": 7,
-      "type": 3,
-      "init_ink": 7
-    },
-    {
-      "paper": 4,
-      "type": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "init_paper": 7,
-      "init_bright": true,
-      "y": 48,
-      "bright": true,
-      "x": 240
-    },
-    {
-      "bright": true,
-      "init_paper": 7,
-      "init_bright": true,
-      "y": 88,
-      "paper": 5,
-      "type": 5,
-      "init_ink": 7,
-      "x": 80,
       "ink": 0
     },
     {
-      "init_ink": 7,
+      "bright": true,
       "init_paper": 7,
       "ink": 0,
+      "type": 4,
       "init_bright": true,
-      "y": 88,
-      "bright": true,
-      "paper": 5,
-      "x": 112,
-      "type": 6
+      "init_ink": 7,
+      "paper": 4,
+      "y": 48,
+      "x": 240
     },
     {
-      "init_ink": 7,
-      "ink": 0,
-      "paper": 5,
-      "x": 152,
-      "bright": true,
-      "init_bright": true,
-      "y": 88,
       "init_paper": 7,
-      "type": 3
-    }
-  ],
-  "vertical_guardians": [],
-  "horizontal_guardians": [
-    {
-      "min_x": 56,
-      "y": 104,
-      "ink": 6,
-      "x": 56,
-      "paper": 0,
+      "type": 5,
+      "init_ink": 7,
+      "y": 88,
+      "ink": 0,
       "bright": true,
-      "max_x": 176
+      "x": 80,
+      "init_bright": true,
+      "paper": 5
+    },
+    {
+      "type": 6,
+      "y": 88,
+      "init_ink": 7,
+      "init_bright": true,
+      "paper": 5,
+      "x": 112,
+      "bright": true,
+      "init_paper": 7,
+      "ink": 0
+    },
+    {
+      "y": 88,
+      "ink": 0,
+      "bright": true,
+      "x": 152,
+      "init_bright": true,
+      "paper": 5,
+      "init_paper": 7,
+      "type": 3,
+      "init_ink": 7
     }
-  ],
-  "conveyor": {
-    "y": 80,
-    "direction": 1,
-    "x": 8,
-    "length": 22
-  },
-  "clock": 252,
-  "height": 16
+  ]
 }

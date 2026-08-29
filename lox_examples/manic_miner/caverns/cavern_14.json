@@ -1,92 +1,126 @@
 {
-  "vertical_guardians": [],
-  "horizontal_guardians": [
-    {
-      "bright": true,
-      "min_x": 1520,
-      "ink": 4,
-      "max_x": 784,
-      "x": 192,
-      "y": 520,
-      "paper": 7
-    },
-    {
-      "max_x": 576,
-      "x": 248,
-      "min_x": 488,
-      "ink": 4,
-      "bright": true,
-      "y": 10248,
-      "paper": 7
-    }
-  ],
-  "border_colour": 2,
-  "items": [
-    {
-      "x": 200,
-      "ink": 0,
-      "bright": true,
-      "init_paper": 7,
-      "init_bright": true,
-      "y": 16,
-      "paper": 4,
-      "type": 3,
-      "init_ink": 7
-    },
-    {
-      "init_bright": true,
-      "y": 48,
-      "bright": true,
-      "paper": 4,
-      "x": 96,
-      "type": 4,
-      "init_ink": 7,
-      "init_paper": 7,
-      "ink": 0
-    },
-    {
-      "x": 208,
-      "ink": 0,
-      "bright": true,
-      "init_paper": 7,
-      "init_bright": true,
-      "y": 112,
-      "paper": 5,
-      "type": 5,
-      "init_ink": 7
-    }
-  ],
-  "air": 97,
   "willy_start": {
     "x": 16,
-    "direction": 0,
-    "jump_counter": 0,
-    "y_times_2": 208,
     "airborne": 0,
-    "frame": 0,
-    "y": 104
+    "direction": 0,
+    "y": 104,
+    "y_times_2": 208,
+    "jump_counter": 0,
+    "frame": 0
   },
-  "tile_names": [
-    "cavern14_tile_background",
-    "cavern14_tile_floor",
-    "cavern14_tile_crumbling_floor",
-    "cavern14_tile_wall",
-    "cavern14_tile_conveyor",
-    "cavern14_tile_nasty1",
-    "cavern14_tile_nasty2",
-    "cavern14_tile_extra"
+  "name": "            The Bank            ",
+  "horizontal_guardians": [
+    {
+      "min_x": 136,
+      "paper": 0,
+      "y": 104,
+      "x": 136,
+      "bright": true,
+      "max_x": 152,
+      "ink": 5
+    }
   ],
-  "width": 32,
-  "clock": 96,
   "portal": {
-    "paper": 2,
-    "x": 0,
-    "ink": 3,
-    "y": -742,
     "sprite": "cavern14_portal",
+    "ink": 6,
+    "y": 24,
+    "paper": 2,
+    "x": 8,
     "bright": true
   },
+  "width": 32,
+  "conveyor": {
+    "x": 64,
+    "y": 24,
+    "direction": 0,
+    "length": 16
+  },
+  "air": 63,
+  "vertical_guardians": [
+    {
+      "ink": 6,
+      "bright": false,
+      "x": 72,
+      "dy": 2,
+      "min_x": 36,
+      "paper": 0,
+      "max_x": 102,
+      "y": 40
+    },
+    {
+      "paper": 0,
+      "x": 120,
+      "y": 64,
+      "min_x": 36,
+      "bright": false,
+      "max_x": 102,
+      "ink": 7,
+      "dy": 1
+    },
+    {
+      "paper": 0,
+      "x": 168,
+      "bright": true,
+      "min_x": 32,
+      "ink": 4,
+      "y": 80,
+      "dy": -3,
+      "max_x": 104
+    }
+  ],
+  "clock": 252,
   "item_sprite": "cavern14_item",
+  "border_colour": 2,
+  "tile_colours": [
+    {
+      "name": "cavern14_tile_background",
+      "ink": 0,
+      "paper": 0,
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 1,
+      "name": "cavern14_tile_floor",
+      "bright": true
+    },
+    {
+      "name": "cavern14_tile_crumbling_floor",
+      "bright": false,
+      "paper": 0,
+      "ink": 1
+    },
+    {
+      "bright": false,
+      "ink": 6,
+      "paper": 1,
+      "name": "cavern14_tile_wall"
+    },
+    {
+      "name": "cavern14_tile_conveyor",
+      "ink": 5,
+      "paper": 0,
+      "bright": true
+    },
+    {
+      "paper": 0,
+      "ink": 6,
+      "name": "cavern14_tile_nasty1",
+      "bright": true
+    },
+    {
+      "name": "cavern14_tile_nasty2",
+      "bright": true,
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "name": "cavern14_tile_extra",
+      "bright": false,
+      "paper": 0,
+      "ink": 6
+    }
+  ],
   "layout": [
     "30000033333333333333333333333333",
     "30000000000000000000000000000773",
@@ -105,13 +139,6 @@
     "30000000000000000000000000000773",
     "31111111111111111111111111111113"
   ],
-  "name": "            The Bank            ",
-  "conveyor": {
-    "direction": 0,
-    "x": 64,
-    "length": 16,
-    "y": 24
-  },
   "guardian_sprite_names": [
     "cavern14_guardian_0",
     "cavern14_guardian_1",
@@ -122,55 +149,61 @@
     "cavern14_guardian_6",
     "cavern14_guardian_7"
   ],
-  "tile_colours": [
-    {
-      "name": "cavern14_tile_background",
-      "bright": false,
-      "ink": 0,
-      "paper": 0
-    },
-    {
-      "name": "cavern14_tile_floor",
-      "bright": true,
-      "paper": 0,
-      "ink": 1
-    },
-    {
-      "paper": 0,
-      "ink": 1,
-      "bright": false,
-      "name": "cavern14_tile_crumbling_floor"
-    },
-    {
-      "bright": false,
-      "name": "cavern14_tile_wall",
-      "paper": 1,
-      "ink": 6
-    },
-    {
-      "paper": 0,
-      "ink": 5,
-      "name": "cavern14_tile_conveyor",
-      "bright": true
-    },
-    {
-      "paper": 0,
-      "ink": 6,
-      "name": "cavern14_tile_nasty1",
-      "bright": true
-    },
-    {
-      "name": "cavern14_tile_nasty2",
-      "bright": true,
-      "ink": 2,
-      "paper": 0
-    },
-    {
-      "paper": 0,
-      "ink": 6,
-      "name": "cavern14_tile_extra",
-      "bright": false
-    }
+  "height": 16,
+  "tile_names": [
+    "cavern14_tile_background",
+    "cavern14_tile_floor",
+    "cavern14_tile_crumbling_floor",
+    "cavern14_tile_wall",
+    "cavern14_tile_conveyor",
+    "cavern14_tile_nasty1",
+    "cavern14_tile_nasty2",
+    "cavern14_tile_extra"
   ],
-  "height": 16
+  "items": [
+    {
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 4,
+      "y": 16,
+      "init_paper": 7,
+      "type": 3,
+      "ink": 0,
+      "bright": true,
+      "x": 200
+    },
+    {
+      "y": 48,
+      "ink": 0,
+      "bright": true,
+      "x": 96,
+      "init_bright": true,
+      "paper": 4,
+      "init_paper": 7,
+      "type": 4,
+      "init_ink": 7
+    },
+    {
+      "init_ink": 7,
+      "paper": 5,
+      "y": 112,
+      "x": 208,
+      "bright": true,
+      "init_paper": 7,
+      "ink": 0,
+      "type": 5,
+      "init_bright": true
+    },
+    {
+      "type": 3,
+      "bright": true,
+      "init_paper": 7,
+      "ink": 0,
+      "paper": 5,
+      "x": 240,
+      "init_ink": 7,
+      "y": 104,
+      "init_bright": true
+    }
+  ]
 }

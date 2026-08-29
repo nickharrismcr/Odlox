@@ -48,12 +48,12 @@ var sprites = []
 
 // Every y below is a multiple of CELL(8) -- a sprite whose position
 // straddles two attribute-cell rows gets its ink/paper resolved against
-// whatever (usually blank) bitmap content shares the other half of each
-// straddled cell, so it renders looking vertically offset/split rather
-// than as a clean tile. Off-grid positions are fine for a sprite that
-// glides freely in isolation (see the continuous sprite below, whose x
-// deliberately drifts off-grid every tick); they aren't for anything
-// meant to tile cleanly against its neighbours, like the wall row.
+// whatever bitmap content shares the other half of each straddled cell,
+// rendering it looking vertically split rather than as a clean tile.
+// Off-grid positions are fine for a sprite gliding freely in isolation
+// (the continuous sprite below deliberately drifts off-grid), but not
+// for anything meant to tile cleanly against neighbours, like the wall
+// row.
 
 // Continuous glide.
 var glider = game_sprite.Sprite()
@@ -70,14 +70,12 @@ glider.load_from_dict({
 })
 sprites.append(glider)
 
-// Block movement using Willy's real walk cycle (from the disassembly,
-// willy_sprites.json): across the 4-frame cycle (animation_speed=1 ->
-// 4 ticks/cycle) the legs animate in place, and the moment the cycle
-// wraps back to frame 0, the block jumps 8px (movement_speed) -- the
-// guardian-style block movement described in game_sprite.lox.
-// image_list holds all 8 frames (right_0..3, then left_0..3); draw()
-// switches to the second half while moving left, using the real
-// left-facing art rather than mirroring the right-facing frames.
+// Block movement using Willy's walk cycle (willy_sprites.json): across
+// the 4-frame cycle (animation_speed=1 -> 4 ticks/cycle) the legs animate
+// in place, and the moment the cycle wraps to frame 0, the block jumps
+// 8px (movement_speed) -- the guardian-style block movement described in
+// game_sprite.lox. image_list holds all 8 frames (right_0..3, then
+// left_0..3); draw() switches to the second half while moving left.
 var stepper = game_sprite.Sprite()
 stepper.load_from_dict({
     "type": "moving",

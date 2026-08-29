@@ -16,9 +16,8 @@ from gfx import *
 //
 
 // Colour component bits, no native bitwise ops in this Lox dialect:
-// blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2 --
-// verified against the standard palette (e.g. 3 = magenta = R1G0B1,
-// 6 = yellow = R1G1B0).
+// blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2
+// (e.g. 3 = magenta = R1G0B1, 6 = yellow = R1G1B0).
 func colour_to_rgba(value, bright) {
     var level = 205
     if (bright) {

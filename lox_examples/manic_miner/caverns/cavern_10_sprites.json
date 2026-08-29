@@ -1,6 +1,5 @@
 [
   {
-    "data_type": "pixel",
     "data": [
       "........",
       "........",
@@ -11,9 +10,11 @@
       "........",
       "........"
     ],
-    "name": "cavern10_tile_background"
+    "name": "cavern10_tile_background",
+    "data_type": "pixel"
   },
   {
+    "data_type": "pixel",
     "name": "cavern10_tile_floor",
     "data": [
       "########",
@@ -24,10 +25,11 @@
       ".#......",
       "........",
       "........"
-    ],
-    "data_type": "pixel"
+    ]
   },
   {
+    "name": "cavern10_tile_crumbling_floor",
+    "data_type": "pixel",
     "data": [
       "########",
       "##.##.##",
@@ -37,9 +39,7 @@
       "..#.....",
       "....#...",
       "........"
-    ],
-    "name": "cavern10_tile_crumbling_floor",
-    "data_type": "pixel"
+    ]
   },
   {
     "data": [
@@ -70,7 +70,6 @@
     "name": "cavern10_tile_conveyor"
   },
   {
-    "data_type": "pixel",
     "data": [
       "...#....",
       "...#....",
@@ -81,10 +80,10 @@
       ".#.#.#..",
       "#..#..#."
     ],
-    "name": "cavern10_tile_nasty1"
+    "name": "cavern10_tile_nasty1",
+    "data_type": "pixel"
   },
   {
-    "data_type": "pixel",
     "data": [
       "...#....",
       "...#....",
@@ -95,9 +94,12 @@
       "...#....",
       "...#...."
     ],
-    "name": "cavern10_tile_nasty2"
+    "name": "cavern10_tile_nasty2",
+    "data_type": "pixel"
   },
   {
+    "name": "cavern10_tile_extra",
+    "data_type": "pixel",
     "data": [
       "########",
       "########",
@@ -107,11 +109,10 @@
       "........",
       "........",
       "........"
-    ],
-    "name": "cavern10_tile_extra",
-    "data_type": "pixel"
+    ]
   },
   {
+    "data_type": "pixel",
     "name": "cavern10_portal",
     "data": [
       "########",
@@ -146,8 +147,7 @@
       "....#..#",
       "########",
       "########"
-    ],
-    "data_type": "pixel"
+    ]
   },
   {
     "data": [
@@ -248,11 +248,12 @@
       "..############..",
       "..############.."
     ],
-    "name": "cavern10_guardian_3",
-    "data_type": "pixel"
+    "data_type": "pixel",
+    "name": "cavern10_guardian_3"
   },
   {
     "name": "cavern10_guardian_4",
+    "data_type": "pixel",
     "data": [
       "....##..........",
       "...#.##.........",
@@ -270,10 +271,11 @@
       "##########......",
       ".#......#.......",
       "..#.###........."
-    ],
-    "data_type": "pixel"
+    ]
   },
   {
+    "name": "cavern10_guardian_5",
+    "data_type": "pixel",
     "data": [
       "......##........",
       "......##........",
@@ -291,11 +293,11 @@
       "..##########....",
       "...#......#.....",
       ".....###.#......"
-    ],
-    "name": "cavern10_guardian_5",
-    "data_type": "pixel"
+    ]
   },
   {
+    "name": "cavern10_guardian_6",
+    "data_type": "pixel",
     "data": [
       "........##......",
       "........##......",
@@ -313,13 +315,9 @@
       "....#########...",
       "............#...",
       "......###.##...."
-    ],
-    "name": "cavern10_guardian_6",
-    "data_type": "pixel"
+    ]
   },
   {
-    "name": "cavern10_guardian_7",
-    "data_type": "pixel",
     "data": [
       "..........##....",
       ".........##.#...",
@@ -337,6 +335,8 @@
       ".......#########",
       ".......#........",
       "........##.###.."
-    ]
+    ],
+    "name": "cavern10_guardian_7",
+    "data_type": "pixel"
   }
 ]

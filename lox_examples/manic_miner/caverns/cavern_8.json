@@ -1,120 +1,4 @@
 {
-  "air": 130,
-  "guardian_sprite_names": [
-    "cavern8_guardian_0",
-    "cavern8_guardian_1",
-    "cavern8_guardian_2",
-    "cavern8_guardian_3",
-    "cavern8_guardian_4",
-    "cavern8_guardian_5",
-    "cavern8_guardian_6",
-    "cavern8_guardian_7"
-  ],
-  "tile_colours": [
-    {
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern8_tile_background",
-      "bright": false
-    },
-    {
-      "name": "cavern8_tile_floor",
-      "bright": false,
-      "ink": 6,
-      "paper": 0
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "bright": true,
-      "name": "cavern8_tile_crumbling_floor"
-    },
-    {
-      "paper": 2,
-      "ink": 6,
-      "bright": false,
-      "name": "cavern8_tile_wall"
-    },
-    {
-      "name": "cavern8_tile_conveyor",
-      "bright": false,
-      "ink": 4,
-      "paper": 0
-    },
-    {
-      "name": "cavern8_tile_nasty1",
-      "bright": true,
-      "paper": 0,
-      "ink": 4
-    },
-    {
-      "name": "cavern8_tile_nasty2",
-      "bright": false,
-      "ink": 5,
-      "paper": 0
-    },
-    {
-      "ink": 0,
-      "bright": false,
-      "paper": 0,
-      "name": "cavern8_tile_extra"
-    }
-  ],
-  "name": "        Wacky Amoebatrons       ",
-  "vertical_guardians": [],
-  "horizontal_guardians": [
-    {
-      "bright": false,
-      "min_x": 1016,
-      "ink": 1,
-      "max_x": -1016,
-      "x": 8,
-      "y": 2336,
-      "paper": 0
-    },
-    {
-      "paper": 3,
-      "ink": 4,
-      "y": 256,
-      "x": 8,
-      "max_x": 1152,
-      "min_x": 1088,
-      "bright": true
-    },
-    {
-      "max_x": 288,
-      "x": -224,
-      "min_x": 768,
-      "ink": 0,
-      "bright": true,
-      "y": -5240,
-      "paper": 5
-    },
-    {
-      "bright": true,
-      "min_x": 400,
-      "ink": 4,
-      "max_x": 552,
-      "x": 224,
-      "y": 272,
-      "paper": 5
-    }
-  ],
-  "items": [
-    {
-      "init_bright": true,
-      "y": 8,
-      "bright": true,
-      "paper": 4,
-      "x": 128,
-      "type": 3,
-      "init_ink": 7,
-      "init_paper": 7,
-      "ink": 0
-    }
-  ],
-  "border_colour": 1,
-  "item_sprite": "cavern8_item",
   "layout": [
     "30030000000000000000000000000003",
     "30000000000000000000000000000003",
@@ -133,17 +17,119 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "clock": 65,
-  "height": 16,
+  "guardian_sprite_names": [
+    "cavern8_guardian_0",
+    "cavern8_guardian_1",
+    "cavern8_guardian_2",
+    "cavern8_guardian_3",
+    "cavern8_guardian_4",
+    "cavern8_guardian_5",
+    "cavern8_guardian_6",
+    "cavern8_guardian_7"
+  ],
+  "conveyor": {
+    "direction": 1,
+    "length": 8,
+    "x": 96,
+    "y": 64
+  },
+  "air": 63,
+  "item_sprite": "cavern8_item",
+  "vertical_guardians": [
+    {
+      "dy": 1,
+      "paper": 0,
+      "ink": 3,
+      "bright": true,
+      "min_x": 5,
+      "x": 40,
+      "y": 8,
+      "max_x": 100
+    },
+    {
+      "ink": 4,
+      "bright": false,
+      "x": 80,
+      "dy": 2,
+      "min_x": 5,
+      "paper": 0,
+      "max_x": 100,
+      "y": 8
+    },
+    {
+      "max_x": 100,
+      "bright": false,
+      "ink": 5,
+      "dy": 1,
+      "paper": 0,
+      "x": 160,
+      "y": 8,
+      "min_x": 5
+    },
+    {
+      "max_x": 100,
+      "ink": 2,
+      "dy": 2,
+      "min_x": 5,
+      "paper": 0,
+      "y": 8,
+      "x": 200,
+      "bright": true
+    }
+  ],
+  "name": "        Wacky Amoebatrons       ",
+  "horizontal_guardians": [
+    {
+      "min_x": 96,
+      "ink": 4,
+      "bright": true,
+      "x": 96,
+      "max_x": 144,
+      "paper": 0,
+      "y": 24
+    },
+    {
+      "y": 80,
+      "bright": false,
+      "max_x": 144,
+      "x": 128,
+      "min_x": 96,
+      "paper": 0,
+      "ink": 5
+    }
+  ],
+  "portal": {
+    "x": 8,
+    "y": 0,
+    "paper": 1,
+    "ink": 6,
+    "bright": false,
+    "sprite": "cavern8_portal"
+  },
+  "width": 32,
   "willy_start": {
-    "y_times_2": 208,
-    "direction": 0,
     "y": 104,
-    "airborne": 0,
+    "y_times_2": 208,
+    "jump_counter": 0,
     "frame": 0,
     "x": 8,
-    "jump_counter": 0
+    "airborne": 0,
+    "direction": 0
   },
+  "height": 16,
+  "items": [
+    {
+      "type": 3,
+      "y": 8,
+      "init_ink": 7,
+      "init_bright": true,
+      "paper": 4,
+      "x": 128,
+      "bright": true,
+      "init_paper": 7,
+      "ink": 0
+    }
+  ],
   "tile_names": [
     "cavern8_tile_background",
     "cavern8_tile_floor",
@@ -154,19 +140,56 @@
     "cavern8_tile_nasty2",
     "cavern8_tile_extra"
   ],
-  "width": 32,
-  "conveyor": {
-    "length": 8,
-    "y": 64,
-    "x": 96,
-    "direction": 1
-  },
-  "portal": {
-    "ink": 7,
-    "paper": 7,
-    "bright": true,
-    "sprite": "cavern8_portal",
-    "y": 301,
-    "x": 8
-  }
+  "clock": 128,
+  "border_colour": 1,
+  "tile_colours": [
+    {
+      "paper": 0,
+      "ink": 0,
+      "name": "cavern8_tile_background",
+      "bright": false
+    },
+    {
+      "ink": 6,
+      "bright": false,
+      "name": "cavern8_tile_floor",
+      "paper": 0
+    },
+    {
+      "ink": 2,
+      "bright": true,
+      "name": "cavern8_tile_crumbling_floor",
+      "paper": 0
+    },
+    {
+      "name": "cavern8_tile_wall",
+      "bright": false,
+      "ink": 6,
+      "paper": 2
+    },
+    {
+      "name": "cavern8_tile_conveyor",
+      "bright": false,
+      "paper": 0,
+      "ink": 4
+    },
+    {
+      "name": "cavern8_tile_nasty1",
+      "ink": 4,
+      "paper": 0,
+      "bright": true
+    },
+    {
+      "name": "cavern8_tile_nasty2",
+      "ink": 5,
+      "paper": 0,
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 0,
+      "bright": false,
+      "name": "cavern8_tile_extra"
+    }
+  ]
 }

@@ -4,9 +4,8 @@
 // pixel (x, y) coordinates. Two address shapes appear in Manic Miner's
 // data, both relative to a caller-supplied buffer base (not necessarily
 // the real hardware base -- the game keeps its own working copies of
-// these buffers at other addresses; the base to use for each field was
-// confirmed empirically against Central Cavern's known values, see the
-// call sites in extract_cavern.lox):
+// these buffers at other addresses; see extract_cavern.lox's call sites
+// for which base applies to which field):
 //
 //  - Attribute-style: a plain 32-column row-major grid, same shape as
 //    the real hardware attribute file (22528, 32x24) -- attr_addr_to_xy().

@@ -14,12 +14,6 @@ import sys
 // item graphic). Cavern records are 1024 bytes each, starting at 45056,
 // formulaically addressed (45056 + index*1024) for all 20 caverns.
 //
-// Field offsets below are a best-effort reconstruction from a
-// disassembly reference and are NOT all independently confirmed --
-// see the printed sanity line and README note in the plan this came
-// from. Treat any offset as a first guess to correct once real output
-// (cavern name text, rendered layout, sprite shapes) proves it wrong.
-//
 // Usage: odlox.exe extract_cavern.lox <path.sna> <index|all> <output_dir>
 //
 
@@ -27,19 +21,17 @@ const CAVERN_BASE = 45056
 const CAVERN_SIZE = 1024
 const NUM_CAVERNS = 20
 
-// "extra" is Central Cavern's own name for the 8th tile slot -- kept as
-// all-zero/unused there, but confirmed NOT universally unused (Skylab
-// Landing Bay's layout references it with real, non-zero graphics), so
-// it's just "whatever the 8th slot holds," not a guaranteed-junk tile.
+// "extra" is Central Cavern's own name for the 8th tile slot -- all-zero
+// there, but not universally unused (Skylab Landing Bay's layout
+// references it with real, non-zero graphics), so it holds whatever data
+// a given cavern puts there, not a guaranteed-junk tile.
 const TILE_NAMES = ["background", "floor", "crumbling_floor", "wall", "conveyor", "nasty1", "nasty2", "extra"]
 
-// Buffer bases for spectrum_screen's address decoders -- confirmed
-// empirically against Central Cavern's known values (willy_start,
-// conveyor, and portal positions all matched their documented (col,row)
-// coordinates using exactly these bases): willy/items/guardians' "addr"
-// fields index a plain attribute-style buffer at ATTR_BUFFER_BASE; the
-// conveyor and portal's own "screen_addr" fields each index a *separate*
-// pixel/bitmap-style buffer, at their own distinct bases.
+// Buffer bases for spectrum_screen's address decoders: willy/items/
+// guardians' "addr" fields index a plain attribute-style buffer at
+// ATTR_BUFFER_BASE; the conveyor and portal's own "screen_addr" fields
+// each index a *separate* pixel/bitmap-style buffer, at their own
+// distinct bases.
 const ATTR_BUFFER_BASE = 23552
 const CONVEYOR_SCREEN_BASE = 28672
 const PORTAL_SCREEN_BASE = 24576
@@ -112,10 +104,9 @@ func read_tiles(bytes, addr, prefix) {
 // at a terminator byte (255) in a record's first byte. Returns
 // {"records": [...], "next": addr right after the terminator byte (or
 // after the last record read, if max_count was hit with no terminator)}
-// -- "next" lets a variable-length section's real end feed directly into
-// where the following section starts, since these records are NOT padded
-// to a fixed size (confirmed empirically: Central Cavern's real item
-// list is 5 records + a terminator, 26 bytes, not padded further).
+// -- "next" lets a variable-length section feed directly into where the
+// following section starts, since these records are not padded to a
+// fixed size.
 func read_terminated_records(bytes, addr, record_size, max_count) {
     var records = []
     var pos = addr
@@ -135,15 +126,30 @@ func read_terminated_records(bytes, addr, record_size, max_count) {
     return {"records": records, "next": pos}
 }
 
+// Reads exactly count fixed-width records starting at addr, then skips
+// one trailing terminator byte -- for a section that always reserves a
+// fixed slot count regardless of how many are real (items, like the
+// guardian lists), where a slot's own first byte can legitimately be 0
+// or 255 ("unused") without ending the section early. Returns
+// {"records": [...], "next": addr right after the terminator byte}.
+func read_fixed_slots(bytes, addr, record_size, count) {
+    var records = []
+    for (var i = 0; i < count; i = i + 1) {
+        var record = []
+        for (var b = 0; b < record_size; b = b + 1) {
+            record.append(sna.read_u8(bytes, addr + i * record_size + b))
+        }
+        records.append(record)
+    }
+    return {"records": records, "next": addr + count * record_size + 1}
+}
+
 func extract_one(bytes, index, out_dir) {
     var base = CAVERN_BASE + index * CAVERN_SIZE
     var prefix = format("cavern%d", index)
 
-    // Layout: 512 bytes, 32 cols x 16 rows, row-major (layout[y][x] =
-    // bytes[y*32+x]) -- confirmed against Central Cavern: rendering raw
-    // cell values by their known tile attribute byte produces an
-    // unmistakable bordered room with multi-level floors, one continuous
-    // conveyor strip, and crumbling platforms.
+    // Layout: 512 bytes, 32 cols x 16 rows, row-major
+    // (layout[y][x] = bytes[y*32+x]).
     var raw_layout = []
     for (var y = 0; y < 16; y = y + 1) {
         var row = []
@@ -156,14 +162,13 @@ func extract_one(bytes, index, out_dir) {
     var name = read_ascii(bytes, base + 512, 32)
     var tiles = read_tiles(bytes, base + 544, prefix)
 
-    // The layout grid's raw byte at each cell IS that tile's own
-    // attribute byte (confirmed: 0/2/4/5/22/66/68 match the tile defs'
-    // decoded attributes exactly), not a plain 0-7 index -- remap to a
-    // clean index into tile_names here so Cavern doesn't need to know
-    // about raw Spectrum attribute bytes at all. First-wins: "extra" (the
-    // unused 8th tile slot) has an all-zero attribute byte too, colliding
-    // with "background"'s -- background must win that collision, since
-    // "extra" is never meant to be placed in a real layout.
+    // The layout grid's raw byte at each cell is that tile's own
+    // attribute byte, not a plain 0-7 index -- remap to a clean index
+    // into tile_names here so Cavern doesn't need to know about raw
+    // Spectrum attribute bytes at all. First-wins: "extra" (the unused
+    // 8th tile slot) has an all-zero attribute byte too, colliding with
+    // "background"'s -- background must win, since "extra" is never
+    // meant to be placed in a real layout.
     var attr_to_index = {}
     for (var t = 0; t < len(tiles); t = t + 1) {
         var key = str(tiles[t]["attr"])
@@ -207,22 +212,30 @@ func extract_one(bytes, index, out_dir) {
 
     var border_colour = sna.read_u8(bytes, base + 627)
 
-    // Items: variable-length, 5 bytes each (type, addr lo, addr hi,
-    // colour, init colour), terminated by 255. Confirmed against Central
-    // Cavern's real data (5 items, all fields byte-exact) -- portal etc.
-    // start right after this list's terminator, NOT at a fixed offset;
-    // there's no padding to a fixed-size block.
-    var item_result = read_terminated_records(bytes, base + 629, 5, 20)
+    // Items: a fixed 5-slot reserved block (5 bytes each: type, addr lo,
+    // addr hi, colour, init colour), always followed by one terminator
+    // byte, exactly like the guardian lists -- an unused slot's own type
+    // byte can legitimately be 0 or 255 without ending the section early
+    // (confirmed against real disassembly for both Wacky Amoebatrons and
+    // Skylab Landing Bay), so the portal and everything after it always
+    // starts exactly 26 bytes past the items list's own start.
+    var item_result = read_fixed_slots(bytes, base + 629, 5, 5)
     var items = []
     foreach (var r in item_result["records"]) {
+        if (r[0] == 0 or r[0] == 255) {
+            continue
+        }
         var item_addr = r[1] + r[2] * 256
         var item_xy = spectrum_screen.attr_addr_to_xy(item_addr, ATTR_BUFFER_BASE)
+        if (item_xy["x"] > 255 or item_xy["y"] > 191) {
+            continue
+        }
         // colour/init_colour are raw attribute bytes, same encoding as a
         // tile's own "attr" -- decode both, don't keep the raw byte once
-        // decoded. Willy's item twinkle actually cycles ink through
-        // 3,4,5,6 per tick over the item's own fixed paper (see
-        // Cavern.draw_items()), not by alternating colour/init_colour --
-        // init_ink/init_paper are kept anyway as real decoded ROM data.
+        // decoded. The item twinkle animation (Cavern.draw_items()) cycles
+        // ink through 3,4,5,6 per tick over the room tile's own paper, not
+        // by alternating colour/init_colour; init_ink/init_paper are kept
+        // as decoded data regardless.
         var colours = spectrum_attr.decode_attribute(r[3])
         var init_colours = spectrum_attr.decode_attribute(r[4])
         items.append({
@@ -233,9 +246,8 @@ func extract_one(bytes, index, out_dir) {
         })
     }
 
-    // Portal: confirmed byte-exact against Central Cavern (attribute,
-    // 32-byte graphic, attr_addr, screen_addr all matched known values)
-    // once its start was corrected to follow the items list directly.
+    // Portal: attribute byte, 32-byte graphic, then screen_addr -- starts
+    // right after the items list's terminator.
     var portal_base = item_result["next"]
     var portal_attr = sna.read_u8(bytes, portal_base)
     var portal_colours = spectrum_attr.decode_attribute(portal_attr)
@@ -253,8 +265,7 @@ func extract_one(bytes, index, out_dir) {
         "sprite": {"name": prefix & "_portal", "data_type": "pixel", "data": bytes_to_pixel_rows(portal_pixels, 8)}
     }
 
-    // Item graphic: confirmed byte-exact against Central Cavern
-    // (48,72,136,144,104,4,10,4) once placed right after the portal.
+    // Item graphic: one 8x8 tile, placed right after the portal record.
     var item_graphic_base = portal_base + 37
     var item_graphic_pixels = []
     for (var i = 0; i < 8; i = i + 1) {
@@ -262,32 +273,18 @@ func extract_one(bytes, index, out_dir) {
     }
     var item_sprite = {"name": prefix & "_item", "data_type": "pixel", "data": bytes_to_pixel_rows(item_graphic_pixels, 8)}
 
-    // Air/clock: confirmed byte-exact (63, 252) once placed right after
-    // the item graphic.
+    // Air/clock: two bytes, right after the item graphic.
     var air_addr = item_graphic_base + 8
     var air = sna.read_u8(bytes, air_addr)
     var clock = sna.read_u8(bytes, air_addr + 1)
 
-    // Horizontal guardians: record layout confirmed against the real
-    // disassembly (routines at 36111/37125's neighbourhood), not just
-    // the earlier best-effort guess:
-    //   byte0: attribute/colour byte (decode normally for ink/paper/
-    //     bright) -- bit7 (FLASH, unused by this project otherwise) is
-    //     repurposed as an animation-speed flag (0 normal, 1 slow), not
-    //     modelled yet.
-    //   byte1-2: 16-bit address of the guardian's starting cell in the
-    //     attribute buffer -- decodes to its initial (x, y) exactly like
-    //     items/Willy.
-    //   byte3-4: unconfirmed (not referenced by the movement routine we
-    //     have) -- not extracted.
-    //   byte5, byte6: NOT absolute x bounds -- they're compared directly
-    //     against byte1 (the address's own low byte, which the real
-    //     routine increments/decrements to move the guardian one column
-    //     at a time). The real bound in pixels is the guardian's own
-    //     starting x plus (bound_byte - byte1) columns.
-    // A record whose byte0 is 0 is a deliberately blank slot (skipped,
-    // not a terminator -- scanning continues); 255 still terminates the
-    // whole list, exactly as read_terminated_records already handles.
+    // Horizontal guardian record (7 bytes): byte0 = attribute/colour
+    // (bit7 doubles as an unmodelled animation-speed flag); byte1-2 =
+    // 16-bit attribute-buffer address of the starting cell, decoded into
+    // (x, y) like items/Willy; byte3-4 unused; byte5-6 = min/max bound,
+    // compared against byte1 itself, so (bound_byte - byte1) gives the
+    // travel range in columns rather than an absolute pixel x. byte0 == 0
+    // is a blank slot (scan continues); 255 still terminates the list.
     func read_horizontal_guardians(addr) {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
@@ -297,31 +294,74 @@ func extract_one(bytes, index, out_dir) {
             }
             var g_addr = r[1] + r[2] * 256
             var g_xy = spectrum_screen.attr_addr_to_xy(g_addr, ATTR_BUFFER_BASE)
+            var min_x = g_xy["x"] + (r[5] - r[1]) * 8
+            var max_x = g_xy["x"] + (r[6] - r[1]) * 8
+            // Discard out-of-range fields rather than emit a guardian at a
+            // garbage position (see the same discard in
+            // read_vertical_guardians()).
+            if (g_xy["x"] > 255 or g_xy["y"] > 191 or min_x < 0 or max_x > 255 or min_x > max_x) {
+                continue
+            }
             var colours = spectrum_attr.decode_attribute(r[0])
             guardians.append({
                 "x": g_xy["x"], "y": g_xy["y"],
                 "ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"],
-                "min_x": g_xy["x"] + (r[5] - r[1]) * 8,
-                "max_x": g_xy["x"] + (r[6] - r[1]) * 8
+                "min_x": min_x, "max_x": max_x
             })
         }
         return guardians
     }
     var horizontal_guardians = read_horizontal_guardians(air_addr + 2)
 
-    // Vertical guardians: NOT YET CONFIRMED. The bytes following the
-    // horizontal list's terminator don't fit the same
-    // terminator-in-first-byte convention for Central Cavern (multiple
-    // all-zero 7-byte spans with no 255 in a record-aligned position,
-    // before the fixed-anchor swordfish graphic at base+736) -- rather
-    // than emit garbage, this is deliberately left empty until a cavern
-    // with real vertical guardians (e.g. Skylab Landing Bay) reveals the
-    // actual convention.
-    var vertical_guardians = []
+    // Vertical guardian record (7 bytes), in its own fixed 4-slot block
+    // starting 3 bytes after the horizontal block's terminator: byte0 =
+    // attribute/colour (255 terminates, 0 is a blank slot); byte1 = live
+    // frame counter (not extracted, the engine tracks its own); byte2 =
+    // starting pixel y; byte3 = x column (0-31, x = byte3*8); byte4-6
+    // vary by cavern -- see is_skylab below.
+    func read_vertical_guardians(addr) {
+        var result = read_terminated_records(bytes, addr, 7, 4)
+        var guardians = []
+        // Skylab Landing Bay's guardians move via a different real-game
+        // routine (fall to byte6 then hold, disintegrate over 8 frames,
+        // respawn at byte5/x+8): byte4 is a plain unsigned fall speed,
+        // and byte5/byte6 are respawn-y/crash-y rather than a min/max
+        // bounce range. Every other cavern's guardians bounce instead,
+        // with byte4 signed for initial direction and byte5<=byte6 a
+        // min/max range.
+        var is_skylab = (index == 13)
+        foreach (var r in result["records"]) {
+            if (r[0] == 0) {
+                continue
+            }
+            // Eugene's Lair's guardian uses a different, not-yet-decoded
+            // mechanic and doesn't fit this record format -- discard
+            // out-of-range fields rather than emit garbage positions/bounds.
+            if (r[3] > 31 or r[2] > 191 or r[5] > 191 or r[6] > 191 or r[5] > r[6]) {
+                continue
+            }
+            var dy = r[4]
+            if (!is_skylab and dy > 127) {
+                dy = dy - 256
+            }
+            var colours = spectrum_attr.decode_attribute(r[0])
+            var g = {
+                "x": r[3] * 8, "y": r[2],
+                "ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"],
+                "dy": dy,
+                "min_x": r[5], "max_x": r[6]
+            }
+            if (is_skylab) {
+                g["style"] = "skylab"
+            }
+            guardians.append(g)
+        }
+        return guardians
+    }
+    var vertical_guardians = read_vertical_guardians(air_addr + 33)
 
-    // Guardian animation frames: last 256 bytes of the record (high
-    // confidence -- 8 frames x 32 bytes, same shape as willy_sprites.json,
-    // and 1024-256=768 lines up with the record's own fixed end).
+    // Guardian animation frames: last 256 bytes of the record -- 8 frames
+    // x 32 bytes each, same shape as willy_sprites.json.
     var guardian_sprites = []
     var guardian_names = []
     for (var f = 0; f < 8; f = f + 1) {
