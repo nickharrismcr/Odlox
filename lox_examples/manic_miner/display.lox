@@ -138,6 +138,35 @@ class Display {
         }
     }
 
+    // Rotates a width-pixel row starting at (x, y) circularly left by
+    // `amount` positions -- e.g. Manic Miner's conveyor animation, which
+    // bit-rotates specific pixel rows of its already-drawn tile graphic
+    // in place every tick (RLC on real hardware) instead of cycling
+    // through separate animation frames. Reads/writes through plot(), so
+    // the affected pixels' resolved colour stays correct against
+    // whatever that cell's current attribute is.
+    rotate_row_left(x, y, width, amount) {
+        var old = []
+        for (var i = 0; i < width; i = i + 1) {
+            old.append(this.bitmap.get(x + i, y))
+        }
+        for (var i = 0; i < width; i = i + 1) {
+            this.plot(x + i, y, old[(i + amount) % width])
+        }
+    }
+
+    // As rotate_row_left, but rotating right (RRC on real hardware).
+    rotate_row_right(x, y, width, amount) {
+        var old = []
+        for (var i = 0; i < width; i = i + 1) {
+            old.append(this.bitmap.get(x + i, y))
+        }
+        for (var i = 0; i < width; i = i + 1) {
+            var src = ((i - amount) % width + width) % width
+            this.plot(x + i, y, old[src])
+        }
+    }
+
     get_ink(cx, cy) -> float {
         return this.attr_ink.get(cx, cy)
     }

@@ -1,182 +1,6 @@
 {
-  "name": "          The Menagerie         ",
-  "horizontal_guardians": [
-    {
-      "max_x": 179,
-      "y": 104,
-      "x": 152,
-      "bright": true,
-      "ink": 0,
-      "paper": 5,
-      "min_x": 161,
-      "y_raw": 68,
-      "unused": 7
-    },
-    {
-      "bright": true,
-      "min_x": 97,
-      "y_raw": 67,
-      "y": 24,
-      "x": 128,
-      "max_x": 112,
-      "paper": 4,
-      "ink": 0,
-      "unused": 7
-    },
-    {
-      "paper": 4,
-      "ink": 0,
-      "unused": 0,
-      "y": 24,
-      "x": 144,
-      "max_x": 125,
-      "bright": true,
-      "min_x": 114,
-      "y_raw": 66
-    }
-  ],
-  "guardian_sprite_names": [
-    "cavern2_guardian_0",
-    "cavern2_guardian_1",
-    "cavern2_guardian_2",
-    "cavern2_guardian_3",
-    "cavern2_guardian_4",
-    "cavern2_guardian_5",
-    "cavern2_guardian_6",
-    "cavern2_guardian_7"
-  ],
-  "width": 32,
-  "items": [
-    {
-      "bright": true,
-      "init_paper": 7,
-      "y": 0,
-      "x": 48,
-      "init_bright": true,
-      "paper": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 3
-    },
-    {
-      "paper": 4,
-      "ink": 0,
-      "type": 4,
-      "init_ink": 7,
-      "y": 0,
-      "x": 120,
-      "init_bright": true,
-      "bright": true,
-      "init_paper": 7
-    },
-    {
-      "init_bright": true,
-      "y": 0,
-      "x": 184,
-      "init_paper": 7,
-      "type": 5,
-      "bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0
-    },
-    {
-      "y": 48,
-      "x": 240,
-      "init_bright": true,
-      "bright": true,
-      "init_paper": 7,
-      "paper": 4,
-      "ink": 0,
-      "type": 6,
-      "init_ink": 7
-    },
-    {
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "type": 3,
-      "init_paper": 7,
-      "init_ink": 7,
-      "init_bright": true,
-      "y": 48,
-      "x": 168
-    }
-  ],
-  "tile_colours": [
-    {
-      "paper": 0,
-      "ink": 0,
-      "bright": false,
-      "name": "cavern2_tile_background"
-    },
-    {
-      "bright": true,
-      "paper": 0,
-      "ink": 5,
-      "name": "cavern2_tile_floor"
-    },
-    {
-      "name": "cavern2_tile_crumbling_floor",
-      "bright": false,
-      "paper": 0,
-      "ink": 5
-    },
-    {
-      "name": "cavern2_tile_wall",
-      "bright": false,
-      "paper": 1,
-      "ink": 5
-    },
-    {
-      "name": "cavern2_tile_conveyor",
-      "bright": false,
-      "paper": 0,
-      "ink": 2
-    },
-    {
-      "ink": 6,
-      "bright": false,
-      "name": "cavern2_tile_nasty1",
-      "paper": 0
-    },
-    {
-      "paper": 0,
-      "ink": 3,
-      "name": "cavern2_tile_nasty2",
-      "bright": true
-    },
-    {
-      "name": "cavern2_tile_extra",
-      "bright": false,
-      "paper": 0,
-      "ink": 3
-    }
-  ],
-  "air": 63,
-  "height": 16,
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern2_tile_background",
-    "cavern2_tile_floor",
-    "cavern2_tile_crumbling_floor",
-    "cavern2_tile_wall",
-    "cavern2_tile_conveyor",
-    "cavern2_tile_nasty1",
-    "cavern2_tile_nasty2",
-    "cavern2_tile_extra"
-  ],
-  "item_sprite": "cavern2_item",
-  "willy_start": {
-    "x": 16,
-    "y": 104,
-    "jump_counter": 0,
-    "frame": 0,
-    "direction": 0,
-    "y_times_2": 208,
-    "airborne": 0
-  },
   "border_colour": 2,
+  "item_sprite": "cavern2_item",
   "layout": [
     "30000000006000000070000000060003",
     "30000000000000000060000000000003",
@@ -196,18 +20,188 @@
     "31111111111111111111111111111113"
   ],
   "clock": 128,
+  "height": 16,
+  "willy_start": {
+    "airborne": 0,
+    "y": 104,
+    "direction": 0,
+    "jump_counter": 0,
+    "y_times_2": 208,
+    "x": 16,
+    "frame": 0
+  },
+  "tile_names": [
+    "cavern2_tile_background",
+    "cavern2_tile_floor",
+    "cavern2_tile_crumbling_floor",
+    "cavern2_tile_wall",
+    "cavern2_tile_conveyor",
+    "cavern2_tile_nasty1",
+    "cavern2_tile_nasty2",
+    "cavern2_tile_extra"
+  ],
+  "width": 32,
+  "conveyor": {
+    "x": 48,
+    "direction": 0,
+    "length": 6,
+    "y": 72
+  },
   "portal": {
-    "paper": 1,
-    "ink": 6,
-    "bright": false,
     "y": 88,
+    "ink": 6,
+    "paper": 1,
     "x": 232,
+    "bright": false,
     "sprite": "cavern2_portal"
   },
-  "conveyor": {
-    "length": 6,
-    "y": 72,
-    "x": 48,
-    "direction": 0
-  }
+  "air": 63,
+  "guardian_sprite_names": [
+    "cavern2_guardian_0",
+    "cavern2_guardian_1",
+    "cavern2_guardian_2",
+    "cavern2_guardian_3",
+    "cavern2_guardian_4",
+    "cavern2_guardian_5",
+    "cavern2_guardian_6",
+    "cavern2_guardian_7"
+  ],
+  "tile_colours": [
+    {
+      "ink": 0,
+      "paper": 0,
+      "name": "cavern2_tile_background",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "bright": true,
+      "name": "cavern2_tile_floor"
+    },
+    {
+      "name": "cavern2_tile_crumbling_floor",
+      "bright": false,
+      "ink": 5,
+      "paper": 0
+    },
+    {
+      "name": "cavern2_tile_wall",
+      "bright": false,
+      "paper": 1,
+      "ink": 5
+    },
+    {
+      "name": "cavern2_tile_conveyor",
+      "bright": false,
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "name": "cavern2_tile_nasty1",
+      "bright": false,
+      "paper": 0,
+      "ink": 6
+    },
+    {
+      "paper": 0,
+      "ink": 3,
+      "name": "cavern2_tile_nasty2",
+      "bright": true
+    },
+    {
+      "name": "cavern2_tile_extra",
+      "bright": false,
+      "ink": 3,
+      "paper": 0
+    }
+  ],
+  "name": "          The Menagerie         ",
+  "vertical_guardians": [],
+  "horizontal_guardians": [
+    {
+      "min_x": 8,
+      "y": 104,
+      "ink": 4,
+      "x": 152,
+      "paper": 0,
+      "bright": true,
+      "max_x": 152
+    },
+    {
+      "min_x": 8,
+      "y": 24,
+      "ink": 3,
+      "x": 128,
+      "bright": true,
+      "paper": 0,
+      "max_x": 128
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "y": 24,
+      "min_x": 144,
+      "max_x": 232,
+      "bright": true,
+      "x": 144
+    }
+  ],
+  "items": [
+    {
+      "y": 0,
+      "bright": true,
+      "x": 48,
+      "paper": 4,
+      "type": 3,
+      "ink": 0,
+      "init_ink": 7,
+      "init_paper": 7,
+      "init_bright": true
+    },
+    {
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0,
+      "init_bright": true,
+      "y": 0,
+      "bright": true,
+      "paper": 4,
+      "x": 120,
+      "type": 4
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 0,
+      "paper": 4,
+      "type": 5,
+      "init_ink": 7,
+      "x": 184,
+      "ink": 0
+    },
+    {
+      "paper": 4,
+      "type": 6,
+      "ink": 0,
+      "init_ink": 7,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 48,
+      "bright": true,
+      "x": 240
+    },
+    {
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0,
+      "init_bright": true,
+      "y": 48,
+      "bright": true,
+      "paper": 4,
+      "x": 168,
+      "type": 3
+    }
+  ]
 }

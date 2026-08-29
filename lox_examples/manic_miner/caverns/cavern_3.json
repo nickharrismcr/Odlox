@@ -1,49 +1,4 @@
 {
-  "portal": {
-    "x": 232,
-    "sprite": "cavern3_portal",
-    "paper": 1,
-    "ink": 6,
-    "bright": false,
-    "y": 8
-  },
-  "width": 32,
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern3_tile_background",
-    "cavern3_tile_floor",
-    "cavern3_tile_crumbling_floor",
-    "cavern3_tile_wall",
-    "cavern3_tile_conveyor",
-    "cavern3_tile_nasty1",
-    "cavern3_tile_nasty2",
-    "cavern3_tile_extra"
-  ],
-  "horizontal_guardians": [
-    {
-      "bright": true,
-      "min_x": 161,
-      "y_raw": 66,
-      "y": 104,
-      "x": 8,
-      "max_x": 170,
-      "paper": 5,
-      "ink": 0,
-      "unused": 0
-    },
-    {
-      "bright": true,
-      "min_x": 166,
-      "y_raw": 68,
-      "y": 104,
-      "x": 56,
-      "max_x": 175,
-      "paper": 5,
-      "ink": 0,
-      "unused": 0
-    }
-  ],
-  "border_colour": 2,
   "layout": [
     "30000006000000333333333333333333",
     "30000000000000000000000000000003",
@@ -62,17 +17,103 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "name": "   Abandoned Uranium Workings   ",
-  "willy_start": {
-    "y_times_2": 208,
-    "x": 232,
-    "y": 104,
-    "airborne": 0,
-    "direction": 1,
-    "jump_counter": 0,
-    "frame": 0
-  },
   "item_sprite": "cavern3_item",
+  "clock": 128,
+  "border_colour": 2,
+  "portal": {
+    "y": 8,
+    "sprite": "cavern3_portal",
+    "bright": false,
+    "paper": 1,
+    "x": 232,
+    "ink": 6
+  },
+  "vertical_guardians": [],
+  "horizontal_guardians": [
+    {
+      "ink": 2,
+      "paper": 0,
+      "max_x": 80,
+      "x": 8,
+      "bright": true,
+      "min_x": 8,
+      "y": 104
+    },
+    {
+      "ink": 4,
+      "paper": 0,
+      "max_x": 120,
+      "x": 56,
+      "bright": true,
+      "min_x": 48,
+      "y": 104
+    }
+  ],
+  "items": [
+    {
+      "paper": 4,
+      "init_paper": 7,
+      "ink": 0,
+      "type": 3,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 0,
+      "x": 8,
+      "bright": true
+    },
+    {
+      "x": 96,
+      "ink": 0,
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 8,
+      "paper": 4,
+      "type": 4,
+      "init_ink": 7
+    },
+    {
+      "type": 5,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 8,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
+      "paper": 4,
+      "x": 200
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 48,
+      "paper": 4,
+      "type": 6,
+      "init_ink": 7,
+      "x": 128,
+      "ink": 0
+    },
+    {
+      "init_bright": true,
+      "y": 48,
+      "init_paper": 7,
+      "type": 3,
+      "init_ink": 7,
+      "ink": 0,
+      "paper": 4,
+      "x": 240,
+      "bright": true
+    }
+  ],
+  "air": 63,
+  "height": 16,
+  "conveyor": {
+    "x": 8,
+    "direction": 1,
+    "length": 3,
+    "y": 80
+  },
   "guardian_sprite_names": [
     "cavern3_guardian_0",
     "cavern3_guardian_1",
@@ -83,120 +124,75 @@
     "cavern3_guardian_6",
     "cavern3_guardian_7"
   ],
-  "air": 63,
-  "height": 16,
-  "items": [
-    {
-      "ink": 0,
-      "init_paper": 7,
-      "bright": true,
-      "type": 3,
-      "y": 0,
-      "x": 8,
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 4
-    },
-    {
-      "init_bright": true,
-      "y": 8,
-      "x": 96,
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "type": 4,
-      "init_paper": 7,
-      "init_ink": 7
-    },
-    {
-      "type": 5,
-      "bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
-      "init_bright": true,
-      "y": 8,
-      "x": 200,
-      "init_paper": 7
-    },
-    {
-      "init_bright": true,
-      "y": 48,
-      "x": 128,
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "type": 6,
-      "init_paper": 7,
-      "init_ink": 7
-    },
-    {
-      "type": 3,
-      "y": 48,
-      "x": 240,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
-      "init_paper": 7,
-      "bright": true,
-      "init_bright": true
-    }
-  ],
-  "conveyor": {
-    "y": 80,
-    "x": 8,
-    "length": 3,
-    "direction": 1
-  },
   "tile_colours": [
     {
       "paper": 0,
       "ink": 0,
-      "bright": false,
-      "name": "cavern3_tile_background"
+      "name": "cavern3_tile_background",
+      "bright": false
     },
     {
+      "paper": 0,
       "ink": 6,
-      "bright": true,
       "name": "cavern3_tile_floor",
+      "bright": true
+    },
+    {
+      "name": "cavern3_tile_crumbling_floor",
+      "bright": false,
+      "ink": 6,
       "paper": 0
     },
     {
       "bright": false,
-      "paper": 0,
-      "ink": 6,
-      "name": "cavern3_tile_crumbling_floor"
-    },
-    {
+      "name": "cavern3_tile_wall",
       "paper": 5,
-      "ink": 1,
-      "bright": false,
-      "name": "cavern3_tile_wall"
+      "ink": 1
     },
     {
-      "paper": 0,
-      "ink": 3,
       "bright": false,
-      "name": "cavern3_tile_conveyor"
+      "paper": 0,
+      "name": "cavern3_tile_conveyor",
+      "ink": 3
     },
     {
       "paper": 0,
       "ink": 4,
-      "bright": false,
-      "name": "cavern3_tile_nasty1"
+      "name": "cavern3_tile_nasty1",
+      "bright": false
     },
     {
-      "paper": 0,
-      "ink": 5,
       "bright": false,
-      "name": "cavern3_tile_nasty2"
+      "name": "cavern3_tile_nasty2",
+      "paper": 0,
+      "ink": 5
     },
     {
-      "paper": 0,
       "ink": 0,
       "bright": false,
+      "paper": 0,
       "name": "cavern3_tile_extra"
     }
   ],
-  "clock": 128
+  "name": "   Abandoned Uranium Workings   ",
+  "willy_start": {
+    "airborne": 0,
+    "frame": 0,
+    "x": 232,
+    "jump_counter": 0,
+    "y_times_2": 208,
+    "direction": 1,
+    "y": 104
+  },
+  "tile_names": [
+    "cavern3_tile_background",
+    "cavern3_tile_floor",
+    "cavern3_tile_crumbling_floor",
+    "cavern3_tile_wall",
+    "cavern3_tile_conveyor",
+    "cavern3_tile_nasty1",
+    "cavern3_tile_nasty2",
+    "cavern3_tile_extra"
+  ],
+  "width": 32
 }

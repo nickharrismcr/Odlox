@@ -1,120 +1,4 @@
 {
-  "portal": {
-    "y": 301,
-    "x": 8,
-    "paper": 7,
-    "ink": 7,
-    "bright": true,
-    "sprite": "cavern8_portal"
-  },
-  "clock": 65,
-  "conveyor": {
-    "y": 64,
-    "x": 96,
-    "length": 8,
-    "direction": 1
-  },
-  "item_sprite": "cavern8_item",
-  "willy_start": {
-    "direction": 0,
-    "airborne": 0,
-    "y": 104,
-    "x": 8,
-    "y_times_2": 208,
-    "frame": 0,
-    "jump_counter": 0
-  },
-  "border_colour": 1,
-  "layout": [
-    "30030000000000000000000000000003",
-    "30000000000000000000000000000003",
-    "30000000000000000000000000000003",
-    "30000000000000000000000000000003",
-    "30000000000000000000000000000003",
-    "31111001110011111111001110011003",
-    "30000000000000000000000000000003",
-    "30000000000000000000000000000113",
-    "30011001110044444444000000000003",
-    "30000000000000000000001110011003",
-    "31100000000000000000000000000003",
-    "30000000000000000000000000000003",
-    "30011001110011111111001110011003",
-    "30000000000000000000000000000113",
-    "30000000000000000000000000000003",
-    "31111111111111111111111111111113"
-  ],
-  "name": "        Wacky Amoebatrons       ",
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern8_tile_background",
-    "cavern8_tile_floor",
-    "cavern8_tile_crumbling_floor",
-    "cavern8_tile_wall",
-    "cavern8_tile_conveyor",
-    "cavern8_tile_nasty1",
-    "cavern8_tile_nasty2",
-    "cavern8_tile_extra"
-  ],
-  "horizontal_guardians": [
-    {
-      "y_raw": 129,
-      "unused": 255,
-      "y": 2336,
-      "x": 8,
-      "bright": false,
-      "max_x": 1,
-      "paper": 0,
-      "ink": 1,
-      "min_x": 255
-    },
-    {
-      "paper": 6,
-      "ink": 0,
-      "unused": 72,
-      "y": 256,
-      "x": 8,
-      "max_x": 144,
-      "bright": false,
-      "min_x": 136,
-      "y_raw": 92
-    },
-    {
-      "x": -224,
-      "unused": 63,
-      "paper": 0,
-      "ink": 4,
-      "min_x": 128,
-      "y_raw": 104,
-      "max_x": 68,
-      "bright": false,
-      "y": -5240
-    },
-    {
-      "y_raw": 108,
-      "unused": 108,
-      "y": 272,
-      "x": 224,
-      "bright": false,
-      "max_x": 133,
-      "paper": 0,
-      "ink": 0,
-      "min_x": 114
-    }
-  ],
-  "items": [
-    {
-      "paper": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 3,
-      "bright": true,
-      "init_paper": 7,
-      "y": 8,
-      "x": 128,
-      "init_bright": true
-    }
-  ],
-  "height": 16,
   "air": 130,
   "guardian_sprite_names": [
     "cavern8_guardian_0",
@@ -134,47 +18,155 @@
       "bright": false
     },
     {
-      "paper": 0,
-      "ink": 6,
       "name": "cavern8_tile_floor",
-      "bright": false
+      "bright": false,
+      "ink": 6,
+      "paper": 0
     },
     {
-      "name": "cavern8_tile_crumbling_floor",
-      "bright": true,
       "paper": 0,
-      "ink": 2
+      "ink": 2,
+      "bright": true,
+      "name": "cavern8_tile_crumbling_floor"
     },
     {
       "paper": 2,
       "ink": 6,
-      "name": "cavern8_tile_wall",
-      "bright": false
+      "bright": false,
+      "name": "cavern8_tile_wall"
     },
     {
-      "paper": 0,
-      "ink": 4,
       "name": "cavern8_tile_conveyor",
-      "bright": false
+      "bright": false,
+      "ink": 4,
+      "paper": 0
     },
     {
+      "name": "cavern8_tile_nasty1",
       "bright": true,
       "paper": 0,
-      "ink": 4,
-      "name": "cavern8_tile_nasty1"
+      "ink": 4
     },
     {
-      "paper": 0,
-      "ink": 5,
       "name": "cavern8_tile_nasty2",
-      "bright": false
+      "bright": false,
+      "ink": 5,
+      "paper": 0
     },
     {
+      "ink": 0,
       "bright": false,
       "paper": 0,
-      "ink": 0,
       "name": "cavern8_tile_extra"
     }
   ],
-  "width": 32
+  "name": "        Wacky Amoebatrons       ",
+  "vertical_guardians": [],
+  "horizontal_guardians": [
+    {
+      "bright": false,
+      "min_x": 1016,
+      "ink": 1,
+      "max_x": -1016,
+      "x": 8,
+      "y": 2336,
+      "paper": 0
+    },
+    {
+      "paper": 3,
+      "ink": 4,
+      "y": 256,
+      "x": 8,
+      "max_x": 1152,
+      "min_x": 1088,
+      "bright": true
+    },
+    {
+      "max_x": 288,
+      "x": -224,
+      "min_x": 768,
+      "ink": 0,
+      "bright": true,
+      "y": -5240,
+      "paper": 5
+    },
+    {
+      "bright": true,
+      "min_x": 400,
+      "ink": 4,
+      "max_x": 552,
+      "x": 224,
+      "y": 272,
+      "paper": 5
+    }
+  ],
+  "items": [
+    {
+      "init_bright": true,
+      "y": 8,
+      "bright": true,
+      "paper": 4,
+      "x": 128,
+      "type": 3,
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0
+    }
+  ],
+  "border_colour": 1,
+  "item_sprite": "cavern8_item",
+  "layout": [
+    "30030000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "31111001110011111111001110011003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000113",
+    "30011001110044444444000000000003",
+    "30000000000000000000001110011003",
+    "31100000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30011001110011111111001110011003",
+    "30000000000000000000000000000113",
+    "30000000000000000000000000000003",
+    "31111111111111111111111111111113"
+  ],
+  "clock": 65,
+  "height": 16,
+  "willy_start": {
+    "y_times_2": 208,
+    "direction": 0,
+    "y": 104,
+    "airborne": 0,
+    "frame": 0,
+    "x": 8,
+    "jump_counter": 0
+  },
+  "tile_names": [
+    "cavern8_tile_background",
+    "cavern8_tile_floor",
+    "cavern8_tile_crumbling_floor",
+    "cavern8_tile_wall",
+    "cavern8_tile_conveyor",
+    "cavern8_tile_nasty1",
+    "cavern8_tile_nasty2",
+    "cavern8_tile_extra"
+  ],
+  "width": 32,
+  "conveyor": {
+    "length": 8,
+    "y": 64,
+    "x": 96,
+    "direction": 1
+  },
+  "portal": {
+    "ink": 7,
+    "paper": 7,
+    "bright": true,
+    "sprite": "cavern8_portal",
+    "y": 301,
+    "x": 8
+  }
 }

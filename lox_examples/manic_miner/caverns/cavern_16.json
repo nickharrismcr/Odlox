@@ -1,116 +1,6 @@
 {
-  "items": [
-    {
-      "paper": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 35,
-      "bright": true,
-      "init_paper": 7,
-      "y": 40,
-      "x": 192,
-      "init_bright": true
-    },
-    {
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
-      "init_paper": 7,
-      "bright": true,
-      "type": 36,
-      "y": 56,
-      "x": 120
-    },
-    {
-      "x": 8,
-      "init_ink": 7,
-      "paper": 5,
-      "ink": 0,
-      "type": 37,
-      "init_paper": 7,
-      "init_bright": true,
-      "bright": true,
-      "y": 72
-    },
-    {
-      "type": 38,
-      "bright": true,
-      "init_ink": 7,
-      "paper": 5,
-      "ink": 0,
-      "init_bright": true,
-      "y": 80,
-      "x": 152,
-      "init_paper": 7
-    },
-    {
-      "x": 208,
-      "init_ink": 7,
-      "paper": 5,
-      "ink": 0,
-      "type": 35,
-      "init_paper": 7,
-      "init_bright": true,
-      "bright": true,
-      "y": 88
-    }
-  ],
-  "width": 32,
-  "conveyor": {
-    "direction": 1,
-    "length": 5,
-    "y": 64,
-    "x": 112
-  },
-  "horizontal_guardians": [
-    {
-      "paper": 5,
-      "ink": 0,
-      "unused": 0,
-      "bright": true,
-      "min_x": 165,
-      "y_raw": 194,
-      "y": 104,
-      "x": 40,
-      "max_x": 168
-    },
-    {
-      "max_x": 185,
-      "y": 104,
-      "x": 96,
-      "min_x": 172,
-      "y_raw": 5,
-      "bright": true,
-      "unused": 0,
-      "paper": 5,
-      "ink": 0
-    }
-  ],
-  "item_sprite": "cavern16_item",
-  "willy_start": {
-    "airborne": 0,
-    "y_times_2": 48,
-    "frame": 3,
-    "direction": 1,
-    "jump_counter": 0,
-    "y": 24,
-    "x": 8
-  },
-  "air": 63,
-  "height": 16,
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern16_tile_background",
-    "cavern16_tile_floor",
-    "cavern16_tile_crumbling_floor",
-    "cavern16_tile_wall",
-    "cavern16_tile_conveyor",
-    "cavern16_tile_nasty1",
-    "cavern16_tile_nasty2",
-    "cavern16_tile_extra"
-  ],
   "border_colour": 2,
+  "item_sprite": "cavern16_item",
   "layout": [
     "30000000000000000000000000000333",
     "30000000000000000000000000000003",
@@ -129,58 +19,43 @@
     "30000000000000000000000000011113",
     "31111111111111111111111111111113"
   ],
-  "name": "         The Warehouse          ",
-  "tile_colours": [
-    {
-      "bright": false,
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern16_tile_background"
-    },
-    {
-      "paper": 0,
-      "ink": 4,
-      "name": "cavern16_tile_floor",
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 4,
-      "name": "cavern16_tile_crumbling_floor",
-      "bright": true
-    },
-    {
-      "name": "cavern16_tile_wall",
-      "bright": false,
-      "paper": 2,
-      "ink": 6
-    },
-    {
-      "paper": 4,
-      "ink": 0,
-      "name": "cavern16_tile_conveyor",
-      "bright": false
-    },
-    {
-      "bright": false,
-      "paper": 0,
-      "ink": 6,
-      "name": "cavern16_tile_nasty1"
-    },
-    {
-      "paper": 4,
-      "ink": 1,
-      "name": "cavern16_tile_nasty2",
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern16_tile_extra",
-      "bright": false
-    }
-  ],
   "clock": 128,
+  "height": 16,
+  "willy_start": {
+    "x": 8,
+    "direction": 1,
+    "jump_counter": 0,
+    "y_times_2": 48,
+    "airborne": 0,
+    "frame": 3,
+    "y": 24
+  },
+  "tile_names": [
+    "cavern16_tile_background",
+    "cavern16_tile_floor",
+    "cavern16_tile_crumbling_floor",
+    "cavern16_tile_wall",
+    "cavern16_tile_conveyor",
+    "cavern16_tile_nasty1",
+    "cavern16_tile_nasty2",
+    "cavern16_tile_extra"
+  ],
+  "width": 32,
+  "conveyor": {
+    "x": 112,
+    "direction": 1,
+    "length": 5,
+    "y": 64
+  },
+  "portal": {
+    "ink": 4,
+    "paper": 1,
+    "bright": true,
+    "sprite": "cavern16_portal",
+    "y": 8,
+    "x": 232
+  },
+  "air": 63,
   "guardian_sprite_names": [
     "cavern16_guardian_0",
     "cavern16_guardian_1",
@@ -191,12 +66,133 @@
     "cavern16_guardian_6",
     "cavern16_guardian_7"
   ],
-  "portal": {
-    "sprite": "cavern16_portal",
-    "y": 8,
-    "x": 232,
-    "bright": true,
-    "paper": 1,
-    "ink": 4
-  }
+  "tile_colours": [
+    {
+      "name": "cavern16_tile_background",
+      "bright": false,
+      "ink": 0,
+      "paper": 0
+    },
+    {
+      "name": "cavern16_tile_floor",
+      "bright": false,
+      "ink": 4,
+      "paper": 0
+    },
+    {
+      "name": "cavern16_tile_crumbling_floor",
+      "bright": true,
+      "ink": 4,
+      "paper": 0
+    },
+    {
+      "ink": 6,
+      "paper": 2,
+      "name": "cavern16_tile_wall",
+      "bright": false
+    },
+    {
+      "bright": false,
+      "paper": 4,
+      "name": "cavern16_tile_conveyor",
+      "ink": 0
+    },
+    {
+      "name": "cavern16_tile_nasty1",
+      "bright": false,
+      "ink": 6,
+      "paper": 0
+    },
+    {
+      "ink": 1,
+      "paper": 4,
+      "name": "cavern16_tile_nasty2",
+      "bright": false
+    },
+    {
+      "name": "cavern16_tile_extra",
+      "bright": false,
+      "paper": 0,
+      "ink": 0
+    }
+  ],
+  "name": "         The Warehouse          ",
+  "vertical_guardians": [],
+  "horizontal_guardians": [
+    {
+      "bright": true,
+      "min_x": 40,
+      "ink": 2,
+      "max_x": 64,
+      "x": 40,
+      "y": 104,
+      "paper": 0
+    },
+    {
+      "bright": false,
+      "ink": 5,
+      "y": 104,
+      "x": 96,
+      "max_x": 200,
+      "min_x": 96,
+      "paper": 0
+    }
+  ],
+  "items": [
+    {
+      "x": 192,
+      "ink": 0,
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 40,
+      "paper": 4,
+      "type": 35,
+      "init_ink": 7
+    },
+    {
+      "x": 120,
+      "ink": 0,
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 56,
+      "paper": 4,
+      "type": 36,
+      "init_ink": 7
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 72,
+      "paper": 5,
+      "type": 37,
+      "init_ink": 7,
+      "x": 8,
+      "ink": 0
+    },
+    {
+      "type": 38,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 80,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
+      "paper": 5,
+      "x": 152
+    },
+    {
+      "x": 208,
+      "ink": 0,
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
+      "y": 88,
+      "paper": 5,
+      "type": 35,
+      "init_ink": 7
+    }
+  ]
 }

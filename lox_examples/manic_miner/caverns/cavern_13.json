@@ -1,14 +1,80 @@
 {
-  "portal": {
-    "sprite": "cavern13_portal",
-    "y": 0,
+  "conveyor": {
     "x": 120,
-    "bright": false,
-    "paper": 3,
-    "ink": 6
+    "length": 6,
+    "y": 88,
+    "direction": 0
   },
-  "width": 32,
-  "vertical_guardians": [],
+  "guardian_sprite_names": [
+    "cavern13_guardian_0",
+    "cavern13_guardian_1",
+    "cavern13_guardian_2",
+    "cavern13_guardian_3",
+    "cavern13_guardian_4",
+    "cavern13_guardian_5",
+    "cavern13_guardian_6",
+    "cavern13_guardian_7"
+  ],
+  "tile_colours": [
+    {
+      "bright": false,
+      "paper": 1,
+      "name": "cavern13_tile_background",
+      "ink": 0
+    },
+    {
+      "name": "cavern13_tile_floor",
+      "bright": true,
+      "ink": 4,
+      "paper": 1
+    },
+    {
+      "name": "cavern13_tile_crumbling_floor",
+      "bright": false,
+      "ink": 2,
+      "paper": 0
+    },
+    {
+      "bright": true,
+      "name": "cavern13_tile_wall",
+      "paper": 5,
+      "ink": 0
+    },
+    {
+      "bright": true,
+      "paper": 1,
+      "name": "cavern13_tile_conveyor",
+      "ink": 3
+    },
+    {
+      "ink": 0,
+      "paper": 0,
+      "name": "cavern13_tile_nasty1",
+      "bright": false
+    },
+    {
+      "ink": 0,
+      "bright": false,
+      "paper": 0,
+      "name": "cavern13_tile_nasty2"
+    },
+    {
+      "name": "cavern13_tile_extra",
+      "bright": false,
+      "ink": 4,
+      "paper": 1
+    }
+  ],
+  "name": "       Skylab Landing Bay       ",
+  "willy_start": {
+    "direction": 0,
+    "y": 104,
+    "frame": 0,
+    "jump_counter": 0,
+    "y_times_2": 208,
+    "airborne": 0,
+    "x": 232
+  },
   "tile_names": [
     "cavern13_tile_background",
     "cavern13_tile_floor",
@@ -19,8 +85,7 @@
     "cavern13_tile_nasty2",
     "cavern13_tile_extra"
   ],
-  "horizontal_guardians": [],
-  "border_colour": 6,
+  "width": 32,
   "layout": [
     "30000000000000000000000000000003",
     "30000000000000000000000000000003",
@@ -39,141 +104,76 @@
     "30000000000000000000000000000003",
     "33333333333333333333333333333333"
   ],
-  "name": "       Skylab Landing Bay       ",
-  "willy_start": {
-    "frame": 0,
-    "y": 104,
-    "x": 232,
-    "jump_counter": 0,
-    "airborne": 0,
-    "y_times_2": 208,
-    "direction": 0
-  },
   "item_sprite": "cavern13_item",
-  "guardian_sprite_names": [
-    "cavern13_guardian_0",
-    "cavern13_guardian_1",
-    "cavern13_guardian_2",
-    "cavern13_guardian_3",
-    "cavern13_guardian_4",
-    "cavern13_guardian_5",
-    "cavern13_guardian_6",
-    "cavern13_guardian_7"
-  ],
-  "air": 63,
-  "height": 16,
+  "clock": 248,
+  "border_colour": 6,
+  "portal": {
+    "sprite": "cavern13_portal",
+    "y": 0,
+    "x": 120,
+    "ink": 6,
+    "paper": 3,
+    "bright": false
+  },
+  "vertical_guardians": [],
+  "horizontal_guardians": [],
   "items": [
     {
-      "bright": true,
+      "type": 11,
+      "init_ink": 7,
       "init_bright": true,
-      "paper": 4,
+      "y": 16,
       "ink": 0,
       "init_paper": 7,
-      "init_ink": 7,
-      "y": 16,
-      "x": 184,
-      "type": 11
+      "bright": true,
+      "paper": 4,
+      "x": 184
     },
     {
-      "y": 64,
       "x": 24,
-      "init_ink": 7,
+      "bright": true,
       "paper": 5,
+      "init_bright": true,
+      "y": 64,
       "ink": 0,
       "init_paper": 7,
-      "bright": true,
-      "init_bright": true,
-      "type": 12
+      "type": 12,
+      "init_ink": 7
     },
     {
       "x": 216,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
       "type": 13,
-      "init_paper": 7,
       "init_bright": true,
-      "bright": true,
-      "y": 56
-    },
-    {
       "y": 56,
-      "x": 128,
       "init_ink": 7,
       "paper": 4,
-      "ink": 0,
       "init_paper": 7,
       "bright": true,
-      "init_bright": true,
-      "type": 14
+      "ink": 0
     },
     {
+      "x": 128,
+      "bright": true,
+      "paper": 4,
+      "init_bright": true,
+      "y": 56,
+      "ink": 0,
+      "init_paper": 7,
+      "type": 14,
+      "init_ink": 7
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "init_bright": true,
       "y": 10488,
-      "x": 248,
-      "init_ink": 7,
       "paper": 7,
-      "ink": 7,
-      "init_paper": 7,
-      "bright": true,
-      "init_bright": true,
-      "type": 0
+      "type": 0,
+      "init_ink": 7,
+      "x": 248,
+      "ink": 7
     }
   ],
-  "conveyor": {
-    "length": 6,
-    "direction": 0,
-    "y": 88,
-    "x": 120
-  },
-  "tile_colours": [
-    {
-      "bright": false,
-      "paper": 1,
-      "ink": 0,
-      "name": "cavern13_tile_background"
-    },
-    {
-      "paper": 1,
-      "ink": 4,
-      "name": "cavern13_tile_floor",
-      "bright": true
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "bright": false,
-      "name": "cavern13_tile_crumbling_floor"
-    },
-    {
-      "paper": 5,
-      "ink": 0,
-      "name": "cavern13_tile_wall",
-      "bright": true
-    },
-    {
-      "paper": 1,
-      "ink": 3,
-      "name": "cavern13_tile_conveyor",
-      "bright": true
-    },
-    {
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern13_tile_nasty1",
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern13_tile_nasty2",
-      "bright": false
-    },
-    {
-      "ink": 4,
-      "bright": false,
-      "name": "cavern13_tile_extra",
-      "paper": 1
-    }
-  ],
-  "clock": 248
+  "air": 63,
+  "height": 16
 }

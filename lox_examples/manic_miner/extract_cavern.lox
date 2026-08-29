@@ -268,30 +268,46 @@ func extract_one(bytes, index, out_dir) {
     var air = sna.read_u8(bytes, air_addr)
     var clock = sna.read_u8(bytes, air_addr + 1)
 
-    // Horizontal guardians: confirmed byte-exact (the one real guardian's
-    // y/addr/colour/min_x/max_x all matched known values) once placed
-    // right after clock.
-    func read_guardians(addr) {
+    // Horizontal guardians: record layout confirmed against the real
+    // disassembly (routines at 36111/37125's neighbourhood), not just
+    // the earlier best-effort guess:
+    //   byte0: attribute/colour byte (decode normally for ink/paper/
+    //     bright) -- bit7 (FLASH, unused by this project otherwise) is
+    //     repurposed as an animation-speed flag (0 normal, 1 slow), not
+    //     modelled yet.
+    //   byte1-2: 16-bit address of the guardian's starting cell in the
+    //     attribute buffer -- decodes to its initial (x, y) exactly like
+    //     items/Willy.
+    //   byte3-4: unconfirmed (not referenced by the movement routine we
+    //     have) -- not extracted.
+    //   byte5, byte6: NOT absolute x bounds -- they're compared directly
+    //     against byte1 (the address's own low byte, which the real
+    //     routine increments/decrements to move the guardian one column
+    //     at a time). The real bound in pixels is the guardian's own
+    //     starting x plus (bound_byte - byte1) columns.
+    // A record whose byte0 is 0 is a deliberately blank slot (skipped,
+    // not a terminator -- scanning continues); 255 still terminates the
+    // whole list, exactly as read_terminated_records already handles.
+    func read_horizontal_guardians(addr) {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
         foreach (var r in result["records"]) {
+            if (r[0] == 0) {
+                continue
+            }
             var g_addr = r[1] + r[2] * 256
             var g_xy = spectrum_screen.attr_addr_to_xy(g_addr, ATTR_BUFFER_BASE)
-            // colour is a raw attribute byte, same encoding as a tile's
-            // own "attr" -- decode it, don't keep the raw byte.
-            var colours = spectrum_attr.decode_attribute(r[3])
+            var colours = spectrum_attr.decode_attribute(r[0])
             guardians.append({
-                "y_raw": r[0],
                 "x": g_xy["x"], "y": g_xy["y"],
                 "ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"],
-                "unused": r[4],
-                "min_x": r[5],
-                "max_x": r[6]
+                "min_x": g_xy["x"] + (r[5] - r[1]) * 8,
+                "max_x": g_xy["x"] + (r[6] - r[1]) * 8
             })
         }
         return guardians
     }
-    var horizontal_guardians = read_guardians(air_addr + 2)
+    var horizontal_guardians = read_horizontal_guardians(air_addr + 2)
 
     // Vertical guardians: NOT YET CONFIRMED. The bytes following the
     // horizontal list's terminator don't fit the same

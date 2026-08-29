@@ -1,5 +1,7 @@
 [
   {
+    "name": "cavern18_tile_background",
+    "data_type": "pixel",
     "data": [
       "........",
       "........",
@@ -9,11 +11,10 @@
       "........",
       "........",
       "........"
-    ],
-    "data_type": "pixel",
-    "name": "cavern18_tile_background"
+    ]
   },
   {
+    "name": "cavern18_tile_floor",
     "data": [
       "########",
       "########",
@@ -24,11 +25,9 @@
       "........",
       "........"
     ],
-    "name": "cavern18_tile_floor",
     "data_type": "pixel"
   },
   {
-    "name": "cavern18_tile_crumbling_floor",
     "data": [
       "########",
       "##.##.##",
@@ -39,9 +38,12 @@
       "....#...",
       "........"
     ],
+    "name": "cavern18_tile_crumbling_floor",
     "data_type": "pixel"
   },
   {
+    "name": "cavern18_tile_wall",
+    "data_type": "pixel",
     "data": [
       "..#...#.",
       "########",
@@ -51,9 +53,7 @@
       "########",
       "#...#...",
       "########"
-    ],
-    "data_type": "pixel",
-    "name": "cavern18_tile_wall"
+    ]
   },
   {
     "name": "cavern18_tile_conveyor",
@@ -70,6 +70,7 @@
     ]
   },
   {
+    "data_type": "pixel",
     "data": [
       ".#...#..",
       "..#.#...",
@@ -80,11 +81,11 @@
       ".#.##...",
       "...#...."
     ],
-    "name": "cavern18_tile_nasty1",
-    "data_type": "pixel"
+    "name": "cavern18_tile_nasty1"
   },
   {
     "name": "cavern18_tile_nasty2",
+    "data_type": "pixel",
     "data": [
       ".######.",
       "..####..",
@@ -94,10 +95,10 @@
       "....#...",
       "....#...",
       "....#..."
-    ],
-    "data_type": "pixel"
+    ]
   },
   {
+    "data_type": "pixel",
     "data": [
       "........",
       "........",
@@ -108,7 +109,6 @@
       "........",
       "........"
     ],
-    "data_type": "pixel",
     "name": "cavern18_tile_extra"
   },
   {
@@ -151,7 +151,6 @@
   },
   {
     "data_type": "pixel",
-    "name": "cavern18_item",
     "data": [
       "#.######",
       "######.#",
@@ -161,11 +160,11 @@
       "########",
       "..#....#",
       ".#.###.."
-    ]
+    ],
+    "name": "cavern18_item"
   },
   {
     "name": "cavern18_guardian_0",
-    "data_type": "pixel",
     "data": [
       "......##.#......",
       "....####.###....",
@@ -183,9 +182,12 @@
       "..##........##..",
       "....##....##....",
       "......#.##......"
-    ]
+    ],
+    "data_type": "pixel"
   },
   {
+    "name": "cavern18_guardian_1",
+    "data_type": "pixel",
     "data": [
       "......####......",
       "....########....",
@@ -203,11 +205,10 @@
       "..##........##..",
       "....##....##....",
       "......####......"
-    ],
-    "data_type": "pixel",
-    "name": "cavern18_guardian_1"
+    ]
   },
   {
+    "name": "cavern18_guardian_2",
     "data": [
       "......####......",
       "....########....",
@@ -226,12 +227,10 @@
       "....##....##....",
       "......####......"
     ],
-    "name": "cavern18_guardian_2",
     "data_type": "pixel"
   },
   {
     "data_type": "pixel",
-    "name": "cavern18_guardian_3",
     "data": [
       "......####......",
       "....#.######....",
@@ -249,10 +248,10 @@
       "..##........##..",
       "....##.....#....",
       "......####......"
-    ]
+    ],
+    "name": "cavern18_guardian_3"
   },
   {
-    "data_type": "pixel",
     "data": [
       ".....##.........",
       "....##..........",
@@ -271,7 +270,8 @@
       "##.#.#.#.#......",
       "....#...#......."
     ],
-    "name": "cavern18_guardian_4"
+    "name": "cavern18_guardian_4",
+    "data_type": "pixel"
   },
   {
     "name": "cavern18_guardian_5",
@@ -296,8 +296,8 @@
     "data_type": "pixel"
   },
   {
-    "data_type": "pixel",
     "name": "cavern18_guardian_6",
+    "data_type": "pixel",
     "data": [
       ".........##.....",
       "........##......",
@@ -318,7 +318,6 @@
     ]
   },
   {
-    "name": "cavern18_guardian_7",
     "data_type": "pixel",
     "data": [
       "...........##...",
@@ -337,6 +336,7 @@
       ".....##...#...#.",
       ".....##..#.#.#.#",
       "..........#...#."
-    ]
+    ],
+    "name": "cavern18_guardian_7"
   }
 ]

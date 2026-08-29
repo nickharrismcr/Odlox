@@ -1,15 +1,12 @@
 {
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern17_tile_background",
-    "cavern17_tile_floor",
-    "cavern17_tile_crumbling_floor",
-    "cavern17_tile_wall",
-    "cavern17_tile_conveyor",
-    "cavern17_tile_nasty1",
-    "cavern17_tile_nasty2",
-    "cavern17_tile_extra"
-  ],
+  "portal": {
+    "y": -82,
+    "ink": 7,
+    "paper": 7,
+    "x": -176,
+    "bright": true,
+    "sprite": "cavern17_portal"
+  },
   "guardian_sprite_names": [
     "cavern17_guardian_0",
     "cavern17_guardian_1",
@@ -20,63 +17,36 @@
     "cavern17_guardian_6",
     "cavern17_guardian_7"
   ],
-  "conveyor": {
-    "direction": 1,
-    "length": 3,
-    "y": 72,
-    "x": 56
-  },
-  "portal": {
-    "x": -176,
-    "sprite": "cavern17_portal",
-    "paper": 7,
-    "ink": 7,
-    "bright": true,
-    "y": -82
-  },
-  "items": [
-    {
-      "paper": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 3,
-      "bright": true,
-      "init_paper": 7,
-      "y": 8,
-      "x": 128,
-      "init_bright": true
-    }
-  ],
   "tile_colours": [
     {
-      "paper": 0,
-      "ink": 0,
       "name": "cavern17_tile_background",
-      "bright": false
+      "bright": false,
+      "ink": 0,
+      "paper": 0
     },
     {
-      "name": "cavern17_tile_floor",
-      "bright": true,
+      "ink": 2,
       "paper": 0,
-      "ink": 2
+      "name": "cavern17_tile_floor",
+      "bright": true
     },
     {
       "ink": 2,
       "bright": false,
-      "name": "cavern17_tile_crumbling_floor",
-      "paper": 0
+      "paper": 0,
+      "name": "cavern17_tile_crumbling_floor"
     },
     {
+      "bright": false,
       "paper": 2,
-      "ink": 6,
       "name": "cavern17_tile_wall",
-      "bright": false
+      "ink": 6
     },
     {
-      "ink": 4,
       "bright": false,
       "name": "cavern17_tile_conveyor",
-      "paper": 0
+      "paper": 0,
+      "ink": 4
     },
     {
       "paper": 0,
@@ -85,33 +55,20 @@
       "bright": true
     },
     {
-      "bright": false,
-      "paper": 0,
       "ink": 5,
-      "name": "cavern17_tile_nasty2"
+      "paper": 0,
+      "name": "cavern17_tile_nasty2",
+      "bright": false
     },
     {
-      "name": "cavern17_tile_extra",
-      "bright": false,
       "paper": 0,
-      "ink": 0
+      "ink": 0,
+      "bright": false,
+      "name": "cavern17_tile_extra"
     }
   ],
-  "clock": 5,
-  "item_sprite": "cavern17_item",
-  "willy_start": {
-    "frame": 3,
-    "x": 232,
-    "y": 104,
-    "jump_counter": 0,
-    "airborne": 0,
-    "y_times_2": 208,
-    "direction": 1
-  },
   "air": 160,
-  "height": 16,
-  "width": 32,
-  "border_colour": 1,
+  "item_sprite": "cavern17_item",
   "layout": [
     "30000000000000000000000000003003",
     "30000000000000000000000000000003",
@@ -130,51 +87,86 @@
     "30000000000000000000000000000003",
     "11111111111111111111111111111111"
   ],
-  "name": "      Amoebatrons' Revenge      ",
+  "tile_names": [
+    "cavern17_tile_background",
+    "cavern17_tile_floor",
+    "cavern17_tile_crumbling_floor",
+    "cavern17_tile_wall",
+    "cavern17_tile_conveyor",
+    "cavern17_tile_nasty1",
+    "cavern17_tile_nasty2",
+    "cavern17_tile_extra"
+  ],
+  "willy_start": {
+    "frame": 3,
+    "airborne": 0,
+    "jump_counter": 0,
+    "y_times_2": 208,
+    "direction": 1,
+    "x": 232,
+    "y": 104
+  },
+  "width": 32,
+  "vertical_guardians": [],
   "horizontal_guardians": [
-    {
-      "paper": 0,
-      "ink": 1,
-      "unused": 255,
-      "y": 2304,
-      "x": 104,
-      "max_x": 29,
-      "bright": false,
-      "min_x": 255,
-      "y_raw": 176
-    },
     {
       "paper": 6,
       "ink": 0,
-      "unused": 72,
+      "y": 2304,
+      "min_x": 2040,
+      "max_x": 232,
       "bright": false,
-      "min_x": 136,
-      "y_raw": 92,
-      "y": 256,
+      "x": 104
+    },
+    {
+      "ink": 4,
+      "paper": 3,
+      "max_x": 1152,
       "x": 232,
-      "max_x": 144
+      "bright": true,
+      "min_x": 1088,
+      "y": 256
     },
     {
-      "min_x": 128,
-      "y_raw": 104,
-      "max_x": 196,
-      "bright": false,
       "y": -5240,
+      "min_x": 768,
+      "bright": true,
+      "paper": 5,
       "x": -224,
-      "unused": 63,
-      "paper": 0,
-      "ink": 4
+      "max_x": 1312,
+      "ink": 0
     },
     {
-      "y_raw": 108,
-      "bright": false,
-      "unused": 108,
-      "paper": 0,
-      "ink": 0,
-      "max_x": 133,
+      "max_x": 552,
       "y": 272,
-      "x": 224,
-      "min_x": 114
+      "ink": 4,
+      "bright": true,
+      "paper": 5,
+      "min_x": 400,
+      "x": 224
     }
-  ]
+  ],
+  "name": "      Amoebatrons' Revenge      ",
+  "items": [
+    {
+      "init_bright": true,
+      "y": 8,
+      "init_paper": 7,
+      "type": 3,
+      "init_ink": 7,
+      "ink": 0,
+      "paper": 4,
+      "x": 128,
+      "bright": true
+    }
+  ],
+  "clock": 5,
+  "height": 16,
+  "border_colour": 1,
+  "conveyor": {
+    "length": 3,
+    "y": 72,
+    "direction": 1,
+    "x": 56
+  }
 }

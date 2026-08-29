@@ -8,8 +8,9 @@ import sys
 //
 // @file test_cavern_display.lox
 // @brief Renders one extracted cavern (real tile graphics/colours, not
-// ASCII) via Display + Cavern.draw(), plus its items twinkling via
-// Cavern.draw_items(). ESC quits.
+// ASCII) via Display + Cavern.draw(), plus its items twinkling
+// (draw_items()), its conveyor animating (animate_conveyor()), and its
+// guardians patrolling (update_guardians()/draw_guardians()). ESC quits.
 //
 // Usage: odlox.exe test_cavern_display.lox [cavern_index]
 //
@@ -43,6 +44,9 @@ while (!win.should_close()) {
     }
 
     c.draw_items(disp, lib, tick)
+    c.animate_conveyor(disp)
+    c.update_guardians()
+    c.draw_guardians(disp, lib)
     tick = tick + 1
     disp.upload()
 

@@ -1,5 +1,74 @@
 {
-  "border_colour": 2,
+  "portal": {
+    "sprite": "cavern15_portal",
+    "y": 1255,
+    "x": 8,
+    "ink": 2,
+    "paper": 7,
+    "bright": false
+  },
+  "guardian_sprite_names": [
+    "cavern15_guardian_0",
+    "cavern15_guardian_1",
+    "cavern15_guardian_2",
+    "cavern15_guardian_3",
+    "cavern15_guardian_4",
+    "cavern15_guardian_5",
+    "cavern15_guardian_6",
+    "cavern15_guardian_7"
+  ],
+  "tile_colours": [
+    {
+      "bright": false,
+      "paper": 0,
+      "name": "cavern15_tile_background",
+      "ink": 0
+    },
+    {
+      "name": "cavern15_tile_floor",
+      "bright": true,
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "name": "cavern15_tile_crumbling_floor",
+      "bright": false
+    },
+    {
+      "bright": true,
+      "paper": 4,
+      "name": "cavern15_tile_wall",
+      "ink": 5
+    },
+    {
+      "name": "cavern15_tile_conveyor",
+      "bright": true,
+      "ink": 6,
+      "paper": 0
+    },
+    {
+      "name": "cavern15_tile_nasty1",
+      "bright": false,
+      "paper": 0,
+      "ink": 4
+    },
+    {
+      "name": "cavern15_tile_nasty2",
+      "bright": false,
+      "ink": 5,
+      "paper": 0
+    },
+    {
+      "bright": false,
+      "name": "cavern15_tile_extra",
+      "paper": 0,
+      "ink": 6
+    }
+  ],
+  "air": 39,
+  "item_sprite": "cavern15_item",
   "layout": [
     "30000000000000000000000000000003",
     "30000000000000000000000000000003",
@@ -18,132 +87,6 @@
     "30000000000000000000000555000003",
     "31111111111111111111111111111113"
   ],
-  "name": "      The Sixteenth Cavern      ",
-  "air": 39,
-  "height": 16,
-  "item_sprite": "cavern15_item",
-  "willy_start": {
-    "jump_counter": 0,
-    "frame": 0,
-    "y": 104,
-    "x": 16,
-    "y_times_2": 208,
-    "direction": 0,
-    "airborne": 0
-  },
-  "portal": {
-    "bright": false,
-    "sprite": "cavern15_portal",
-    "y": 1255,
-    "x": 8,
-    "paper": 7,
-    "ink": 2
-  },
-  "horizontal_guardians": [
-    {
-      "y_raw": 156,
-      "bright": false,
-      "unused": 248,
-      "paper": 7,
-      "ink": 7,
-      "max_x": 169,
-      "y": 9504,
-      "x": 128,
-      "min_x": 68
-    },
-    {
-      "bright": false,
-      "max_x": 65,
-      "paper": 4,
-      "ink": 1,
-      "min_x": 6,
-      "y_raw": 93,
-      "unused": 178,
-      "y": -5856,
-      "x": -192
-    },
-    {
-      "y_raw": 93,
-      "bright": true,
-      "unused": 71,
-      "paper": 0,
-      "ink": 1,
-      "max_x": 242,
-      "y": -5856,
-      "x": -192,
-      "min_x": 67
-    },
-    {
-      "max_x": 186,
-      "unused": 247,
-      "paper": 6,
-      "ink": 2,
-      "min_x": 133,
-      "y_raw": 92,
-      "bright": true,
-      "y": -5864,
-      "x": 0
-    }
-  ],
-  "clock": 244,
-  "items": [
-    {
-      "bright": true,
-      "init_bright": true,
-      "paper": 4,
-      "ink": 0,
-      "init_paper": 7,
-      "init_ink": 7,
-      "y": 16,
-      "x": 240,
-      "type": 3
-    },
-    {
-      "init_bright": true,
-      "y": 56,
-      "x": 104,
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "type": 4,
-      "init_paper": 7,
-      "init_ink": 7
-    },
-    {
-      "type": 5,
-      "bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
-      "init_bright": true,
-      "y": 0,
-      "x": 8,
-      "init_paper": 7
-    },
-    {
-      "paper": 5,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 6,
-      "bright": true,
-      "init_paper": 7,
-      "y": 80,
-      "x": 136,
-      "init_bright": true
-    }
-  ],
-  "width": 32,
-  "guardian_sprite_names": [
-    "cavern15_guardian_0",
-    "cavern15_guardian_1",
-    "cavern15_guardian_2",
-    "cavern15_guardian_3",
-    "cavern15_guardian_4",
-    "cavern15_guardian_5",
-    "cavern15_guardian_6",
-    "cavern15_guardian_7"
-  ],
-  "vertical_guardians": [],
   "tile_names": [
     "cavern15_tile_background",
     "cavern15_tile_floor",
@@ -154,60 +97,109 @@
     "cavern15_tile_nasty2",
     "cavern15_tile_extra"
   ],
-  "tile_colours": [
+  "willy_start": {
+    "frame": 0,
+    "y": 104,
+    "direction": 0,
+    "x": 16,
+    "airborne": 0,
+    "jump_counter": 0,
+    "y_times_2": 208
+  },
+  "width": 32,
+  "vertical_guardians": [],
+  "horizontal_guardians": [
     {
-      "name": "cavern15_tile_background",
+      "y": 9504,
+      "ink": 4,
+      "paper": 3,
+      "max_x": 328,
+      "x": 128,
       "bright": false,
-      "paper": 0,
-      "ink": 0
+      "min_x": -480
     },
     {
-      "paper": 0,
-      "ink": 2,
-      "name": "cavern15_tile_floor",
-      "bright": true
+      "ink": 5,
+      "y": -5856,
+      "min_x": -976,
+      "bright": true,
+      "paper": 3,
+      "x": -192,
+      "max_x": -504
     },
     {
-      "paper": 0,
-      "ink": 2,
-      "name": "cavern15_tile_crumbling_floor",
-      "bright": false
+      "x": -192,
+      "bright": true,
+      "paper": 3,
+      "max_x": 912,
+      "min_x": -488,
+      "y": -5856,
+      "ink": 5
+    },
+    {
+      "ink": 4,
+      "paper": 3,
+      "max_x": 720,
+      "x": 0,
+      "bright": true,
+      "min_x": 296,
+      "y": -5864
+    }
+  ],
+  "name": "      The Sixteenth Cavern      ",
+  "items": [
+    {
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0,
+      "init_bright": true,
+      "y": 16,
+      "bright": true,
+      "paper": 4,
+      "x": 240,
+      "type": 3
     },
     {
       "paper": 4,
-      "ink": 5,
-      "name": "cavern15_tile_wall",
+      "init_paper": 7,
+      "ink": 0,
+      "type": 4,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 56,
+      "x": 104,
       "bright": true
     },
     {
-      "name": "cavern15_tile_conveyor",
+      "ink": 0,
+      "init_paper": 7,
       "bright": true,
-      "paper": 0,
-      "ink": 6
+      "paper": 4,
+      "x": 8,
+      "type": 5,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 0
     },
     {
-      "paper": 0,
-      "ink": 4,
-      "name": "cavern15_tile_nasty1",
-      "bright": false
-    },
-    {
-      "bright": false,
-      "paper": 0,
-      "ink": 5,
-      "name": "cavern15_tile_nasty2"
-    },
-    {
-      "paper": 0,
-      "ink": 6,
-      "name": "cavern15_tile_extra",
-      "bright": false
+      "x": 136,
+      "bright": true,
+      "paper": 5,
+      "init_paper": 7,
+      "ink": 0,
+      "type": 6,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 80
     }
   ],
+  "clock": 244,
+  "height": 16,
+  "border_colour": 2,
   "conveyor": {
     "length": 24,
-    "direction": 0,
     "y": 72,
-    "x": 24
+    "x": 24,
+    "direction": 0
   }
 }

@@ -1,14 +1,17 @@
 import json
 import spectrum_attr
+import game_sprite
 
 //
 // @file cavern.lox
 // @brief Holds one Manic Miner cavern's layout and metadata, as produced
 // by extract_cavern.lox. Graphics are never owned here -- layout cells,
-// item_sprite, portal.sprite, and guardian_sprite_names are all asset
-// name *pointers*, resolved through a SpriteAssets instance (draw()
-// takes one). Guardian/item/portal gameplay behavior isn't implemented
-// here yet -- only the static tile layout draws so far.
+// item_sprite, and portal.sprite are all asset name *pointers*, resolved
+// through a SpriteAssets instance (every draw method takes one).
+// Guardians are the exception: load_from_dict() builds a real
+// game_sprite.Sprite per guardian (guardian_sprites), driven by
+// update_guardians()/draw_guardians(). Portal gameplay (collision,
+// opening once all items are collected) isn't implemented yet.
 //
 // Same __init__-defaults + load_from_dict(d) convention as
 // game_sprite.Sprite, plus load(path) to read straight from a JSON file.
@@ -20,6 +23,56 @@ import spectrum_attr
 // the actual "twinkle," not an alternation between the extracted
 // colour/init_colour bytes (see draw_items()).
 const ITEM_INK_CYCLE = [3, 4, 5, 6]
+
+// Per the disassembly (routine at 37125), the conveyor doesn't cycle
+// through separate frames either: each tick it bit-rotates pixel row 0
+// of every belt tile by this many positions one way, and pixel row 2 the
+// other way (rows 1 and 3-7 are never touched) -- see animate_conveyor().
+const CONVEYOR_ROTATE = 2
+
+// Guardian movement/animation parameters aren't part of the extracted
+// per-guardian data (the 7-byte record has no speed/frame-rate byte) --
+// these match the block-movement convention already established and
+// tested for Willy (game_sprite.lox): a full 4-frame cycle per 8px jump,
+// one animation tick per game tick.
+const GUARDIAN_FRAMES = 4
+const GUARDIAN_MOVEMENT_SPEED = 8
+const GUARDIAN_ANIMATION_SPEED = 1
+
+// Builds a game_sprite.Sprite for one guardian record. g's min_x/max_x
+// are reused as the bound pair for whichever axis movement_type is --
+// for "vertical" that means (unverified, since no cavern's
+// vertical_guardians has real data yet) they'd be read as a min/max y
+// range instead.
+func make_guardian_sprite(g, movement_type, image_list) {
+    var ink = spectrum_attr.colour_to_rgba(g["ink"], g["bright"])
+    var paper = spectrum_attr.colour_to_rgba(g["paper"], g["bright"])
+    var start_x = g["x"]
+    var end_x = g["x"]
+    var start_y = g["y"]
+    var end_y = g["y"]
+    if (movement_type == "horizontal") {
+        start_x = g["min_x"]
+        end_x = g["max_x"]
+    } else {
+        start_y = g["min_x"]
+        end_y = g["max_x"]
+    }
+    var spr = game_sprite.Sprite()
+    spr.load_from_dict({
+        "type": "moving",
+        "frames": GUARDIAN_FRAMES,
+        "movement_type": movement_type,
+        "movement_speed": GUARDIAN_MOVEMENT_SPEED,
+        "animation_speed": GUARDIAN_ANIMATION_SPEED,
+        "step_movement": true,
+        "image_list": image_list,
+        "start_x": start_x, "start_y": start_y,
+        "end_x": end_x, "end_y": end_y,
+        "colour": ink, "paper": paper
+    })
+    return spr
+}
 
 class Cavern {
     __init__() {
@@ -37,9 +90,10 @@ class Cavern {
         this.portal = {}              // {ink, paper, bright, x, y, sprite}
         this.air = 0
         this.clock = 0
-        this.horizontal_guardians = []   // list of {y_raw, x, y, ink, paper, bright, unused, min_x, max_x}
+        this.horizontal_guardians = []   // list of {x, y, ink, paper, bright, min_x, max_x} -- min_x/max_x already in pixels
         this.vertical_guardians = []
         this.guardian_sprite_names = []   // 8 asset-name pointers (right_0..3, left_0..3)
+        this.guardian_sprites = []        // game_sprite.Sprite instances, built from the above by load_from_dict
     }
 
     // Sets every named field present in `d` (anything absent keeps its
@@ -62,6 +116,14 @@ class Cavern {
         this.horizontal_guardians = d.get("horizontal_guardians", this.horizontal_guardians)
         this.vertical_guardians = d.get("vertical_guardians", this.vertical_guardians)
         this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
+
+        this.guardian_sprites = []
+        foreach (var g in this.horizontal_guardians) {
+            this.guardian_sprites.append(make_guardian_sprite(g, "horizontal", this.guardian_sprite_names))
+        }
+        foreach (var g in this.vertical_guardians) {
+            this.guardian_sprites.append(make_guardian_sprite(g, "vertical", this.guardian_sprite_names))
+        }
     }
 
     // Reads a cavern JSON file (as written by extract_cavern.lox).
@@ -127,6 +189,51 @@ class Cavern {
             var ink = spectrum_attr.colour_to_rgba(ink_value, tile["bright"])
             var paper = spectrum_attr.colour_to_rgba(tile["paper"], tile["bright"])
             disp.blit_sprite(img, item["x"], item["y"], ink, paper)
+        }
+    }
+
+    // Animates the conveyor belt by directly bit-rotating pixel rows 0
+    // and 2 of every belt tile already on the display, per the
+    // disassembly (routine at 37125) -- no separate animation frames are
+    // involved, so this needs no frame/tick state of its own, just the
+    // display's own persistent bitmap to rotate in place. direction 0
+    // ("moving left") rotates row 0 left and row 2 right; any other
+    // value ("moving right") does the opposite. this.conveyor must have
+    // already been drawn (its tiles blitted via the normal tile layout)
+    // before this runs, and does nothing if length is 0 (no conveyor).
+    animate_conveyor(disp) {
+        var length = this.conveyor.get("length", 0)
+        if (length <= 0) {
+            return
+        }
+        var left_row = 0
+        var right_row = 2
+        if (this.conveyor["direction"] != 0) {
+            left_row = 2
+            right_row = 0
+        }
+        var x0 = this.conveyor["x"]
+        var y0 = this.conveyor["y"]
+        for (var t = 0; t < length; t = t + 1) {
+            var x = x0 + t * 8
+            disp.rotate_row_left(x, y0 + left_row, 8, CONVEYOR_ROTATE)
+            disp.rotate_row_right(x, y0 + right_row, 8, CONVEYOR_ROTATE)
+        }
+    }
+
+    // Advances every guardian's animation/position by one tick. Call
+    // once per game tick, before draw_guardians().
+    update_guardians() {
+        foreach (var g in this.guardian_sprites) {
+            g.update()
+        }
+    }
+
+    // Draws every guardian at its current position -- each Sprite
+    // handles its own erase-before-redraw (see game_sprite.lox).
+    draw_guardians(disp, lib) {
+        foreach (var g in this.guardian_sprites) {
+            g.draw(disp, lib)
         }
     }
 }

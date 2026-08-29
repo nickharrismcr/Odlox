@@ -1,127 +1,6 @@
 {
-  "items": [
-    {
-      "type": 3,
-      "y": 0,
-      "x": 192,
-      "init_ink": 7,
-      "paper": 4,
-      "ink": 0,
-      "init_paper": 7,
-      "bright": true,
-      "init_bright": true
-    },
-    {
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "type": 4,
-      "init_paper": 7,
-      "init_ink": 7,
-      "init_bright": true,
-      "y": 8,
-      "x": 240
-    },
-    {
-      "y": 32,
-      "x": 8,
-      "init_bright": true,
-      "bright": true,
-      "init_paper": 7,
-      "paper": 4,
-      "ink": 0,
-      "type": 5,
-      "init_ink": 7
-    },
-    {
-      "bright": true,
-      "init_paper": 7,
-      "y": 48,
-      "x": 152,
-      "init_bright": true,
-      "paper": 4,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 6
-    },
-    {
-      "paper": 5,
-      "ink": 0,
-      "init_ink": 7,
-      "type": 3,
-      "bright": true,
-      "init_paper": 7,
-      "y": 104,
-      "x": 240,
-      "init_bright": true
-    }
-  ],
-  "width": 32,
-  "conveyor": {
-    "y": 64,
-    "x": 40,
-    "length": 2,
-    "direction": 0
-  },
-  "horizontal_guardians": [
-    {
-      "max_x": 120,
-      "y": 24,
-      "x": 120,
-      "bright": true,
-      "ink": 0,
-      "paper": 4,
-      "min_x": 111,
-      "y_raw": 70,
-      "unused": 0
-    },
-    {
-      "x": 112,
-      "unused": 0,
-      "paper": 4,
-      "ink": 0,
-      "min_x": 238,
-      "y_raw": 196,
-      "max_x": 242,
-      "bright": true,
-      "y": 56
-    },
-    {
-      "y": 104,
-      "x": 120,
-      "max_x": 179,
-      "bright": true,
-      "min_x": 165,
-      "y_raw": 66,
-      "paper": 5,
-      "ink": 0,
-      "unused": 7
-    }
-  ],
-  "item_sprite": "cavern10_item",
-  "willy_start": {
-    "airborne": 0,
-    "jump_counter": 0,
-    "y": 8,
-    "x": 24,
-    "direction": 0,
-    "frame": 0,
-    "y_times_2": 16
-  },
-  "air": 63,
-  "height": 16,
-  "vertical_guardians": [],
-  "tile_names": [
-    "cavern10_tile_background",
-    "cavern10_tile_floor",
-    "cavern10_tile_crumbling_floor",
-    "cavern10_tile_wall",
-    "cavern10_tile_conveyor",
-    "cavern10_tile_nasty1",
-    "cavern10_tile_nasty2",
-    "cavern10_tile_extra"
-  ],
   "border_colour": 2,
+  "item_sprite": "cavern10_item",
   "layout": [
     "33333330000000000006000000000003",
     "30000000000000000005000000000003",
@@ -140,58 +19,43 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "name": "Attack of the Mutant Telephones ",
-  "tile_colours": [
-    {
-      "ink": 0,
-      "bright": false,
-      "name": "cavern10_tile_background",
-      "paper": 0
-    },
-    {
-      "paper": 0,
-      "ink": 1,
-      "name": "cavern10_tile_floor",
-      "bright": true
-    },
-    {
-      "ink": 1,
-      "bright": false,
-      "name": "cavern10_tile_crumbling_floor",
-      "paper": 0
-    },
-    {
-      "paper": 1,
-      "ink": 6,
-      "bright": false,
-      "name": "cavern10_tile_wall"
-    },
-    {
-      "ink": 6,
-      "bright": false,
-      "name": "cavern10_tile_conveyor",
-      "paper": 0
-    },
-    {
-      "name": "cavern10_tile_nasty1",
-      "bright": true,
-      "paper": 0,
-      "ink": 6
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "name": "cavern10_tile_nasty2",
-      "bright": true
-    },
-    {
-      "ink": 5,
-      "bright": true,
-      "name": "cavern10_tile_extra",
-      "paper": 0
-    }
-  ],
   "clock": 128,
+  "height": 16,
+  "willy_start": {
+    "y": 8,
+    "direction": 0,
+    "jump_counter": 0,
+    "y_times_2": 16,
+    "x": 24,
+    "frame": 0,
+    "airborne": 0
+  },
+  "tile_names": [
+    "cavern10_tile_background",
+    "cavern10_tile_floor",
+    "cavern10_tile_crumbling_floor",
+    "cavern10_tile_wall",
+    "cavern10_tile_conveyor",
+    "cavern10_tile_nasty1",
+    "cavern10_tile_nasty2",
+    "cavern10_tile_extra"
+  ],
+  "width": 32,
+  "conveyor": {
+    "y": 64,
+    "direction": 0,
+    "x": 40,
+    "length": 2
+  },
+  "portal": {
+    "paper": 2,
+    "x": 8,
+    "ink": 6,
+    "y": 8,
+    "sprite": "cavern10_portal",
+    "bright": true
+  },
+  "air": 63,
   "guardian_sprite_names": [
     "cavern10_guardian_0",
     "cavern10_guardian_1",
@@ -202,12 +66,142 @@
     "cavern10_guardian_6",
     "cavern10_guardian_7"
   ],
-  "portal": {
-    "bright": true,
-    "paper": 2,
-    "ink": 6,
-    "sprite": "cavern10_portal",
-    "y": 8,
-    "x": 8
-  }
+  "tile_colours": [
+    {
+      "bright": false,
+      "name": "cavern10_tile_background",
+      "paper": 0,
+      "ink": 0
+    },
+    {
+      "bright": true,
+      "name": "cavern10_tile_floor",
+      "paper": 0,
+      "ink": 1
+    },
+    {
+      "ink": 1,
+      "paper": 0,
+      "name": "cavern10_tile_crumbling_floor",
+      "bright": false
+    },
+    {
+      "name": "cavern10_tile_wall",
+      "bright": false,
+      "paper": 1,
+      "ink": 6
+    },
+    {
+      "paper": 0,
+      "ink": 6,
+      "name": "cavern10_tile_conveyor",
+      "bright": false
+    },
+    {
+      "bright": true,
+      "name": "cavern10_tile_nasty1",
+      "paper": 0,
+      "ink": 6
+    },
+    {
+      "bright": true,
+      "name": "cavern10_tile_nasty2",
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "bright": true,
+      "name": "cavern10_tile_extra"
+    }
+  ],
+  "name": "Attack of the Mutant Telephones ",
+  "vertical_guardians": [],
+  "horizontal_guardians": [
+    {
+      "x": 120,
+      "max_x": 192,
+      "min_x": 120,
+      "paper": 0,
+      "bright": true,
+      "ink": 6,
+      "y": 24
+    },
+    {
+      "paper": 0,
+      "bright": true,
+      "min_x": 112,
+      "x": 112,
+      "max_x": 144,
+      "y": 56,
+      "ink": 4
+    },
+    {
+      "x": 120,
+      "max_x": 152,
+      "min_x": 40,
+      "bright": true,
+      "paper": 0,
+      "ink": 2,
+      "y": 104
+    }
+  ],
+  "items": [
+    {
+      "init_bright": true,
+      "y": 0,
+      "ink": 0,
+      "init_paper": 7,
+      "type": 3,
+      "init_ink": 7,
+      "x": 192,
+      "bright": true,
+      "paper": 4
+    },
+    {
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0,
+      "init_bright": true,
+      "y": 8,
+      "bright": true,
+      "paper": 4,
+      "x": 240,
+      "type": 4
+    },
+    {
+      "init_bright": true,
+      "y": 32,
+      "init_paper": 7,
+      "type": 5,
+      "init_ink": 7,
+      "ink": 0,
+      "paper": 4,
+      "x": 8,
+      "bright": true
+    },
+    {
+      "init_bright": true,
+      "y": 48,
+      "init_paper": 7,
+      "type": 6,
+      "init_ink": 7,
+      "ink": 0,
+      "paper": 4,
+      "x": 152,
+      "bright": true
+    },
+    {
+      "init_ink": 7,
+      "init_paper": 7,
+      "ink": 0,
+      "init_bright": true,
+      "y": 104,
+      "bright": true,
+      "paper": 5,
+      "x": 240,
+      "type": 3
+    }
+  ]
 }
