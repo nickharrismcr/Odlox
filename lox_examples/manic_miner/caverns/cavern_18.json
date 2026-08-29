@@ -1,61 +1,5 @@
 {
-  "portal": {
-    "ink": 7,
-    "x": 0,
-    "bright": true,
-    "y": -730,
-    "sprite": "cavern18_portal",
-    "paper": 7
-  },
-  "horizontal_guardians": [
-    {
-      "max_x": 10,
-      "y": 2832,
-      "x": 64,
-      "y_raw": 48,
-      "colour": 144,
-      "unused": 104,
-      "min_x": 4
-    },
-    {
-      "y_raw": 4,
-      "colour": 38,
-      "min_x": 92,
-      "max_x": 96,
-      "unused": 120,
-      "y": 9480,
-      "x": 248
-    },
-    {
-      "min_x": 92,
-      "x": 184,
-      "y_raw": 0,
-      "colour": 33,
-      "y": 2136,
-      "unused": 220,
-      "max_x": 96
-    },
-    {
-      "unused": 61,
-      "colour": 162,
-      "x": 176,
-      "y_raw": 0,
-      "y": 8304,
-      "max_x": 104,
-      "min_x": 93
-    }
-  ],
-  "tile_names": [
-    "cavern18_tile_background",
-    "cavern18_tile_floor",
-    "cavern18_tile_crumbling_floor",
-    "cavern18_tile_wall",
-    "cavern18_tile_conveyor",
-    "cavern18_tile_nasty1",
-    "cavern18_tile_nasty2",
-    "cavern18_tile_extra"
-  ],
-  "width": 32,
+  "border_colour": 3,
   "layout": [
     "33300000000000000000000000000003",
     "30000000000000000000000000000003",
@@ -74,7 +18,68 @@
     "33300000000000000000000000000003",
     "33311111111111111111111311111113"
   ],
-  "item_sprite": "cavern18_item",
+  "clock": 96,
+  "portal": {
+    "paper": 7,
+    "ink": 7,
+    "bright": true,
+    "y": -730,
+    "x": 0,
+    "sprite": "cavern18_portal"
+  },
+  "conveyor": {
+    "length": 4,
+    "direction": 0,
+    "y": 96,
+    "x": 56
+  },
+  "name": "     Solar Power Generator      ",
+  "horizontal_guardians": [
+    {
+      "y_raw": 48,
+      "unused": 104,
+      "y": 2832,
+      "x": 64,
+      "bright": false,
+      "max_x": 10,
+      "paper": 2,
+      "ink": 0,
+      "min_x": 4
+    },
+    {
+      "bright": false,
+      "min_x": 92,
+      "y_raw": 4,
+      "y": 9480,
+      "x": 248,
+      "max_x": 96,
+      "paper": 4,
+      "ink": 6,
+      "unused": 120
+    },
+    {
+      "y_raw": 0,
+      "bright": false,
+      "unused": 220,
+      "paper": 4,
+      "ink": 1,
+      "max_x": 96,
+      "y": 2136,
+      "x": 184,
+      "min_x": 92
+    },
+    {
+      "max_x": 104,
+      "y": 8304,
+      "x": 176,
+      "bright": false,
+      "ink": 2,
+      "paper": 4,
+      "min_x": 93,
+      "y_raw": 0,
+      "unused": 61
+    }
+  ],
   "guardian_sprite_names": [
     "cavern18_guardian_0",
     "cavern18_guardian_1",
@@ -85,106 +90,113 @@
     "cavern18_guardian_6",
     "cavern18_guardian_7"
   ],
-  "vertical_guardians": [],
+  "width": 32,
   "items": [
     {
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
       "type": 35,
       "y": 8,
       "x": 240,
-      "colour": 96,
-      "init_colour": 255
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 4
     },
     {
-      "init_colour": 255,
+      "init_bright": true,
       "y": 40,
       "x": 8,
-      "colour": 96,
-      "type": 36
-    },
-    {
-      "init_colour": 255,
-      "y": 96,
-      "x": 240,
-      "colour": 104,
-      "type": 37
-    }
-  ],
-  "name": "     Solar Power Generator      ",
-  "air": 33,
-  "willy_start": {
-    "jump_counter": 0,
-    "airborne": 0,
-    "y_times_2": 160,
-    "direction": 0,
-    "frame": 0,
-    "x": 112,
-    "y": 80
-  },
-  "conveyor": {
-    "y": 96,
-    "length": 4,
-    "x": 56,
-    "direction": 0
-  },
-  "border_colour": 3,
-  "height": 16,
-  "tile_colours": [
-    {
-      "name": "cavern18_tile_background",
-      "ink": 4,
-      "paper": 4,
-      "bright": false,
-      "attr": 36
-    },
-    {
-      "attr": 32,
-      "name": "cavern18_tile_floor",
+      "bright": true,
       "ink": 0,
       "paper": 4,
+      "type": 36,
+      "init_paper": 7,
+      "init_ink": 7
+    },
+    {
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
+      "type": 37,
+      "y": 96,
+      "x": 240,
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 5
+    }
+  ],
+  "tile_colours": [
+    {
+      "paper": 4,
+      "ink": 4,
+      "name": "cavern18_tile_background",
       "bright": false
     },
     {
-      "name": "cavern18_tile_crumbling_floor",
-      "ink": 2,
+      "paper": 4,
+      "ink": 0,
+      "name": "cavern18_tile_floor",
+      "bright": false
+    },
+    {
       "paper": 0,
+      "ink": 2,
       "bright": false,
-      "attr": 2
+      "name": "cavern18_tile_crumbling_floor"
     },
     {
       "paper": 2,
       "ink": 6,
-      "attr": 22,
       "name": "cavern18_tile_wall",
       "bright": false
     },
     {
-      "attr": 38,
-      "name": "cavern18_tile_conveyor",
-      "ink": 6,
+      "bright": false,
       "paper": 4,
-      "bright": false
+      "ink": 6,
+      "name": "cavern18_tile_conveyor"
     },
     {
       "name": "cavern18_tile_nasty1",
-      "ink": 4,
-      "paper": 0,
       "bright": true,
-      "attr": 68
+      "paper": 0,
+      "ink": 4
     },
     {
-      "paper": 0,
       "ink": 5,
-      "attr": 5,
+      "bright": false,
       "name": "cavern18_tile_nasty2",
-      "bright": false
+      "paper": 0
     },
     {
-      "attr": 0,
-      "name": "cavern18_tile_extra",
       "ink": 0,
-      "paper": 0,
-      "bright": false
+      "bright": false,
+      "name": "cavern18_tile_extra",
+      "paper": 0
     }
   ],
-  "clock": 96
+  "air": 33,
+  "height": 16,
+  "vertical_guardians": [],
+  "tile_names": [
+    "cavern18_tile_background",
+    "cavern18_tile_floor",
+    "cavern18_tile_crumbling_floor",
+    "cavern18_tile_wall",
+    "cavern18_tile_conveyor",
+    "cavern18_tile_nasty1",
+    "cavern18_tile_nasty2",
+    "cavern18_tile_extra"
+  ],
+  "item_sprite": "cavern18_item",
+  "willy_start": {
+    "y_times_2": 160,
+    "y": 80,
+    "x": 112,
+    "airborne": 0,
+    "direction": 0,
+    "jump_counter": 0,
+    "frame": 0
+  }
 }

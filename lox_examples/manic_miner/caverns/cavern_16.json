@@ -1,60 +1,105 @@
 {
-  "item_sprite": "cavern16_item",
-  "guardian_sprite_names": [
-    "cavern16_guardian_0",
-    "cavern16_guardian_1",
-    "cavern16_guardian_2",
-    "cavern16_guardian_3",
-    "cavern16_guardian_4",
-    "cavern16_guardian_5",
-    "cavern16_guardian_6",
-    "cavern16_guardian_7"
-  ],
-  "vertical_guardians": [],
   "items": [
     {
+      "paper": 4,
+      "ink": 0,
+      "init_ink": 7,
+      "type": 35,
+      "bright": true,
+      "init_paper": 7,
       "y": 40,
-      "init_colour": 255,
-      "colour": 96,
       "x": 192,
-      "type": 35
+      "init_bright": true
     },
     {
-      "colour": 96,
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
       "type": 36,
-      "init_colour": 255,
       "y": 56,
       "x": 120
     },
     {
-      "init_colour": 255,
-      "y": 72,
       "x": 8,
-      "colour": 104,
-      "type": 37
+      "init_ink": 7,
+      "paper": 5,
+      "ink": 0,
+      "type": 37,
+      "init_paper": 7,
+      "init_bright": true,
+      "bright": true,
+      "y": 72
     },
     {
-      "x": 152,
-      "colour": 104,
-      "init_colour": 255,
       "type": 38,
-      "y": 80
+      "bright": true,
+      "init_ink": 7,
+      "paper": 5,
+      "ink": 0,
+      "init_bright": true,
+      "y": 80,
+      "x": 152,
+      "init_paper": 7
     },
     {
-      "colour": 104,
       "x": 208,
-      "y": 88,
-      "init_colour": 255,
-      "type": 35
+      "init_ink": 7,
+      "paper": 5,
+      "ink": 0,
+      "type": 35,
+      "init_paper": 7,
+      "init_bright": true,
+      "bright": true,
+      "y": 88
     }
   ],
-  "name": "         The Warehouse          ",
+  "width": 32,
   "conveyor": {
-    "y": 64,
     "direction": 1,
     "length": 5,
+    "y": 64,
     "x": 112
   },
+  "horizontal_guardians": [
+    {
+      "paper": 5,
+      "ink": 0,
+      "unused": 0,
+      "bright": true,
+      "min_x": 165,
+      "y_raw": 194,
+      "y": 104,
+      "x": 40,
+      "max_x": 168
+    },
+    {
+      "max_x": 185,
+      "y": 104,
+      "x": 96,
+      "min_x": 172,
+      "y_raw": 5,
+      "bright": true,
+      "unused": 0,
+      "paper": 5,
+      "ink": 0
+    }
+  ],
+  "item_sprite": "cavern16_item",
+  "willy_start": {
+    "airborne": 0,
+    "y_times_2": 48,
+    "frame": 3,
+    "direction": 1,
+    "jump_counter": 0,
+    "y": 24,
+    "x": 8
+  },
+  "air": 63,
+  "height": 16,
+  "vertical_guardians": [],
   "tile_names": [
     "cavern16_tile_background",
     "cavern16_tile_floor",
@@ -65,7 +110,7 @@
     "cavern16_tile_nasty2",
     "cavern16_tile_extra"
   ],
-  "width": 32,
+  "border_colour": 2,
   "layout": [
     "30000000000000000000000000000333",
     "30000000000000000000000000000003",
@@ -84,103 +129,74 @@
     "30000000000000000000000000011113",
     "31111111111111111111111111111113"
   ],
+  "name": "         The Warehouse          ",
   "tile_colours": [
     {
-      "paper": 0,
-      "ink": 0,
-      "attr": 0,
-      "name": "cavern16_tile_background",
-      "bright": false
-    },
-    {
-      "attr": 4,
-      "name": "cavern16_tile_floor",
-      "ink": 4,
-      "paper": 0,
-      "bright": false
-    },
-    {
-      "name": "cavern16_tile_crumbling_floor",
-      "ink": 4,
-      "paper": 0,
-      "bright": true,
-      "attr": 68
-    },
-    {
-      "paper": 2,
-      "ink": 6,
-      "attr": 22,
-      "name": "cavern16_tile_wall",
-      "bright": false
-    },
-    {
-      "attr": 32,
-      "name": "cavern16_tile_conveyor",
-      "ink": 0,
-      "paper": 4,
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 6,
-      "attr": 6,
-      "name": "cavern16_tile_nasty1",
-      "bright": false
-    },
-    {
-      "name": "cavern16_tile_nasty2",
       "bright": false,
+      "paper": 0,
+      "ink": 0,
+      "name": "cavern16_tile_background"
+    },
+    {
+      "paper": 0,
+      "ink": 4,
+      "name": "cavern16_tile_floor",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 4,
+      "name": "cavern16_tile_crumbling_floor",
+      "bright": true
+    },
+    {
+      "name": "cavern16_tile_wall",
+      "bright": false,
+      "paper": 2,
+      "ink": 6
+    },
+    {
+      "paper": 4,
+      "ink": 0,
+      "name": "cavern16_tile_conveyor",
+      "bright": false
+    },
+    {
+      "bright": false,
+      "paper": 0,
+      "ink": 6,
+      "name": "cavern16_tile_nasty1"
+    },
+    {
       "paper": 4,
       "ink": 1,
-      "attr": 33
+      "name": "cavern16_tile_nasty2",
+      "bright": false
     },
     {
-      "name": "cavern16_tile_extra",
-      "ink": 0,
       "paper": 0,
-      "bright": false,
-      "attr": 0
+      "ink": 0,
+      "name": "cavern16_tile_extra",
+      "bright": false
     }
   ],
   "clock": 128,
+  "guardian_sprite_names": [
+    "cavern16_guardian_0",
+    "cavern16_guardian_1",
+    "cavern16_guardian_2",
+    "cavern16_guardian_3",
+    "cavern16_guardian_4",
+    "cavern16_guardian_5",
+    "cavern16_guardian_6",
+    "cavern16_guardian_7"
+  ],
   "portal": {
-    "ink": 4,
-    "x": 232,
-    "bright": true,
     "sprite": "cavern16_portal",
     "y": 8,
-    "paper": 1
-  },
-  "horizontal_guardians": [
-    {
-      "colour": 104,
-      "x": 40,
-      "y_raw": 194,
-      "y": 104,
-      "unused": 0,
-      "max_x": 168,
-      "min_x": 165
-    },
-    {
-      "max_x": 185,
-      "y": 104,
-      "x": 96,
-      "y_raw": 5,
-      "colour": 104,
-      "unused": 0,
-      "min_x": 172
-    }
-  ],
-  "air": 63,
-  "willy_start": {
-    "y": 24,
-    "x": 8,
-    "frame": 3,
-    "airborne": 0,
-    "y_times_2": 48,
-    "jump_counter": 0,
-    "direction": 1
-  },
-  "border_colour": 2,
-  "height": 16
+    "x": 232,
+    "bright": true,
+    "paper": 1,
+    "ink": 4
+  }
 }

@@ -1,102 +1,71 @@
 {
+  "portal": {
+    "paper": 7,
+    "ink": 7,
+    "bright": true,
+    "y": 1239,
+    "x": 72,
+    "sprite": "cavern7_portal"
+  },
+  "width": 32,
+  "vertical_guardians": [],
+  "tile_names": [
+    "cavern7_tile_background",
+    "cavern7_tile_floor",
+    "cavern7_tile_crumbling_floor",
+    "cavern7_tile_wall",
+    "cavern7_tile_conveyor",
+    "cavern7_tile_nasty1",
+    "cavern7_tile_nasty2",
+    "cavern7_tile_extra"
+  ],
   "horizontal_guardians": [
     {
-      "y": 2784,
       "max_x": 169,
-      "min_x": 68,
-      "unused": 128,
+      "y": 2784,
       "x": 80,
+      "unused": 128,
+      "paper": 7,
+      "ink": 7,
+      "min_x": 68,
       "y_raw": 84,
-      "colour": 63
+      "bright": false
     },
     {
-      "y": -5408,
-      "max_x": 107,
-      "min_x": 195,
+      "paper": 4,
+      "ink": 1,
       "unused": 169,
-      "colour": 161,
-      "x": -192,
-      "y_raw": 93
-    },
-    {
-      "y": -5856,
-      "colour": 107,
-      "x": -192,
+      "bright": false,
+      "min_x": 195,
       "y_raw": 93,
-      "unused": 111,
-      "min_x": 0,
-      "max_x": 0
+      "y": -5408,
+      "x": -192,
+      "max_x": 107
     },
     {
-      "unused": 0,
-      "max_x": 242,
-      "min_x": 5,
-      "x": 0,
-      "y_raw": 0,
-      "colour": 0,
-      "y": -5888
-    }
-  ],
-  "item_sprite": "cavern7_item",
-  "name": "Miner Willy meets the Kong Beast",
-  "tile_colours": [
+      "bright": true,
+      "min_x": 0,
+      "y_raw": 93,
+      "y": -5856,
+      "x": -192,
+      "max_x": 0,
+      "paper": 5,
+      "ink": 3,
+      "unused": 111
+    },
     {
-      "attr": 0,
-      "name": "cavern7_tile_background",
+      "bright": false,
       "ink": 0,
       "paper": 0,
-      "bright": false
-    },
-    {
-      "name": "cavern7_tile_floor",
-      "bright": true,
-      "paper": 0,
-      "ink": 2,
-      "attr": 66
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "attr": 2,
-      "name": "cavern7_tile_crumbling_floor",
-      "bright": false
-    },
-    {
-      "paper": 6,
-      "ink": 2,
-      "attr": 114,
-      "name": "cavern7_tile_wall",
-      "bright": true
-    },
-    {
-      "attr": 68,
-      "name": "cavern7_tile_conveyor",
-      "ink": 4,
-      "paper": 0,
-      "bright": true
-    },
-    {
-      "name": "cavern7_tile_nasty1",
-      "ink": 4,
-      "paper": 0,
-      "bright": false,
-      "attr": 4
-    },
-    {
-      "paper": 0,
-      "ink": 5,
-      "attr": 5,
-      "name": "cavern7_tile_nasty2",
-      "bright": false
-    },
-    {
-      "attr": 6,
-      "name": "cavern7_tile_extra",
-      "ink": 6,
-      "paper": 0,
-      "bright": false
+      "min_x": 5,
+      "y_raw": 0,
+      "unused": 0,
+      "max_x": 242,
+      "y": -5888,
+      "x": 0
     }
   ],
+  "border_colour": 2,
   "layout": [
     "30600070006000000370300000000003",
     "30000000000000000300300000000003",
@@ -115,43 +84,17 @@
     "30000000000000300300000500000003",
     "31111111111111111111111111111113"
   ],
-  "tile_names": [
-    "cavern7_tile_background",
-    "cavern7_tile_floor",
-    "cavern7_tile_crumbling_floor",
-    "cavern7_tile_wall",
-    "cavern7_tile_conveyor",
-    "cavern7_tile_nasty1",
-    "cavern7_tile_nasty2",
-    "cavern7_tile_extra"
-  ],
-  "width": 32,
-  "height": 16,
-  "border_colour": 2,
+  "name": "Miner Willy meets the Kong Beast",
   "willy_start": {
+    "airborne": 0,
+    "jump_counter": 0,
     "y": 104,
     "x": 16,
+    "direction": 0,
     "frame": 0,
-    "airborne": 0,
-    "y_times_2": 208,
-    "jump_counter": 0,
-    "direction": 0
+    "y_times_2": 208
   },
-  "conveyor": {
-    "length": 3,
-    "x": 88,
-    "y": 104,
-    "direction": 1
-  },
-  "clock": 40,
-  "portal": {
-    "y": 1239,
-    "paper": 7,
-    "ink": 7,
-    "sprite": "cavern7_portal",
-    "bright": true,
-    "x": 72
-  },
+  "item_sprite": "cavern7_item",
   "guardian_sprite_names": [
     "cavern7_guardian_0",
     "cavern7_guardian_1",
@@ -162,36 +105,109 @@
     "cavern7_guardian_6",
     "cavern7_guardian_7"
   ],
-  "vertical_guardians": [],
+  "air": 114,
+  "height": 16,
   "items": [
     {
-      "init_colour": 255,
-      "type": 3,
-      "colour": 96,
+      "init_ink": 7,
+      "y": 16,
       "x": 104,
-      "y": 16
+      "type": 3,
+      "bright": true,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7
     },
     {
+      "init_ink": 7,
+      "y": 48,
       "x": 112,
       "type": 4,
-      "y": 48,
-      "init_colour": 255,
-      "colour": 96
+      "bright": true,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7
     },
     {
-      "init_colour": 255,
+      "bright": true,
+      "ink": 0,
+      "paper": 5,
       "type": 5,
-      "colour": 104,
-      "x": 16,
-      "y": 64
+      "init_paper": 7,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 64,
+      "x": 16
     },
     {
-      "type": 6,
+      "bright": true,
+      "init_bright": true,
+      "paper": 5,
+      "ink": 0,
+      "init_paper": 7,
+      "init_ink": 7,
       "y": 104,
       "x": 232,
-      "colour": 104,
-      "init_colour": 255
+      "type": 6
     }
   ],
-  "air": 114
+  "conveyor": {
+    "direction": 1,
+    "length": 3,
+    "y": 104,
+    "x": 88
+  },
+  "tile_colours": [
+    {
+      "ink": 0,
+      "bright": false,
+      "name": "cavern7_tile_background",
+      "paper": 0
+    },
+    {
+      "name": "cavern7_tile_floor",
+      "bright": true,
+      "paper": 0,
+      "ink": 2
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "name": "cavern7_tile_crumbling_floor",
+      "bright": false
+    },
+    {
+      "ink": 2,
+      "bright": true,
+      "name": "cavern7_tile_wall",
+      "paper": 6
+    },
+    {
+      "name": "cavern7_tile_conveyor",
+      "bright": true,
+      "paper": 0,
+      "ink": 4
+    },
+    {
+      "paper": 0,
+      "ink": 4,
+      "name": "cavern7_tile_nasty1",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "bright": false,
+      "name": "cavern7_tile_nasty2"
+    },
+    {
+      "name": "cavern7_tile_extra",
+      "bright": false,
+      "paper": 0,
+      "ink": 6
+    }
+  ],
+  "clock": 40
 }

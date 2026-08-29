@@ -8,7 +8,8 @@ import sys
 //
 // @file test_cavern_display.lox
 // @brief Renders one extracted cavern (real tile graphics/colours, not
-// ASCII) via Display + Cavern.draw(). ESC quits.
+// ASCII) via Display + Cavern.draw(), plus its items twinkling via
+// Cavern.draw_items(). ESC quits.
 //
 // Usage: odlox.exe test_cavern_display.lox [cavern_index]
 //
@@ -28,17 +29,22 @@ c.load(format("caverns/cavern_%d.json", index))
 const SCALE = 3
 var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
 win.init()
-win.set_target_fps(30)
+win.set_target_fps(8)   // Manic Miner's own tick rate -- see game_sprite.lox
 
 var disp = display.Display()
 disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
 c.draw(disp, lib)
 disp.upload()
 
+var tick = 0
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break
     }
+
+    c.draw_items(disp, lib, tick)
+    tick = tick + 1
+    disp.upload()
 
     win.begin()
     win.clear(colour.BLACK)

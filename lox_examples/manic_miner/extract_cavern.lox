@@ -217,11 +217,19 @@ func extract_one(bytes, index, out_dir) {
     foreach (var r in item_result["records"]) {
         var item_addr = r[1] + r[2] * 256
         var item_xy = spectrum_screen.attr_addr_to_xy(item_addr, ATTR_BUFFER_BASE)
+        // colour/init_colour are raw attribute bytes, same encoding as a
+        // tile's own "attr" -- decode both, don't keep the raw byte once
+        // decoded. Willy's item twinkle actually cycles ink through
+        // 3,4,5,6 per tick over the item's own fixed paper (see
+        // Cavern.draw_items()), not by alternating colour/init_colour --
+        // init_ink/init_paper are kept anyway as real decoded ROM data.
+        var colours = spectrum_attr.decode_attribute(r[3])
+        var init_colours = spectrum_attr.decode_attribute(r[4])
         items.append({
             "type": r[0],
             "x": item_xy["x"], "y": item_xy["y"],
-            "colour": r[3],
-            "init_colour": r[4]
+            "ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"],
+            "init_ink": init_colours["ink"], "init_paper": init_colours["paper"], "init_bright": init_colours["bright"]
         })
     }
 
@@ -269,10 +277,13 @@ func extract_one(bytes, index, out_dir) {
         foreach (var r in result["records"]) {
             var g_addr = r[1] + r[2] * 256
             var g_xy = spectrum_screen.attr_addr_to_xy(g_addr, ATTR_BUFFER_BASE)
+            // colour is a raw attribute byte, same encoding as a tile's
+            // own "attr" -- decode it, don't keep the raw byte.
+            var colours = spectrum_attr.decode_attribute(r[3])
             guardians.append({
                 "y_raw": r[0],
                 "x": g_xy["x"], "y": g_xy["y"],
-                "colour": r[3],
+                "ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"],
                 "unused": r[4],
                 "min_x": r[5],
                 "max_x": r[6]
@@ -316,8 +327,9 @@ func extract_one(bytes, index, out_dir) {
         tile_names.append(t["name"])
         // Sprite pixel data already lives in cavern_N_sprites.json under
         // this same name -- tile_colours only needs the name pointer plus
-        // ink/paper/bright, not a duplicate copy of the pixel data.
-        tile_colours.append({"name": t["name"], "attr": t["attr"], "ink": t["ink"],
+        // ink/paper/bright, not a duplicate copy of the pixel data or the
+        // raw attribute byte ink/paper/bright were already decoded from.
+        tile_colours.append({"name": t["name"], "ink": t["ink"],
                               "paper": t["paper"], "bright": t["bright"]})
         sprite_sheet.append(t["sprite"])
     }

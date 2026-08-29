@@ -1,126 +1,175 @@
 {
-  "border_colour": 2,
-  "height": 16,
-  "air": 97,
-  "willy_start": {
-    "jump_counter": 0,
-    "airborne": 0,
-    "y_times_2": 208,
-    "direction": 0,
-    "y": 104,
-    "x": 16,
-    "frame": 0
-  },
-  "conveyor": {
-    "length": 16,
-    "x": 64,
-    "y": 24,
-    "direction": 0
-  },
+  "name": "            The Bank            ",
+  "items": [
+    {
+      "paper": 4,
+      "ink": 0,
+      "init_ink": 7,
+      "type": 3,
+      "bright": true,
+      "init_paper": 7,
+      "y": 16,
+      "x": 200,
+      "init_bright": true
+    },
+    {
+      "init_bright": true,
+      "y": 48,
+      "x": 96,
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
+      "type": 4,
+      "init_paper": 7,
+      "init_ink": 7
+    },
+    {
+      "y": 112,
+      "x": 208,
+      "init_bright": true,
+      "bright": true,
+      "init_paper": 7,
+      "paper": 5,
+      "ink": 0,
+      "type": 5,
+      "init_ink": 7
+    }
+  ],
+  "clock": 96,
   "portal": {
+    "paper": 2,
     "ink": 3,
-    "x": 0,
     "bright": true,
     "y": -742,
-    "sprite": "cavern14_portal",
-    "paper": 2
+    "x": 0,
+    "sprite": "cavern14_portal"
   },
-  "horizontal_guardians": [
-    {
-      "y": 520,
-      "max_x": 130,
-      "min_x": 222,
-      "unused": 142,
-      "x": 192,
-      "y_raw": 124,
-      "colour": 222
-    },
-    {
-      "y": 10248,
-      "max_x": 104,
-      "min_x": 93,
-      "unused": 177,
-      "colour": 69,
-      "x": 248,
-      "y_raw": 124
-    },
-    {
-      "x": 136,
-      "y_raw": 0,
-      "min_x": 0,
-      "max_x": 0,
-      "unused": 0,
-      "y": 5608,
-      "colour": 0
-    },
-    {
-      "max_x": 0,
-      "min_x": 0,
-      "colour": 0,
-      "x": 0,
-      "y_raw": 0,
-      "y": -5888,
-      "unused": 0
-    }
+  "conveyor": {
+    "y": 24,
+    "x": 64,
+    "direction": 0,
+    "length": 16
+  },
+  "item_sprite": "cavern14_item",
+  "willy_start": {
+    "y_times_2": 208,
+    "y": 104,
+    "x": 16,
+    "airborne": 0,
+    "direction": 0,
+    "jump_counter": 0,
+    "frame": 0
+  },
+  "guardian_sprite_names": [
+    "cavern14_guardian_0",
+    "cavern14_guardian_1",
+    "cavern14_guardian_2",
+    "cavern14_guardian_3",
+    "cavern14_guardian_4",
+    "cavern14_guardian_5",
+    "cavern14_guardian_6",
+    "cavern14_guardian_7"
   ],
   "tile_colours": [
     {
-      "ink": 0,
-      "attr": 0,
-      "name": "cavern14_tile_background",
       "bright": false,
-      "paper": 0
+      "paper": 0,
+      "ink": 0,
+      "name": "cavern14_tile_background"
     },
     {
-      "paper": 0,
       "bright": true,
-      "attr": 65,
-      "name": "cavern14_tile_floor",
-      "ink": 1
+      "paper": 0,
+      "ink": 1,
+      "name": "cavern14_tile_floor"
     },
     {
-      "attr": 1,
-      "name": "cavern14_tile_crumbling_floor",
-      "ink": 1,
       "paper": 0,
+      "ink": 1,
+      "name": "cavern14_tile_crumbling_floor",
       "bright": false
     },
     {
       "paper": 1,
       "ink": 6,
-      "attr": 14,
       "name": "cavern14_tile_wall",
       "bright": false
     },
     {
       "paper": 0,
-      "bright": true,
-      "attr": 69,
+      "ink": 5,
       "name": "cavern14_tile_conveyor",
-      "ink": 5
+      "bright": true
     },
     {
-      "attr": 70,
+      "ink": 6,
+      "bright": true,
       "name": "cavern14_tile_nasty1",
-      "ink": 6,
-      "paper": 0,
-      "bright": true
+      "paper": 0
     },
     {
-      "attr": 66,
-      "name": "cavern14_tile_nasty2",
+      "bright": true,
+      "paper": 0,
       "ink": 2,
-      "paper": 0,
-      "bright": true
+      "name": "cavern14_tile_nasty2"
     },
     {
-      "attr": 6,
-      "name": "cavern14_tile_extra",
-      "ink": 6,
+      "bright": false,
       "paper": 0,
-      "bright": false
+      "ink": 6,
+      "name": "cavern14_tile_extra"
     }
   ],
+  "width": 32,
+  "air": 97,
+  "height": 16,
+  "horizontal_guardians": [
+    {
+      "ink": 6,
+      "min_x": 222,
+      "y_raw": 124,
+      "bright": true,
+      "y": 520,
+      "x": 192,
+      "max_x": 130,
+      "unused": 142,
+      "paper": 3
+    },
+    {
+      "y_raw": 124,
+      "bright": true,
+      "unused": 177,
+      "paper": 0,
+      "ink": 5,
+      "max_x": 104,
+      "y": 10248,
+      "x": 248,
+      "min_x": 93
+    },
+    {
+      "ink": 0,
+      "min_x": 0,
+      "y_raw": 0,
+      "bright": false,
+      "y": 5608,
+      "x": 136,
+      "max_x": 0,
+      "unused": 0,
+      "paper": 0
+    },
+    {
+      "y_raw": 0,
+      "unused": 0,
+      "y": -5888,
+      "x": 0,
+      "bright": false,
+      "max_x": 0,
+      "paper": 0,
+      "ink": 0,
+      "min_x": 0
+    }
+  ],
+  "vertical_guardians": [],
   "tile_names": [
     "cavern14_tile_background",
     "cavern14_tile_floor",
@@ -131,7 +180,7 @@
     "cavern14_tile_nasty2",
     "cavern14_tile_extra"
   ],
-  "width": 32,
+  "border_colour": 2,
   "layout": [
     "30000033333333333333333333333333",
     "30000000000000000000000000000773",
@@ -149,42 +198,5 @@
     "30000000000011000000000000000773",
     "30000000000000000000000000000773",
     "31111111111111111111111111111113"
-  ],
-  "item_sprite": "cavern14_item",
-  "guardian_sprite_names": [
-    "cavern14_guardian_0",
-    "cavern14_guardian_1",
-    "cavern14_guardian_2",
-    "cavern14_guardian_3",
-    "cavern14_guardian_4",
-    "cavern14_guardian_5",
-    "cavern14_guardian_6",
-    "cavern14_guardian_7"
-  ],
-  "vertical_guardians": [],
-  "items": [
-    {
-      "x": 200,
-      "colour": 96,
-      "init_colour": 255,
-      "type": 3,
-      "y": 16
-    },
-    {
-      "x": 96,
-      "type": 4,
-      "y": 48,
-      "init_colour": 255,
-      "colour": 96
-    },
-    {
-      "colour": 104,
-      "type": 5,
-      "init_colour": 255,
-      "y": 112,
-      "x": 208
-    }
-  ],
-  "clock": 96,
-  "name": "            The Bank            "
+  ]
 }

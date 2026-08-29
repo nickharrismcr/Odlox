@@ -1,47 +1,4 @@
 {
-  "vertical_guardians": [],
-  "items": [
-    {
-      "type": 19,
-      "y": 24,
-      "x": 240,
-      "colour": 96,
-      "init_colour": 255
-    },
-    {
-      "x": 160,
-      "type": 20,
-      "y": 48,
-      "init_colour": 255,
-      "colour": 96
-    },
-    {
-      "y": 56,
-      "init_colour": 255,
-      "colour": 96,
-      "x": 216,
-      "type": 21
-    },
-    {
-      "init_colour": 255,
-      "y": 80,
-      "x": 152,
-      "colour": 104,
-      "type": 22
-    },
-    {
-      "x": 240,
-      "colour": 104,
-      "init_colour": 255,
-      "type": 19,
-      "y": 88
-    }
-  ],
-  "air": 63,
-  "border_colour": 4,
-  "height": 16,
-  "name": "            The Vat             ",
-  "width": 32,
   "tile_names": [
     "cavern6_tile_background",
     "cavern6_tile_floor",
@@ -52,89 +9,68 @@
     "cavern6_tile_nasty2",
     "cavern6_tile_extra"
   ],
-  "clock": 128,
-  "tile_colours": [
-    {
-      "paper": 0,
-      "bright": false,
-      "attr": 0,
-      "name": "cavern6_tile_background",
-      "ink": 0
-    },
-    {
-      "name": "cavern6_tile_floor",
-      "ink": 6,
-      "paper": 0,
-      "bright": true,
-      "attr": 70
-    },
-    {
-      "name": "cavern6_tile_crumbling_floor",
-      "bright": false,
-      "paper": 0,
-      "ink": 2,
-      "attr": 2
-    },
-    {
-      "ink": 5,
-      "attr": 77,
-      "name": "cavern6_tile_wall",
-      "bright": true,
-      "paper": 1
-    },
-    {
-      "name": "cavern6_tile_conveyor",
-      "ink": 4,
-      "paper": 0,
-      "bright": false,
-      "attr": 4
-    },
-    {
-      "paper": 2,
-      "bright": false,
-      "attr": 21,
-      "name": "cavern6_tile_nasty1",
-      "ink": 5
-    },
-    {
-      "name": "cavern6_tile_nasty2",
-      "ink": 6,
-      "paper": 2,
-      "bright": false,
-      "attr": 22
-    },
-    {
-      "name": "cavern6_tile_extra",
-      "bright": false,
-      "paper": 0,
-      "ink": 0,
-      "attr": 0
-    }
-  ],
-  "conveyor": {
-    "x": 56,
-    "direction": 0,
-    "y": 40,
-    "length": 5
-  },
-  "portal": {
-    "sprite": "cavern6_portal",
-    "bright": false,
-    "x": 120,
-    "y": 104,
-    "paper": 1,
-    "ink": 3
-  },
+  "air": 63,
+  "height": 16,
   "item_sprite": "cavern6_item",
   "willy_start": {
-    "x": 16,
     "frame": 0,
-    "y": 104,
     "direction": 0,
-    "jump_counter": 0,
+    "y_times_2": 208,
     "airborne": 0,
-    "y_times_2": 208
+    "y": 104,
+    "x": 16,
+    "jump_counter": 0
   },
+  "portal": {
+    "y": 104,
+    "x": 120,
+    "sprite": "cavern6_portal",
+    "paper": 1,
+    "ink": 3,
+    "bright": false
+  },
+  "conveyor": {
+    "y": 40,
+    "x": 56,
+    "direction": 0,
+    "length": 5
+  },
+  "horizontal_guardians": [
+    {
+      "ink": 0,
+      "min_x": 47,
+      "y_raw": 69,
+      "bright": true,
+      "y": 8,
+      "x": 120,
+      "max_x": 61,
+      "unused": 0,
+      "paper": 4
+    },
+    {
+      "paper": 5,
+      "ink": 0,
+      "unused": 7,
+      "y": 64,
+      "x": 80,
+      "max_x": 10,
+      "bright": true,
+      "min_x": 2,
+      "y_raw": 67
+    },
+    {
+      "x": 136,
+      "unused": 0,
+      "paper": 5,
+      "ink": 0,
+      "min_x": 177,
+      "y_raw": 6,
+      "max_x": 189,
+      "bright": true,
+      "y": 104
+    }
+  ],
+  "border_colour": 4,
   "layout": [
     "30000000000000333333333333333333",
     "30000000000000000000000000000003",
@@ -153,33 +89,114 @@
     "30000000000000300000000000000003",
     "31111111111111333333333333333333"
   ],
-  "horizontal_guardians": [
+  "name": "            The Vat             ",
+  "clock": 128,
+  "width": 32,
+  "tile_colours": [
     {
-      "unused": 0,
-      "colour": 96,
-      "x": 120,
-      "y_raw": 69,
-      "y": 8,
-      "max_x": 61,
-      "min_x": 47
+      "paper": 0,
+      "ink": 0,
+      "name": "cavern6_tile_background",
+      "bright": false
     },
     {
-      "max_x": 10,
-      "min_x": 2,
-      "colour": 104,
-      "x": 80,
-      "y_raw": 67,
-      "y": 64,
-      "unused": 7
+      "name": "cavern6_tile_floor",
+      "bright": true,
+      "paper": 0,
+      "ink": 6
     },
     {
-      "y": 104,
-      "max_x": 189,
-      "min_x": 177,
-      "unused": 0,
-      "colour": 104,
-      "x": 136,
-      "y_raw": 6
+      "bright": false,
+      "paper": 0,
+      "ink": 2,
+      "name": "cavern6_tile_crumbling_floor"
+    },
+    {
+      "name": "cavern6_tile_wall",
+      "bright": true,
+      "paper": 1,
+      "ink": 5
+    },
+    {
+      "paper": 0,
+      "ink": 4,
+      "name": "cavern6_tile_conveyor",
+      "bright": false
+    },
+    {
+      "name": "cavern6_tile_nasty1",
+      "bright": false,
+      "paper": 2,
+      "ink": 5
+    },
+    {
+      "paper": 2,
+      "ink": 6,
+      "name": "cavern6_tile_nasty2",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 0,
+      "bright": false,
+      "name": "cavern6_tile_extra"
+    }
+  ],
+  "items": [
+    {
+      "init_ink": 7,
+      "y": 24,
+      "x": 240,
+      "type": 19,
+      "bright": true,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7
+    },
+    {
+      "y": 48,
+      "x": 160,
+      "init_bright": true,
+      "bright": true,
+      "init_paper": 7,
+      "paper": 4,
+      "ink": 0,
+      "type": 20,
+      "init_ink": 7
+    },
+    {
+      "x": 216,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "type": 21,
+      "init_paper": 7,
+      "init_bright": true,
+      "bright": true,
+      "y": 56
+    },
+    {
+      "init_bright": true,
+      "y": 80,
+      "x": 152,
+      "init_paper": 7,
+      "type": 22,
+      "bright": true,
+      "init_ink": 7,
+      "paper": 5,
+      "ink": 0
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "y": 88,
+      "x": 240,
+      "init_bright": true,
+      "paper": 5,
+      "ink": 0,
+      "init_ink": 7,
+      "type": 19
     }
   ],
   "guardian_sprite_names": [
@@ -191,5 +208,6 @@
     "cavern6_guardian_5",
     "cavern6_guardian_6",
     "cavern6_guardian_7"
-  ]
+  ],
+  "vertical_guardians": []
 }

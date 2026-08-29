@@ -1,14 +1,127 @@
 {
-  "item_sprite": "cavern10_item",
-  "willy_start": {
-    "x": 24,
-    "frame": 0,
-    "y": 8,
-    "airborne": 0,
-    "y_times_2": 16,
-    "jump_counter": 0,
+  "items": [
+    {
+      "type": 3,
+      "y": 0,
+      "x": 192,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
+      "init_bright": true
+    },
+    {
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
+      "type": 4,
+      "init_paper": 7,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 8,
+      "x": 240
+    },
+    {
+      "y": 32,
+      "x": 8,
+      "init_bright": true,
+      "bright": true,
+      "init_paper": 7,
+      "paper": 4,
+      "ink": 0,
+      "type": 5,
+      "init_ink": 7
+    },
+    {
+      "bright": true,
+      "init_paper": 7,
+      "y": 48,
+      "x": 152,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_ink": 7,
+      "type": 6
+    },
+    {
+      "paper": 5,
+      "ink": 0,
+      "init_ink": 7,
+      "type": 3,
+      "bright": true,
+      "init_paper": 7,
+      "y": 104,
+      "x": 240,
+      "init_bright": true
+    }
+  ],
+  "width": 32,
+  "conveyor": {
+    "y": 64,
+    "x": 40,
+    "length": 2,
     "direction": 0
   },
+  "horizontal_guardians": [
+    {
+      "max_x": 120,
+      "y": 24,
+      "x": 120,
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
+      "min_x": 111,
+      "y_raw": 70,
+      "unused": 0
+    },
+    {
+      "x": 112,
+      "unused": 0,
+      "paper": 4,
+      "ink": 0,
+      "min_x": 238,
+      "y_raw": 196,
+      "max_x": 242,
+      "bright": true,
+      "y": 56
+    },
+    {
+      "y": 104,
+      "x": 120,
+      "max_x": 179,
+      "bright": true,
+      "min_x": 165,
+      "y_raw": 66,
+      "paper": 5,
+      "ink": 0,
+      "unused": 7
+    }
+  ],
+  "item_sprite": "cavern10_item",
+  "willy_start": {
+    "airborne": 0,
+    "jump_counter": 0,
+    "y": 8,
+    "x": 24,
+    "direction": 0,
+    "frame": 0,
+    "y_times_2": 16
+  },
+  "air": 63,
+  "height": 16,
+  "vertical_guardians": [],
+  "tile_names": [
+    "cavern10_tile_background",
+    "cavern10_tile_floor",
+    "cavern10_tile_crumbling_floor",
+    "cavern10_tile_wall",
+    "cavern10_tile_conveyor",
+    "cavern10_tile_nasty1",
+    "cavern10_tile_nasty2",
+    "cavern10_tile_extra"
+  ],
+  "border_colour": 2,
   "layout": [
     "33333330000000000006000000000003",
     "30000000000000000005000000000003",
@@ -27,35 +140,58 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "horizontal_guardians": [
+  "name": "Attack of the Mutant Telephones ",
+  "tile_colours": [
     {
-      "y": 24,
-      "max_x": 120,
-      "min_x": 111,
-      "unused": 0,
-      "x": 120,
-      "y_raw": 70,
-      "colour": 96
+      "ink": 0,
+      "bright": false,
+      "name": "cavern10_tile_background",
+      "paper": 0
     },
     {
-      "y": 56,
-      "max_x": 242,
-      "min_x": 238,
-      "unused": 0,
-      "colour": 96,
-      "x": 112,
-      "y_raw": 196
+      "paper": 0,
+      "ink": 1,
+      "name": "cavern10_tile_floor",
+      "bright": true
     },
     {
-      "y_raw": 66,
-      "colour": 104,
-      "min_x": 165,
-      "max_x": 179,
-      "unused": 7,
-      "y": 104,
-      "x": 120
+      "ink": 1,
+      "bright": false,
+      "name": "cavern10_tile_crumbling_floor",
+      "paper": 0
+    },
+    {
+      "paper": 1,
+      "ink": 6,
+      "bright": false,
+      "name": "cavern10_tile_wall"
+    },
+    {
+      "ink": 6,
+      "bright": false,
+      "name": "cavern10_tile_conveyor",
+      "paper": 0
+    },
+    {
+      "name": "cavern10_tile_nasty1",
+      "bright": true,
+      "paper": 0,
+      "ink": 6
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "name": "cavern10_tile_nasty2",
+      "bright": true
+    },
+    {
+      "ink": 5,
+      "bright": true,
+      "name": "cavern10_tile_extra",
+      "paper": 0
     }
   ],
+  "clock": 128,
   "guardian_sprite_names": [
     "cavern10_guardian_0",
     "cavern10_guardian_1",
@@ -66,130 +202,12 @@
     "cavern10_guardian_6",
     "cavern10_guardian_7"
   ],
-  "vertical_guardians": [],
-  "items": [
-    {
-      "init_colour": 255,
-      "type": 3,
-      "colour": 96,
-      "x": 192,
-      "y": 0
-    },
-    {
-      "colour": 96,
-      "x": 240,
-      "y": 8,
-      "init_colour": 255,
-      "type": 4
-    },
-    {
-      "type": 5,
-      "y": 32,
-      "x": 8,
-      "colour": 96,
-      "init_colour": 255
-    },
-    {
-      "init_colour": 255,
-      "type": 6,
-      "colour": 96,
-      "x": 152,
-      "y": 48
-    },
-    {
-      "type": 3,
-      "y": 104,
-      "x": 240,
-      "colour": 104,
-      "init_colour": 255
-    }
-  ],
-  "air": 63,
-  "border_colour": 2,
-  "height": 16,
-  "name": "Attack of the Mutant Telephones ",
-  "width": 32,
-  "tile_names": [
-    "cavern10_tile_background",
-    "cavern10_tile_floor",
-    "cavern10_tile_crumbling_floor",
-    "cavern10_tile_wall",
-    "cavern10_tile_conveyor",
-    "cavern10_tile_nasty1",
-    "cavern10_tile_nasty2",
-    "cavern10_tile_extra"
-  ],
-  "clock": 128,
-  "tile_colours": [
-    {
-      "name": "cavern10_tile_background",
-      "ink": 0,
-      "paper": 0,
-      "bright": false,
-      "attr": 0
-    },
-    {
-      "paper": 0,
-      "ink": 1,
-      "attr": 65,
-      "name": "cavern10_tile_floor",
-      "bright": true
-    },
-    {
-      "ink": 1,
-      "attr": 1,
-      "name": "cavern10_tile_crumbling_floor",
-      "bright": false,
-      "paper": 0
-    },
-    {
-      "ink": 6,
-      "attr": 14,
-      "name": "cavern10_tile_wall",
-      "bright": false,
-      "paper": 1
-    },
-    {
-      "name": "cavern10_tile_conveyor",
-      "ink": 6,
-      "paper": 0,
-      "bright": false,
-      "attr": 6
-    },
-    {
-      "name": "cavern10_tile_nasty1",
-      "ink": 6,
-      "paper": 0,
-      "bright": true,
-      "attr": 70
-    },
-    {
-      "attr": 66,
-      "name": "cavern10_tile_nasty2",
-      "ink": 2,
-      "paper": 0,
-      "bright": true
-    },
-    {
-      "attr": 69,
-      "name": "cavern10_tile_extra",
-      "ink": 5,
-      "paper": 0,
-      "bright": true
-    }
-  ],
-  "conveyor": {
-    "y": 64,
-    "direction": 0,
-    "length": 2,
-    "x": 40
-  },
   "portal": {
-    "sprite": "cavern10_portal",
     "bright": true,
-    "x": 8,
-    "y": 8,
     "paper": 2,
-    "ink": 6
+    "ink": 6,
+    "sprite": "cavern10_portal",
+    "y": 8,
+    "x": 8
   }
 }

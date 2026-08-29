@@ -1,60 +1,5 @@
 {
-  "item_sprite": "cavern11_item",
-  "guardian_sprite_names": [
-    "cavern11_guardian_0",
-    "cavern11_guardian_1",
-    "cavern11_guardian_2",
-    "cavern11_guardian_3",
-    "cavern11_guardian_4",
-    "cavern11_guardian_5",
-    "cavern11_guardian_6",
-    "cavern11_guardian_7"
-  ],
   "vertical_guardians": [],
-  "items": [
-    {
-      "colour": 96,
-      "type": 3,
-      "init_colour": 255,
-      "y": 24,
-      "x": 120
-    },
-    {
-      "colour": 96,
-      "x": 128,
-      "y": 56,
-      "init_colour": 255,
-      "type": 4
-    },
-    {
-      "x": 16,
-      "colour": 96,
-      "init_colour": 255,
-      "type": 5,
-      "y": 48
-    },
-    {
-      "x": 232,
-      "type": 6,
-      "y": 104,
-      "init_colour": 255,
-      "colour": 104
-    },
-    {
-      "init_colour": 255,
-      "type": 3,
-      "colour": 96,
-      "x": 208,
-      "y": 40
-    }
-  ],
-  "name": " Return of the Alien Kong Beast ",
-  "conveyor": {
-    "direction": 1,
-    "y": 104,
-    "length": 11,
-    "x": 144
-  },
   "tile_names": [
     "cavern11_tile_background",
     "cavern11_tile_floor",
@@ -65,7 +10,152 @@
     "cavern11_tile_nasty2",
     "cavern11_tile_extra"
   ],
+  "guardian_sprite_names": [
+    "cavern11_guardian_0",
+    "cavern11_guardian_1",
+    "cavern11_guardian_2",
+    "cavern11_guardian_3",
+    "cavern11_guardian_4",
+    "cavern11_guardian_5",
+    "cavern11_guardian_6",
+    "cavern11_guardian_7"
+  ],
+  "conveyor": {
+    "direction": 1,
+    "length": 11,
+    "y": 104,
+    "x": 144
+  },
+  "portal": {
+    "bright": true,
+    "paper": 3,
+    "ink": 6,
+    "sprite": "cavern11_portal",
+    "y": 104,
+    "x": 120
+  },
+  "items": [
+    {
+      "y": 24,
+      "x": 120,
+      "init_bright": true,
+      "bright": true,
+      "init_paper": 7,
+      "paper": 4,
+      "ink": 0,
+      "type": 3,
+      "init_ink": 7
+    },
+    {
+      "bright": true,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7,
+      "init_ink": 7,
+      "y": 56,
+      "x": 128,
+      "type": 4
+    },
+    {
+      "bright": true,
+      "init_bright": true,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7,
+      "init_ink": 7,
+      "y": 48,
+      "x": 16,
+      "type": 5
+    },
+    {
+      "paper": 5,
+      "ink": 0,
+      "type": 6,
+      "init_ink": 7,
+      "y": 104,
+      "x": 232,
+      "init_bright": true,
+      "bright": true,
+      "init_paper": 7
+    },
+    {
+      "init_bright": true,
+      "y": 40,
+      "x": 208,
+      "init_paper": 7,
+      "type": 3,
+      "bright": true,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0
+    }
+  ],
+  "tile_colours": [
+    {
+      "paper": 0,
+      "ink": 0,
+      "name": "cavern11_tile_background",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 3,
+      "name": "cavern11_tile_floor",
+      "bright": true
+    },
+    {
+      "name": "cavern11_tile_crumbling_floor",
+      "bright": false,
+      "paper": 0,
+      "ink": 3
+    },
+    {
+      "paper": 4,
+      "ink": 5,
+      "name": "cavern11_tile_wall",
+      "bright": true
+    },
+    {
+      "ink": 6,
+      "bright": true,
+      "name": "cavern11_tile_conveyor",
+      "paper": 0
+    },
+    {
+      "bright": false,
+      "paper": 0,
+      "ink": 4,
+      "name": "cavern11_tile_nasty1"
+    },
+    {
+      "name": "cavern11_tile_nasty2",
+      "bright": false,
+      "paper": 0,
+      "ink": 5
+    },
+    {
+      "paper": 0,
+      "ink": 6,
+      "bright": false,
+      "name": "cavern11_tile_extra"
+    }
+  ],
+  "clock": 128,
+  "item_sprite": "cavern11_item",
+  "willy_start": {
+    "jump_counter": 0,
+    "frame": 0,
+    "y": 104,
+    "x": 16,
+    "y_times_2": 208,
+    "direction": 0,
+    "airborne": 0
+  },
+  "air": 63,
+  "height": 16,
   "width": 32,
+  "border_colour": 2,
   "layout": [
     "30600070006000000370030000000003",
     "30000000000000000000000000000003",
@@ -84,121 +174,51 @@
     "30000000000000300300000000000003",
     "31111111111111333311111111111113"
   ],
-  "tile_colours": [
-    {
-      "paper": 0,
-      "ink": 0,
-      "attr": 0,
-      "name": "cavern11_tile_background",
-      "bright": false
-    },
-    {
-      "name": "cavern11_tile_floor",
-      "bright": true,
-      "paper": 0,
-      "ink": 3,
-      "attr": 67
-    },
-    {
-      "name": "cavern11_tile_crumbling_floor",
-      "bright": false,
-      "paper": 0,
-      "ink": 3,
-      "attr": 3
-    },
-    {
-      "paper": 4,
-      "ink": 5,
-      "attr": 101,
-      "name": "cavern11_tile_wall",
-      "bright": true
-    },
-    {
-      "attr": 70,
-      "name": "cavern11_tile_conveyor",
-      "ink": 6,
-      "paper": 0,
-      "bright": true
-    },
-    {
-      "attr": 4,
-      "name": "cavern11_tile_nasty1",
-      "ink": 4,
-      "paper": 0,
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 5,
-      "attr": 5,
-      "name": "cavern11_tile_nasty2",
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "bright": false,
-      "attr": 6,
-      "name": "cavern11_tile_extra",
-      "ink": 6
-    }
-  ],
-  "clock": 128,
-  "portal": {
-    "sprite": "cavern11_portal",
-    "bright": true,
-    "x": 120,
-    "y": 104,
-    "paper": 3,
-    "ink": 6
-  },
+  "name": " Return of the Alien Kong Beast ",
   "horizontal_guardians": [
     {
-      "x": 72,
-      "y_raw": 68,
-      "min_x": 161,
       "max_x": 169,
       "unused": 7,
+      "paper": 5,
+      "ink": 0,
+      "min_x": 161,
+      "y_raw": 68,
+      "bright": true,
       "y": 104,
-      "colour": 104
+      "x": 72
     },
     {
-      "min_x": 107,
-      "x": 88,
       "y_raw": 198,
-      "colour": 104,
-      "y": 88,
+      "bright": true,
       "unused": 0,
-      "max_x": 111
+      "paper": 5,
+      "ink": 0,
+      "max_x": 111,
+      "y": 88,
+      "x": 88,
+      "min_x": 107
     },
     {
-      "colour": 0,
-      "x": 0,
       "y_raw": 0,
-      "y": -5888,
       "unused": 0,
+      "y": -5888,
+      "x": 0,
+      "bright": false,
       "max_x": 0,
+      "paper": 0,
+      "ink": 0,
       "min_x": 0
     },
     {
+      "max_x": 220,
       "y": 48,
-      "colour": 96,
       "x": 200,
-      "y_raw": 5,
-      "unused": 0,
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
       "min_x": 217,
-      "max_x": 220
+      "y_raw": 5,
+      "unused": 0
     }
-  ],
-  "air": 63,
-  "willy_start": {
-    "y": 104,
-    "direction": 0,
-    "airborne": 0,
-    "y_times_2": 208,
-    "jump_counter": 0,
-    "x": 16,
-    "frame": 0
-  },
-  "border_colour": 2,
-  "height": 16
+  ]
 }

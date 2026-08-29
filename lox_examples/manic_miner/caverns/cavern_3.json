@@ -1,84 +1,49 @@
 {
+  "portal": {
+    "x": 232,
+    "sprite": "cavern3_portal",
+    "paper": 1,
+    "ink": 6,
+    "bright": false,
+    "y": 8
+  },
+  "width": 32,
+  "vertical_guardians": [],
+  "tile_names": [
+    "cavern3_tile_background",
+    "cavern3_tile_floor",
+    "cavern3_tile_crumbling_floor",
+    "cavern3_tile_wall",
+    "cavern3_tile_conveyor",
+    "cavern3_tile_nasty1",
+    "cavern3_tile_nasty2",
+    "cavern3_tile_extra"
+  ],
   "horizontal_guardians": [
     {
+      "bright": true,
       "min_x": 161,
-      "x": 8,
       "y_raw": 66,
-      "colour": 104,
       "y": 104,
-      "unused": 0,
-      "max_x": 170
+      "x": 8,
+      "max_x": 170,
+      "paper": 5,
+      "ink": 0,
+      "unused": 0
     },
     {
-      "colour": 104,
-      "x": 56,
+      "bright": true,
+      "min_x": 166,
       "y_raw": 68,
       "y": 104,
-      "unused": 0,
+      "x": 56,
       "max_x": 175,
-      "min_x": 166
-    }
-  ],
-  "item_sprite": "cavern3_item",
-  "name": "   Abandoned Uranium Workings   ",
-  "tile_colours": [
-    {
-      "name": "cavern3_tile_background",
-      "bright": false,
-      "paper": 0,
-      "ink": 0,
-      "attr": 0
-    },
-    {
-      "attr": 70,
-      "name": "cavern3_tile_floor",
-      "ink": 6,
-      "paper": 0,
-      "bright": true
-    },
-    {
-      "name": "cavern3_tile_crumbling_floor",
-      "bright": false,
-      "paper": 0,
-      "ink": 6,
-      "attr": 6
-    },
-    {
-      "attr": 41,
-      "name": "cavern3_tile_wall",
-      "ink": 1,
       "paper": 5,
-      "bright": false
-    },
-    {
-      "paper": 0,
-      "ink": 3,
-      "attr": 3,
-      "name": "cavern3_tile_conveyor",
-      "bright": false
-    },
-    {
-      "attr": 4,
-      "name": "cavern3_tile_nasty1",
-      "ink": 4,
-      "paper": 0,
-      "bright": false
-    },
-    {
-      "attr": 5,
-      "name": "cavern3_tile_nasty2",
-      "ink": 5,
-      "paper": 0,
-      "bright": false
-    },
-    {
-      "paper": 0,
       "ink": 0,
-      "attr": 0,
-      "name": "cavern3_tile_extra",
-      "bright": false
+      "unused": 0
     }
   ],
+  "border_colour": 2,
   "layout": [
     "30000006000000333333333333333333",
     "30000000000000000000000000000003",
@@ -97,43 +62,17 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "tile_names": [
-    "cavern3_tile_background",
-    "cavern3_tile_floor",
-    "cavern3_tile_crumbling_floor",
-    "cavern3_tile_wall",
-    "cavern3_tile_conveyor",
-    "cavern3_tile_nasty1",
-    "cavern3_tile_nasty2",
-    "cavern3_tile_extra"
-  ],
-  "width": 32,
-  "height": 16,
-  "border_colour": 2,
+  "name": "   Abandoned Uranium Workings   ",
   "willy_start": {
+    "y_times_2": 208,
     "x": 232,
-    "frame": 0,
     "y": 104,
     "airborne": 0,
-    "y_times_2": 208,
-    "jump_counter": 0,
-    "direction": 1
-  },
-  "conveyor": {
     "direction": 1,
-    "y": 80,
-    "length": 3,
-    "x": 8
+    "jump_counter": 0,
+    "frame": 0
   },
-  "clock": 128,
-  "portal": {
-    "ink": 6,
-    "x": 232,
-    "bright": false,
-    "sprite": "cavern3_portal",
-    "y": 8,
-    "paper": 1
-  },
+  "item_sprite": "cavern3_item",
   "guardian_sprite_names": [
     "cavern3_guardian_0",
     "cavern3_guardian_1",
@@ -144,43 +83,120 @@
     "cavern3_guardian_6",
     "cavern3_guardian_7"
   ],
-  "vertical_guardians": [],
+  "air": 63,
+  "height": 16,
   "items": [
     {
-      "y": 0,
-      "init_colour": 255,
-      "colour": 96,
-      "x": 8,
-      "type": 3
-    },
-    {
-      "x": 96,
-      "type": 4,
-      "y": 8,
-      "init_colour": 255,
-      "colour": 96
-    },
-    {
-      "y": 8,
-      "init_colour": 255,
-      "colour": 96,
-      "x": 200,
-      "type": 5
-    },
-    {
-      "colour": 96,
-      "x": 128,
-      "y": 48,
-      "init_colour": 255,
-      "type": 6
-    },
-    {
-      "x": 240,
-      "colour": 96,
-      "init_colour": 255,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
       "type": 3,
-      "y": 48
+      "y": 0,
+      "x": 8,
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 4
+    },
+    {
+      "init_bright": true,
+      "y": 8,
+      "x": 96,
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
+      "type": 4,
+      "init_paper": 7,
+      "init_ink": 7
+    },
+    {
+      "type": 5,
+      "bright": true,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "init_bright": true,
+      "y": 8,
+      "x": 200,
+      "init_paper": 7
+    },
+    {
+      "init_bright": true,
+      "y": 48,
+      "x": 128,
+      "bright": true,
+      "ink": 0,
+      "paper": 4,
+      "type": 6,
+      "init_paper": 7,
+      "init_ink": 7
+    },
+    {
+      "type": 3,
+      "y": 48,
+      "x": 240,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "init_paper": 7,
+      "bright": true,
+      "init_bright": true
     }
   ],
-  "air": 63
+  "conveyor": {
+    "y": 80,
+    "x": 8,
+    "length": 3,
+    "direction": 1
+  },
+  "tile_colours": [
+    {
+      "paper": 0,
+      "ink": 0,
+      "bright": false,
+      "name": "cavern3_tile_background"
+    },
+    {
+      "ink": 6,
+      "bright": true,
+      "name": "cavern3_tile_floor",
+      "paper": 0
+    },
+    {
+      "bright": false,
+      "paper": 0,
+      "ink": 6,
+      "name": "cavern3_tile_crumbling_floor"
+    },
+    {
+      "paper": 5,
+      "ink": 1,
+      "bright": false,
+      "name": "cavern3_tile_wall"
+    },
+    {
+      "paper": 0,
+      "ink": 3,
+      "bright": false,
+      "name": "cavern3_tile_conveyor"
+    },
+    {
+      "paper": 0,
+      "ink": 4,
+      "bright": false,
+      "name": "cavern3_tile_nasty1"
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "bright": false,
+      "name": "cavern3_tile_nasty2"
+    },
+    {
+      "paper": 0,
+      "ink": 0,
+      "bright": false,
+      "name": "cavern3_tile_extra"
+    }
+  ],
+  "clock": 128
 }

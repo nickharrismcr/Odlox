@@ -14,6 +14,13 @@ import spectrum_attr
 // game_sprite.Sprite, plus load(path) to read straight from a JSON file.
 //
 
+// Per the disassembly, an uncollected item's ink cycles through these
+// four palette values once per tick -- magenta, green, cyan, yellow --
+// while its paper stays fixed at the item's own decoded paper. That's
+// the actual "twinkle," not an alternation between the extracted
+// colour/init_colour bytes (see draw_items()).
+const ITEM_INK_CYCLE = [3, 4, 5, 6]
+
 class Cavern {
     __init__() {
         this.name = ""
@@ -21,16 +28,16 @@ class Cavern {
         this.height = 0
         this.layout = []              // row strings, one digit char (0-7) per cell, indexing tile_names
         this.tile_names = []          // 8 asset-name pointers, index-matched to layout values
-        this.tile_colours = []        // 8 {name, attr, ink, paper, bright} -- name points into a SpriteAssets, ink/paper are 0-7 palette indices
+        this.tile_colours = []        // 8 {name, ink, paper, bright} -- name points into a SpriteAssets, ink/paper are 0-7 palette indices
         this.willy_start = {}         // {y_times_2, frame, direction, airborne, x, y, jump_counter}
         this.conveyor = {}            // {direction, x, y, length}
         this.border_colour = 0
-        this.items = []               // list of {type, x, y, colour, init_colour}
+        this.items = []               // list of {type, x, y, ink, paper, bright, init_ink, init_paper, init_bright}
         this.item_sprite = ""         // asset name pointer
         this.portal = {}              // {ink, paper, bright, x, y, sprite}
         this.air = 0
         this.clock = 0
-        this.horizontal_guardians = []
+        this.horizontal_guardians = []   // list of {y_raw, x, y, ink, paper, bright, unused, min_x, max_x}
         this.vertical_guardians = []
         this.guardian_sprite_names = []   // 8 asset-name pointers (right_0..3, left_0..3)
     }
@@ -92,6 +99,34 @@ class Cavern {
                 var img = lib.get(tile["name"])
                 disp.blit_sprite(img, x * 8, y * 8, tile["ink"], tile["paper"])
             }
+        }
+    }
+
+    // Draws every (uncollected) item using the shared item_sprite icon,
+    // ink cycling through ITEM_INK_CYCLE once per tick (tick increases by
+    // 1 every call -- the caller owns the counter, same as
+    // game_sprite.Sprite's callers own theirs). Each item's cycle is
+    // offset by its own index, per the original game -- items shimmer in
+    // a staggered wave rather than all flashing the same colour at once.
+    // Paper/bright come from whatever room tile actually occupies the
+    // item's cell, not from the item's own extracted paper/bright -- the
+    // real engine only pokes the ink bits into that cell's existing
+    // attribute byte, leaving its paper as the room's own background
+    // rather than a fixed colour baked into the item data. No erase step
+    // needed: items never move, so redrawing the same cell each tick
+    // just overwrites its ink.
+    draw_items(disp, lib, tick) {
+        var img = lib.get(this.item_sprite)
+        for (var i = 0; i < len(this.items); i = i + 1) {
+            var item = this.items[i]
+            var ink_value = ITEM_INK_CYCLE[(tick + i) % len(ITEM_INK_CYCLE)]
+            var cx = int(item["x"] / 8)
+            var cy = int(item["y"] / 8)
+            var tile_index = int(this.layout[cy][cx])
+            var tile = this.tile_colours[tile_index]
+            var ink = spectrum_attr.colour_to_rgba(ink_value, tile["bright"])
+            var paper = spectrum_attr.colour_to_rgba(tile["paper"], tile["bright"])
+            disp.blit_sprite(img, item["x"], item["y"], ink, paper)
         }
     }
 }
