@@ -1,80 +1,118 @@
 {
+  "border_colour": 2,
+  "tile_names": [
+    "cavern19_tile_background",
+    "cavern19_tile_floor",
+    "cavern19_tile_crumbling_floor",
+    "cavern19_tile_wall",
+    "cavern19_tile_conveyor",
+    "cavern19_tile_nasty1",
+    "cavern19_tile_nasty2",
+    "cavern19_tile_extra"
+  ],
+  "vertical_guardians": [
+    {
+      "bright": false,
+      "dy": 1,
+      "paper": 0,
+      "y": 48,
+      "x": 192,
+      "max_x": 103,
+      "ink": 7,
+      "min_x": 40
+    }
+  ],
+  "air": 63,
+  "items": [
+    {
+      "type": 3,
+      "init_ink": 7,
+      "init_paper": 7,
+      "x": 184,
+      "bright": true,
+      "paper": 4,
+      "y": 40,
+      "init_bright": true,
+      "ink": 0
+    },
+    {
+      "paper": 4,
+      "init_ink": 7,
+      "y": 48,
+      "ink": 0,
+      "type": 4,
+      "init_bright": true,
+      "bright": true,
+      "x": 240,
+      "init_paper": 7
+    },
+    {
+      "paper": 5,
+      "init_ink": 7,
+      "y": 88,
+      "ink": 0,
+      "type": 5,
+      "init_bright": true,
+      "bright": true,
+      "x": 80,
+      "init_paper": 7
+    },
+    {
+      "init_paper": 7,
+      "x": 112,
+      "init_bright": true,
+      "ink": 0,
+      "type": 6,
+      "bright": true,
+      "paper": 5,
+      "y": 88,
+      "init_ink": 7
+    },
+    {
+      "y": 88,
+      "init_bright": true,
+      "ink": 0,
+      "type": 3,
+      "init_ink": 7,
+      "init_paper": 7,
+      "x": 152,
+      "bright": true,
+      "paper": 5
+    }
+  ],
   "willy_start": {
-    "airborne": 0,
     "y": 104,
     "y_times_2": 208,
     "x": 216,
+    "jump_counter": 0,
+    "airborne": 0,
     "direction": 1,
-    "frame": 0,
-    "jump_counter": 0
+    "frame": 0
   },
-  "name": "        The Final Barrier       ",
-  "horizontal_guardians": [
-    {
-      "max_x": 176,
-      "ink": 6,
-      "min_x": 56,
-      "paper": 0,
-      "y": 104,
-      "x": 56,
-      "bright": true
-    }
-  ],
-  "portal": {
-    "paper": 3,
-    "ink": 6,
-    "bright": false,
-    "sprite": "cavern19_portal",
-    "x": 152,
-    "y": 40
-  },
-  "width": 32,
-  "conveyor": {
-    "length": 22,
-    "x": 8,
-    "y": 80,
-    "direction": 1
-  },
-  "air": 63,
-  "vertical_guardians": [
-    {
-      "dy": 1,
-      "paper": 0,
-      "ink": 7,
-      "min_x": 40,
-      "bright": false,
-      "x": 192,
-      "y": 48,
-      "max_x": 103
-    }
-  ],
-  "clock": 252,
-  "item_sprite": "cavern19_item",
-  "border_colour": 2,
   "tile_colours": [
     {
       "bright": false,
-      "ink": 0,
       "paper": 0,
+      "ink": 0,
       "name": "cavern19_tile_background"
     },
     {
       "bright": true,
-      "ink": 2,
       "paper": 0,
+      "ink": 2,
       "name": "cavern19_tile_floor"
     },
     {
       "paper": 0,
-      "bright": false,
+      "ink": 2,
       "name": "cavern19_tile_crumbling_floor",
-      "ink": 2
+      "bright": false
     },
     {
-      "name": "cavern19_tile_wall",
-      "ink": 6,
+      "bright": false,
       "paper": 4,
-      "bright": false
+      "ink": 6,
+      "name": "cavern19_tile_wall"
     },
     {
       "paper": 0,
@@ -83,24 +121,52 @@
       "bright": false
     },
     {
-      "ink": 4,
-      "bright": true,
       "name": "cavern19_tile_nasty1",
-      "paper": 0
+      "paper": 0,
+      "ink": 4,
+      "bright": true
     },
     {
+      "ink": 2,
       "name": "cavern19_tile_nasty2",
       "bright": false,
-      "paper": 1,
-      "ink": 2
+      "paper": 1
     },
     {
-      "paper": 0,
-      "bright": false,
+      "ink": 0,
       "name": "cavern19_tile_extra",
-      "ink": 0
+      "bright": false,
+      "paper": 0
     }
   ],
+  "guardian_sprite_names": [
+    "cavern19_guardian_0",
+    "cavern19_guardian_1",
+    "cavern19_guardian_2",
+    "cavern19_guardian_3",
+    "cavern19_guardian_4",
+    "cavern19_guardian_5",
+    "cavern19_guardian_6",
+    "cavern19_guardian_7"
+  ],
+  "horizontal_guardians": [
+    {
+      "paper": 0,
+      "ink": 6,
+      "bright": true,
+      "max_x": 176,
+      "y": 104,
+      "x": 56,
+      "min_x": 56
+    }
+  ],
+  "conveyor": {
+    "y": 80,
+    "direction": 1,
+    "x": 8,
+    "length": 22
+  },
+  "name": "        The Final Barrier       ",
   "layout": [
     "00000000000000000000000000000000",
     "00000000000000000000000000000000",
@@ -119,82 +185,16 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "guardian_sprite_names": [
-    "cavern19_guardian_0",
-    "cavern19_guardian_1",
-    "cavern19_guardian_2",
-    "cavern19_guardian_3",
-    "cavern19_guardian_4",
-    "cavern19_guardian_5",
-    "cavern19_guardian_6",
-    "cavern19_guardian_7"
-  ],
+  "clock": 252,
+  "width": 32,
+  "portal": {
+    "bright": false,
+    "sprite": "cavern19_portal",
+    "x": 152,
+    "paper": 3,
+    "ink": 6,
+    "y": 40
+  },
   "height": 16,
-  "tile_names": [
-    "cavern19_tile_background",
-    "cavern19_tile_floor",
-    "cavern19_tile_crumbling_floor",
-    "cavern19_tile_wall",
-    "cavern19_tile_conveyor",
-    "cavern19_tile_nasty1",
-    "cavern19_tile_nasty2",
-    "cavern19_tile_extra"
-  ],
-  "items": [
-    {
-      "type": 3,
-      "y": 40,
-      "init_ink": 7,
-      "init_bright": true,
-      "paper": 4,
-      "x": 184,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0
-    },
-    {
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0,
-      "type": 4,
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "y": 48,
-      "x": 240
-    },
-    {
-      "init_paper": 7,
-      "type": 5,
-      "init_ink": 7,
-      "y": 88,
-      "ink": 0,
-      "bright": true,
-      "x": 80,
-      "init_bright": true,
-      "paper": 5
-    },
-    {
-      "type": 6,
-      "y": 88,
-      "init_ink": 7,
-      "init_bright": true,
-      "paper": 5,
-      "x": 112,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0
-    },
-    {
-      "y": 88,
-      "ink": 0,
-      "bright": true,
-      "x": 152,
-      "init_bright": true,
-      "paper": 5,
-      "init_paper": 7,
-      "type": 3,
-      "init_ink": 7
-    }
-  ]
+  "item_sprite": "cavern19_item"
 }

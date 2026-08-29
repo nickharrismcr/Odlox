@@ -25,6 +25,7 @@ func state_running(g, win) {
     g.controller.update(win)
     g.cavern.draw_items(g.disp, g.lib, g.frame_count)
     g.cavern.animate_conveyor(g.disp)
+    g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
     g.cavern.update_guardians()
     g.cavern.draw_guardians(g.disp, g.lib)
     g.willy.step(g.controller, g.cavern, g.disp, g.lib)

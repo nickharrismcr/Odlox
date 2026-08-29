@@ -37,6 +37,10 @@ const CRUMBLE_TICKS = 8
 // the item's own decoded paper or an alternation with init_colour.
 const ITEM_INK_CYCLE = [3, 4, 5, 6]
 
+// Ticks per flash phase once the portal starts flashing (see
+// Cavern.set_portal_flash()).
+const PORTAL_FLASH_TICKS = 8
+
 // Each tick, animate_conveyor() bit-rotates pixel row 0 of every belt
 // tile by this many positions one way, and row 2 the other way (rows 1
 // and 3-7 are untouched) -- there are no separate animation frames.
@@ -256,12 +260,23 @@ class Cavern {
         return !this.tile_blocks(px, py)
     }
 
+    // The room's own background paper, as a packed colour -- Willy force-
+    // blits with this (not a fixed colour) wherever he overlaps open
+    // background, so it matches whatever this cavern's background is.
+    background_paper() -> float {
+        var bg = this.tile_colours[TILE_BACKGROUND]
+        return spectrum_attr.colour_to_rgba(bg["paper"], bg["bright"])
+    }
+
     // Call once per tick while Willy is standing on a still-solid
-    // crumbling-floor cell at pixel position (px, py); after CRUMBLE_TICKS
-    // calls for that same cell, it collapses (tile_type_at() then reads it
-    // as TILE_BACKGROUND, and the cell is redrawn to match). Calling this
-    // on a cell that isn't TILE_CRUMBLING_FLOOR, or that has already
-    // collapsed, is harmless.
+    // crumbling-floor cell at pixel position (px, py); each call shifts
+    // the cell's own 8 pixel rows down by one (the row that falls off the
+    // bottom is gone, the row left at top is blank), so after
+    // CRUMBLE_TICKS calls the cell is visually empty and collapses
+    // (tile_type_at() then reads it as TILE_BACKGROUND, and the cell is
+    // redrawn to match its true background attribute). Calling this on a
+    // cell that isn't TILE_CRUMBLING_FLOOR, or that has already collapsed,
+    // is harmless.
     tick_crumble(disp, lib, px, py) {
         var cx = int(px / 8)
         var cy = int(py / 8)
@@ -269,6 +284,7 @@ class Cavern {
         if (this.crumbled.get(key, false)) {
             return
         }
+        disp.shift_rows_down(cx * 8, cy * 8, 8, 8)
         var remaining = this.crumble_timers.get(key, CRUMBLE_TICKS) - 1
         if (remaining <= 0) {
             this.crumbled[key] = true
@@ -357,6 +373,36 @@ class Cavern {
                 var img = lib.get(tile["name"])
                 disp.blit_sprite(img, x * 8, y * 8, tile["ink"], tile["paper"])
             }
+        }
+        this.draw_portal(disp, lib)
+    }
+
+    // Draws the portal at its own position in its own (non-flashing)
+    // colour -- static, so unlike draw_items()/draw_guardians() this only
+    // needs calling once (draw() does so). See set_portal_flash() for the
+    // per-tick flash once every item is collected.
+    draw_portal(disp, lib) {
+        var img = lib.get(this.portal["sprite"])
+        var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
+        var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
+        disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
+    }
+
+    // Once all_items_collected(), alternates the portal between its
+    // normal ink/paper and them swapped, every PORTAL_FLASH_TICKS ticks --
+    // call once per game tick, same convention as draw_items(). A no-op
+    // until every item is collected.
+    set_portal_flash(disp, lib, tick) {
+        if (!this.all_items_collected()) {
+            return
+        }
+        var img = lib.get(this.portal["sprite"])
+        var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
+        var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
+        if (int(tick / PORTAL_FLASH_TICKS) % 2 == 0) {
+            disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
+        } else {
+            disp.blit_sprite(img, this.portal["x"], this.portal["y"], paper, ink)
         }
     }
 

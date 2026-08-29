@@ -246,8 +246,9 @@ func extract_one(bytes, index, out_dir) {
         })
     }
 
-    // Portal: attribute byte, 32-byte graphic, then screen_addr -- starts
-    // right after the items list's terminator.
+    // Portal: attribute byte, 32-byte graphic (16x16 -- 2 bytes/row x 16
+    // rows), then screen_addr -- starts right after the items list's
+    // terminator.
     var portal_base = item_result["next"]
     var portal_attr = sna.read_u8(bytes, portal_base)
     var portal_colours = spectrum_attr.decode_attribute(portal_attr)
@@ -262,7 +263,7 @@ func extract_one(bytes, index, out_dir) {
         "paper": portal_colours["paper"],
         "bright": portal_colours["bright"],
         "x": portal_xy["x"], "y": portal_xy["y"],
-        "sprite": {"name": prefix & "_portal", "data_type": "pixel", "data": bytes_to_pixel_rows(portal_pixels, 8)}
+        "sprite": {"name": prefix & "_portal", "data_type": "pixel", "data": bytes_to_pixel_rows(portal_pixels, 16)}
     }
 
     // Item graphic: one 8x8 tile, placed right after the portal record.

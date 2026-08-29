@@ -1,122 +1,123 @@
 {
-  "portal": {
-    "paper": 1,
-    "ink": 7,
-    "bright": true,
-    "sprite": "cavern12_portal",
-    "x": 8,
-    "y": 104
-  },
-  "width": 32,
-  "items": [
-    {
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "y": 24,
-      "init_paper": 7,
-      "type": 3,
-      "ink": 0,
-      "bright": true,
-      "x": 208
-    },
-    {
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0,
-      "paper": 4,
-      "x": 80,
-      "init_bright": true,
-      "type": 4,
-      "init_ink": 7,
-      "y": 48
-    },
-    {
-      "init_paper": 7,
-      "type": 5,
-      "ink": 0,
-      "bright": true,
-      "x": 152,
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 5,
-      "y": 72
-    },
-    {
-      "init_bright": true,
-      "type": 6,
-      "init_ink": 7,
-      "y": 72,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0,
-      "paper": 5,
-      "x": 208
-    },
-    {
-      "type": 3,
-      "y": 96,
-      "init_ink": 7,
-      "init_bright": true,
-      "paper": 5,
-      "x": 88,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0
-    }
-  ],
   "clock": 252,
-  "border_colour": 1,
+  "name": "          Ore Refinery          ",
   "tile_colours": [
     {
       "paper": 0,
+      "ink": 0,
       "bright": false,
-      "name": "cavern12_tile_background",
-      "ink": 0
+      "name": "cavern12_tile_background"
     },
     {
-      "name": "cavern12_tile_floor",
-      "bright": false,
-      "ink": 5,
-      "paper": 0
-    },
-    {
-      "bright": true,
-      "ink": 2,
       "paper": 0,
+      "ink": 5,
+      "bright": false,
+      "name": "cavern12_tile_floor"
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "bright": true,
       "name": "cavern12_tile_crumbling_floor"
     },
     {
+      "name": "cavern12_tile_wall",
       "paper": 2,
       "ink": 6,
-      "bright": false,
-      "name": "cavern12_tile_wall"
-    },
-    {
-      "paper": 0,
-      "bright": false,
-      "name": "cavern12_tile_conveyor",
-      "ink": 4
+      "bright": false
     },
     {
       "paper": 0,
       "ink": 4,
-      "bright": true,
-      "name": "cavern12_tile_nasty1"
+      "bright": false,
+      "name": "cavern12_tile_conveyor"
     },
     {
-      "name": "cavern12_tile_nasty2",
+      "ink": 4,
+      "name": "cavern12_tile_nasty1",
       "bright": true,
-      "ink": 5,
       "paper": 0
     },
     {
+      "name": "cavern12_tile_nasty2",
       "paper": 0,
+      "ink": 5,
+      "bright": true
+    },
+    {
       "ink": 6,
+      "name": "cavern12_tile_extra",
       "bright": false,
-      "name": "cavern12_tile_extra"
+      "paper": 0
     }
   ],
+  "air": 63,
+  "items": [
+    {
+      "init_paper": 7,
+      "x": 208,
+      "init_bright": true,
+      "ink": 0,
+      "type": 3,
+      "bright": true,
+      "paper": 4,
+      "y": 24,
+      "init_ink": 7
+    },
+    {
+      "paper": 4,
+      "init_ink": 7,
+      "bright": true,
+      "ink": 0,
+      "type": 4,
+      "init_paper": 7,
+      "x": 80,
+      "init_bright": true,
+      "y": 48
+    },
+    {
+      "init_bright": true,
+      "bright": true,
+      "init_ink": 7,
+      "paper": 5,
+      "init_paper": 7,
+      "x": 152,
+      "y": 72,
+      "ink": 0,
+      "type": 5
+    },
+    {
+      "x": 208,
+      "bright": true,
+      "ink": 0,
+      "type": 6,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 72,
+      "paper": 5,
+      "init_paper": 7
+    },
+    {
+      "bright": true,
+      "init_bright": true,
+      "init_paper": 7,
+      "x": 88,
+      "init_ink": 7,
+      "y": 96,
+      "paper": 5,
+      "ink": 0,
+      "type": 3
+    }
+  ],
+  "portal": {
+    "y": 104,
+    "paper": 1,
+    "ink": 7,
+    "sprite": "cavern12_portal",
+    "bright": true,
+    "x": 8
+  },
+  "height": 16,
   "layout": [
     "33333333333333333333333333333333",
     "30070000000000000000000000000003",
@@ -135,16 +136,7 @@
     "30070000000000000000000000000003",
     "31144444444444444444444444444113"
   ],
-  "guardian_sprite_names": [
-    "cavern12_guardian_0",
-    "cavern12_guardian_1",
-    "cavern12_guardian_2",
-    "cavern12_guardian_3",
-    "cavern12_guardian_4",
-    "cavern12_guardian_5",
-    "cavern12_guardian_6",
-    "cavern12_guardian_7"
-  ],
+  "border_colour": 1,
   "tile_names": [
     "cavern12_tile_background",
     "cavern12_tile_floor",
@@ -155,73 +147,81 @@
     "cavern12_tile_nasty2",
     "cavern12_tile_extra"
   ],
-  "name": "          Ore Refinery          ",
-  "conveyor": {
-    "y": 120,
-    "length": 26,
-    "x": 24,
-    "direction": 1
-  },
-  "air": 63,
+  "width": 32,
   "vertical_guardians": [
     {
+      "x": 40,
+      "min_x": 8,
       "max_x": 100,
       "y": 8,
-      "min_x": 8,
-      "bright": true,
-      "ink": 7,
-      "paper": 0,
       "dy": 2,
-      "x": 40
+      "paper": 0,
+      "ink": 7,
+      "bright": true
     }
   ],
-  "item_sprite": "cavern12_item",
-  "willy_start": {
-    "airborne": 0,
-    "direction": 0,
-    "x": 232,
-    "frame": 0,
-    "jump_counter": 0,
-    "y": 104,
-    "y_times_2": 208
-  },
-  "height": 16,
+  "guardian_sprite_names": [
+    "cavern12_guardian_0",
+    "cavern12_guardian_1",
+    "cavern12_guardian_2",
+    "cavern12_guardian_3",
+    "cavern12_guardian_4",
+    "cavern12_guardian_5",
+    "cavern12_guardian_6",
+    "cavern12_guardian_7"
+  ],
   "horizontal_guardians": [
     {
-      "bright": true,
       "min_x": 56,
+      "y": 8,
+      "max_x": 232,
       "ink": 3,
-      "paper": 0,
+      "bright": true,
       "x": 56,
-      "max_x": 232,
-      "y": 8
+      "paper": 0
     },
     {
+      "y": 32,
       "min_x": 56,
-      "bright": true,
+      "max_x": 232,
       "ink": 4,
-      "paper": 0,
       "x": 128,
-      "max_x": 232,
-      "y": 32
+      "bright": true,
+      "paper": 0
     },
     {
-      "max_x": 208,
-      "y": 56,
-      "min_x": 80,
-      "bright": true,
+      "paper": 0,
       "ink": 6,
-      "paper": 0,
-      "x": 160
+      "bright": true,
+      "x": 160,
+      "min_x": 80,
+      "max_x": 208,
+      "y": 56
     },
     {
-      "paper": 0,
       "x": 144,
-      "bright": true,
       "min_x": 56,
-      "ink": 2,
+      "max_x": 232,
       "y": 80,
-      "max_x": 232
+      "paper": 0,
+      "ink": 2,
+      "bright": true
     }
-  ]
+  ],
+  "conveyor": {
+    "direction": 1,
+    "x": 24,
+    "length": 26,
+    "y": 120
+  },
+  "willy_start": {
+    "jump_counter": 0,
+    "airborne": 0,
+    "direction": 0,
+    "frame": 0,
+    "y": 104,
+    "y_times_2": 208,
+    "x": 232
+  },
+  "item_sprite": "cavern12_item"
 }

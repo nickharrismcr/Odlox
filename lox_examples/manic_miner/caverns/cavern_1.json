@@ -1,57 +1,5 @@
 {
-  "clock": 252,
-  "height": 16,
-  "border_colour": 2,
-  "tile_colours": [
-    {
-      "name": "cavern1_tile_background",
-      "bright": false,
-      "paper": 1,
-      "ink": 0
-    },
-    {
-      "paper": 1,
-      "ink": 3,
-      "name": "cavern1_tile_floor",
-      "bright": true
-    },
-    {
-      "paper": 1,
-      "bright": false,
-      "name": "cavern1_tile_crumbling_floor",
-      "ink": 3
-    },
-    {
-      "paper": 2,
-      "ink": 6,
-      "bright": false,
-      "name": "cavern1_tile_wall"
-    },
-    {
-      "paper": 1,
-      "bright": false,
-      "name": "cavern1_tile_conveyor",
-      "ink": 6
-    },
-    {
-      "paper": 1,
-      "ink": 4,
-      "name": "cavern1_tile_nasty1",
-      "bright": false
-    },
-    {
-      "name": "cavern1_tile_nasty2",
-      "bright": false,
-      "paper": 1,
-      "ink": 5
-    },
-    {
-      "ink": 0,
-      "bright": false,
-      "name": "cavern1_tile_extra",
-      "paper": 0
-    }
-  ],
+  "name": "          The Cold Room         ",
   "layout": [
     "30000000000000000003333333333333",
     "30000000000000000000000000000063",
@@ -70,111 +18,64 @@
     "30000000000000000000000000000003",
     "31111111111111111111111111111113"
   ],
-  "vertical_guardians": [],
-  "item_sprite": "cavern1_item",
-  "name": "          The Cold Room         ",
-  "willy_start": {
-    "frame": 0,
-    "jump_counter": 0,
-    "airborne": 0,
-    "y": 104,
-    "y_times_2": 208,
-    "x": 16,
-    "direction": 0
-  },
-  "horizontal_guardians": [
+  "tile_colours": [
     {
-      "x": 144,
-      "y": 24,
-      "min_x": 8,
       "bright": false,
-      "max_x": 144,
-      "ink": 6,
-      "paper": 1
-    },
-    {
-      "min_x": 96,
+      "name": "cavern1_tile_background",
       "paper": 1,
-      "y": 104,
-      "x": 232,
-      "bright": false,
-      "max_x": 232,
-      "ink": 5
-    }
-  ],
-  "portal": {
-    "x": 232,
-    "y": 104,
-    "sprite": "cavern1_portal",
-    "bright": true,
-    "paper": 2,
-    "ink": 3
-  },
-  "conveyor": {
-    "y": 88,
-    "length": 4,
-    "x": 24,
-    "direction": 1
-  },
-  "width": 32,
-  "air": 63,
-  "items": [
-    {
-      "type": 11,
-      "init_ink": 7,
-      "y": 8,
-      "bright": true,
-      "init_bright": true,
-      "x": 56,
-      "paper": 4,
-      "init_paper": 7,
       "ink": 0
     },
     {
-      "type": 12,
-      "init_ink": 7,
-      "y": 8,
-      "bright": true,
-      "init_bright": true,
-      "x": 192,
-      "paper": 4,
-      "init_paper": 7,
-      "ink": 0
-    },
-    {
-      "type": 13,
-      "y": 56,
-      "init_ink": 7,
-      "init_bright": true,
-      "paper": 4,
-      "x": 208,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0
-    },
-    {
-      "init_bright": true,
-      "x": 24,
-      "init_ink": 7,
-      "y": 72,
-      "paper": 5,
-      "init_paper": 7,
-      "ink": 0,
-      "type": 14,
+      "name": "cavern1_tile_floor",
+      "paper": 1,
+      "ink": 3,
       "bright": true
     },
     {
-      "type": 11,
-      "bright": true,
-      "init_paper": 7,
+      "bright": false,
+      "paper": 1,
+      "ink": 3,
+      "name": "cavern1_tile_crumbling_floor"
+    },
+    {
+      "bright": false,
+      "paper": 2,
+      "ink": 6,
+      "name": "cavern1_tile_wall"
+    },
+    {
+      "bright": false,
+      "name": "cavern1_tile_conveyor",
+      "paper": 1,
+      "ink": 6
+    },
+    {
+      "paper": 1,
+      "ink": 4,
+      "bright": false,
+      "name": "cavern1_tile_nasty1"
+    },
+    {
+      "name": "cavern1_tile_nasty2",
+      "paper": 1,
+      "ink": 5,
+      "bright": false
+    },
+    {
+      "bright": false,
+      "paper": 0,
       "ink": 0,
-      "paper": 5,
-      "x": 152,
-      "init_ink": 7,
-      "y": 96,
-      "init_bright": true
+      "name": "cavern1_tile_extra"
     }
   ],
+  "clock": 252,
+  "conveyor": {
+    "length": 4,
+    "y": 88,
+    "direction": 1,
+    "x": 24
+  },
+  "vertical_guardians": [],
   "guardian_sprite_names": [
     "cavern1_guardian_0",
     "cavern1_guardian_1",
@@ -185,6 +86,105 @@
     "cavern1_guardian_6",
     "cavern1_guardian_7"
   ],
+  "horizontal_guardians": [
+    {
+      "bright": false,
+      "min_x": 8,
+      "paper": 1,
+      "x": 144,
+      "y": 24,
+      "max_x": 144,
+      "ink": 6
+    },
+    {
+      "max_x": 232,
+      "x": 232,
+      "bright": false,
+      "paper": 1,
+      "y": 104,
+      "min_x": 96,
+      "ink": 5
+    }
+  ],
+  "item_sprite": "cavern1_item",
+  "willy_start": {
+    "y": 104,
+    "y_times_2": 208,
+    "x": 16,
+    "jump_counter": 0,
+    "airborne": 0,
+    "frame": 0,
+    "direction": 0
+  },
+  "portal": {
+    "bright": true,
+    "sprite": "cavern1_portal",
+    "x": 232,
+    "paper": 2,
+    "ink": 3,
+    "y": 104
+  },
+  "height": 16,
+  "air": 63,
+  "items": [
+    {
+      "paper": 4,
+      "ink": 0,
+      "type": 11,
+      "bright": true,
+      "init_bright": true,
+      "init_paper": 7,
+      "x": 56,
+      "init_ink": 7,
+      "y": 8
+    },
+    {
+      "y": 8,
+      "init_paper": 7,
+      "x": 192,
+      "init_ink": 7,
+      "paper": 4,
+      "ink": 0,
+      "type": 12,
+      "bright": true,
+      "init_bright": true
+    },
+    {
+      "type": 13,
+      "init_ink": 7,
+      "init_paper": 7,
+      "x": 208,
+      "bright": true,
+      "paper": 4,
+      "y": 56,
+      "init_bright": true,
+      "ink": 0
+    },
+    {
+      "ink": 0,
+      "type": 14,
+      "init_paper": 7,
+      "x": 24,
+      "init_bright": true,
+      "y": 72,
+      "paper": 5,
+      "init_ink": 7,
+      "bright": true
+    },
+    {
+      "paper": 5,
+      "init_ink": 7,
+      "y": 96,
+      "ink": 0,
+      "type": 11,
+      "init_bright": true,
+      "bright": true,
+      "x": 152,
+      "init_paper": 7
+    }
+  ],
+  "width": 32,
+  "border_colour": 2,
   "tile_names": [
     "cavern1_tile_background",
     "cavern1_tile_floor",

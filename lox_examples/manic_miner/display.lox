@@ -188,6 +188,22 @@ class Display {
         }
     }
 
+    // Shifts a width x height pixel block at (x, y) down by one row,
+    // discarding the row that falls off the bottom and blanking the row
+    // left at the top -- Manic Miner's crumbling-floor animation. Unlike
+    // rotate_row_left/right this is a shift, not a wraparound: after
+    // `height` calls the whole block is blank regardless of its start.
+    shift_rows_down(x, y, width, height) {
+        for (var row = height - 1; row > 0; row = row - 1) {
+            for (var col = 0; col < width; col = col + 1) {
+                this.plot(x + col, y + row, this.bitmap.get(x + col, y + row - 1))
+            }
+        }
+        for (var col = 0; col < width; col = col + 1) {
+            this.plot(x + col, y, 0.0)
+        }
+    }
+
     get_ink(cx, cy) -> float {
         return this.attr_ink.get(cx, cy)
     }

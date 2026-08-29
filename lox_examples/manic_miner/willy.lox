@@ -20,7 +20,7 @@ const WILLY_FRAMES = [
 
 const WALK_STEP = 8           // one column per completed 4-frame walk/jump cycle (see handle_step_horizontal)
 const FALL_SPEED = 4          // real Z80 (35706-35711): +8 to the raw y*2 counter = 4 real pixels/tick
-const FALL_DEATH_HEIGHT = 24  // approximate: falling further than this before landing kills Willy
+const FALL_DEATH_HEIGHT = 34  // approximate: falling further than this before landing kills Willy
 const AIR_TICKS_PER_UNIT = 8  // approximate: ticks per 1 unit of air consumed
 
 // Real jump arc (Z80 35522-35533), halved from a raw y*2 counter to real
@@ -85,7 +85,6 @@ class Willy < Sprite {
         this.image_list = WILLY_FRAMES
         this.anim = WalkCycle()
         this.colour = encode_rgba(255, 255, 255)
-        this.paper = encode_rgba(0, 0, 0)
         this.visible = true
 
         this.dead = false
@@ -157,7 +156,7 @@ func draw_footprint(w, room, disp, img, x, y) {
         for (var cx = cx0; cx <= cx1; cx = cx + 1) {
             var platform = room.tile_is_platform(cx * 8, cy * 8)
             if (!platform) {
-                disp.set_attr(cx, cy, w.colour, w.paper)
+                disp.set_attr(cx, cy, w.colour, room.background_paper())
             }
             var py0 = cy * 8
             var py1 = py0 + 7

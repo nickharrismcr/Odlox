@@ -15,7 +15,7 @@ import sys
 //
 
 var argv = sys.args()
-var index = 0
+var index = 2
 if (len(argv) >= 2) {
     index = int(argv[1])
 }
@@ -32,7 +32,7 @@ win.set_target_fps(TARGET_FPS)
 var g = game.Game(index,TARGET_FPS)
 g.disp.upload()
 
-var was_dying = false
+ 
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         break

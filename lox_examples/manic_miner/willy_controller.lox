@@ -10,12 +10,12 @@ class Controller {
     __init__() {
         this.left = false    // held: move left
         this.right = false   // held: move right
-        this.jump = false    // edge-triggered: start a jump
+        this.jump = false    // held: jump, or jump again immediately on landing
     }
 
     update(win) {
         this.left = win.key_down(win.KEY_Q)
         this.right = win.key_down(win.KEY_W)
-        this.jump = win.key_pressed(win.KEY_SPACE)
+        this.jump = win.key_down(win.KEY_SPACE)
     }
 }

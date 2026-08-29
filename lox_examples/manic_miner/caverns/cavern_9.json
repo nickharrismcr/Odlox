@@ -1,170 +1,130 @@
 {
-  "items": [
-    {
-      "init_paper": 7,
-      "type": 3,
-      "init_ink": 7,
-      "y": 16,
-      "ink": 0,
-      "bright": true,
-      "x": 168,
-      "init_bright": true,
-      "paper": 4
-    },
-    {
-      "paper": 4,
-      "x": 112,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0,
-      "type": 4,
-      "y": 8,
-      "init_ink": 7,
-      "init_bright": true
-    },
-    {
-      "x": 96,
-      "init_ink": 7,
-      "y": 48,
-      "init_bright": true,
-      "type": 5,
-      "bright": true,
-      "init_paper": 7,
-      "ink": 0,
-      "paper": 4
-    },
-    {
-      "init_bright": true,
-      "init_ink": 7,
-      "paper": 5,
-      "y": 64,
-      "init_paper": 7,
-      "type": 6,
-      "ink": 0,
-      "bright": true,
-      "x": 144
-    },
-    {
-      "type": 3,
-      "init_ink": 7,
-      "y": 8,
-      "bright": true,
-      "init_bright": true,
-      "x": 240,
-      "paper": 4,
-      "init_paper": 7,
-      "ink": 0
-    }
+  "portal": {
+    "x": 96,
+    "sprite": "cavern9_portal",
+    "bright": false,
+    "paper": 3,
+    "ink": 6,
+    "y": 104
+  },
+  "height": 16,
+  "width": 32,
+  "item_sprite": "cavern9_item",
+  "guardian_sprite_names": [
+    "cavern9_guardian_0",
+    "cavern9_guardian_1",
+    "cavern9_guardian_2",
+    "cavern9_guardian_3",
+    "cavern9_guardian_4",
+    "cavern9_guardian_5",
+    "cavern9_guardian_6",
+    "cavern9_guardian_7"
   ],
   "horizontal_guardians": [
     {
+      "bright": true,
+      "max_x": 112,
+      "ink": 6,
       "y": 56,
-      "max_x": 112,
       "paper": 0,
-      "x": 72,
-      "bright": true,
       "min_x": 72,
-      "ink": 6
+      "x": 72
     },
     {
-      "ink": 2,
       "bright": true,
-      "x": 96,
-      "min_x": 64,
-      "paper": 0,
       "max_x": 112,
-      "y": 80
+      "ink": 2,
+      "y": 80,
+      "paper": 0,
+      "min_x": 64,
+      "x": 96
     },
     {
+      "y": 104,
       "min_x": 32,
       "ink": 3,
-      "bright": true,
-      "x": 64,
       "max_x": 208,
-      "paper": 0,
-      "y": 104
+      "x": 64,
+      "bright": true,
+      "paper": 0
     },
     {
+      "x": 144,
+      "min_x": 136,
       "max_x": 168,
       "y": 40,
-      "min_x": 136,
-      "bright": false,
-      "ink": 5,
       "paper": 0,
-      "x": 144
+      "ink": 5,
+      "bright": false
     }
   ],
-  "portal": {
-    "paper": 3,
-    "ink": 6,
-    "bright": false,
-    "sprite": "cavern9_portal",
-    "x": 96,
-    "y": 104
-  },
-  "width": 32,
-  "name": "       The Endorian Forest      ",
-  "tile_names": [
-    "cavern9_tile_background",
-    "cavern9_tile_floor",
-    "cavern9_tile_crumbling_floor",
-    "cavern9_tile_wall",
-    "cavern9_tile_conveyor",
-    "cavern9_tile_nasty1",
-    "cavern9_tile_nasty2",
-    "cavern9_tile_extra"
-  ],
-  "border_colour": 2,
   "tile_colours": [
     {
       "name": "cavern9_tile_background",
-      "ink": 0,
       "paper": 0,
+      "ink": 0,
       "bright": false
     },
     {
-      "name": "cavern9_tile_floor",
-      "ink": 4,
       "paper": 0,
+      "ink": 4,
+      "name": "cavern9_tile_floor",
       "bright": true
     },
     {
+      "bright": false,
       "paper": 0,
       "ink": 2,
-      "bright": false,
       "name": "cavern9_tile_crumbling_floor"
     },
     {
+      "name": "cavern9_tile_wall",
       "paper": 2,
       "ink": 6,
-      "bright": false,
-      "name": "cavern9_tile_wall"
+      "bright": false
     },
     {
-      "name": "cavern9_tile_conveyor",
-      "bright": true,
+      "paper": 0,
       "ink": 3,
-      "paper": 0
+      "bright": true,
+      "name": "cavern9_tile_conveyor"
     },
     {
-      "name": "cavern9_tile_nasty1",
-      "bright": true,
+      "paper": 0,
       "ink": 5,
-      "paper": 0
+      "bright": true,
+      "name": "cavern9_tile_nasty1"
     },
     {
       "name": "cavern9_tile_nasty2",
-      "bright": false,
       "paper": 0,
-      "ink": 4
+      "ink": 4,
+      "bright": false
     },
     {
+      "paper": 0,
       "ink": 5,
-      "bright": false,
       "name": "cavern9_tile_extra",
-      "paper": 0
+      "bright": false
     }
   ],
+  "vertical_guardians": [],
+  "conveyor": {
+    "direction": 0,
+    "x": 152,
+    "length": 1,
+    "y": 0
+  },
+  "willy_start": {
+    "frame": 0,
+    "direction": 0,
+    "airborne": 0,
+    "jump_counter": 0,
+    "x": 8,
+    "y": 32,
+    "y_times_2": 64
+  },
+  "clock": 248,
   "layout": [
     "30000000000601113060611111111113",
     "30000000000000003000060000000003",
@@ -183,34 +143,74 @@
     "30000000000000000000000000000003",
     "77777777777777777777777777777777"
   ],
+  "name": "       The Endorian Forest      ",
   "air": 63,
-  "clock": 248,
-  "height": 16,
-  "guardian_sprite_names": [
-    "cavern9_guardian_0",
-    "cavern9_guardian_1",
-    "cavern9_guardian_2",
-    "cavern9_guardian_3",
-    "cavern9_guardian_4",
-    "cavern9_guardian_5",
-    "cavern9_guardian_6",
-    "cavern9_guardian_7"
+  "items": [
+    {
+      "init_bright": true,
+      "y": 16,
+      "paper": 4,
+      "init_paper": 7,
+      "x": 168,
+      "bright": true,
+      "ink": 0,
+      "type": 3,
+      "init_ink": 7
+    },
+    {
+      "init_bright": true,
+      "bright": true,
+      "init_ink": 7,
+      "paper": 4,
+      "init_paper": 7,
+      "x": 112,
+      "y": 8,
+      "ink": 0,
+      "type": 4
+    },
+    {
+      "paper": 4,
+      "init_ink": 7,
+      "bright": true,
+      "ink": 0,
+      "type": 5,
+      "init_paper": 7,
+      "x": 96,
+      "init_bright": true,
+      "y": 48
+    },
+    {
+      "x": 144,
+      "bright": true,
+      "ink": 0,
+      "type": 6,
+      "init_ink": 7,
+      "init_bright": true,
+      "y": 64,
+      "paper": 5,
+      "init_paper": 7
+    },
+    {
+      "init_paper": 7,
+      "x": 240,
+      "init_bright": true,
+      "ink": 0,
+      "type": 3,
+      "bright": true,
+      "paper": 4,
+      "y": 8,
+      "init_ink": 7
+    }
   ],
-  "conveyor": {
-    "direction": 0,
-    "length": 1,
-    "x": 152,
-    "y": 0
-  },
-  "vertical_guardians": [],
-  "item_sprite": "cavern9_item",
-  "willy_start": {
-    "x": 8,
-    "airborne": 0,
-    "direction": 0,
-    "y": 32,
-    "y_times_2": 64,
-    "jump_counter": 0,
-    "frame": 0
-  }
+  "border_colour": 2,
+  "tile_names": [
+    "cavern9_tile_background",
+    "cavern9_tile_floor",
+    "cavern9_tile_crumbling_floor",
+    "cavern9_tile_wall",
+    "cavern9_tile_conveyor",
+    "cavern9_tile_nasty1",
+    "cavern9_tile_nasty2",
+    "cavern9_tile_extra"
+  ]
 }
