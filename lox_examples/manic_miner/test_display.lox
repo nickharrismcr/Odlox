@@ -1,0 +1,65 @@
+from gfx import *
+import display
+import colour
+import assets
+
+//
+// @file test_display.lox
+// @brief Visual smoke test for display.lox: a static 8x8 sprite (magenta
+// ink box on yellow paper) and a moving 16x16 sprite (red triangle on
+// black paper), loaded via assets.SpriteAssets and redrawn every frame
+// via Display.blit_sprite(). ESC quits.
+//
+
+const SCALE = 3
+const WIN_W = display.SCREEN_W * SCALE
+const WIN_H = display.SCREEN_H * SCALE
+
+const YELLOW  = encode_rgba(255, 255, 0)
+const MAGENTA = encode_rgba(255, 0, 255)
+const BLACK   = encode_rgba(0, 0, 0)
+const RED     = encode_rgba(255, 0, 0)
+
+var lib = assets.SpriteAssets()
+lib.load("display_test_sprites.json")
+
+var win = window(WIN_W, WIN_H)
+win.init()
+win.set_target_fps(60)
+
+var disp = display.Display()
+disp.clear(BLACK, BLACK)
+
+var box_sprite = lib.get("box")
+var triangle_sprite = lib.get("triangle")
+var blank_triangle = float_array(16, 16)   // all-zero -- erases the triangle's old position
+
+disp.blit_sprite(box_sprite, 40, 40, MAGENTA, YELLOW)
+
+var tri_x = 100
+var tri_y = 100
+var dx = 1
+
+disp.blit_sprite(triangle_sprite, tri_x, tri_y, RED, BLACK)
+disp.upload()
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+
+    // Erase the triangle's old position, move, draw it at the new one.
+    disp.blit_sprite(blank_triangle, tri_x, tri_y, BLACK, BLACK)
+    tri_x = tri_x + dx
+    if (tri_x <= 0 or tri_x + 16 >= display.SCREEN_W) {
+        dx = -dx
+    }
+    disp.blit_sprite(triangle_sprite, tri_x, tri_y, RED, BLACK)
+    disp.upload()
+
+    win.begin()
+    win.clear(colour.BLACK)
+    disp.draw(win, 0, 0, WIN_W, WIN_H)
+    win.end()
+}
+win.close()

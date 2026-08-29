@@ -1,0 +1,97 @@
+from gfx import *
+import sys
+
+// Realistic per-frame redraw cost for a Manic-Miner-style room: the static
+// level (walls/floor/items) is drawn once, outside the timed loop -- real
+// 8-bit games never re-clear the framebuffer, they only erase each sprite's
+// previous position and draw its new one. This times just that per-frame
+// sprite traffic: Willy, 3 guardians, a couple of animated crumble tiles,
+// the air-supply bar, and a HUD strip -- against the full-buffer-fill
+// baseline in spectrum_bench.lox.
+
+const W = 256
+const H = 192
+const REPS = 1000
+
+const WILLY_SIZE = 16      // Willy/guardian sprites are 16x16px (2x2 attribute cells)
+const NUM_GUARDIANS = 3
+const CRUMBLE_TILES = 4
+const CRUMBLE_SIZE = 8
+const AIR_BAR_W = 32
+const AIR_BAR_H = 4
+const HUD_W = 64
+const HUD_H = 8
+
+var win = window(W, H)
+win.init()
+
+var rt = render_texture(W, H)
+var arr = float_array(W, H)
+
+const BG = encode_rgba(0, 0, 0)
+const INK = encode_rgba(200, 200, 200)
+
+// Draws (or erases, by passing BG) a w x h box at (x0, y0), clamped to
+// the buffer -- same primitive an erase-then-redraw sprite update uses.
+func fill_box(a, x0, y0, w, h, val) {
+    for (var y = y0; y < y0 + h; y = y + 1) {
+        if (y < 0 or y >= H) { continue }
+        for (var x = x0; x < x0 + w; x = x + 1) {
+            if (x < 0 or x >= W) { continue }
+            a.set(x, y, val)
+        }
+    }
+}
+
+// One frame's worth of real sprite/HUD traffic: erase each mover's previous
+// box, draw its new one, animate a couple of crumble tiles, redraw the air
+// bar and a HUD strip. Positions just cycle with `frame` to simulate motion.
+func realistic_frame(a, frame) {
+    var wx = 40 + (frame % 100)
+    var wy = 80
+    fill_box(a, wx - 1, wy, WILLY_SIZE, WILLY_SIZE, BG)     // erase previous
+    fill_box(a, wx, wy, WILLY_SIZE, WILLY_SIZE, INK)        // draw new
+
+    for (var g = 0; g < NUM_GUARDIANS; g = g + 1) {
+        var gx = 20 + g * 60 + (frame % 40)
+        var gy = 40 + g * 30
+        fill_box(a, gx - 1, gy, WILLY_SIZE, WILLY_SIZE, BG)
+        fill_box(a, gx, gy, WILLY_SIZE, WILLY_SIZE, INK)
+    }
+
+    for (var c = 0; c < CRUMBLE_TILES; c = c + 1) {
+        var cx = 100 + c * CRUMBLE_SIZE
+        var cy = 150
+        var v = BG
+        if (frame % 2 == 0) { v = INK }
+        fill_box(a, cx, cy, CRUMBLE_SIZE, CRUMBLE_SIZE, v)
+    }
+
+    fill_box(a, 10, 4, AIR_BAR_W, AIR_BAR_H, INK)
+    fill_box(a, 150, 4, HUD_W, HUD_H, INK)
+}
+
+func report(label, elapsed) {
+    var per_frame_ms = elapsed / REPS * 1000
+    var fps = REPS / elapsed
+    print(format("%-14s %.4fs total  %.4fms/frame  %.1f fps-equiv", label, elapsed, per_frame_ms, fps))
+}
+
+// Draw the static level once, unmeasured -- matches how a real frame buffer
+// already holds the room and only sprites move over it.
+fill_box(arr, 0, 0, W, H, BG)
+
+var t0 = sys.clock()
+for (var f = 0; f < REPS; f = f + 1) {
+    realistic_frame(arr, f)
+}
+report("realistic fill:", sys.clock() - t0)
+
+t0 = sys.clock()
+for (var f = 0; f < REPS; f = f + 1) {
+    realistic_frame(arr, f)
+    rt.draw_array_fast(arr)
+}
+report("realistic+upload:", sys.clock() - t0)
+
+win.close()

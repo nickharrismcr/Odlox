@@ -17,6 +17,7 @@ define_os_builtins :: proc(vm: ^VM) {
 	define_builtin(vm, "os", "readln", readln_builtin)
 	define_builtin(vm, "os", "write", write_builtin)
 	define_builtin(vm, "os", "read_all", read_all_builtin)
+	define_builtin(vm, "os", "read_bytes", read_bytes_builtin)
 	define_builtin(vm, "os", "listdir", listdir_builtin)
 	define_builtin(vm, "os", "isdir", isdir_builtin)
 	define_builtin(vm, "os", "isfile", isfile_builtin)
@@ -131,6 +132,32 @@ read_all_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.
 	// that should actually be collectible once long, not just skip
 	// interning -- see obj_string.odin's STRING_INTERN_MAX_LEN.
 	return make_tracked_string_value(vm, string(data))
+}
+
+// read_bytes reads a whole file as a List of ints (0-255), one per byte --
+// for extracting numeric data from binary files, which read_all's string
+// result can't do (no ord()/byte-indexing exists at the script level).
+@(private = "file")
+read_bytes_builtin :: proc(argc: int, arg_stack_ptr: int, vm_ptr: rawptr) -> core.Value {
+	vm := native_vm(vm_ptr)
+	if argc != 1 || !core.is_string(vm.stack[arg_stack_ptr]) {
+		runtime_error(vm, "Invalid argument type to read_bytes.")
+		return core.NIL_VALUE
+	}
+	path := core.string_get(core.as_string(vm.stack[arg_stack_ptr]))
+	data, err := os.read_entire_file_from_path(path, context.allocator)
+	if err != nil {
+		runtime_error(vm, "%v", err)
+		return core.NIL_VALUE
+	}
+	defer delete(data)
+	items := make([dynamic]core.Value, len(data))
+	for b, i in data {
+		items[i] = core.make_int_value(int(b))
+	}
+	list := core.make_list_object(items)
+	gc_track(vm, &list.obj)
+	return core.make_object_value(&list.obj)
 }
 
 @(private = "file")

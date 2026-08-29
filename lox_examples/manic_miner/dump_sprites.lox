@@ -1,0 +1,37 @@
+import assets
+import sys
+
+//
+// @file dump_sprites.lox
+// @brief Loads a sprite JSON file and dumps every entry back out as ASCII
+// art (in file order), so a "pixel"/"byte" datafile's decode -- and the
+// order/naming of its entries -- can be checked by eye against source
+// data (a disassembly listing, an original screenshot, etc).
+//
+// Usage: odlox.exe dump_sprites.lox <path/to/sprites.json>
+//
+
+// sys.args()[0] is this script's own path -- the real argument starts at [1].
+var argv = sys.args()
+if (len(argv) < 2) {
+    print("usage: dump_sprites.lox <path/to/sprites.json>")
+} else {
+    var lib = assets.SpriteAssets()
+    lib.load(argv[1])
+
+    foreach (var name in lib.names()) {
+        var arr = lib.get(name)
+        print(format("-- %s (%dx%d) --", name, arr.width(), arr.height()))
+        for (var y = 0; y < arr.height(); y = y + 1) {
+            var row = ""
+            for (var x = 0; x < arr.width(); x = x + 1) {
+                if (arr.get(x, y) != 0.0) {
+                    row = row & "#"
+                } else {
+                    row = row & "."
+                }
+            }
+            print(row)
+        }
+    }
+}

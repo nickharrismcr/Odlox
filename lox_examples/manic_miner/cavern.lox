@@ -1,0 +1,97 @@
+import json
+import spectrum_attr
+
+//
+// @file cavern.lox
+// @brief Holds one Manic Miner cavern's layout and metadata, as produced
+// by extract_cavern.lox. Graphics are never owned here -- layout cells,
+// item_sprite, portal.sprite, and guardian_sprite_names are all asset
+// name *pointers*, resolved through a SpriteAssets instance (draw()
+// takes one). Guardian/item/portal gameplay behavior isn't implemented
+// here yet -- only the static tile layout draws so far.
+//
+// Same __init__-defaults + load_from_dict(d) convention as
+// game_sprite.Sprite, plus load(path) to read straight from a JSON file.
+//
+
+class Cavern {
+    __init__() {
+        this.name = ""
+        this.width = 0
+        this.height = 0
+        this.layout = []              // row strings, one digit char (0-7) per cell, indexing tile_names
+        this.tile_names = []          // 8 asset-name pointers, index-matched to layout values
+        this.tile_colours = []        // 8 {name, attr, ink, paper, bright} -- name points into a SpriteAssets, ink/paper are 0-7 palette indices
+        this.willy_start = {}         // {y_times_2, frame, direction, airborne, x, y, jump_counter}
+        this.conveyor = {}            // {direction, x, y, length}
+        this.border_colour = 0
+        this.items = []               // list of {type, x, y, colour, init_colour}
+        this.item_sprite = ""         // asset name pointer
+        this.portal = {}              // {ink, paper, bright, x, y, sprite}
+        this.air = 0
+        this.clock = 0
+        this.horizontal_guardians = []
+        this.vertical_guardians = []
+        this.guardian_sprite_names = []   // 8 asset-name pointers (right_0..3, left_0..3)
+    }
+
+    // Sets every named field present in `d` (anything absent keeps its
+    // current value) -- same pattern as game_sprite.Sprite.load_from_dict.
+    load_from_dict(d) {
+        this.name = d.get("name", this.name)
+        this.width = d.get("width", this.width)
+        this.height = d.get("height", this.height)
+        this.layout = d.get("layout", this.layout)
+        this.tile_names = d.get("tile_names", this.tile_names)
+        this.tile_colours = d.get("tile_colours", this.tile_colours)
+        this.willy_start = d.get("willy_start", this.willy_start)
+        this.conveyor = d.get("conveyor", this.conveyor)
+        this.border_colour = d.get("border_colour", this.border_colour)
+        this.items = d.get("items", this.items)
+        this.item_sprite = d.get("item_sprite", this.item_sprite)
+        this.portal = d.get("portal", this.portal)
+        this.air = d.get("air", this.air)
+        this.clock = d.get("clock", this.clock)
+        this.horizontal_guardians = d.get("horizontal_guardians", this.horizontal_guardians)
+        this.vertical_guardians = d.get("vertical_guardians", this.vertical_guardians)
+        this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
+    }
+
+    // Reads a cavern JSON file (as written by extract_cavern.lox).
+    load(path) {
+        this.load_from_dict(json.load(path))
+    }
+
+    // Returns the asset name for the tile at grid cell (x, y). layout
+    // rows are strings, one digit character (0-7) per cell, indexing
+    // tile_names.
+    get_tile(x, y) {
+        var index = int(this.layout[y][x])
+        return this.tile_names[index]
+    }
+
+    // Draws every layout cell's tile onto disp (an 8px-aligned blit per
+    // cell, so no attribute clash between neighbouring tiles), resolving
+    // graphics through lib -- a SpriteAssets loaded from this cavern's
+    // own *_sprites.json. tile_colours' ink/paper are 0-7 palette
+    // indices, resolved to actual colours once per tile here (not once
+    // per cell) via spectrum_attr.colour_to_rgba().
+    draw(disp, lib) {
+        var resolved = []
+        foreach (var tile in this.tile_colours) {
+            resolved.append({
+                "name": tile["name"],
+                "ink": spectrum_attr.colour_to_rgba(tile["ink"], tile["bright"]),
+                "paper": spectrum_attr.colour_to_rgba(tile["paper"], tile["bright"])
+            })
+        }
+        for (var y = 0; y < this.height; y = y + 1) {
+            for (var x = 0; x < this.width; x = x + 1) {
+                var index = int(this.layout[y][x])
+                var tile = resolved[index]
+                var img = lib.get(tile["name"])
+                disp.blit_sprite(img, x * 8, y * 8, tile["ink"], tile["paper"])
+            }
+        }
+    }
+}

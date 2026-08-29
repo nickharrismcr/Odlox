@@ -1,0 +1,39 @@
+import os
+
+//
+// @file sna.lox
+// @brief Thin helpers for reading a standard 48K ZX Spectrum .sna
+// snapshot: a fixed 27-byte header followed by the full 16384-65535 RAM
+// image. Every function here takes a Spectrum memory address, not a raw
+// file offset -- the header adjustment is internal.
+//
+
+const HEADER_SIZE = 27
+const RAM_SIZE = 49152          // 16384..65535
+const EXPECTED_SIZE = HEADER_SIZE + RAM_SIZE
+
+// Loads a .sna file as a List of ints (0-255), one per byte, via
+// os.read_bytes. Raises if the file isn't exactly a standard 48K
+// snapshot (e.g. a 128K .sna has extra trailing pages we don't handle).
+func load(path) {
+    var bytes = os.read_bytes(path)
+    if (len(bytes) != EXPECTED_SIZE) {
+        raise Exception(format(
+            "%s is %d bytes, expected %d (a standard 48K .sna)",
+            path, len(bytes), EXPECTED_SIZE))
+    }
+    return bytes
+}
+
+func addr_to_offset(addr) {
+    return HEADER_SIZE + (addr - 16384)
+}
+
+func read_u8(bytes, addr) {
+    return bytes[addr_to_offset(addr)]
+}
+
+// Little-endian 16-bit read (standard Z80/Spectrum word order).
+func read_u16(bytes, addr) {
+    return read_u8(bytes, addr) + read_u8(bytes, addr + 1) * 256
+}

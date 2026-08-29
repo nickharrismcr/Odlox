@@ -1,0 +1,44 @@
+//
+// @file spectrum_screen.lox
+// @brief Converts ZX Spectrum screen/attribute memory addresses into
+// pixel (x, y) coordinates. Two address shapes appear in Manic Miner's
+// data, both relative to a caller-supplied buffer base (not necessarily
+// the real hardware base -- the game keeps its own working copies of
+// these buffers at other addresses; the base to use for each field was
+// confirmed empirically against Central Cavern's known values, see the
+// call sites in extract_cavern.lox):
+//
+//  - Attribute-style: a plain 32-column row-major grid, same shape as
+//    the real hardware attribute file (22528, 32x24) -- attr_addr_to_xy().
+//  - Pixel/bitmap-style: the real hardware display file's well-known
+//    bit-interleaved address layout (see e.g.
+//    https://en.wikipedia.org/wiki/ZX_Spectrum -- "Screen memory format"
+//    -- or chuckbatson.org's bit-level diagram of it), relocated to a
+//    different base -- pixel_addr_to_xy().
+//
+
+// Attribute-style: addr indexes a plain 32-wide row-major grid starting
+// at base. Returns the pixel (x, y) of that 8x8 cell's top-left corner.
+func attr_addr_to_xy(addr, base) {
+    var offset = addr - base
+    var col = offset % 32
+    var row = int(offset / 32)
+    return {"x": col * 8, "y": row * 8}
+}
+
+// Pixel/bitmap-style: addr indexes a buffer laid out exactly like the
+// real ZX Spectrum display file, just relocated to base. The relative
+// address's bits, MSB to LSB, are Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X4 X3 X2 X1 X0
+// -- decoded here via integer division/modulo since this Lox dialect has
+// no bitwise operators. Byte-addressed, so x always lands on an 8px
+// boundary; y is a true pixel row (0-191).
+func pixel_addr_to_xy(addr, base) {
+    var offset = addr - base
+    var x_byte = offset % 32
+    var shifted = int(offset / 32)          // 8 bits: Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3
+    var char_row = shifted % 8              // Y5 Y4 Y3 -- character row within third (0-7)
+    var pixel_line = int(shifted / 8) % 8   // Y2 Y1 Y0 -- pixel line within character row (0-7)
+    var third = int(shifted / 64)           // Y7 Y6 -- which third of the screen (0-2)
+    var y = third * 64 + char_row * 8 + pixel_line
+    return {"x": x_byte * 8, "y": y}
+}

@@ -1,0 +1,148 @@
+from gfx import *
+import display
+import colour
+import assets
+import game_sprite
+
+//
+// @file test_sprite.lox
+// @brief Visual smoke test for game_sprite.lox:
+//  - a "moving" sprite that glides continuously, bouncing horizontally
+//    between x=0 and x=248, cycling between the "tile_wall" and
+//    "guardian_diamond" frames (both 8x8, so they line up cleanly).
+//  - a "moving" sprite with step_movement set: holds its position for a
+//    full 4-frame animation cycle, then jumps 8px in one go -- the
+//    guardian-style block movement described in game_sprite.lox.
+//  - a row of "fixed" 8x8 "box" sprites (magenta ink on yellow paper),
+//    standing in for wall tiles.
+// ESC quits.
+//
+
+const BLACK   = encode_rgba(0, 0, 0)
+const CYAN    = encode_rgba(0, 255, 255)
+const WHITE   = encode_rgba(255, 255, 255)
+const YELLOW  = encode_rgba(255, 255, 0)
+const MAGENTA = encode_rgba(255, 0, 255)
+const RED     = encode_rgba(255, 0, 0)
+
+var lib = assets.SpriteAssets()
+lib.load("test_sprites.json")
+lib.load("display_test_sprites.json")   // for "box"
+lib.load("willy_sprites.json")
+
+const SCALE = 3
+var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+win.init()
+// Manic Miner's actual game tick rate -- caps render, input poll, and
+// Sprite.update() together, matching the original's coupled cadence
+// rather than smoothing it out. All movement_speed/animation_speed
+// values above are "per tick," so they now represent ~125ms each
+// instead of ~16.7ms -- everything will look ~7.5x slower in real time
+// than it did at 60fps.
+win.set_target_fps(14)
+
+var disp = display.Display()
+disp.clear(BLACK, BLACK)
+
+var sprites = []
+
+// Every y below is a multiple of CELL(8) -- a sprite whose position
+// straddles two attribute-cell rows gets its ink/paper resolved against
+// whatever (usually blank) bitmap content shares the other half of each
+// straddled cell, so it renders looking vertically offset/split rather
+// than as a clean tile. Off-grid positions are fine for a sprite that
+// glides freely in isolation (see the continuous sprite below, whose x
+// deliberately drifts off-grid every tick); they aren't for anything
+// meant to tile cleanly against its neighbours, like the wall row.
+
+// Continuous glide.
+var glider = game_sprite.Sprite()
+glider.load_from_dict({
+    "type": "moving",
+    "frames": 1,
+    "movement_type": "vertical",
+    "movement_speed": 1,
+    "animation_speed": 10,
+    "image_list": ["tile_wall", "guardian_diamond"],
+    "start_x": 0, "start_y": 0,
+    "end_x": 0, "end_y": 88,
+    "colour": CYAN, "paper": BLACK
+})
+sprites.append(glider)
+
+// Block movement using Willy's real walk cycle (from the disassembly,
+// willy_sprites.json): across the 4-frame cycle (animation_speed=1 ->
+// 4 ticks/cycle) the legs animate in place, and the moment the cycle
+// wraps back to frame 0, the block jumps 8px (movement_speed) -- the
+// guardian-style block movement described in game_sprite.lox.
+// image_list holds all 8 frames (right_0..3, then left_0..3); draw()
+// switches to the second half while moving left, using the real
+// left-facing art rather than mirroring the right-facing frames.
+var stepper = game_sprite.Sprite()
+stepper.load_from_dict({
+    "type": "moving",
+    "frames": 4,
+    "movement_type": "horizontal",
+    "movement_speed": 8,
+    "animation_speed": 1,
+    "step_movement": true,
+    "image_list": ["willy_right_0", "willy_right_1", "willy_right_2", "willy_right_3",
+                   "willy_left_0", "willy_left_1", "willy_left_2", "willy_left_3"],
+    "start_x": 0, "start_y": 48,
+    "end_x": 240, "end_y": 48,
+    "colour": WHITE, "paper": BLACK
+})
+sprites.append(stepper)
+
+// Same walk cycle again, in red, directly below, over a narrower range --
+// checks that colour and range are both independent per Sprite instance.
+var stepper2 = game_sprite.Sprite()
+stepper2.load_from_dict({
+    "type": "moving",
+    "frames": 4,
+    "movement_type": "horizontal",
+    "movement_speed": 8,
+    "animation_speed": 1,
+    "step_movement": true,
+    "image_list": ["willy_right_0", "willy_right_1", "willy_right_2", "willy_right_3",
+                   "willy_left_0", "willy_left_1", "willy_left_2", "willy_left_3"],
+    "start_x": 64, "start_y": 64,
+    "end_x": 176, "end_y": 64,
+    "colour": RED, "paper": BLACK
+})
+sprites.append(stepper2)
+
+// A fixed row of wall-like blocks -- never move, single frame. tile_wall
+// (not box) because it has a border: box's inner square floats on
+// contiguous yellow paper with no line between tiles, so a row of them
+// reads as one solid yellow strip with dots rather than distinct blocks.
+for (var i = 0; i < 10; i = i + 1) {
+    var x = i * 8
+    var block = game_sprite.Sprite()
+    block.load_from_dict({
+        "type": "fixed",
+        "image_list": ["tile_wall"],
+        "start_x": x, "start_y": 168,
+        "end_x": x, "end_y": 168,
+        "colour": MAGENTA, "paper": YELLOW
+    })
+    sprites.append(block)
+}
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+
+    foreach (var s in sprites) {
+        s.update()
+        s.draw(disp, lib)
+    }
+    disp.upload()
+
+    win.begin()
+    win.clear(colour.BLACK)
+    disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+    win.end()
+}
+win.close()

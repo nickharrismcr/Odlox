@@ -1,0 +1,176 @@
+{
+  "vertical_guardians": [],
+  "items": [
+    {
+      "colour": 96,
+      "type": 3,
+      "init_colour": 255,
+      "y": 8,
+      "x": 128
+    }
+  ],
+  "air": 160,
+  "border_colour": 1,
+  "height": 16,
+  "name": "      Amoebatrons' Revenge      ",
+  "width": 32,
+  "tile_names": [
+    "cavern17_tile_background",
+    "cavern17_tile_floor",
+    "cavern17_tile_crumbling_floor",
+    "cavern17_tile_wall",
+    "cavern17_tile_conveyor",
+    "cavern17_tile_nasty1",
+    "cavern17_tile_nasty2",
+    "cavern17_tile_extra"
+  ],
+  "clock": 5,
+  "tile_colours": [
+    {
+      "paper": 0,
+      "ink": 0,
+      "attr": 0,
+      "name": "cavern17_tile_background",
+      "bright": false
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "attr": 66,
+      "name": "cavern17_tile_floor",
+      "bright": true
+    },
+    {
+      "paper": 0,
+      "ink": 2,
+      "attr": 2,
+      "name": "cavern17_tile_crumbling_floor",
+      "bright": false
+    },
+    {
+      "ink": 6,
+      "attr": 22,
+      "name": "cavern17_tile_wall",
+      "bright": false,
+      "paper": 2
+    },
+    {
+      "paper": 0,
+      "bright": false,
+      "attr": 4,
+      "name": "cavern17_tile_conveyor",
+      "ink": 4
+    },
+    {
+      "ink": 4,
+      "attr": 68,
+      "name": "cavern17_tile_nasty1",
+      "bright": true,
+      "paper": 0
+    },
+    {
+      "attr": 5,
+      "name": "cavern17_tile_nasty2",
+      "ink": 5,
+      "paper": 0,
+      "bright": false
+    },
+    {
+      "name": "cavern17_tile_extra",
+      "ink": 0,
+      "paper": 0,
+      "bright": false,
+      "attr": 0
+    }
+  ],
+  "conveyor": {
+    "length": 3,
+    "x": 56,
+    "direction": 1,
+    "y": 72
+  },
+  "portal": {
+    "y": -82,
+    "sprite": "cavern17_portal",
+    "paper": 7,
+    "ink": 7,
+    "x": -176,
+    "bright": true
+  },
+  "item_sprite": "cavern17_item",
+  "willy_start": {
+    "x": 232,
+    "frame": 3,
+    "direction": 1,
+    "airborne": 0,
+    "y_times_2": 208,
+    "jump_counter": 0,
+    "y": 104
+  },
+  "layout": [
+    "30000000000000000000000000003003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30011001110011111111001110011113",
+    "30000000000000000000000000000003",
+    "31100000000000000000000000000003",
+    "30000000000011111111001110011003",
+    "30011001110000000000000000000003",
+    "30000000000000000000000000000113",
+    "30000000000000000000000000000003",
+    "30011001110011111111001110011003",
+    "31100000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "11111111111111111111111111111111"
+  ],
+  "horizontal_guardians": [
+    {
+      "min_x": 255,
+      "x": 104,
+      "y_raw": 176,
+      "colour": 1,
+      "y": 2304,
+      "unused": 255,
+      "max_x": 29
+    },
+    {
+      "unused": 72,
+      "y": 256,
+      "colour": 48,
+      "x": 232,
+      "y_raw": 92,
+      "min_x": 136,
+      "max_x": 144
+    },
+    {
+      "y": -5240,
+      "max_x": 196,
+      "min_x": 128,
+      "unused": 63,
+      "colour": 4,
+      "x": -224,
+      "y_raw": 104
+    },
+    {
+      "colour": 0,
+      "x": 224,
+      "y_raw": 108,
+      "y": 272,
+      "unused": 108,
+      "max_x": 133,
+      "min_x": 114
+    }
+  ],
+  "guardian_sprite_names": [
+    "cavern17_guardian_0",
+    "cavern17_guardian_1",
+    "cavern17_guardian_2",
+    "cavern17_guardian_3",
+    "cavern17_guardian_4",
+    "cavern17_guardian_5",
+    "cavern17_guardian_6",
+    "cavern17_guardian_7"
+  ]
+}

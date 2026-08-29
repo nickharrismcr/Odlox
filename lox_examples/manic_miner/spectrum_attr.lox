@@ -1,0 +1,48 @@
+from gfx import *
+
+//
+// @file spectrum_attr.lox
+// @brief Decodes a raw ZX Spectrum attribute byte (bits 0-2 ink, 3-5
+// paper, 6 bright, 7 flash -- flash is unused here, this project doesn't
+// implement screen flashing) into a plain {ink, paper, bright} record --
+// ink/paper are 0-7 palette indices, not packed colours, since there are
+// only 8 Spectrum colours (+ bright variants): an index round-trips
+// through JSON as a small readable int rather than a big packed float in
+// scientific notation. colour_to_rgba() converts an index (+bright) to an
+// actual packed-rgba colour at render time. Kept local to manic_miner/
+// rather than modules/colour.lox, which is a general-purpose colour
+// module shared by unrelated example projects -- this is specific to how
+// Spectrum attribute bytes encode colour, not a general utility.
+//
+
+// Colour component bits, no native bitwise ops in this Lox dialect:
+// blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2 --
+// verified against the standard palette (e.g. 3 = magenta = R1G0B1,
+// 6 = yellow = R1G1B0).
+func colour_to_rgba(value, bright) {
+    var level = 205
+    if (bright) {
+        level = 255
+    }
+    var blue = value % 2
+    var red = int(value / 2) % 2
+    var green = int(value / 4) % 2
+
+    var r = 0
+    var g = 0
+    var b = 0
+    if (red != 0) { r = level }
+    if (green != 0) { g = level }
+    if (blue != 0) { b = level }
+    return encode_rgba(r, g, b)
+}
+
+// Returns {"ink": 0-7, "paper": 0-7, "bright": bool} for a raw Spectrum
+// attribute byte -- bright applies to both ink and paper together on
+// real hardware, so it's one shared flag, not per-colour.
+func decode_attribute(byte) {
+    var ink = byte % 8
+    var paper = int(byte / 8) % 8
+    var bright = int(byte / 64) % 2 != 0
+    return {"ink": ink, "paper": paper, "bright": bright}
+}

@@ -14,3 +14,7 @@ tests/new_tests/tmp
 # bin/dist.sh's bundled output -- generated, zippable folders for handing
 # a script to someone without this repo (see bin/dist.sh's own header).
 dist/
+# Raw ZX Spectrum game snapshots (e.g. lox_examples/manic_miner/*.sna) --
+# copyrighted commercial game data, kept local only. extract_cavern.lox
+# reads one to produce the (committed) caverns/*.json data.
+*.sna

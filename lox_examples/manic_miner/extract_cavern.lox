@@ -1,0 +1,379 @@
+from gfx import *
+import sna
+import json
+import spectrum_attr
+import spectrum_screen
+import os
+import sys
+
+//
+// @file extract_cavern.lox
+// @brief Extracts one Manic Miner cavern's layout/metadata/graphics from
+// a .sna snapshot into two JSON files: a Cavern-shaped data file and an
+// assets.lox-compatible sprite sheet (tiles, guardian frames, portal,
+// item graphic). Cavern records are 1024 bytes each, starting at 45056,
+// formulaically addressed (45056 + index*1024) for all 20 caverns.
+//
+// Field offsets below are a best-effort reconstruction from a
+// disassembly reference and are NOT all independently confirmed --
+// see the printed sanity line and README note in the plan this came
+// from. Treat any offset as a first guess to correct once real output
+// (cavern name text, rendered layout, sprite shapes) proves it wrong.
+//
+// Usage: odlox.exe extract_cavern.lox <path.sna> <index|all> <output_dir>
+//
+
+const CAVERN_BASE = 45056
+const CAVERN_SIZE = 1024
+const NUM_CAVERNS = 20
+
+// "extra" is Central Cavern's own name for the 8th tile slot -- kept as
+// all-zero/unused there, but confirmed NOT universally unused (Skylab
+// Landing Bay's layout references it with real, non-zero graphics), so
+// it's just "whatever the 8th slot holds," not a guaranteed-junk tile.
+const TILE_NAMES = ["background", "floor", "crumbling_floor", "wall", "conveyor", "nasty1", "nasty2", "extra"]
+
+// Buffer bases for spectrum_screen's address decoders -- confirmed
+// empirically against Central Cavern's known values (willy_start,
+// conveyor, and portal positions all matched their documented (col,row)
+// coordinates using exactly these bases): willy/items/guardians' "addr"
+// fields index a plain attribute-style buffer at ATTR_BUFFER_BASE; the
+// conveyor and portal's own "screen_addr" fields each index a *separate*
+// pixel/bitmap-style buffer, at their own distinct bases.
+const ATTR_BUFFER_BASE = 23552
+const CONVEYOR_SCREEN_BASE = 28672
+const PORTAL_SCREEN_BASE = 24576
+
+// Converts a flat MSB-first byte list into a list of pixel row-strings
+// ('.' off, any other char on -- assets.lox's "pixel" convention),
+// readable directly in the JSON, same spirit as the layout grid's row
+// strings. width must be a multiple of 8.
+func bytes_to_pixel_rows(data, width) {
+    var bytes_per_row = int(width / 8)
+    var height = int(len(data) / bytes_per_row)
+    var rows = []
+    for (var y = 0; y < height; y = y + 1) {
+        var chars = []
+        for (var bx = 0; bx < bytes_per_row; bx = bx + 1) {
+            var v = data[y * bytes_per_row + bx]
+            var divisor = 128
+            for (var p = 0; p < 8; p = p + 1) {
+                var bit = int(v / divisor) % 2
+                if (bit != 0) {
+                    chars.append("#")
+                } else {
+                    chars.append(".")
+                }
+                divisor = int(divisor / 2)
+            }
+        }
+        rows.append("".join(chars))
+    }
+    return rows
+}
+
+func read_ascii(bytes, addr, length) {
+    var chars = []
+    for (var i = 0; i < length; i = i + 1) {
+        var b = sna.read_u8(bytes, addr + i)
+        chars.append(format("%c", b))
+    }
+    return "".join(chars)
+}
+
+// Reads count 8x8 pixel-tile definitions starting at addr, each 9 bytes
+// (1 attribute byte + 8 pixel rows). Returns a list of {name, ink, paper,
+// sprite_data} for building both the Cavern's tile_names and the
+// asset-sheet entries.
+func read_tiles(bytes, addr, prefix) {
+    var tiles = []
+    for (var t = 0; t < len(TILE_NAMES); t = t + 1) {
+        var base = addr + t * 9
+        var attr = sna.read_u8(bytes, base)
+        var colours = spectrum_attr.decode_attribute(attr)
+        var pixels = []
+        for (var i = 1; i < 9; i = i + 1) {
+            pixels.append(sna.read_u8(bytes, base + i))
+        }
+        var name = prefix & "_tile_" & TILE_NAMES[t]
+        tiles.append({
+            "name": name,
+            "attr": attr,
+            "ink": colours["ink"],
+            "paper": colours["paper"],
+            "bright": colours["bright"],
+            "sprite": {"name": name, "data_type": "pixel", "data": bytes_to_pixel_rows(pixels, 8)}
+        })
+    }
+    return tiles
+}
+
+// Reads up to max_count fixed-width records starting at addr, stopping
+// at a terminator byte (255) in a record's first byte. Returns
+// {"records": [...], "next": addr right after the terminator byte (or
+// after the last record read, if max_count was hit with no terminator)}
+// -- "next" lets a variable-length section's real end feed directly into
+// where the following section starts, since these records are NOT padded
+// to a fixed size (confirmed empirically: Central Cavern's real item
+// list is 5 records + a terminator, 26 bytes, not padded further).
+func read_terminated_records(bytes, addr, record_size, max_count) {
+    var records = []
+    var pos = addr
+    for (var i = 0; i < max_count; i = i + 1) {
+        var first = sna.read_u8(bytes, pos)
+        if (first == 255) {
+            pos = pos + 1
+            break
+        }
+        var record = []
+        for (var b = 0; b < record_size; b = b + 1) {
+            record.append(sna.read_u8(bytes, pos + b))
+        }
+        records.append(record)
+        pos = pos + record_size
+    }
+    return {"records": records, "next": pos}
+}
+
+func extract_one(bytes, index, out_dir) {
+    var base = CAVERN_BASE + index * CAVERN_SIZE
+    var prefix = format("cavern%d", index)
+
+    // Layout: 512 bytes, 32 cols x 16 rows, row-major (layout[y][x] =
+    // bytes[y*32+x]) -- confirmed against Central Cavern: rendering raw
+    // cell values by their known tile attribute byte produces an
+    // unmistakable bordered room with multi-level floors, one continuous
+    // conveyor strip, and crumbling platforms.
+    var raw_layout = []
+    for (var y = 0; y < 16; y = y + 1) {
+        var row = []
+        for (var x = 0; x < 32; x = x + 1) {
+            row.append(sna.read_u8(bytes, base + y * 32 + x))
+        }
+        raw_layout.append(row)
+    }
+
+    var name = read_ascii(bytes, base + 512, 32)
+    var tiles = read_tiles(bytes, base + 544, prefix)
+
+    // The layout grid's raw byte at each cell IS that tile's own
+    // attribute byte (confirmed: 0/2/4/5/22/66/68 match the tile defs'
+    // decoded attributes exactly), not a plain 0-7 index -- remap to a
+    // clean index into tile_names here so Cavern doesn't need to know
+    // about raw Spectrum attribute bytes at all. First-wins: "extra" (the
+    // unused 8th tile slot) has an all-zero attribute byte too, colliding
+    // with "background"'s -- background must win that collision, since
+    // "extra" is never meant to be placed in a real layout.
+    var attr_to_index = {}
+    for (var t = 0; t < len(tiles); t = t + 1) {
+        var key = str(tiles[t]["attr"])
+        if (attr_to_index.get(key, nil) == nil) {
+            attr_to_index[key] = t
+        }
+    }
+    // One string per row, one digit character (0-7, indexing tile_names)
+    // per cell -- readable/debuggable directly in the JSON file, same
+    // spirit as assets.lox's "pixel" row-string convention. Only 8 tile
+    // types ever exist, so a single digit always suffices.
+    var layout = []
+    foreach (var row in raw_layout) {
+        var chars = []
+        foreach (var cell in row) {
+            chars.append(str(attr_to_index.get(str(cell), 0)))
+        }
+        layout.append("".join(chars))
+    }
+
+    var willy_base = base + 616
+    var willy_attr_addr = sna.read_u16(bytes, willy_base + 4)
+    var willy_xy = spectrum_screen.attr_addr_to_xy(willy_attr_addr, ATTR_BUFFER_BASE)
+    var willy_start = {
+        "y_times_2": sna.read_u8(bytes, willy_base),
+        "frame": sna.read_u8(bytes, willy_base + 1),
+        "direction": sna.read_u8(bytes, willy_base + 2),
+        "airborne": sna.read_u8(bytes, willy_base + 3),
+        "x": willy_xy["x"], "y": willy_xy["y"],
+        "jump_counter": sna.read_u8(bytes, willy_base + 6)
+    }
+
+    var conveyor_base = base + 623
+    var conveyor_screen_addr = sna.read_u16(bytes, conveyor_base + 1)
+    var conveyor_xy = spectrum_screen.pixel_addr_to_xy(conveyor_screen_addr, CONVEYOR_SCREEN_BASE)
+    var conveyor = {
+        "direction": sna.read_u8(bytes, conveyor_base),
+        "x": conveyor_xy["x"], "y": conveyor_xy["y"],
+        "length": sna.read_u8(bytes, conveyor_base + 3)
+    }
+
+    var border_colour = sna.read_u8(bytes, base + 627)
+
+    // Items: variable-length, 5 bytes each (type, addr lo, addr hi,
+    // colour, init colour), terminated by 255. Confirmed against Central
+    // Cavern's real data (5 items, all fields byte-exact) -- portal etc.
+    // start right after this list's terminator, NOT at a fixed offset;
+    // there's no padding to a fixed-size block.
+    var item_result = read_terminated_records(bytes, base + 629, 5, 20)
+    var items = []
+    foreach (var r in item_result["records"]) {
+        var item_addr = r[1] + r[2] * 256
+        var item_xy = spectrum_screen.attr_addr_to_xy(item_addr, ATTR_BUFFER_BASE)
+        items.append({
+            "type": r[0],
+            "x": item_xy["x"], "y": item_xy["y"],
+            "colour": r[3],
+            "init_colour": r[4]
+        })
+    }
+
+    // Portal: confirmed byte-exact against Central Cavern (attribute,
+    // 32-byte graphic, attr_addr, screen_addr all matched known values)
+    // once its start was corrected to follow the items list directly.
+    var portal_base = item_result["next"]
+    var portal_attr = sna.read_u8(bytes, portal_base)
+    var portal_colours = spectrum_attr.decode_attribute(portal_attr)
+    var portal_pixels = []
+    for (var i = 0; i < 32; i = i + 1) {
+        portal_pixels.append(sna.read_u8(bytes, portal_base + 1 + i))
+    }
+    var portal_screen_addr = sna.read_u16(bytes, portal_base + 35)
+    var portal_xy = spectrum_screen.pixel_addr_to_xy(portal_screen_addr, PORTAL_SCREEN_BASE)
+    var portal = {
+        "ink": portal_colours["ink"],
+        "paper": portal_colours["paper"],
+        "bright": portal_colours["bright"],
+        "x": portal_xy["x"], "y": portal_xy["y"],
+        "sprite": {"name": prefix & "_portal", "data_type": "pixel", "data": bytes_to_pixel_rows(portal_pixels, 8)}
+    }
+
+    // Item graphic: confirmed byte-exact against Central Cavern
+    // (48,72,136,144,104,4,10,4) once placed right after the portal.
+    var item_graphic_base = portal_base + 37
+    var item_graphic_pixels = []
+    for (var i = 0; i < 8; i = i + 1) {
+        item_graphic_pixels.append(sna.read_u8(bytes, item_graphic_base + i))
+    }
+    var item_sprite = {"name": prefix & "_item", "data_type": "pixel", "data": bytes_to_pixel_rows(item_graphic_pixels, 8)}
+
+    // Air/clock: confirmed byte-exact (63, 252) once placed right after
+    // the item graphic.
+    var air_addr = item_graphic_base + 8
+    var air = sna.read_u8(bytes, air_addr)
+    var clock = sna.read_u8(bytes, air_addr + 1)
+
+    // Horizontal guardians: confirmed byte-exact (the one real guardian's
+    // y/addr/colour/min_x/max_x all matched known values) once placed
+    // right after clock.
+    func read_guardians(addr) {
+        var result = read_terminated_records(bytes, addr, 7, 4)
+        var guardians = []
+        foreach (var r in result["records"]) {
+            var g_addr = r[1] + r[2] * 256
+            var g_xy = spectrum_screen.attr_addr_to_xy(g_addr, ATTR_BUFFER_BASE)
+            guardians.append({
+                "y_raw": r[0],
+                "x": g_xy["x"], "y": g_xy["y"],
+                "colour": r[3],
+                "unused": r[4],
+                "min_x": r[5],
+                "max_x": r[6]
+            })
+        }
+        return guardians
+    }
+    var horizontal_guardians = read_guardians(air_addr + 2)
+
+    // Vertical guardians: NOT YET CONFIRMED. The bytes following the
+    // horizontal list's terminator don't fit the same
+    // terminator-in-first-byte convention for Central Cavern (multiple
+    // all-zero 7-byte spans with no 255 in a record-aligned position,
+    // before the fixed-anchor swordfish graphic at base+736) -- rather
+    // than emit garbage, this is deliberately left empty until a cavern
+    // with real vertical guardians (e.g. Skylab Landing Bay) reveals the
+    // actual convention.
+    var vertical_guardians = []
+
+    // Guardian animation frames: last 256 bytes of the record (high
+    // confidence -- 8 frames x 32 bytes, same shape as willy_sprites.json,
+    // and 1024-256=768 lines up with the record's own fixed end).
+    var guardian_sprites = []
+    var guardian_names = []
+    for (var f = 0; f < 8; f = f + 1) {
+        var fbase = base + 768 + f * 32
+        var pixels = []
+        for (var i = 0; i < 32; i = i + 1) {
+            pixels.append(sna.read_u8(bytes, fbase + i))
+        }
+        var gname = format("%s_guardian_%d", prefix, f)
+        guardian_names.append(gname)
+        guardian_sprites.append({"name": gname, "data_type": "pixel", "data": bytes_to_pixel_rows(pixels, 16)})
+    }
+
+    // -- Assemble output --
+    var tile_names = []
+    var tile_colours = []
+    var sprite_sheet = []
+    foreach (var t in tiles) {
+        tile_names.append(t["name"])
+        // Sprite pixel data already lives in cavern_N_sprites.json under
+        // this same name -- tile_colours only needs the name pointer plus
+        // ink/paper/bright, not a duplicate copy of the pixel data.
+        tile_colours.append({"name": t["name"], "attr": t["attr"], "ink": t["ink"],
+                              "paper": t["paper"], "bright": t["bright"]})
+        sprite_sheet.append(t["sprite"])
+    }
+    sprite_sheet.append(portal["sprite"])
+    sprite_sheet.append(item_sprite)
+    foreach (var s in guardian_sprites) {
+        sprite_sheet.append(s)
+    }
+
+    var cavern = {
+        "name": name,
+        "width": 32, "height": 16,
+        "layout": layout,
+        "tile_names": tile_names,
+        "tile_colours": tile_colours,   // ink/paper per tile (name pointer only, not the sprite pixel data)
+        "willy_start": willy_start,
+        "conveyor": conveyor,
+        "border_colour": border_colour,
+        "items": items,
+        "item_sprite": item_sprite["name"],
+        "portal": {"ink": portal["ink"], "paper": portal["paper"], "bright": portal["bright"],
+                   "x": portal["x"], "y": portal["y"],
+                   "sprite": portal["sprite"]["name"]},
+        "air": air, "clock": clock,
+        "horizontal_guardians": horizontal_guardians,
+        "vertical_guardians": vertical_guardians,
+        "guardian_sprite_names": guardian_names
+    }
+
+    var cavern_path = os.join(out_dir, format("cavern_%d.json", index))
+    var sprites_path = os.join(out_dir, format("cavern_%d_sprites.json", index))
+    var f1 = os.open(cavern_path, "w")
+    os.write(f1, json.encode(cavern, 2))
+    os.close(f1)
+    var f2 = os.open(sprites_path, "w")
+    os.write(f2, json.encode(sprite_sheet, 2))
+    os.close(f2)
+
+    print(format("cavern %d: name=%s willy=(y*2=%d) items=%d h_guardians=%d v_guardians=%d air=%d border=%d",
+        index, name, willy_start["y_times_2"], len(items), len(horizontal_guardians), len(vertical_guardians), air, border_colour))
+}
+
+var argv = sys.args()
+if (len(argv) < 4) {
+    print("usage: extract_cavern.lox <path.sna> <index|all> <output_dir>")
+} else {
+    var bytes = sna.load(argv[1])
+    var out_dir = argv[3]
+    if (!os.exists(out_dir)) {
+        os.mkdir(out_dir)
+    }
+    if (argv[2] == "all") {
+        for (var i = 0; i < NUM_CAVERNS; i = i + 1) {
+            extract_one(bytes, i, out_dir)
+        }
+    } else {
+        extract_one(bytes, int(argv[2]), out_dir)
+    }
+}

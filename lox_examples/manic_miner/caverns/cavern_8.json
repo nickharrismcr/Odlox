@@ -1,0 +1,176 @@
+{
+  "conveyor": {
+    "y": 64,
+    "length": 8,
+    "x": 96,
+    "direction": 1
+  },
+  "tile_names": [
+    "cavern8_tile_background",
+    "cavern8_tile_floor",
+    "cavern8_tile_crumbling_floor",
+    "cavern8_tile_wall",
+    "cavern8_tile_conveyor",
+    "cavern8_tile_nasty1",
+    "cavern8_tile_nasty2",
+    "cavern8_tile_extra"
+  ],
+  "width": 32,
+  "name": "        Wacky Amoebatrons       ",
+  "willy_start": {
+    "airborne": 0,
+    "y_times_2": 208,
+    "jump_counter": 0,
+    "direction": 0,
+    "y": 104,
+    "x": 8,
+    "frame": 0
+  },
+  "air": 130,
+  "guardian_sprite_names": [
+    "cavern8_guardian_0",
+    "cavern8_guardian_1",
+    "cavern8_guardian_2",
+    "cavern8_guardian_3",
+    "cavern8_guardian_4",
+    "cavern8_guardian_5",
+    "cavern8_guardian_6",
+    "cavern8_guardian_7"
+  ],
+  "vertical_guardians": [],
+  "items": [
+    {
+      "init_colour": 255,
+      "type": 3,
+      "colour": 96,
+      "x": 128,
+      "y": 8
+    }
+  ],
+  "item_sprite": "cavern8_item",
+  "horizontal_guardians": [
+    {
+      "max_x": 1,
+      "min_x": 255,
+      "colour": 1,
+      "x": 8,
+      "y_raw": 129,
+      "y": 2336,
+      "unused": 255
+    },
+    {
+      "unused": 72,
+      "colour": 48,
+      "x": 8,
+      "y_raw": 92,
+      "y": 256,
+      "max_x": 144,
+      "min_x": 136
+    },
+    {
+      "y_raw": 104,
+      "colour": 4,
+      "min_x": 128,
+      "max_x": 68,
+      "unused": 63,
+      "y": -5240,
+      "x": -224
+    },
+    {
+      "min_x": 114,
+      "max_x": 133,
+      "y": 272,
+      "colour": 0,
+      "x": 224,
+      "y_raw": 108,
+      "unused": 108
+    }
+  ],
+  "portal": {
+    "sprite": "cavern8_portal",
+    "y": 301,
+    "paper": 7,
+    "ink": 7,
+    "x": 8,
+    "bright": true
+  },
+  "border_colour": 1,
+  "height": 16,
+  "layout": [
+    "30030000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "31111001110011111111001110011003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000113",
+    "30011001110044444444000000000003",
+    "30000000000000000000001110011003",
+    "31100000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30011001110011111111001110011003",
+    "30000000000000000000000000000113",
+    "30000000000000000000000000000003",
+    "31111111111111111111111111111113"
+  ],
+  "clock": 65,
+  "tile_colours": [
+    {
+      "paper": 0,
+      "ink": 0,
+      "attr": 0,
+      "name": "cavern8_tile_background",
+      "bright": false
+    },
+    {
+      "name": "cavern8_tile_floor",
+      "ink": 6,
+      "paper": 0,
+      "bright": false,
+      "attr": 6
+    },
+    {
+      "attr": 66,
+      "name": "cavern8_tile_crumbling_floor",
+      "ink": 2,
+      "paper": 0,
+      "bright": true
+    },
+    {
+      "name": "cavern8_tile_wall",
+      "ink": 6,
+      "paper": 2,
+      "bright": false,
+      "attr": 22
+    },
+    {
+      "name": "cavern8_tile_conveyor",
+      "bright": false,
+      "paper": 0,
+      "ink": 4,
+      "attr": 4
+    },
+    {
+      "name": "cavern8_tile_nasty1",
+      "bright": true,
+      "paper": 0,
+      "ink": 4,
+      "attr": 68
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "attr": 5,
+      "name": "cavern8_tile_nasty2",
+      "bright": false
+    },
+    {
+      "name": "cavern8_tile_extra",
+      "ink": 0,
+      "paper": 0,
+      "bright": false,
+      "attr": 0
+    }
+  ]
+}

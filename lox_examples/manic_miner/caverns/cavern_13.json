@@ -1,0 +1,167 @@
+{
+  "willy_start": {
+    "jump_counter": 0,
+    "airborne": 0,
+    "y_times_2": 208,
+    "direction": 0,
+    "x": 232,
+    "frame": 0,
+    "y": 104
+  },
+  "air": 63,
+  "tile_names": [
+    "cavern13_tile_background",
+    "cavern13_tile_floor",
+    "cavern13_tile_crumbling_floor",
+    "cavern13_tile_wall",
+    "cavern13_tile_conveyor",
+    "cavern13_tile_nasty1",
+    "cavern13_tile_nasty2",
+    "cavern13_tile_extra"
+  ],
+  "width": 32,
+  "name": "       Skylab Landing Bay       ",
+  "guardian_sprite_names": [
+    "cavern13_guardian_0",
+    "cavern13_guardian_1",
+    "cavern13_guardian_2",
+    "cavern13_guardian_3",
+    "cavern13_guardian_4",
+    "cavern13_guardian_5",
+    "cavern13_guardian_6",
+    "cavern13_guardian_7"
+  ],
+  "vertical_guardians": [],
+  "items": [
+    {
+      "type": 11,
+      "y": 16,
+      "x": 184,
+      "colour": 96,
+      "init_colour": 255
+    },
+    {
+      "init_colour": 255,
+      "type": 12,
+      "colour": 104,
+      "x": 24,
+      "y": 64
+    },
+    {
+      "init_colour": 255,
+      "type": 13,
+      "colour": 96,
+      "x": 216,
+      "y": 56
+    },
+    {
+      "y": 56,
+      "init_colour": 255,
+      "colour": 96,
+      "x": 128,
+      "type": 14
+    },
+    {
+      "x": 248,
+      "colour": 255,
+      "init_colour": 255,
+      "type": 0,
+      "y": 10488
+    }
+  ],
+  "item_sprite": "cavern13_item",
+  "conveyor": {
+    "length": 6,
+    "x": 120,
+    "y": 88,
+    "direction": 0
+  },
+  "horizontal_guardians": [],
+  "portal": {
+    "sprite": "cavern13_portal",
+    "y": 0,
+    "paper": 3,
+    "ink": 6,
+    "bright": false,
+    "x": 120
+  },
+  "border_colour": 6,
+  "height": 16,
+  "layout": [
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000000000000000000003",
+    "30000000000000017000000000000003",
+    "30017000000170000001700000017003",
+    "30000001700000000000000170000003",
+    "30000000000000000000000000000003",
+    "30000170000001700000017000000173",
+    "30000000000000000000000000000003",
+    "31700000017000044444400001700003",
+    "30000000000000000000000000000003",
+    "30000001700000000000000000000003",
+    "30000000000000000000000000000003",
+    "33333333333333333333333333333333"
+  ],
+  "tile_colours": [
+    {
+      "name": "cavern13_tile_background",
+      "ink": 0,
+      "paper": 1,
+      "bright": false,
+      "attr": 8
+    },
+    {
+      "ink": 4,
+      "attr": 76,
+      "name": "cavern13_tile_floor",
+      "bright": true,
+      "paper": 1
+    },
+    {
+      "name": "cavern13_tile_crumbling_floor",
+      "ink": 2,
+      "paper": 0,
+      "bright": false,
+      "attr": 2
+    },
+    {
+      "paper": 5,
+      "bright": true,
+      "attr": 104,
+      "name": "cavern13_tile_wall",
+      "ink": 0
+    },
+    {
+      "paper": 1,
+      "ink": 3,
+      "attr": 75,
+      "name": "cavern13_tile_conveyor",
+      "bright": true
+    },
+    {
+      "ink": 0,
+      "attr": 0,
+      "name": "cavern13_tile_nasty1",
+      "bright": false,
+      "paper": 0
+    },
+    {
+      "attr": 0,
+      "name": "cavern13_tile_nasty2",
+      "ink": 0,
+      "paper": 0,
+      "bright": false
+    },
+    {
+      "paper": 1,
+      "ink": 4,
+      "attr": 12,
+      "name": "cavern13_tile_extra",
+      "bright": false
+    }
+  ],
+  "clock": 248
+}

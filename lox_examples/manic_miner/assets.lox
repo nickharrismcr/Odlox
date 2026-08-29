@@ -1,0 +1,103 @@
+from gfx import *
+import json
+
+//
+// @file assets.lox
+// @brief Loads sprite graphics data from an external JSON datafile into
+// float_arrays (0.0/1.0 per pixel), keyed by name. The JSON is a list of
+// {"name", "data_type", "data"} objects:
+//
+//   data_type "pixel": data is a list of row strings, one per pixel row.
+//     '.' or ' ' is an off/paper pixel, any other character is on/ink.
+//
+//   data_type "byte": data is a flat list of byte values (0-255), one row
+//     at a time, most-significant-bit first (bit 7 = leftmost pixel of
+//     that byte's 8), matching the layout a Spectrum ROM stores sprite
+//     graphics in. An optional "width" (pixel width, default 8, must be a
+//     multiple of 8) gives the bytes-per-row for sprites wider than one
+//     byte -- this is the shape a separate .z80-ROM extraction tool would
+//     produce directly, without needing to re-render to ASCII first.
+//
+
+// Decodes a "pixel" sprite's row strings into a float_array.
+func decode_pixel_rows(rows) {
+    var height = len(rows)
+    var width = len(rows[0])
+    var arr = float_array(width, height)
+    for (var y = 0; y < height; y = y + 1) {
+        var row = rows[y]
+        for (var x = 0; x < width; x = x + 1) {
+            var ch = row[x]
+            var val = 1.0
+            if (ch == "." or ch == " ") {
+                val = 0.0
+            }
+            arr.set(x, y, val)
+        }
+    }
+    return arr
+}
+
+// Decodes a "byte" sprite's flat byte list into a float_array, width_px
+// pixels wide (must be a multiple of 8).
+func decode_byte_rows(data, width_px) {
+    var bytes_per_row = int(width_px / 8)
+    var height = int(len(data) / bytes_per_row)
+    var arr = float_array(width_px, height)
+    for (var y = 0; y < height; y = y + 1) {
+        for (var bx = 0; bx < bytes_per_row; bx = bx + 1) {
+            var v = data[y * bytes_per_row + bx]
+            // Peel bits off from the LSB up, filling pixel columns from
+            // the right (p=7) back to the left (p=0) -- p=0 ends up
+            // holding the MSB, i.e. the byte's leftmost pixel.
+            for (var p = 7; p >= 0; p = p - 1) {
+                var bit = v % 2
+                v = int(v / 2)
+                var val = 0.0
+                if (bit != 0) {
+                    val = 1.0
+                }
+                arr.set(bx * 8 + p, y, val)
+            }
+        }
+    }
+    return arr
+}
+
+class SpriteAssets {
+    __init__() {
+        this.sprites = {}
+    }
+
+    // Loads every sprite defined in the JSON file at `path`, adding each
+    // to this asset set under its "name". Re-loading a name overwrites it.
+    load(path) {
+        var entries = json.load(path)
+        foreach (var entry in entries) {
+            var name = entry["name"]
+            var data_type = entry["data_type"]
+            var arr = nil
+            if (data_type == "pixel") {
+                arr = decode_pixel_rows(entry["data"])
+            } else if (data_type == "byte") {
+                var width = entry.get("width", 8)
+                arr = decode_byte_rows(entry["data"], width)
+            } else {
+                raise Exception("Unknown sprite data_type '" & data_type & "' for '" & name & "'")
+            }
+            this.sprites[name] = arr
+        }
+    }
+
+    get(name) {
+        return this.sprites[name]
+    }
+
+    has(name) -> bool {
+        return this.sprites.get(name, nil) != nil
+    }
+
+    names() {
+        return this.sprites.keys()
+    }
+}

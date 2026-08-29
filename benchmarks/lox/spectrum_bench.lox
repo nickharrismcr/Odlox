@@ -1,0 +1,58 @@
+from gfx import *
+import sys
+
+// Benchmark: a Spectrum-resolution (256x192) pixel buffer as a float_array,
+// hand-filled one pixel at a time in script, then bulk-uploaded via
+// draw_array_fast(). Times fill-only, upload-only, and combined over
+// REPS iterations to estimate real frame budgets for a script-level
+// "clear the maps and hand-draw every pixel" game loop.
+
+const W = 256
+const H = 192
+const REPS = 100
+
+var win = window(W, H)
+win.init()
+
+var rt = render_texture(W, H)
+var arr = float_array(W, H)
+
+func fill_frame(a, frame) {
+    for (var y = 0; y < H; y = y + 1) {
+        for (var x = 0; x < W; x = x + 1) {
+            var v = (x + y + frame) % 256
+            a.set(x, y, encode_rgba(v, v, v))
+        }
+    }
+}
+
+func report(label, elapsed) {
+    var per_frame_ms = elapsed / REPS * 1000
+    var fps = REPS / elapsed
+    var per_pixel_ns = elapsed / REPS / (W * H) * 1000000000
+    print(format("%-14s %.4fs total  %.4fms/frame  %.1f fps-equiv  %.1fns/pixel", label, elapsed, per_frame_ms, fps, per_pixel_ns))
+}
+
+// --- fill-only: script-level per-pixel .set() over the whole buffer ---
+var t0 = sys.clock()
+for (var f = 0; f < REPS; f = f + 1) {
+    fill_frame(arr, f)
+}
+report("fill only:", sys.clock() - t0)
+
+// --- upload-only: draw_array_fast() bulk blit of an already-filled buffer ---
+t0 = sys.clock()
+for (var f = 0; f < REPS; f = f + 1) {
+    rt.draw_array_fast(arr)
+}
+report("upload only:", sys.clock() - t0)
+
+// --- combined: what a real per-frame game loop actually pays ---
+t0 = sys.clock()
+for (var f = 0; f < REPS; f = f + 1) {
+    fill_frame(arr, f)
+    rt.draw_array_fast(arr)
+}
+report("combined:", sys.clock() - t0)
+
+win.close()

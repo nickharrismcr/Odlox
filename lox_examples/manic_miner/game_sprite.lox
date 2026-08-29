@@ -1,0 +1,197 @@
+from gfx import *
+
+// Erase colour for clearing a sprite's last drawn position -- assumes a
+// black room background. Revisit once rooms have their own backgrounds
+// (erasing would need to know the paper underneath, not just black).
+const BLACK = encode_rgba(0, 0, 0)
+
+//
+// @file game_sprite.lox
+// @brief An animated, optionally moving sprite: cycles through
+// image_list's frames over time and, for a "moving" sprite, bounces a
+// position back and forth between (start_x, start_y) and (end_x, end_y)
+// at movement_speed pixels/tick. draw() resolves the current frame's name
+// through a SpriteAssets instance and blits it onto a Display in this
+// sprite's ink/paper -- paper is a real attribute colour, not just a
+// transparent backdrop, so this doubles as how walls get drawn.
+//
+// A horizontally moving sprite needs distinct left/right art -- Manic
+// Miner's own guardians (and Willy) do, rather than a mirrored single
+// set -- so image_list always holds 2x frames entries: the first `frames`
+// for moving right (dx >= 0), the next `frames` for moving left (dx < 0).
+// draw() picks which half to index into, and within the left half counts
+// down (last entry first) as the animation counts up, so frame 0 of each
+// direction's cycle lines up with the other direction's last entry rather
+// than its first. There is no runtime mirroring.
+//
+// step_movement covers guardians that hold their on-screen position for a
+// full animation cycle, then jump movement_speed pixels in one go (the
+// classic Spectrum-era pattern of syncing movement to 8px attribute-cell
+// boundaries instead of gliding continuously) -- see update().
+//
+// __init__ takes no arguments -- every field starts at a default and is
+// set via load_from_dict(), a prelude to loading sprite definitions
+// straight from data alongside the graphics in assets.lox.
+//
+
+class Sprite {
+    __init__() {
+        this.type = "fixed"          // "moving" | "fixed" | "player"
+        this.frames = 1
+        this.movement_type = nil     // "horizontal" | "vertical"
+        this.movement_speed = 0      // pixels per tick (or per cycle, if step_movement)
+        this.animation_speed = 1     // ticks per animation frame
+        this.step_movement = false   // hold position until a full anim cycle completes, then jump
+        this.image_list = []         // sprite names, len == 2*frames (right half, then left half)
+        this.start_x = 0
+        this.start_y = 0
+        this.end_x = 0
+        this.end_y = 0
+        this.colour = nil
+        this.paper = nil
+
+        this.x = 0
+        this.y = 0
+        this.dx = 0
+        this.dy = 0
+        this.frame = 0
+        this.tick = 0
+
+        this.last_x = nil     // where draw() last blitted -- nil means "never drawn yet"
+        this.last_y = nil
+        this.blank = nil      // lazily sized to the first frame drawn, reused every erase
+
+        this.pending_flip = false  // see update(): defers a boundary reversal by one cycle
+    }
+
+    // Sets every named field present in `d` (anything absent keeps its
+    // current value), then re-derives position/delta from start_x/y and
+    // movement_type/speed -- the same setup __init__ used to do inline.
+    load_from_dict(d) {
+        this.type = d.get("type", this.type)
+        this.frames = d.get("frames", this.frames)
+        this.movement_type = d.get("movement_type", this.movement_type)
+        this.movement_speed = d.get("movement_speed", this.movement_speed)
+        this.animation_speed = d.get("animation_speed", this.animation_speed)
+        this.step_movement = d.get("step_movement", this.step_movement)
+        this.image_list = d.get("image_list", this.image_list)
+        this.start_x = d.get("start_x", this.start_x)
+        this.start_y = d.get("start_y", this.start_y)
+        this.end_x = d.get("end_x", this.end_x)
+        this.end_y = d.get("end_y", this.end_y)
+        this.colour = d.get("colour", this.colour)
+        this.paper = d.get("paper", this.paper)
+
+        this.x = this.start_x
+        this.y = this.start_y
+        this.dx = 0
+        this.dy = 0
+        if (this.type == "moving") {
+            if (this.movement_type == "horizontal") {
+                this.dx = this.movement_speed
+            } else if (this.movement_type == "vertical") {
+                this.dy = this.movement_speed
+            }
+        }
+
+        this.frame = 0
+        this.tick = 0
+
+        this.last_x = nil
+        this.last_y = nil
+        this.blank = nil
+
+        this.pending_flip = false
+    }
+
+    // Advances the animation frame every animation_speed ticks. For a
+    // "moving" sprite, also advances position by the delta, reversing it
+    // on whichever axis it moves along once that axis reaches its
+    // start/end bound. "fixed" and "player" sprites never move here --
+    // a player's position is driven externally (input), not this loop.
+    //
+    // If step_movement is set, the position only advances on the tick a
+    // full animation cycle wraps back to frame 0 -- otherwise it holds,
+    // so the sprite stays put through frames 1..frames-1 and only jumps
+    // once every `frames` animation frames.
+    update() {
+        this.tick = this.tick + 1
+        var wrapped = false
+        if (this.tick >= this.animation_speed) {
+            this.tick = 0
+            this.frame = this.frame + 1
+            if (this.frame >= this.frames) {
+                this.frame = 0
+                wrapped = true
+            }
+        }
+
+        if (this.type != "moving") {
+            return
+        }
+
+        if (this.step_movement and !wrapped) {
+            return
+        }
+
+        // Horizontal movement defers a boundary reversal by a full cycle:
+        // the cycle that reaches start/end clamps exactly onto it and
+        // plays out fully there (so the sprite genuinely reaches the
+        // boundary instead of stopping short), and only the cycle after
+        // that actually flips direction -- on its own first tick, moving
+        // nowhere that tick. Without this, step_movement's hold means the
+        // last cycle before a bounce never gets to land exactly on
+        // start_x/end_x, and the new facing switches in immediately
+        // instead of after that cycle's final frame.
+        if (this.movement_type == "horizontal") {
+            if (this.pending_flip) {
+                this.dx = -this.dx
+                this.pending_flip = false
+            } else {
+                var next_x = this.x + this.dx
+                if (next_x <= this.start_x) {
+                    this.x = this.start_x
+                    this.pending_flip = true
+                } else if (next_x >= this.end_x) {
+                    this.x = this.end_x
+                    this.pending_flip = true
+                } else {
+                    this.x = next_x
+                }
+            }
+        } else if (this.movement_type == "vertical") {
+            this.y = this.y + this.dy
+            if (this.y <= this.start_y or this.y >= this.end_y) {
+                this.dy = -this.dy
+            }
+        }
+    }
+
+    // Clears wherever this sprite last drew itself (a no-op the first call,
+    // since last_x starts nil), then looks up the current frame's sprite
+    // by name in `lib` and blits it onto `disp` at the current position,
+    // in this sprite's colour/paper. A horizontally moving sprite
+    // travelling left (dx < 0) indexes into image_list's second half, and
+    // counts down through it (2*frames-1 .. frames) as this.frame counts
+    // up (0 .. frames-1) -- see the class comment.
+    draw(disp, lib) {
+        var index = this.frame
+        if (this.movement_type == "horizontal" and this.dx < 0) {
+            index = 2 * this.frames - 1 - this.frame
+        }
+        var name = this.image_list[index]
+        var img = lib.get(name)
+
+        if (this.blank == nil) {
+            this.blank = float_array(img.width(), img.height())
+        }
+        if (this.last_x != nil) {
+            disp.blit_sprite(this.blank, this.last_x, this.last_y, BLACK, BLACK)
+        }
+
+        disp.blit_sprite(img, int(this.x), int(this.y), this.colour, this.paper)
+
+        this.last_x = int(this.x)
+        this.last_y = int(this.y)
+    }
+}

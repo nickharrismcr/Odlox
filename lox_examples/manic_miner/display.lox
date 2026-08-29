@@ -1,0 +1,163 @@
+from gfx import *
+import colour
+
+//
+// @file display.lox
+// @brief ZX Spectrum-style display: a 256x192 1-bit pixel bitmap plus a
+// 32x24 attribute grid (ink/paper colour per 8x8 cell), composited into
+// one packed-colour buffer for GPU upload. Mirrors the real hardware's
+// separation: plotting a pixel never touches colour, and recolouring an
+// attribute cell never touches which pixels are set.
+//
+
+const SCREEN_W = 256
+const SCREEN_H = 192
+const CELL = 8                       // attribute cell size, in pixels
+const ATTR_COLS = SCREEN_W / CELL    // 32
+const ATTR_ROWS = SCREEN_H / CELL    // 24
+
+class Display {
+    __init__() {
+        // 0.0/1.0 per pixel -- the "ink bit". Never stores colour, so it
+        // doubles as the source of truth for pixel-perfect collision tests.
+        this.bitmap = float_array(SCREEN_W, SCREEN_H)
+
+        // One packed-rgba colour per attribute cell.
+        this.attr_ink = float_array(ATTR_COLS, ATTR_ROWS)
+        this.attr_paper = float_array(ATTR_COLS, ATTR_ROWS)
+
+        // Resolved colour per pixel (bitmap bit -> that cell's ink/paper) --
+        // this is the buffer that actually gets uploaded to the GPU.
+        this.screen = float_array(SCREEN_W, SCREEN_H)
+
+        this.rt = render_texture(SCREEN_W, SCREEN_H)
+    }
+
+    // Sets every cell's paper to `paper` and ink to `ink`, and clears the
+    // bitmap -- a fresh blank display in one colour, e.g. at cavern load.
+    clear(ink, paper) {
+        this.bitmap.clear(0.0)
+        this.attr_ink.clear(ink)
+        this.attr_paper.clear(paper)
+        this.screen.clear(paper)
+    }
+
+    // Plots one bitmap pixel (bit != 0.0 -> ink, else paper) and resolves
+    // it against its cell's current attribute in the same call.
+    plot(x, y, bit) {
+        this.bitmap.set(x, y, bit)
+        var cx = int(x / CELL)
+        var cy = int(y / CELL)
+        var col = this.attr_paper.get(cx, cy)
+        if (bit != 0.0) {
+            col = this.attr_ink.get(cx, cy)
+        }
+        this.screen.set(x, y, col)
+    }
+
+    get_pixel(x, y) -> float {
+        return this.bitmap.get(x, y)
+    }
+
+    // Sets one attribute cell's ink/paper and re-resolves every pixel
+    // already plotted in that cell against the new colours. The bitmap
+    // itself is untouched -- this is the ZX Spectrum "attribute flash"
+    // primitive (see Willy's death sequence: cycles ink across every
+    // cell on screen without redrawing a single sprite).
+    set_attr(cx, cy, ink, paper) {
+        this.attr_ink.set(cx, cy, ink)
+        this.attr_paper.set(cx, cy, paper)
+        var x0 = cx * CELL
+        var y0 = cy * CELL
+        for (var y = y0; y < y0 + CELL; y = y + 1) {
+            for (var x = x0; x < x0 + CELL; x = x + 1) {
+                var col = paper
+                if (this.bitmap.get(x, y) != 0.0) {
+                    col = ink
+                }
+                this.screen.set(x, y, col)
+            }
+        }
+    }
+
+    // Sets every cell on screen to the same ink/paper and re-resolves the
+    // whole screen buffer against it, without touching the bitmap -- the
+    // Spectrum "flash the whole attribute block" primitive (Willy's death
+    // sequence cycles this across a handful of colours, a few frames each).
+    set_attr_all(ink, paper) {
+        this.attr_ink.clear(ink)
+        this.attr_paper.clear(paper)
+        for (var y = 0; y < SCREEN_H; y = y + 1) {
+            for (var x = 0; x < SCREEN_W; x = x + 1) {
+                var col = paper
+                if (this.bitmap.get(x, y) != 0.0) {
+                    col = ink
+                }
+                this.screen.set(x, y, col)
+            }
+        }
+    }
+
+    // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits) with
+    // its top-left at (x, y), then colours every attribute cell its
+    // bounding box overlaps with ink/paper. That colouring covers the
+    // whole cell, not just the sprite's own pixels within it -- a sprite
+    // that isn't 8px-aligned bleeds its colour onto whatever else shares
+    // that cell, same as real Spectrum attribute clash.
+    //
+    // reverse mirrors the sprite left-right as it's blitted -- a sprite
+    // drawn once facing right can be reused facing left without a second,
+    // premirrored set of frames.
+    blit_sprite(sprite, x, y, ink, paper, reverse: bool = false) {
+        var sw = sprite.width()
+        var sh = sprite.height()
+        for (var sy = 0; sy < sh; sy = sy + 1) {
+            var py = y + sy
+            if (py < 0 or py >= SCREEN_H) { continue }
+            for (var sx = 0; sx < sw; sx = sx + 1) {
+                var px = x + sx
+                if (px < 0 or px >= SCREEN_W) { continue }
+                var src_x = sx
+                if (reverse) {
+                    src_x = sw - 1 - sx
+                }
+                this.bitmap.set(px, py, sprite.get(src_x, sy))
+            }
+        }
+
+        var cx0 = int(x / CELL)
+        var cy0 = int(y / CELL)
+        var cx1 = int((x + sw - 1) / CELL)
+        var cy1 = int((y + sh - 1) / CELL)
+        for (var cy = cy0; cy <= cy1; cy = cy + 1) {
+            if (cy < 0 or cy >= ATTR_ROWS) { continue }
+            for (var cx = cx0; cx <= cx1; cx = cx + 1) {
+                if (cx < 0 or cx >= ATTR_COLS) { continue }
+                this.set_attr(cx, cy, ink, paper)
+            }
+        }
+    }
+
+    get_ink(cx, cy) -> float {
+        return this.attr_ink.get(cx, cy)
+    }
+
+    get_paper(cx, cy) -> float {
+        return this.attr_paper.get(cx, cy)
+    }
+
+    // Uploads the composited buffer to the GPU. Caller still does its own
+    // win.begin()/draw()/win.end() -- Display owns the pixel/attribute
+    // data and how to present its own texture, not the frame lifecycle.
+    upload() {
+        this.rt.draw_array_fast(this.screen)
+    }
+
+    // Draws the composited display scaled to (w, h) at (x, y) in the
+    // caller's window. Negative source height compensates for the render
+    // texture's bottom-up storage (see game_of_life.lox's identical use of
+    // this for the same reason) -- callers don't need to know about it.
+    draw(win, x, y, w, h) {
+        win.draw_texture_pro(this.rt, 0, 0, SCREEN_W, -SCREEN_H, x, y, w, h, 0, 0, 0, colour.WHITE)
+    }
+}
