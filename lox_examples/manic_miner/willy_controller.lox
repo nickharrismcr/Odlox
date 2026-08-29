@@ -1,0 +1,21 @@
+//
+// @file willy_controller.lox
+// @brief Single place all keyboard polling happens for Willy, mirroring
+// lox_examples/defender/player/controller.lox's convention: update(win)
+// is called once per frame, everything else reads the resulting flags
+// rather than calling win.key_down/key_pressed itself.
+//
+
+class Controller {
+    __init__() {
+        this.left = false    // held: move left
+        this.right = false   // held: move right
+        this.jump = false    // edge-triggered: start a jump
+    }
+
+    update(win) {
+        this.left = win.key_down(win.KEY_Q)
+        this.right = win.key_down(win.KEY_W)
+        this.jump = win.key_pressed(win.KEY_SPACE)
+    }
+}

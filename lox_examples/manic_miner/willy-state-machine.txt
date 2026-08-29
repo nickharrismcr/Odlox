@@ -1,0 +1,98 @@
+init:
+   direction=0   ( -1, 0, 1 )
+   moving=0      ( 0, 1 )
+   state = "standing"
+
+
+state "standing":
+
+   if no floor:
+      enter "falling"
+   else if press jump:
+         if press move:
+         if not blocked forward ( frame = 3 and next block = blocker )
+            set direction
+            set moving=1 
+            enter "jump" 
+         else: 
+            enter "jump"
+   else if press move:
+         if moving dir != direction:
+            direction=moving dir 
+            set frame to opp. direction frame 
+         else: 
+            enter "walking"
+
+enter walking:
+   state = walking           
+ 
+state "walking":
+   if no floor:
+      enter "falling"
+   else if press jump:
+      if not blocked forward ( frame = 3 and next block = blocker )
+         enter "jump"
+      else:
+         set moving=0
+         enter "jump"
+   else if press move:
+      if moving dir != direction:
+         direction=moving dir
+         set frame to opp. direction frame
+      else:
+         if frame==3
+            if next block != blocker:
+               frame=0
+               bump position +8 in direction
+         else:
+            bump frame
+   else:
+      enter "standing"
+
+enter "jump":
+   jump offset index = 0 
+   state = jump 
+
+state "jump":
+
+   if blocked above:
+      moving=0
+   
+   get jump offset using index 
+   add offset to y 
+   bump offset index
+   if past end of offset list:
+      enter "falling" 
+   if offset < 0 and landed ( on or below floor ) 
+      snap to floor 
+      enter "standing" 
+   if moving==1:
+      if frame==3:
+         if next block == blocker:
+            enter "falling"
+         else
+            bump frame
+            bump x position
+      else
+         bump frame 
+
+enter falling:
+   state = falling 
+   dropped = 0 
+
+state falling:
+   y = y - dropping pixels
+   dropped += 1 
+   if landed:
+      if dropped > die_threshold:
+         enter "die"
+      else: 
+         enter "standing" 
+
+enter "die"
+   state = "die"
+
+state "die" 
+   game die state 
+
+   

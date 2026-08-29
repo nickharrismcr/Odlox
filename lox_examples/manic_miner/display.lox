@@ -80,23 +80,47 @@ class Display {
         }
     }
 
-    // Sets every cell on screen to the same ink/paper and re-resolves the
-    // whole screen buffer against it, without touching the bitmap -- the
-    // Spectrum "flash the whole attribute block" primitive (Willy's death
-    // sequence cycles this across a handful of colours, a few frames each).
-    set_attr_all(ink, paper) {
-        this.attr_ink.clear(ink)
-        this.attr_paper.clear(paper)
-        for (var y = 0; y < SCREEN_H; y = y + 1) {
-            for (var x = 0; x < SCREEN_W; x = x + 1) {
-                var col = paper
-                if (this.bitmap.get(x, y) != 0.0) {
-                    col = ink
+    // Starts an ink-only flash (Willy's death sequence): forces every
+    // cell's paper to black and does one full resolve pass, caching every
+    // ink pixel's coordinates for flash_ink() -- the real Spectrum ULA
+    // only ever touches attribute bytes for this, never bitmap pixels, so
+    // once paper is fixed the per-tick cost should scale with ink pixel
+    // count, not the whole screen.
+    begin_flash() {
+        var black = encode_rgba(0, 0, 0)
+        this.attr_paper.clear(black)
+        this.flash_ink_pixels = []
+        for (var cy = 0; cy < ATTR_ROWS; cy = cy + 1) {
+            for (var cx = 0; cx < ATTR_COLS; cx = cx + 1) {
+                var ink = this.attr_ink.get(cx, cy)
+                var x0 = cx * CELL
+                var y0 = cy * CELL
+                for (var y = y0; y < y0 + CELL; y = y + 1) {
+                    for (var x = x0; x < x0 + CELL; x = x + 1) {
+                        if (this.bitmap.get(x, y) != 0.0) {
+                            this.screen.set(x, y, ink)
+                            this.flash_ink_pixels.append(y * SCREEN_W + x)
+                        } else {
+                            this.screen.set(x, y, black)
+                        }
+                    }
                 }
-                this.screen.set(x, y, col)
             }
         }
     }
+
+    // One flash tick: recolours only the pixels begin_flash() cached (the
+    // screen's ink pixels), not the whole screen -- paper stays black and
+    // unchanged for the rest of the flash.
+    flash_ink(ink) {
+        this.attr_ink.clear(ink)
+        foreach (var packed in this.flash_ink_pixels) {
+            var x = packed % SCREEN_W
+            var y = int(packed / SCREEN_W)
+            this.screen.set(x, y, ink)
+        }
+    }
+
 
     // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits)
     // with its top-left at (x, y), then colours every attribute cell its

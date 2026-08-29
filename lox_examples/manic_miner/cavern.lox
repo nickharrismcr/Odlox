@@ -16,6 +16,21 @@ import game_sprite
 // game_sprite.Sprite, plus load(path) to read straight from a JSON file.
 //
 
+// Layout digit values, matching extract_cavern.lox's own TILE_NAMES order
+// exactly -- this.layout[y][x] is already one of these as a character.
+const TILE_BACKGROUND = 0
+const TILE_FLOOR = 1
+const TILE_CRUMBLING_FLOOR = 2
+const TILE_WALL = 3
+const TILE_CONVEYOR = 4
+const TILE_NASTY1 = 5
+const TILE_NASTY2 = 6
+const TILE_EXTRA = 7
+
+// Approximate: real per-tick timing isn't decoded yet -- ticks a crumbling
+// floor tile can be stood on before it gives way (see Cavern.tick_crumble()).
+const CRUMBLE_TICKS = 8
+
 // An uncollected item's ink cycles through these four palette values
 // once per tick -- magenta, green, cyan, yellow -- while its paper stays
 // whatever the underlying room tile's paper is (see draw_items()), not
@@ -94,6 +109,7 @@ func make_guardian_sprite(g, movement_type, image_list, frames) {
 
 class Cavern {
     __init__() {
+        this.path = nil               // set by load(); lets a full reset just re-call load(this.path)
         this.name = ""
         this.width = 0
         this.height = 0
@@ -112,6 +128,8 @@ class Cavern {
         this.vertical_guardians = []
         this.guardian_sprite_names = []   // 8 asset-name pointers (right_0..3, left_0..3)
         this.guardian_sprites = []        // game_sprite.Sprite instances, built from the above by load_from_dict
+        this.crumbled = {}                // "cx,cy" -> true once a crumbling-floor cell has given way
+        this.crumble_timers = {}          // "cx,cy" -> ticks remaining while still being stood on
     }
 
     // Sets every named field present in `d` (anything absent keeps its
@@ -134,6 +152,8 @@ class Cavern {
         this.horizontal_guardians = d.get("horizontal_guardians", this.horizontal_guardians)
         this.vertical_guardians = d.get("vertical_guardians", this.vertical_guardians)
         this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
+        this.crumbled = {}
+        this.crumble_timers = {}
 
         // The 8-frame guardian sheet is a fixed-size, per-cavern resource:
         // a cavern with only one guardian type gives it all 8 (frames=4,
@@ -157,8 +177,11 @@ class Cavern {
         }
     }
 
-    // Reads a cavern JSON file (as written by extract_cavern.lox).
+    // Reads a cavern JSON file (as written by extract_cavern.lox). Records
+    // path so a later load(this.path) can fully reset the room (guardians,
+    // items, crumbled floors) -- e.g. after Willy dies.
     load(path) {
+        this.path = path
         this.load_from_dict(json.load(path))
     }
 
@@ -168,6 +191,148 @@ class Cavern {
     get_tile(x, y) {
         var index = int(this.layout[y][x])
         return this.tile_names[index]
+    }
+
+    // Returns the TILE_* type at pixel position (px, py), for collision.
+    // Out-of-bounds (below/beside the playfield) reads as TILE_WALL, a
+    // safety floor rather than an index-out-of-range crash -- the real
+    // playfield is always walled in on every side anyway. A collapsed
+    // crumbling-floor cell reads as TILE_BACKGROUND without this.layout
+    // itself ever being mutated.
+    tile_type_at(px, py) -> int {
+        var cx = int(px / 8)
+        var cy = int(py / 8)
+        if (cx < 0 or cx >= this.width or cy < 0 or cy >= this.height) {
+            return TILE_WALL
+        }
+        var key = format("%d,%d", cx, cy)
+        if (this.crumbled.get(key, false)) {
+            return TILE_BACKGROUND
+        }
+        return int(this.layout[cy][cx])
+    }
+
+    // True if the tile at pixel (px, py) fully blocks movement in every
+    // direction. Real game's collision rule: a non-background tile whose
+    // own paper differs from the room's background paper (tile_colours'
+    // TILE_BACKGROUND entry) is a full wall; one whose paper *matches* is
+    // a one-way platform instead -- passable sideways and from below
+    // (walking or jumping through it), but still supports Willy landing
+    // on it from above (see tile_supports_landing()). Plain background
+    // never blocks at all.
+    tile_blocks(px, py) -> bool {
+        var t = this.tile_type_at(px, py)
+        if (t == TILE_BACKGROUND) {
+            return false
+        }
+        return this.tile_colours[t]["paper"] != this.tile_colours[TILE_BACKGROUND]["paper"]
+    }
+
+    // True if Willy can stand on the tile at (px, py) when landing on it
+    // from above -- any non-background tile, whether tile_blocks() or
+    // not, except a nasty tile: the real game explicitly excludes those
+    // (Willy falls through one rather than landing on it).
+    tile_supports_landing(px, py) -> bool {
+        var t = this.tile_type_at(px, py)
+        if (t == TILE_BACKGROUND) {
+            return false
+        }
+        if (t == TILE_NASTY1 or t == TILE_NASTY2) {
+            return false
+        }
+        return true
+    }
+
+    // True if the tile at (px, py) is a one-way platform: a real,
+    // non-background tile that doesn't tile_blocks(). Willy renders in
+    // *its* ink while overlapping one (see willy.lox's draw()) rather
+    // than his own fixed colour -- plain background isn't a "block" at
+    // all, so it doesn't count even though it also doesn't block.
+    tile_is_platform(px, py) -> bool {
+        var t = this.tile_type_at(px, py)
+        if (t == TILE_BACKGROUND) {
+            return false
+        }
+        return !this.tile_blocks(px, py)
+    }
+
+    // Call once per tick while Willy is standing on a still-solid
+    // crumbling-floor cell at pixel position (px, py); after CRUMBLE_TICKS
+    // calls for that same cell, it collapses (tile_type_at() then reads it
+    // as TILE_BACKGROUND, and the cell is redrawn to match). Calling this
+    // on a cell that isn't TILE_CRUMBLING_FLOOR, or that has already
+    // collapsed, is harmless.
+    tick_crumble(disp, lib, px, py) {
+        var cx = int(px / 8)
+        var cy = int(py / 8)
+        var key = format("%d,%d", cx, cy)
+        if (this.crumbled.get(key, false)) {
+            return
+        }
+        var remaining = this.crumble_timers.get(key, CRUMBLE_TICKS) - 1
+        if (remaining <= 0) {
+            this.crumbled[key] = true
+            this.redraw_tile_cell(disp, lib, cx, cy)
+        } else {
+            this.crumble_timers[key] = remaining
+        }
+    }
+
+    // Redraws whatever tile currently occupies grid cell (cx, cy) --
+    // tile_type_at()'s own crumbled-overlay check, not the raw layout
+    // digit, so a collapsed cell redraws as TILE_BACKGROUND. Used to erase
+    // an item's icon once collect_item_at() removes it (items are drawn
+    // straight onto disp's bitmap with no erase-tracking of their own,
+    // unlike game_sprite.Sprite) and to reveal a crumbled floor cell.
+    redraw_tile_cell(disp, lib, cx, cy) {
+        var index = this.tile_type_at(cx * 8, cy * 8)
+        var tile = this.tile_colours[index]
+        var img = lib.get(tile["name"])
+        var ink = spectrum_attr.colour_to_rgba(tile["ink"], tile["bright"])
+        var paper = spectrum_attr.colour_to_rgba(tile["paper"], tile["bright"])
+        disp.blit_sprite(img, cx * 8, cy * 8, ink, paper)
+    }
+
+    // Marks the first uncollected item overlapping the given pixel bounding
+    // box as collected, erases its icon, and returns it (nil if none
+    // overlap). Items are 8x8; collected ones are skipped both here and by
+    // draw_items().
+    collect_item_at(disp, lib, px, py, pw, ph) {
+        foreach (var item in this.items) {
+            if (item.get("collected", false)) {
+                continue
+            }
+            var overlap_x = px < item["x"] + 8 and px + pw > item["x"]
+            var overlap_y = py < item["y"] + 8 and py + ph > item["y"]
+            if (overlap_x and overlap_y) {
+                item["collected"] = true
+                this.redraw_tile_cell(disp, lib, int(item["x"] / 8), int(item["y"] / 8))
+                return item
+            }
+        }
+        return nil
+    }
+
+    all_items_collected() -> bool {
+        foreach (var item in this.items) {
+            if (!item.get("collected", false)) {
+                return false
+            }
+        }
+        return true
+    }
+
+    // Bounding-box test against every guardian's current position.
+    // Guardians (like Willy) are always 16x16.
+    guardian_hit(px, py, pw, ph) -> bool {
+        foreach (var g in this.guardian_sprites) {
+            var overlap_x = px < g.x + 16 and px + pw > g.x
+            var overlap_y = py < g.y + 16 and py + ph > g.y
+            if (overlap_x and overlap_y) {
+                return true
+            }
+        }
+        return false
     }
 
     // Draws every layout cell's tile onto disp (an 8px-aligned blit per
@@ -206,6 +371,9 @@ class Cavern {
         var img = lib.get(this.item_sprite)
         for (var i = 0; i < len(this.items); i = i + 1) {
             var item = this.items[i]
+            if (item.get("collected", false)) {
+                continue
+            }
             var ink_value = ITEM_INK_CYCLE[(tick + i) % len(ITEM_INK_CYCLE)]
             var cx = int(item["x"] / 8)
             var cy = int(item["y"] / 8)
