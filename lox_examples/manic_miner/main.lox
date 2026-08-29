@@ -15,7 +15,7 @@ import sys
 //
 
 var argv = sys.args()
-var index = 2
+var index = 3
 if (len(argv) >= 2) {
     index = int(argv[1])
 }

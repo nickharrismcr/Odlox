@@ -60,10 +60,10 @@ const SKYLAB_FRAMES = 8
 
 // Builds a game_sprite.Sprite for one guardian record. g's min_x/max_x
 // are reused as the bound pair for whichever axis movement_type is
-// (min/max y for "vertical"). Horizontal guardians always spawn exactly
-// on one bound (g["x"] == min_x or max_x), so start_x doubles as the
-// spawn point same as before; vertical guardians can spawn mid-range, so
-// init_y overrides that with g["y"] instead. A vertical guardian tagged
+// (min/max y for "vertical"), overwriting start_x/y or end_x/y -- but
+// g["x"]/g["y"] (its real starting position, not necessarily either
+// bound) is preserved separately as init_x/init_y so the sprite spawns
+// there rather than always snapping to a bound. A vertical guardian tagged
 // "style": "skylab" (Skylab Landing Bay only) uses crash_respawn instead
 // of bouncing -- see game_sprite.lox's update(). `frames` and
 // `image_list` are caller-supplied (not fixed constants) because a
@@ -76,6 +76,7 @@ func make_guardian_sprite(g, movement_type, image_list, frames) {
     var end_x = g["x"]
     var start_y = g["y"]
     var end_y = g["y"]
+    var init_x = g["x"]
     var init_y = g["y"]
     var movement_speed = GUARDIAN_MOVEMENT_SPEED
     var step_movement = true
@@ -105,7 +106,7 @@ func make_guardian_sprite(g, movement_type, image_list, frames) {
         "image_list": image_list,
         "start_x": start_x, "start_y": start_y,
         "end_x": end_x, "end_y": end_y,
-        "init_y": init_y,
+        "init_x": init_x, "init_y": init_y,
         "colour": ink, "paper": paper
     })
     return spr
