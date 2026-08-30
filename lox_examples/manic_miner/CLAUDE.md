@@ -81,10 +81,13 @@ and consumed at runtime.
 - Every file here already carries a substantial `@file`/`@brief` header comment describing its own
   intent in detail — read that first rather than re-deriving behaviour from the code alone.
 
-## Pending work
+## GPU-composited display
 
-`docs/plans/shader-attribute-compositing.md` (repo root) is a design doc, not yet implemented, for
-moving `display.lox`'s bitmap/ink/paper colour resolution off the CPU and onto a GPU fragment
-shader. It also specifies one required native addition (`Shader.set_value_texture` in
-`src/natives/gfx_shader.odin`). Check it before making unrelated changes to `display.lox`'s
-`plot`/`set_attr`/`begin_flash`/`flash_ink` methods, since that plan rewrites all of them.
+`display.lox`'s bitmap/ink/paper colour resolution runs on the GPU: `plot()`/`set_attr()` only
+write to their own source buffers (`bitmap`/`attr_ink`/`attr_paper`), and a fragment shader
+(`Display`'s embedded `COMPOSITE_SHADER_SRC`) composites them every frame in `draw()`. See
+`docs/plans/shader-attribute-compositing.md` (repo root) for the design and its one native
+addition (`Shader.set_value_texture` in `src/natives/gfx_shader.odin`), including a documented
+deviation from the original design around when `set_value_texture` must be called relative to
+`begin_shader_mode()`. Check it before changing `display.lox`'s `plot`/`set_attr`/`begin_flash`/
+`flash_ink`/`upload`/`draw`.

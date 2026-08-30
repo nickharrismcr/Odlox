@@ -1,6 +1,17 @@
 # Shader-based attribute compositing for the Manic Miner display
 
-**Status**: design only, not yet implemented.
+**Status**: implemented (`src/natives/gfx_shader.odin`'s `set_value_texture`,
+`lox_examples/manic_miner/display.lox`'s GPU compositing).
+
+One deviation from this design as written: `Shader.set_value_texture()` resolves against
+whichever shader program is currently bound (`rlSetUniformSampler` issues `glUniform1i` directly,
+with no `glUseProgram` of its own) -- calling it from `upload()`, before `draw()`'s
+`begin_shader_mode()`, silently rebinds whatever shader happened to be active instead of
+`composite`, leaving `inkTex`/`paperTex` unset and the display black. `set_value_texture` calls
+for `inkTex`/`paperTex` were moved into `draw()`, inside the `begin_shader_mode(composite)`/
+`end_shader_mode()` bracket; `attr_dirty` is still set by `set_attr`/`begin_flash`/`flash_ink` and
+still gates `upload()`'s `ink_rt`/`paper_rt` texture uploads, but is only cleared once `draw()`
+rebinds the samplers.
 
 ## Context
 

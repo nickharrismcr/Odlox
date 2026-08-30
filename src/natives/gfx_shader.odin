@@ -196,6 +196,28 @@ shader_invoke :: proc(vm_ctx: rawptr, data: rawptr, name: string, arg_count: int
 		values := [4]f32{f32(vv.x), f32(vv.y), f32(vv.z), f32(vv.w)}
 		rl.SetShaderValue(s.shader, c.int(core.as_int(loc_val)), &values, .VEC4)
 		result = core.NIL_VALUE
+	case "set_value_texture":
+		if arg_count != 2 {
+			vm.runtime_error(v, "set_value_texture() expects 2 arguments (location, texture).")
+			return false
+		}
+		loc_val, tex_val := vm.peek(v, 1), vm.peek(v, 0)
+		if !core.is_int(loc_val) {
+			vm.runtime_error(v, "set_value_texture() expects an int location.")
+			return false
+		}
+		tex: rl.Texture2D
+		switch {
+		case is_texture_value(tex_val):
+			tex = texture_data_of(tex_val).texture
+		case is_render_texture_value(tex_val):
+			tex = render_texture_data_of(tex_val).render_texture.texture
+		case:
+			vm.runtime_error(v, "set_value_texture() second argument must be a texture or render_texture.")
+			return false
+		}
+		rl.SetShaderValueTexture(s.shader, c.int(core.as_int(loc_val)), tex)
+		result = core.NIL_VALUE
 	case "is_valid":
 		if arg_count != 0 {
 			vm.runtime_error(v, "is_valid() takes no arguments.")

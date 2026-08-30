@@ -4,10 +4,11 @@ import colour
 //
 // @file display.lox
 // @brief ZX Spectrum-style display: a 256x192 1-bit pixel bitmap plus a
-// 32x24 attribute grid (ink/paper colour per 8x8 cell), composited into
-// one packed-colour buffer for GPU upload. Mirrors the real hardware's
-// separation: plotting a pixel never touches colour, and recolouring an
-// attribute cell never touches which pixels are set.
+// 32x24 attribute grid (ink/paper colour per 8x8 cell). Colour resolution
+// happens on the GPU: bitmap/ink/paper each upload to their own texture
+// unchanged, and a fragment shader composites them every frame. Mirrors
+// the real hardware's separation: plotting a pixel never touches colour,
+// and recolouring an attribute cell never touches which pixels are set.
 //
 
 const SCREEN_W = 256
@@ -16,21 +17,95 @@ const CELL = 8                       // attribute cell size, in pixels
 const ATTR_COLS = SCREEN_W / CELL    // 32
 const ATTR_ROWS = SCREEN_H / CELL    // 24
 
+// Packed-rgba encoding of a set bitmap pixel -- same convention as
+// attr_ink/attr_paper, so the composite shader can test texture0.r
+// against a clean 0.0/1.0 instead of relying on draw_array_fast's
+// incidental low-byte packing of a raw 1.0.
+const BIT_SET = encode_rgba(255, 255, 255)
+
+// Mirror win.FILTER_POINT/win.WRAP_CLAMP's rl.TextureFilter/TextureWrap
+// ordinals -- Display has no window reference to read those constants
+// off of, since it's constructed with no arguments.
+const TEXTURE_FILTER_POINT = 0
+const TEXTURE_WRAP_CLAMP = 1
+
+// Standard fullscreen-quad vertex shader, same as every other shader
+// example in this codebase.
+var VERTEX_SHADER_SRC = "
+#version 330
+
+in vec3 vertexPosition;
+in vec2 vertexTexCoord;
+in vec3 vertexNormal;
+in vec4 vertexColor;
+
+uniform mat4 mvp;
+
+out vec2 fragTexCoord;
+out vec4 fragColor;
+
+void main()
+{
+    fragTexCoord = vertexTexCoord;
+    fragColor = vertexColor;
+    gl_Position = mvp * vec4(vertexPosition, 1.0);
+}
+"
+
+// Composites bitmap/ink/paper into the final image. inkTex/paperTex are
+// only 32x24 texels; with FILTER_POINT + WRAP_CLAMP (set on ink_rt/
+// paper_rt below), the GPU's own texture-coordinate mapping quantizes
+// each fragment to its containing 8x8 cell, so no cell-index math is
+// needed here.
+var COMPOSITE_SHADER_SRC = "
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+
+uniform sampler2D texture0;  // bitmap_rt: WHITE = ink bit set, BLACK = clear
+uniform sampler2D inkTex;    // ink_rt, 32x24, FILTER_POINT + WRAP_CLAMP
+uniform sampler2D paperTex;  // paper_rt, 32x24, FILTER_POINT + WRAP_CLAMP
+
+void main() {
+    float bit = texture(texture0, fragTexCoord).r;
+    vec4 ink = texture(inkTex, fragTexCoord);
+    vec4 paper = texture(paperTex, fragTexCoord);
+    finalColor = mix(paper, ink, bit);
+}
+"
+
 class Display {
     __init__() {
-        // 0.0/1.0 per pixel -- the "ink bit". Never stores colour, so it
-        // doubles as the source of truth for pixel-perfect collision tests.
+        // Packed-rgba per pixel (BIT_SET or 0.0) -- the "ink bit". Never
+        // stores colour, so it doubles as the source of truth for
+        // pixel-perfect collision tests (via get_pixel()).
         this.bitmap = float_array(SCREEN_W, SCREEN_H)
 
         // One packed-rgba colour per attribute cell.
         this.attr_ink = float_array(ATTR_COLS, ATTR_ROWS)
         this.attr_paper = float_array(ATTR_COLS, ATTR_ROWS)
 
-        // Resolved colour per pixel (bitmap bit -> that cell's ink/paper) --
-        // this is the buffer that actually gets uploaded to the GPU.
-        this.screen = float_array(SCREEN_W, SCREEN_H)
+        this.bitmap_rt = render_texture(SCREEN_W, SCREEN_H)
+        this.ink_rt = render_texture(ATTR_COLS, ATTR_ROWS)
+        this.paper_rt = render_texture(ATTR_COLS, ATTR_ROWS)
+        this.ink_rt.get_texture().set_filter_mode(TEXTURE_FILTER_POINT)
+        this.ink_rt.get_texture().set_wrap_mode(TEXTURE_WRAP_CLAMP)
+        this.paper_rt.get_texture().set_filter_mode(TEXTURE_FILTER_POINT)
+        this.paper_rt.get_texture().set_wrap_mode(TEXTURE_WRAP_CLAMP)
 
+        // Final composited output, presented by draw().
         this.rt = render_texture(SCREEN_W, SCREEN_H)
+
+        this.composite = shader()
+        this.composite.load_from_memory(VERTEX_SHADER_SRC, COMPOSITE_SHADER_SRC)
+        this.ink_loc = this.composite.get_location("inkTex")
+        this.paper_loc = this.composite.get_location("paperTex")
+
+        // Set whenever attr_ink/attr_paper change; consumed (and
+        // cleared) by upload(), which re-uploads ink_rt/paper_rt only
+        // then -- pixel plots are far more frequent than attribute
+        // changes. True here so the first upload() populates them.
+        this.attr_dirty = true
     }
 
     // Sets every cell's paper to `paper` and ink to `ink`, and clears the
@@ -39,88 +114,42 @@ class Display {
         this.bitmap.clear(0.0)
         this.attr_ink.clear(ink)
         this.attr_paper.clear(paper)
-        this.screen.clear(paper)
+        this.attr_dirty = true
     }
 
-    // Plots one bitmap pixel (bit != 0.0 -> ink, else paper) and resolves
-    // it against its cell's current attribute in the same call.
+    // Plots one bitmap pixel: BIT_SET if bit != 0.0, else clear. Colour
+    // resolution happens later, on the GPU, in upload()/draw().
     plot(x, y, bit) {
-        this.bitmap.set(x, y, bit)
-        var cx = int(x / CELL)
-        var cy = int(y / CELL)
-        var col = this.attr_paper.get(cx, cy)
-        if (bit != 0.0) {
-            col = this.attr_ink.get(cx, cy)
-        }
-        this.screen.set(x, y, col)
+        this.bitmap.set(x, y, bit != 0.0 ? BIT_SET : 0.0)
     }
 
     get_pixel(x, y) -> float {
-        return this.bitmap.get(x, y)
+        return this.bitmap.get(x, y) != 0.0 ? 1.0 : 0.0
     }
 
-    // Sets one attribute cell's ink/paper and re-resolves every pixel
-    // already plotted in that cell against the new colours. The bitmap
-    // itself is untouched -- this is the ZX Spectrum "attribute flash"
-    // primitive (see Willy's death sequence: cycles ink across every
-    // cell on screen without redrawing a single sprite).
+    // Sets one attribute cell's ink/paper -- the ZX Spectrum "attribute
+    // flash" primitive (see Willy's death sequence: cycles ink across
+    // every cell on screen without redrawing a single sprite). The
+    // bitmap itself is untouched.
     set_attr(cx, cy, ink, paper) {
         this.attr_ink.set(cx, cy, ink)
         this.attr_paper.set(cx, cy, paper)
-        var x0 = cx * CELL
-        var y0 = cy * CELL
-        for (var y = y0; y < y0 + CELL; y = y + 1) {
-            for (var x = x0; x < x0 + CELL; x = x + 1) {
-                var col = paper
-                if (this.bitmap.get(x, y) != 0.0) {
-                    col = ink
-                }
-                this.screen.set(x, y, col)
-            }
-        }
+        this.attr_dirty = true
     }
 
     // Starts an ink-only flash (Willy's death sequence): forces every
-    // cell's paper to black and does one full resolve pass, caching every
-    // ink pixel's coordinates for flash_ink() -- the real Spectrum ULA
-    // only ever touches attribute bytes for this, never bitmap pixels, so
-    // once paper is fixed the per-tick cost should scale with ink pixel
-    // count, not the whole screen.
+    // cell's paper to black.
     begin_flash() {
-        var black = encode_rgba(0, 0, 0)
-        this.attr_paper.clear(black)
-        this.flash_ink_pixels = []
-        for (var cy = 0; cy < ATTR_ROWS; cy = cy + 1) {
-            for (var cx = 0; cx < ATTR_COLS; cx = cx + 1) {
-                var ink = this.attr_ink.get(cx, cy)
-                var x0 = cx * CELL
-                var y0 = cy * CELL
-                for (var y = y0; y < y0 + CELL; y = y + 1) {
-                    for (var x = x0; x < x0 + CELL; x = x + 1) {
-                        if (this.bitmap.get(x, y) != 0.0) {
-                            this.screen.set(x, y, ink)
-                            this.flash_ink_pixels.append(y * SCREEN_W + x)
-                        } else {
-                            this.screen.set(x, y, black)
-                        }
-                    }
-                }
-            }
-        }
+        this.attr_paper.clear(encode_rgba(0, 0, 0))
+        this.attr_dirty = true
     }
 
-    // One flash tick: recolours only the pixels begin_flash() cached (the
-    // screen's ink pixels), not the whole screen -- paper stays black and
-    // unchanged for the rest of the flash.
+    // One flash tick: recolours every cell's ink. Paper stays black
+    // (set by begin_flash()) for the rest of the flash.
     flash_ink(ink) {
         this.attr_ink.clear(ink)
-        foreach (var packed in this.flash_ink_pixels) {
-            var x = packed % SCREEN_W
-            var y = int(packed / SCREEN_W)
-            this.screen.set(x, y, ink)
-        }
+        this.attr_dirty = true
     }
-
 
     // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits)
     // with its top-left at (x, y), then colours every attribute cell its
@@ -142,7 +171,7 @@ class Display {
                 if (reverse) {
                     src_x = sw - 1 - sx
                 }
-                this.bitmap.set(px, py, sprite.get(src_x, sy))
+                this.plot(px, py, sprite.get(src_x, sy))
             }
         }
 
@@ -164,8 +193,7 @@ class Display {
     // bit-rotates specific pixel rows of its already-drawn tile graphic
     // in place every tick (RLC on real hardware) instead of cycling
     // through separate animation frames. Reads/writes through plot(), so
-    // the affected pixels' resolved colour stays correct against
-    // whatever that cell's current attribute is.
+    // re-plotting an already-encoded value stays idempotent.
     rotate_row_left(x, y, width, amount) {
         var old = []
         for (var i = 0; i < width; i = i + 1) {
@@ -212,18 +240,40 @@ class Display {
         return this.attr_paper.get(cx, cy)
     }
 
-    // Uploads the composited buffer to the GPU. Caller still does its own
-    // win.begin()/draw()/win.end() -- Display owns the pixel/attribute
-    // data and how to present its own texture, not the frame lifecycle.
+    // Uploads bitmap to the GPU every frame; ink/paper only when dirty
+    // (attribute changes are far rarer than pixel plots). attr_dirty
+    // itself is cleared by draw(), once the shader's inkTex/paperTex
+    // uniforms are actually rebound -- see draw()'s own comment. Caller
+    // still does its own win.begin()/draw()/win.end() -- Display owns
+    // the pixel/attribute data and how to present its own texture, not
+    // the frame lifecycle.
     upload() {
-        this.rt.draw_array_fast(this.screen)
+        this.bitmap_rt.draw_array_fast(this.bitmap)
+        if (this.attr_dirty) {
+            this.ink_rt.draw_array_fast(this.attr_ink)
+            this.paper_rt.draw_array_fast(this.attr_paper)
+        }
     }
 
-    // Draws the composited display scaled to (w, h) at (x, y) in the
-    // caller's window. Negative source height compensates for the render
-    // texture's bottom-up storage (see game_of_life.lox's identical use of
-    // this for the same reason) -- callers don't need to know about it.
+    // Composites bitmap_rt/ink_rt/paper_rt into rt via the shader, then
+    // draws rt scaled to (w, h) at (x, y) in the caller's window.
+    // Negative source heights compensate for render textures' bottom-up
+    // storage (see game_of_life.lox's identical use of this) -- callers
+    // don't need to know about it.
     draw(win, x, y, w, h) {
+        win.begin_texture_mode(this.rt)
+        win.begin_shader_mode(this.composite)
+        // set_value_texture() resolves against whichever shader program
+        // is currently bound -- must run after begin_shader_mode(), not
+        // in upload(), or it silently rebinds the wrong shader's sampler.
+        if (this.attr_dirty) {
+            this.composite.set_value_texture(this.ink_loc, this.ink_rt)
+            this.composite.set_value_texture(this.paper_loc, this.paper_rt)
+            this.attr_dirty = false
+        }
+        win.draw_texture_pro(this.bitmap_rt, 0, 0, SCREEN_W, -SCREEN_H, 0, 0, SCREEN_W, SCREEN_H, 0, 0, 0, colour.WHITE)
+        win.end_shader_mode()
+        win.end_texture_mode()
         win.draw_texture_pro(this.rt, 0, 0, SCREEN_W, -SCREEN_H, x, y, w, h, 0, 0, 0, colour.WHITE)
     }
 }
