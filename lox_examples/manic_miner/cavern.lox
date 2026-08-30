@@ -346,6 +346,12 @@ class Cavern {
         return nil
     }
 
+    // True once every item is collected -- the portal itself flashes
+    // (see set_portal_flash()) and can be entered.
+    is_portal_flashing() -> bool {
+        return this.all_items_collected()
+    }
+
     all_items_collected() -> bool {
         foreach (var item in this.items) {
             if (!item.get("collected", false)) {

@@ -16,6 +16,15 @@ import spectrum_attr
 
 const DIE_FLASH_TICKS = 20  // one tick per ink value, 7 down to 0
 const LIVES_START = 3
+const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
+
+// Portal-entry flash: two ink cycles of 7 down to 1 (blue) -- unlike the
+// death flash, black is never part of the cycle, so it ends on blue --
+// then a fixed pause (placeholder for a remaining-air countdown) before
+// the next cavern loads.
+const PORTAL_FLASH_CYCLE_TICKS = 7
+const PORTAL_FLASH_TICKS = PORTAL_FLASH_CYCLE_TICKS * 2
+const PORTAL_PAUSE_TICKS = 30
 
 func enter_running(g) {
     g.update_func = state_running
@@ -36,6 +45,12 @@ func state_running(g, win) {
 
     if (g.willy.dead) {
         enter_die(g, win)
+        return
+    }
+
+    var portal = g.cavern.portal
+    if (g.cavern.is_portal_flashing() and g.willy.x == portal["x"] and g.willy.y == portal["y"]) {
+        enter_portal(g, win)
     }
 }
 
@@ -73,6 +88,55 @@ func state_die(g, win) {
     }
 }
 
+func enter_portal(g, win) {
+    win.set_target_fps(30)
+    g.update_func = state_portal
+    g.portal_tick = 0
+    g.disp.begin_flash()
+}
+
+// Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
+// fixed pause (placeholder for a remaining-air countdown), then the next
+// cavern loads and play resumes there.
+func state_portal(g, win) {
+    if (g.portal_tick < PORTAL_FLASH_TICKS) {
+        var ink_index = 7 - (g.portal_tick % PORTAL_FLASH_CYCLE_TICKS)
+        g.disp.flash_ink(spectrum_attr.colour_to_rgba(ink_index, true))
+    }
+    g.portal_tick = g.portal_tick + 1
+    if (g.portal_tick < PORTAL_FLASH_TICKS + PORTAL_PAUSE_TICKS) {
+        return
+    }
+
+    win.set_target_fps(g.target_fps)
+    enter_next_cavern(g)
+}
+
+// Loads cavern_<cavern_index>'s data/sprites and redraws disp with it --
+// shared by __init__ (first cavern) and enter_next_cavern (every cavern
+// after). Caller still owns spawning Willy into the new room.
+func load_cavern(g, cavern_index) {
+    g.cavern_index = cavern_index
+    g.lib = assets.SpriteAssets()
+    g.lib.load(format("caverns/cavern_%d_sprites.json", cavern_index))
+    g.lib.load("willy_sprites.json")
+
+    g.cavern = cavern_module.Cavern()
+    g.cavern.load(format("caverns/cavern_%d.json", cavern_index))
+
+    g.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
+    g.cavern.draw(g.disp, g.lib)
+}
+
+// Bumps the cavern counter (wrapping past the last cavern back to the
+// first) and starts the running state fresh in the new room.
+func enter_next_cavern(g) {
+    load_cavern(g, (g.cavern_index + 1) % CAVERN_COUNT)
+    g.willy.spawn(g.cavern)
+    g.frame_count = 0
+    enter_running(g)
+}
+
 func enter_game_over(g) {
     g.update_func = state_game_over
 }
@@ -83,16 +147,8 @@ func state_game_over(g, win) {
 
 class Game {
     __init__(cavern_index,target_fps) {
-        this.lib = assets.SpriteAssets()
-        this.lib.load(format("caverns/cavern_%d_sprites.json", cavern_index))
-        this.lib.load("willy_sprites.json")
-
-        this.cavern = cavern_module.Cavern()
-        this.cavern.load(format("caverns/cavern_%d.json", cavern_index))
-
         this.disp = display.Display()
-        this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
-        this.cavern.draw(this.disp, this.lib)
+        load_cavern(this, cavern_index)
 
         this.willy = willy_module.Willy()
         this.willy.spawn(this.cavern)
@@ -101,6 +157,7 @@ class Game {
 
         this.frame_count = 0
         this.die_tick = 0
+        this.portal_tick = 0
         this.lives = LIVES_START
         this.update_func = state_running
         this.target_fps = target_fps
@@ -112,6 +169,10 @@ class Game {
 
     is_dying() -> bool {
         return this.update_func == state_die
+    }
+
+    is_entering_portal() -> bool {
+        return this.update_func == state_portal
     }
 
     tick(win) {
