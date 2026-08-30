@@ -21,7 +21,8 @@ const WILLY_FRAMES = [
 const WALK_STEP = 8           // one column per completed 4-frame walk/jump cycle (see handle_step_horizontal)
 const FALL_SPEED = 4          // real Z80 (35706-35711): +8 to the raw y*2 counter = 4 real pixels/tick
 const FALL_DEATH_HEIGHT = 34  // approximate: falling further than this before landing kills Willy
-const AIR_TICKS_PER_UNIT = 8  // approximate: ticks per 1 unit of air consumed
+const AIR_TICKS_PER_UNIT = 4  // ticks per 1 unit of air consumed
+const AIR_MAX = 224           // 1 unit = 1px of game.lox's oxygen bar (OXYGEN_BAR_WIDTH) -- not room.air, so every cavern gives the same air budget
 
 // Real jump arc (Z80 35522-35533), halved from a raw y*2 counter to real
 // pixels: rises 20px over 9 ticks, then symmetrically falls back.
@@ -109,7 +110,7 @@ class Willy < Sprite {
         this.anim.reset(initial_dx)
         this.jump_tick = 0
         this.jump_dx = 0
-        this.air_remaining = room.air
+        this.air_remaining = AIR_MAX
         this.air_tick = 0
         this.dead = false
         this.visible = true
@@ -312,12 +313,15 @@ func touching_nasty(w, room) -> bool {
     return false
 }
 
-// Item pickup and lethal contact (guardian or nasty tile) -- called every
-// tick regardless of grounded/airborne state.
+// Item pickup and lethal contact (guardian or nasty tile) -- called
+// every tick regardless of grounded/airborne state. Guardian collision
+// is pixel-perfect (room.guardian_hit()'s own sprite-vs-sprite test),
+// not a bounding-box check.
 func handle_items_and_hazards(w, room, disp, lib) {
     room.collect_item_at(disp, lib, w.x, w.y, WILLY_WIDTH, WILLY_HEIGHT)
 
-    if (room.guardian_hit(w.x, w.y, WILLY_WIDTH, WILLY_HEIGHT)) {
+    var willy_img = lib.get(w.image_list[w.anim.index()])
+    if (room.guardian_hit(lib, willy_img, w.x, w.y)) {
         enter_dying(w)
         return
     }

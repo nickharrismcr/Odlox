@@ -1,0 +1,44 @@
+//
+// @file font.lox
+// @brief Draws text in the ZX Spectrum ROM's built-in 8x8 font (see
+// extract_font.lox), one glyph every 8px. Deliberately stateless -- the
+// caller owns the SpriteAssets (loaded from font_sprites.json) and
+// passes it in, same convention as cavern.lox's own draw methods taking
+// a lib argument rather than owning one.
+//
+
+// Draws text starting at (x, y), one glyph per character, 8px apart.
+// font must be a SpriteAssets loaded from font_sprites.json. A
+// character outside the ROM's 32-127 range is skipped, leaving a blank
+// column rather than raising.
+func draw_text(disp, font, text, x, y, ink, paper) {
+    for (var i = 0; i < len(text); i = i + 1) {
+        var ch = text[i]
+        if (font.has(ch)) {
+            disp.blit_sprite(font.get(ch), x + i * 8, y, ink, paper)
+        }
+    }
+}
+
+// Trims leading/trailing ' ' characters -- extracted cavern names carry
+// inconsistent original-game padding (not always symmetric), so callers
+// that want to centre one need it stripped first.
+func strip_spaces(s) {
+    var start = 0
+    while (start < len(s) and s[start] == " ") {
+        start = start + 1
+    }
+    var stop = len(s)
+    while (stop > start and s[stop - 1] == " ") {
+        stop = stop - 1
+    }
+    return s[start:stop]
+}
+
+// Draws text horizontally centred across the full 256px display width
+// at row y, after strip_spaces().
+func draw_text_centred(disp, font, text, y, ink, paper) {
+    var trimmed = strip_spaces(text)
+    var x = int((256 - len(trimmed) * 8) / 2)
+    draw_text(disp, font, trimmed, x, y, ink, paper)
+}

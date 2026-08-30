@@ -39,7 +39,11 @@ drives).
   flags (same convention as `defender/player/controller.lox`).
 - `assets.lox` — `SpriteAssets`: loads sprite graphics from JSON (`"pixel"` ASCII-row or `"byte"`
   packed-MSB ROM-shaped data) into `float_array`s keyed by name.
-- `display.lox` — `Display`: the bitmap+attribute compositor. See "Pending work" below.
+- `display.lox` — `Display`: the bitmap+attribute compositor. See "GPU-composited display" below.
+- `font.lox` — `draw_text(disp, font, text, x, y, ink, paper)`: draws text in the ZX Spectrum ROM's
+  built-in 8x8 font via `Display.blit_sprite`, one glyph every 8px. Stateless -- caller owns the
+  `SpriteAssets` (loaded from `font_sprites.json`, see "Data" below). Not yet wired into
+  `main.lox`'s HUD, which still uses `win.text()`'s own font.
 
 **Shared Spectrum-format decoding** (no game-state dependencies):
 - `spectrum_attr.lox` — decodes a raw Spectrum attribute byte into `{ink, paper, bright}`;
@@ -57,16 +61,24 @@ drives).
 - `dump_sprites.lox` — `odlox.exe dump_sprites.lox <path/to/sprites.json>`. Loads a sprite JSON via
   `assets.SpriteAssets` and prints it back as `#`/`.` ASCII art, for checking extracted sprite data
   against source.
+- `extract_font.lox` — `odlox.exe extract_font.lox <path/to/48.rom> <output.json>`. Extracts the
+  ROM's built-in character set (96 glyphs, ASCII 32-127, address 15616/0x3D00) into an
+  `assets.lox`-compatible sprite sheet, one entry per glyph keyed by the literal character itself
+  (`lib.get(text[i])` needs no `ord()`/`chr()`, which this Lox dialect doesn't have). Producer side
+  of `font_sprites.json` below.
 
 **Data**:
 - `willy_sprites.json` — Willy's 8 named frames (`willy_right_0..3`, `willy_left_0..3`).
+- `font_sprites.json` — generated: the ROM font's 96 glyphs, one `"pixel"`-type sprite per
+  character. Produced by `extract_font.lox`, not hand-edited.
 - `caverns/` — generated: `cavern_N.json` (layout grid, tile names, conveyor/portal/guardian
   records, `willy_start`, cavern `name`) + `cavern_N_sprites.json` (tile/guardian/portal graphics),
   one pair per cavern, indices 0-19. Produced by `extract_cavern.lox`, not hand-edited.
 
-The source `.sna` snapshot `extract_cavern.lox` reads from is gitignored (see the repo
-`.gitignore`'s "Raw ZX Spectrum game snapshots" entry) — `caverns/` is what's actually checked in
-and consumed at runtime.
+The source `.sna` snapshot `extract_cavern.lox` reads from, and the `48.rom` dump `extract_font.lox`
+reads from, are both gitignored (see the repo `.gitignore`'s "Raw ZX Spectrum game snapshots"/"ROM
+dump" entries) — `caverns/` and `font_sprites.json` are what's actually checked in and consumed at
+runtime.
 
 ## Conventions worth knowing before editing
 

@@ -1,0 +1,75 @@
+import os
+import json
+import sys
+
+//
+// @file extract_font.lox
+// @brief Extracts the ZX Spectrum ROM's built-in 8x8 character set into
+// an assets.lox-compatible sprite sheet: one entry per glyph, keyed by
+// the literal character itself (not a numeric code), so a caller can
+// look a glyph up as lib.get(text[i]) with no ord()/chr() step needed.
+//
+// The ROM stores the character set as 96 glyphs (ASCII 32 "space" to 127
+// "copyright/(c)"), 8 bytes each, MSB-first per row -- exactly
+// assets.lox's "byte" convention -- starting at address 15616 (0x3D00)
+// and running to the very end of the 16K ROM. A raw file offset into
+// 48.rom equals the Spectrum address directly (unlike a .sna snapshot,
+// a ROM dump has no header and starts at address 0).
+//
+// Usage: odlox.exe extract_font.lox <path/to/48.rom> <output.json>
+//
+
+const FONT_ROM_ADDR = 15616  // 0x3D00
+const FONT_FIRST_CHAR = 32   // ' '
+const FONT_CHAR_COUNT = 96   // through 127, '(c)' on real hardware
+const FONT_CHAR_HEIGHT = 8
+
+// Converts 8 MSB-first packed bytes into 8 pixel row-strings ('.' off,
+// '#' on) -- same convention extract_cavern.lox's own copy of this
+// produces, so font_sprites.json reads the same way as every other
+// checked-in sprite sheet.
+func bytes_to_pixel_rows(data) {
+    var rows = []
+    for (var y = 0; y < len(data); y = y + 1) {
+        var v = data[y]
+        var chars = []
+        var divisor = 128
+        for (var p = 0; p < 8; p = p + 1) {
+            var bit = int(v / divisor) % 2
+            if (bit != 0) {
+                chars.append("#")
+            } else {
+                chars.append(".")
+            }
+            divisor = int(divisor / 2)
+        }
+        rows.append("".join(chars))
+    }
+    return rows
+}
+
+var argv = sys.args()
+if (len(argv) < 3) {
+    print("usage: extract_font.lox <path/to/48.rom> <output.json>")
+} else {
+    var rom_path = argv[1]
+    var out_path = argv[2]
+    var rom = os.read_bytes(rom_path)
+
+    var sprites = []
+    for (var i = 0; i < FONT_CHAR_COUNT; i = i + 1) {
+        var code = FONT_FIRST_CHAR + i
+        var base = FONT_ROM_ADDR + i * FONT_CHAR_HEIGHT
+        var data = []
+        for (var b = 0; b < FONT_CHAR_HEIGHT; b = b + 1) {
+            data.append(rom[base + b])
+        }
+        var ch = format("%c", code)
+        sprites.append({"name": ch, "data_type": "pixel", "data": bytes_to_pixel_rows(data)})
+    }
+
+    var f = os.open(out_path, "w")
+    os.write(f, json.encode(sprites, 2))
+    os.close(f)
+    print(format("wrote %d glyphs to %s", len(sprites), out_path))
+}

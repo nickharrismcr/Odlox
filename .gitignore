@@ -18,3 +18,7 @@ dist/
 # copyrighted commercial game data, kept local only. extract_cavern.lox
 # reads one to produce the (committed) caverns/*.json data.
 *.sna
+# Same reasoning for a ROM dump (e.g. lox_examples/manic_miner/48.rom) --
+# copyrighted firmware, kept local only. extract_font.lox reads one to
+# produce the (committed) font_sprites.json.
+*.rom

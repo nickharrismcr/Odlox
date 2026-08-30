@@ -361,14 +361,41 @@ class Cavern {
         return true
     }
 
-    // Bounding-box test against every guardian's current position.
-    // Guardians (like Willy) are always 16x16.
-    guardian_hit(px, py, pw, ph) -> bool {
+    // Pixel-perfect collision: tests willy_img (Willy's current sprite
+    // frame, at wx/wy) against every guardian's own current sprite
+    // frame (at its own x/y) for any coincident "on" pixel -- a direct
+    // sprite-vs-sprite intersection test. Deliberately doesn't read the
+    // shared display bitmap the way a draw-time check would: that can't
+    // tell a guardian's own leftover ink, the portal's static art, or
+    // level geometry apart from Willy himself, so it false-positives
+    // (or, once a sprite's own residue is excluded, false-negatives)
+    // depending on draw order and timing. This test only ever compares
+    // the two sprites' own pixels against each other.
+    guardian_hit(lib, willy_img, wx, wy) -> bool {
+        var iwx = int(wx)
+        var iwy = int(wy)
         foreach (var g in this.guardian_sprites) {
-            var overlap_x = px < g.x + 16 and px + pw > g.x
-            var overlap_y = py < g.y + 16 and py + ph > g.y
-            if (overlap_x and overlap_y) {
-                return true
+            var index = g.frame
+            if (g.movement_type == "horizontal" and g.dx < 0) {
+                index = 2 * g.frames - 1 - g.frame
+            }
+            var gimg = lib.get(g.image_list[index])
+            var igx = int(g.x)
+            var igy = int(g.y)
+            for (var y = 0; y < willy_img.height(); y = y + 1) {
+                for (var x = 0; x < willy_img.width(); x = x + 1) {
+                    if (willy_img.get(x, y) == 0.0) {
+                        continue
+                    }
+                    var gx = iwx + x - igx
+                    var gy = iwy + y - igy
+                    if (gx < 0 or gx >= gimg.width() or gy < 0 or gy >= gimg.height()) {
+                        continue
+                    }
+                    if (gimg.get(gx, gy) != 0.0) {
+                        return true
+                    }
+                }
             }
         }
         return false
