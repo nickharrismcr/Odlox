@@ -183,11 +183,27 @@ class Cavern {
     }
 
     // Reads a cavern JSON file (as written by extract_cavern.lox). Records
-    // path so a later load(this.path) can fully reset the room (guardians,
-    // items, crumbled floors) -- e.g. after Willy dies.
+    // path so a later load(this.path) can fully reset the room (items,
+    // guardians, crumbled floors).
     load(path) {
         this.path = path
         this.load_from_dict(json.load(path))
+    }
+
+    // Reloads from this.path like load(path) -- guardians and crumbled
+    // floors reset -- but carries forward which items were already
+    // collected, since dying shouldn't un-collect them.
+    reset_for_respawn() {
+        var collected = []
+        foreach (var item in this.items) {
+            collected.append(item.get("collected", false))
+        }
+        this.load(this.path)
+        for (var i = 0; i < len(this.items); i = i + 1) {
+            if (i < len(collected) and collected[i]) {
+                this.items[i]["collected"] = true
+            }
+        }
     }
 
     // Returns the asset name for the tile at grid cell (x, y). layout
@@ -379,9 +395,9 @@ class Cavern {
     }
 
     // Draws the portal at its own position in its own (non-flashing)
-    // colour -- static, so unlike draw_items()/draw_guardians() this only
-    // needs calling once (draw() does so). See set_portal_flash() for the
-    // per-tick flash once every item is collected.
+    // colour -- draw() calls this once so the portal shows up on the very
+    // first uploaded frame; set_portal_flash() redraws it every tick after
+    // that (last, per the real game -- see set_portal_flash()).
     draw_portal(disp, lib) {
         var img = lib.get(this.portal["sprite"])
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
@@ -389,21 +405,19 @@ class Cavern {
         disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
     }
 
-    // Once all_items_collected(), alternates the portal between its
-    // normal ink/paper and them swapped, every PORTAL_FLASH_TICKS ticks --
-    // call once per game tick, same convention as draw_items(). A no-op
-    // until every item is collected.
+    // Redraws the portal every tick -- in its normal colour, or (once
+    // all_items_collected()) alternating with it swapped every
+    // PORTAL_FLASH_TICKS ticks. Call this LAST each tick, after Willy and
+    // the guardians: the real game always shows the portal on top, so
+    // Willy disappears underneath it rather than erasing it.
     set_portal_flash(disp, lib, tick) {
-        if (!this.all_items_collected()) {
-            return
-        }
         var img = lib.get(this.portal["sprite"])
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
         var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
-        if (int(tick / PORTAL_FLASH_TICKS) % 2 == 0) {
-            disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
-        } else {
+        if (this.all_items_collected() and int(tick / PORTAL_FLASH_TICKS) % 2 != 0) {
             disp.blit_sprite(img, this.portal["x"], this.portal["y"], paper, ink)
+        } else {
+            disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
         }
     }
 

@@ -25,11 +25,13 @@ func state_running(g, win) {
     g.controller.update(win)
     g.cavern.draw_items(g.disp, g.lib, g.frame_count)
     g.cavern.animate_conveyor(g.disp)
-    g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
     g.cavern.update_guardians()
     g.cavern.draw_guardians(g.disp, g.lib)
     g.willy.step(g.controller, g.cavern, g.disp, g.lib)
     g.willy.draw(g.disp, g.lib, g.cavern)
+    // Last, so the portal always renders on top -- Willy disappears
+    // underneath it rather than erasing it.
+    g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
     g.frame_count = g.frame_count + 1
 
     if (g.willy.dead) {
@@ -59,7 +61,7 @@ func state_die(g, win) {
 
     win.set_target_fps(g.target_fps)
     g.lives = g.lives - 1
-    g.cavern.load(g.cavern.path)
+    g.cavern.reset_for_respawn()
     g.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
     g.cavern.draw(g.disp, g.lib)
     g.willy.spawn(g.cavern)
