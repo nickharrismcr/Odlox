@@ -332,7 +332,7 @@ func tick_air(w) {
     w.air_tick = w.air_tick + 1
     if (w.air_tick >= AIR_TICKS_PER_UNIT) {
         w.air_tick = 0
-        // w.air_remaining = w.air_remaining - 1
+        w.air_remaining = w.air_remaining - 1
         if (w.air_remaining <= 0) {
             enter_dying(w)
         }

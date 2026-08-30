@@ -31,13 +31,64 @@ const PORTAL_PAUSE_TICKS = 30
 // / 128px tall, but the display is 24 rows / 192px -- see draw_lives()).
 const LIVES_ICON_COLOURS = [encode_rgba(255, 255, 0), encode_rgba(0, 255, 0), encode_rgba(0, 0, 255)]  // yellow, green, blue -- cycles per icon
 const LIVES_ICON_X = 8
-const LIVES_ICON_Y = 136
+const LIVES_ICON_Y = 144
 const LIVES_ICON_STRIDE = 24  // 16px sprite + 8px gap
 const LIVES_ANIM_TICKS = 4    // ticks held per walk-cycle frame
 const LIVES_FRAMES = ["willy_right_0", "willy_right_1", "willy_right_2", "willy_right_3"]
 
+// Oxygen bar: a permanent bar in the blank strip below the cavern's own
+// tiles (rows 0-15), one row above the lives display, that empties from
+// the right as air runs out. draw_oxygen_bar_full() paints
+// it solid at spawn/respawn/cavern-change; update_oxygen_bar() then only
+// re-plots the newly-emptied columns each tick -- O(1) amortized over
+// the bar's lifetime rather than redrawing all of it every frame.
+const OXYGEN_BAR_X = 8
+const OXYGEN_BAR_Y = 136
+const OXYGEN_BAR_WIDTH = 240
+const OXYGEN_BAR_HEIGHT = 4
+const OXYGEN_BAR_INK = encode_rgba(255, 0, 255)
+const OXYGEN_BAR_PAPER = encode_rgba(0, 0, 0)
+
 func enter_running(g) {
     g.update_func = state_running
+}
+
+// Paints the bar solid full-width and sets its attribute cells once --
+// call whenever Willy (re)spawns, since that's exactly when
+// air_remaining resets to full.
+func draw_oxygen_bar_full(g) {
+    var cy = int(OXYGEN_BAR_Y / 8)
+    var cx0 = int(OXYGEN_BAR_X / 8)
+    var cx1 = int((OXYGEN_BAR_X + OXYGEN_BAR_WIDTH - 1) / 8)
+    for (var cx = cx0; cx <= cx1; cx = cx + 1) {
+        g.disp.set_attr(cx, cy, OXYGEN_BAR_INK, OXYGEN_BAR_PAPER)
+    }
+    for (var x = OXYGEN_BAR_X; x < OXYGEN_BAR_X + OXYGEN_BAR_WIDTH; x = x + 1) {
+        for (var y = OXYGEN_BAR_Y; y < OXYGEN_BAR_Y + OXYGEN_BAR_HEIGHT; y = y + 1) {
+            g.disp.plot(x, y, 1.0)
+        }
+    }
+    g.oxygen_drawn_width = OXYGEN_BAR_WIDTH
+}
+
+// Re-plots (to black) only the columns that have newly emptied since
+// the last call -- the bar's width tracks air_remaining / cavern.air,
+// and air only ever counts down, so this is a one-way shrink.
+func update_oxygen_bar(g) {
+    if (g.cavern.air <= 0) {
+        return
+    }
+    var target = int(OXYGEN_BAR_WIDTH * g.willy.air_remaining / g.cavern.air)
+    if (target < 0) { target = 0 }
+    if (target >= g.oxygen_drawn_width) {
+        return
+    }
+    for (var x = target; x < g.oxygen_drawn_width; x = x + 1) {
+        for (var y = OXYGEN_BAR_Y; y < OXYGEN_BAR_Y + OXYGEN_BAR_HEIGHT; y = y + 1) {
+            g.disp.plot(x, y, 0.0)
+        }
+    }
+    g.oxygen_drawn_width = target
 }
 
 // Draws one icon per g.lives, cycling yellow/green/blue per icon index,
@@ -64,6 +115,7 @@ func state_running(g, win) {
     // underneath it rather than erasing it.
     g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
     draw_lives(g)
+    update_oxygen_bar(g)
     g.frame_count = g.frame_count + 1
 
     if (g.willy.dead) {
@@ -103,6 +155,7 @@ func state_die(g, win) {
     g.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
     g.cavern.draw(g.disp, g.lib)
     g.willy.spawn(g.cavern)
+    draw_oxygen_bar_full(g)
 
     if (g.lives <= 0) {
         enter_game_over(g)
@@ -156,6 +209,7 @@ func load_cavern(g, cavern_index) {
 func enter_next_cavern(g) {
     load_cavern(g, (g.cavern_index + 1) % CAVERN_COUNT)
     g.willy.spawn(g.cavern)
+    draw_oxygen_bar_full(g)
     g.frame_count = 0
     enter_running(g)
 }
@@ -175,6 +229,7 @@ class Game {
 
         this.willy = willy_module.Willy()
         this.willy.spawn(this.cavern)
+        draw_oxygen_bar_full(this)
 
         this.controller = willy_controller.Controller()
 
