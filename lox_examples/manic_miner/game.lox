@@ -26,8 +26,30 @@ const PORTAL_FLASH_CYCLE_TICKS = 7
 const PORTAL_FLASH_TICKS = PORTAL_FLASH_CYCLE_TICKS * 2
 const PORTAL_PAUSE_TICKS = 30
 
+// Lives display: one small Willy icon per remaining life, drawn in the
+// blank strip below the cavern's own tile rows (every cavern is 16 rows
+// / 128px tall, but the display is 24 rows / 192px -- see draw_lives()).
+const LIVES_ICON_COLOURS = [encode_rgba(255, 255, 0), encode_rgba(0, 255, 0), encode_rgba(0, 0, 255)]  // yellow, green, blue -- cycles per icon
+const LIVES_ICON_X = 8
+const LIVES_ICON_Y = 136
+const LIVES_ICON_STRIDE = 24  // 16px sprite + 8px gap
+const LIVES_ANIM_TICKS = 4    // ticks held per walk-cycle frame
+const LIVES_FRAMES = ["willy_right_0", "willy_right_1", "willy_right_2", "willy_right_3"]
+
 func enter_running(g) {
     g.update_func = state_running
+}
+
+// Draws one icon per g.lives, cycling yellow/green/blue per icon index,
+// all sharing the same right-facing walk-cycle frame (advancing every
+// LIVES_ANIM_TICKS ticks, independent of Willy's own animation state).
+func draw_lives(g) {
+    var frame_name = LIVES_FRAMES[int(g.frame_count / LIVES_ANIM_TICKS) % len(LIVES_FRAMES)]
+    var img = g.lib.get(frame_name)
+    for (var i = 0; i < g.lives; i = i + 1) {
+        var ink = LIVES_ICON_COLOURS[i % len(LIVES_ICON_COLOURS)]
+        g.disp.blit_sprite(img, LIVES_ICON_X + i * LIVES_ICON_STRIDE, LIVES_ICON_Y, ink, encode_rgba(0, 0, 0))
+    }
 }
 
 func state_running(g, win) {
@@ -41,6 +63,7 @@ func state_running(g, win) {
     // Last, so the portal always renders on top -- Willy disappears
     // underneath it rather than erasing it.
     g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
+    draw_lives(g)
     g.frame_count = g.frame_count + 1
 
     if (g.willy.dead) {
