@@ -95,6 +95,15 @@ class Willy < Sprite {
         this.air_remaining = 0
         this.air_tick = 0
         this.update_func = state_walk
+
+        // Save-under scratch buffers for draw()'s restore_footprint(),
+        // sized once for a WILLY_WIDTH x WILLY_HEIGHT footprint (up to a
+        // 3x3 attribute-cell span) and reused every tick -- see
+        // snapshot_footprint()'s own comment for why this replaces
+        // recomputing the tile from static data.
+        this.saved_pixels = float_array(WILLY_WIDTH, WILLY_HEIGHT)
+        this.saved_ink = float_array(3, 3)
+        this.saved_paper = float_array(3, 3)
     }
 
     // (Re)spawns at room.willy_start, resetting all per-life state -- used
@@ -128,13 +137,16 @@ class Willy < Sprite {
     }
 
     // Overrides Sprite.draw() entirely -- OR-blits over a platform tile,
-    // his own colour otherwise (see draw_footprint). Erasing redraws tiles.
+    // his own colour otherwise (see draw_footprint). restore_footprint()
+    // puts back whatever was actually there before (see its own
+    // comment), not a recomputed tile.
     draw(disp, lib, room) {
         if (this.last_x != nil) {
-            erase_footprint(room, disp, lib, this.last_x, this.last_y)
+            restore_footprint(this, disp)
         }
         if (this.visible) {
             var img = lib.get(this.image_list[this.anim.index()])
+            snapshot_footprint(this, disp, int(this.x), int(this.y))
             draw_footprint(this, room, disp, img, int(this.x), int(this.y))
         }
         this.last_x = int(this.x)
@@ -187,16 +199,51 @@ func draw_footprint(w, room, disp, img, x, y) {
     }
 }
 
-// Redraws every tile Willy's box overlapped at (x, y) -- there's no flat
-// "blank" colour to restore instead.
-func erase_footprint(room, disp, lib, x, y) {
+// Snapshots the display's actual pixels and per-cell ink/paper under
+// Willy's footprint at (x, y) into w's own scratch buffers, just before
+// draw_footprint() overwrites them -- so restore_footprint() can put
+// back exactly what was there next time, whatever it was (a partially
+// crumbled floor mid-erosion, a conveyor mid-animation, another
+// sprite), rather than recomputing the tile from static data and losing
+// that dynamic state. w.saved_ink/saved_paper are indexed relative to
+// this footprint's own top-left cell (cx0, cy0), not absolute grid
+// coordinates -- restore_footprint() re-derives the same origin from
+// w.last_x/last_y.
+func snapshot_footprint(w, disp, x, y) {
     var cx0 = int(x / 8)
-    var cx1 = int((x + WILLY_WIDTH - 1) / 8)
     var cy0 = int(y / 8)
+    var cx1 = int((x + WILLY_WIDTH - 1) / 8)
     var cy1 = int((y + WILLY_HEIGHT - 1) / 8)
     for (var cy = cy0; cy <= cy1; cy = cy + 1) {
         for (var cx = cx0; cx <= cx1; cx = cx + 1) {
-            room.redraw_tile_cell(disp, lib, cx, cy)
+            w.saved_ink.set(cx - cx0, cy - cy0, disp.get_ink(cx, cy))
+            w.saved_paper.set(cx - cx0, cy - cy0, disp.get_paper(cx, cy))
+        }
+    }
+    for (var sy = 0; sy < WILLY_HEIGHT; sy = sy + 1) {
+        for (var sx = 0; sx < WILLY_WIDTH; sx = sx + 1) {
+            w.saved_pixels.set(sx, sy, disp.get_pixel(x + sx, y + sy))
+        }
+    }
+}
+
+// Restores exactly what snapshot_footprint() captured for Willy's
+// previous position (w.last_x/last_y) -- the inverse of draw_footprint().
+func restore_footprint(w, disp) {
+    var x = w.last_x
+    var y = w.last_y
+    var cx0 = int(x / 8)
+    var cy0 = int(y / 8)
+    var cx1 = int((x + WILLY_WIDTH - 1) / 8)
+    var cy1 = int((y + WILLY_HEIGHT - 1) / 8)
+    for (var cy = cy0; cy <= cy1; cy = cy + 1) {
+        for (var cx = cx0; cx <= cx1; cx = cx + 1) {
+            disp.set_attr(cx, cy, w.saved_ink.get(cx - cx0, cy - cy0), w.saved_paper.get(cx - cx0, cy - cy0))
+        }
+    }
+    for (var sy = 0; sy < WILLY_HEIGHT; sy = sy + 1) {
+        for (var sx = 0; sx < WILLY_WIDTH; sx = sx + 1) {
+            disp.plot(x + sx, y + sy, w.saved_pixels.get(sx, sy))
         }
     }
 }
