@@ -289,8 +289,22 @@ func enter_portal(g, win) {
     win.set_target_fps(30)
     g.update_func = state_portal
     g.portal_tick = 0
-    g.disp.begin_flash()
     g.sound.play_level_end_swoop()
+}
+
+// Recolours every cavern-area (rows 0-15) cell's ink to `ink`, paper to
+// black -- the level-end flash's own ink-only recolour, scoped to the
+// cavern graphics so the HUD rows below are never touched. Unlike
+// Display.flash_ink()/begin_flash() (which recolour the whole 24-row
+// screen, HUD included -- see state_die's own death flash, which is
+// meant to cover everything), this only ever writes cy 0-15.
+func flash_cavern_ink(g, ink) {
+    var paper = encode_rgba(0, 0, 0)
+    for (var cy = 0; cy < 16; cy = cy + 1) {
+        for (var cx = 0; cx < 32; cx = cx + 1) {
+            g.disp.set_attr(cx, cy, ink, paper)
+        }
+    }
 }
 
 // Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
@@ -301,7 +315,7 @@ func enter_portal(g, win) {
 func state_portal(g, win) {
     if (g.portal_tick < PORTAL_FLASH_TICKS) {
         var ink_index = 7 - (g.portal_tick % PORTAL_FLASH_CYCLE_TICKS)
-        g.disp.flash_ink(spectrum_attr.colour_to_rgba(ink_index, true))
+        flash_cavern_ink(g, spectrum_attr.colour_to_rgba(ink_index, true))
     }
     g.portal_tick = g.portal_tick + 1
     wipe_air_bar(g)
