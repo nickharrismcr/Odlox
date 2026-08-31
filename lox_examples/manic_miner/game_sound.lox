@@ -96,8 +96,16 @@ class Sound {
         this.mgr.play("jump")
     }
 
+    stop_jump() {
+        this.mgr.stop("jump")
+    }
+
     play_falling() {
         this.mgr.play("fall")
+    }
+
+    stop_falling() {
+        this.mgr.stop("fall")
     }
 
     // Loops for as long as the title screen is up; stop_intro_tune()

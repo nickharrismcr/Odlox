@@ -162,8 +162,12 @@ class Willy < Sprite {
     }
 }
 
+// Cuts off a jump/fall clip that's still playing into landing -- either
+// cue's own wav can run longer than the state that started it.
 func enter_walk(w) {
     w.update_func = state_walk
+    w.sound.stop_jump()
+    w.sound.stop_falling()
 }
 
 // OR-blits vs force-blits per attribute cell (up to 2x2), not the whole
@@ -466,10 +470,12 @@ func state_walk(w, input, room, disp, lib) {
 // has dropped by the time he lands (see FALL_DEATH_HEIGHT). Single entry
 // point for both a walked-off ledge (state_walk) and a jump cancelled by
 // a horizontal block (state_jump), so the falling cue only needs firing
-// here.
+// here -- stop_jump() cuts off the jump clip on that second path, in case
+// it's still playing into the cancelled jump.
 func enter_fall(w) {
     w.update_func = state_fall
     w.fall_start_y = w.y
+    w.sound.stop_jump()
     w.sound.play_falling()
 }
 
@@ -545,9 +551,13 @@ func state_jump(w, input, room, disp, lib) {
     tick_air(w)
 }
 
+// Stops any jump/fall clip still playing -- dying can interrupt either
+// state (a nasty tile, guardian, or air-out check mid-jump/-fall).
 func enter_dying(w) {
     w.dead = true
     w.update_func = state_dying
+    w.sound.stop_jump()
+    w.sound.stop_falling()
 }
 
 // Frozen while dead -- the owning Game drives the death-flash timing and
