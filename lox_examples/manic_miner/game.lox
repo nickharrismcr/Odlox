@@ -12,7 +12,10 @@ import font
 // @brief Owns one Manic Miner play session: cavern/Willy/controller,
 // ticked from running/die/game_over -- a state machine of update_func
 // funcs, same convention as willy.lox. The caller still owns the window
-// (create it, poll input via tick(win), upload/present the Display).
+// (create it, poll input via tick(win), upload/present the Display) and
+// the game_sound.Sound passed into __init__ -- shared with intro.Intro
+// rather than owned here, since there's only one audio device for the
+// whole process.
 //
 
 const DIE_FLASH_TICKS = 20  // one tick per ink value, 7 down to 0
@@ -182,6 +185,7 @@ func draw_lives(g) {
 // another sprite's clear running later in the same tick.
 func state_running(g, win) {
     g.controller.update(win)
+    g.sound.play_next_tune_note()
 
     g.willy.clear(g.disp)
     g.cavern.clear_guardians(g.disp)
@@ -222,6 +226,7 @@ func enter_die(g, win) {
     g.update_func = state_die
     g.die_tick = 0
     g.disp.begin_flash()
+    g.sound.play_willy_dying()
 }
 
 // All-attribute flash (ink 7 down to 0, one tick each), then a full
@@ -258,6 +263,7 @@ func enter_portal(g, win) {
     g.update_func = state_portal
     g.portal_tick = 0
     g.disp.begin_flash()
+    g.sound.play_level_end_swoop()
 }
 
 // Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
@@ -326,6 +332,7 @@ func clear_cavern_area(g, ink, paper) {
 // boot's starting frame -- all white on the first paper colour of the
 // cycle. state_game_over() takes over from here every tick.
 func enter_game_over(g) {
+    g.sound.play_game_over_swoop()
     draw_static_hud(g)
     draw_lives(g)
 
@@ -372,7 +379,8 @@ func state_game_over_done(g, win) {
 }
 
 class Game {
-    __init__(cavern_index,target_fps) {
+    __init__(cavern_index,target_fps,sound) {
+        this.sound = sound
         this.disp = display.Display()
         this.font = assets.SpriteAssets()
         this.font.load("assets/font_sprites.json")
@@ -409,6 +417,7 @@ class Game {
     }
 
     tick(win) {
+        this.sound.update()
         var f = this.update_func
         f(this, win)
     }

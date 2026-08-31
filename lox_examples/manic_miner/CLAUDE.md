@@ -25,15 +25,19 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
 ## File map
 
 **Runtime game code**, in dependency order:
-- `main.lox` — window/presentation loop only. Runs an `intro.Intro` to completion, then a
-  `game.Game`. Owns nothing but the `win`/`Display` frame lifecycle and HUD text; all session state
-  lives in `game.Game` (and, before that, `intro.Intro`).
+- `main.lox` — window/presentation loop only. Owns the one `game_sound.Sound` (there's a single
+  audio device for the whole process), passing it into both an `intro.Intro` (run to completion
+  first) and the `game.Game` that follows. Owns nothing else but the `win`/`Display` frame lifecycle
+  and HUD text; all session state lives in `game.Game` (and, before that, `intro.Intro`).
 - `intro.lox` — `Intro`: the title screen. Draws the cached `start_screen.json`/
   `start_screen_sprites.json` (produced by `extract_start_screen.lox`) into its own `Display` once
-  at `__init__`, then `tick(win)` just watches for ENTER (`is_done()`) — same `__init__`/`tick(win)`
-  shape as `game.Game`, so `main.lox` drives either the same way.
-- `game.lox` — `Game`: one play session (cavern, Willy, controller, sprite assets, Display).
-  `running`/`die`/`game_over` state machine.
+  at `__init__`, starts the shared `Sound`'s looping intro tune, then `tick(win)` polls it
+  (`Sound.update()`) and watches for ENTER (`is_done()`, which also stops the tune) — same
+  `__init__`/`tick(win)` shape as `game.Game`, so `main.lox` drives either the same way.
+- `game.lox` — `Game`: one play session (cavern, Willy, controller, sprite assets, Display, the
+  shared `Sound`). `running`/`die`/`game_over` state machine; `tick()` polls `Sound.update()` every
+  frame, `state_running()` advances the tune one tick, and `enter_die`/`enter_portal`/
+  `enter_game_over` each fire their own one-shot cue.
 - `cavern.lox` — `Cavern`: one level's layout/tiles/items/conveyors/portals/guardians, loaded
   from the `caverns/` data below.
 - `game_sprite.lox` — `Sprite`: animated/movable sprite, frame cycling, `Display.blit_sprite`
@@ -49,6 +53,21 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
   built-in 8x8 font via `Display.blit_sprite`, one glyph every 8px. Stateless -- caller owns the
   `SpriteAssets` (loaded from `font_sprites.json`, see "Data" below). Not yet wired into
   `main.lox`'s HUD, which still uses `win.text()`'s own font.
+- `game_sound.lox` — `Sound`: wraps `modules/sound_mgr.SoundManager` with one named method per cue
+  (`play_next_tune_note`, `play_willy_dying`, `play_level_end_swoop`, `play_game_over_swoop`,
+  `play_intro_tune`/`stop_intro_tune`). Named `game_sound.lox`, not `sound.lox`, because `sound` is
+  itself the native module (see `lox_examples/defender/game/game_sound.lox`'s identical naming for
+  the same reason). The background tune is a sequence of short one-shot note samples rather than a
+  synthesized waveform -- real beeper hardware just toggles a bit, so there's nothing to
+  synthesize; sampling the tune's own fixed notes stands in for it instead. `TUNE_TABLE` is the
+  disassembly's actual 64-value tune data (address 34188, its play routine at 34574); each entry
+  plays across 2 `play_next_tune_note()` calls before advancing, matching the real routine's own
+  timing. `TUNE_NOTE_VALUES` is every distinct value in that table, ascending, so sample `tune_0`
+  is always the lowest note regardless of table order. Wired into `game.lox`/`intro.lox` (see
+  above), but the sample files under `assets/` (`tune_0.wav`..`tune_6.wav`, `die.wav`,
+  `level_end_swoop.wav`, `game_over_swoop.wav`, `intro_tune.wav`) aren't sourced yet -- until they
+  are, `main.lox`'s `MUTE_SOUND` stays `true` (`SoundManager.load()` raises on a missing path, so
+  running unmuted right now would crash on startup).
 
 **Shared Spectrum-format decoding** (no game-state dependencies):
 - `spectrum_attr.lox` — decodes a raw Spectrum attribute byte into `{ink, paper, bright}`;

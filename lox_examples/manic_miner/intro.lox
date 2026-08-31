@@ -10,11 +10,15 @@ import spectrum_attr
 // (start_screen.json/start_screen_sprites.json, produced by
 // extract_start_screen.lox) into its own Display and waits for ENTER
 // before handing control to game.Game. Same __init__/tick(win) shape as
-// game.Game, so main.lox can drive either one identically.
+// game.Game, so main.lox can drive either one identically. Takes the
+// caller's game_sound.Sound (not its own) -- there's exactly one audio
+// device for the whole process, so main.lox owns a single Sound and
+// hands it to both Intro and Game rather than each constructing its own.
 //
 
 class Intro {
-    __init__() {
+    __init__(sound) {
+        this.sound = sound
         this.disp = display.Display()
         this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
 
@@ -41,10 +45,13 @@ class Intro {
         }
 
         this.done = false
+        this.sound.play_intro_tune()
     }
 
     tick(win) {
+        this.sound.update()
         if (win.key_pressed(win.KEY_ENTER)) {
+            this.sound.stop_intro_tune()
             this.done = true
         }
     }

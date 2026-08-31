@@ -3,6 +3,7 @@ import display
 import colour
 import intro
 import game
+import game_sound
 import sys
 
 //
@@ -12,6 +13,8 @@ import sys
 // -- cavern/item/conveyor/guardian rendering, Willy's movement/collision/
 // death, and the running/die/game_over session state all live there. This
 // is just the window and presentation loop. ESC quits, at either stage.
+// Owns the one game_sound.Sound shared by both states -- there's a single
+// audio device for the whole process, not one per state.
 //
 // Usage: odlox.exe main.lox [cavern_index]
 //
@@ -23,15 +26,22 @@ if (len(argv) >= 2) {
 }
 
 const TARGET_FPS = 13   // Manic Miner's own tick rate -- see game_sprite.lox
+// True until the assets/*.wav clips game_sound.lox expects are sourced --
+// SoundManager.load() raises if a path doesn't exist, so this stays true
+// (skips every load) rather than crashing main.lox on startup. Flip once
+// the samples are in place.
+const MUTE_SOUND = true
 
 const SCALE = 3
 var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
 win.init()
 win.set_target_fps(TARGET_FPS)
 
+var snd = game_sound.Sound(MUTE_SOUND)
+
 // Intro.__init__/Game.__init__ both create a Display (and its GPU render
 // texture), which needs win.init()'s GL context to already exist.
-var title = intro.Intro()
+var title = intro.Intro(snd)
 title.disp.upload()
 var quit = false
 
@@ -51,7 +61,7 @@ while (!win.should_close() and !title.is_done()) {
 
 var g = nil
 if (!quit) {
-    g = game.Game(index,TARGET_FPS)
+    g = game.Game(index,TARGET_FPS,snd)
     g.disp.upload()
 }
 
@@ -74,4 +84,5 @@ while (!quit and !win.should_close()) {
     g.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
     win.end()
 }
+snd.close()
 win.close()

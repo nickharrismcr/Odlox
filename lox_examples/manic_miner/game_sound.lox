@@ -1,0 +1,109 @@
+import sound
+import sound_mgr
+
+//
+// @file game_sound.lox
+// @brief Wraps a sound_mgr.SoundManager with Manic Miner's own sound
+// cues, one named method per game-state trigger -- same wrapping
+// convention as lox_examples/defender/game/game_sound.lox (also named
+// game_sound.lox: `sound` itself is the native module, so the wrapper
+// can't be named that). The background tune plays as a sequence of
+// short one-shot note samples (real beeper hardware just toggles a bit,
+// so there's no waveform to synthesize -- sampling the tune's own fixed
+// set of notes stands in for it), one per call to play_next_tune_note()
+// (one call per game tick).
+//
+// Clips are checked in under assets/, same as defender's own assets/
+// *.wav.
+//
+
+const SOUND_PATHS = {
+    "die":              "assets/die.wav",
+    "level_end_swoop":  "assets/level_end_swoop.wav",
+    "game_over_swoop":  "assets/game_over_swoop.wav"
+}
+
+// Manic Miner's own tune data, from the disassembly's table at 34188
+// (used by the play routine at 34574): 64 raw note values, each held
+// for 2 ticks -- one play_next_tune_note() call per tick, so every
+// table entry sounds twice before the tune advances to the next one.
+const TUNE_TABLE = [
+    128, 114, 102, 96, 86, 102, 86, 86, 81, 96, 81, 81, 86, 102, 86, 86,
+    128, 114, 102, 96, 86, 102, 86, 86, 81, 96, 81, 81, 86, 86, 86, 86,
+    128, 114, 102, 96, 86, 102, 86, 86, 81, 96, 81, 81, 86, 102, 86, 86,
+    128, 114, 102, 96, 86, 102, 86, 64, 86, 102, 128, 102, 86, 86, 86, 86
+]
+
+// Every distinct value TUNE_TABLE contains, ascending -- sample "tune_i"
+// is TUNE_NOTE_VALUES[i], so tune_0 is always the lowest note regardless
+// of where it falls in the table's own play order.
+const TUNE_NOTE_VALUES = [64, 81, 86, 96, 102, 114, 128]
+const TUNE_NOTE_PATH_FMT = "assets/tune_%d.wav"
+
+class Sound {
+    __init__(mute: bool) {
+        sound_mgr.SoundManager.no_sound = mute
+        this.mgr = sound_mgr.SoundManager()
+        foreach (var name in SOUND_PATHS.keys()) {
+            this.mgr.load(name, SOUND_PATHS[name])
+        }
+
+        // Maps a raw TUNE_TABLE value (as a string -- dict keys are
+        // strings by this codebase's own convention, see
+        // extract_cavern.lox's identical str()-keyed attr_to_index) to
+        // its sample index.
+        this.tune_note_index = {}
+        for (var i = 0; i < len(TUNE_NOTE_VALUES); i = i + 1) {
+            this.mgr.load(format("tune_%d", i), format(TUNE_NOTE_PATH_FMT, i))
+            this.tune_note_index[str(TUNE_NOTE_VALUES[i])] = i
+        }
+        this.tune_tick = 0
+
+        this.mgr.load_music("intro_tune", "assets/intro_tune.wav")
+        this.mgr.set_music_looping("intro_tune", true)
+    }
+
+    // Advances the background tune by one tick -- call once per game
+    // tick during play. Each TUNE_TABLE entry plays across 2 consecutive
+    // calls before moving to the next, wrapping back to the table's
+    // start after its last entry's second tick.
+    play_next_tune_note() {
+        var table_index = int(this.tune_tick / 2) % len(TUNE_TABLE)
+        var value = TUNE_TABLE[table_index]
+        var sample_index = this.tune_note_index[str(value)]
+        this.mgr.play(format("tune_%d", sample_index))
+        this.tune_tick = (this.tune_tick + 1) % (2 * len(TUNE_TABLE))
+    }
+
+    play_willy_dying() {
+        this.mgr.play("die")
+    }
+
+    play_level_end_swoop() {
+        this.mgr.play("level_end_swoop")
+    }
+
+    play_game_over_swoop() {
+        this.mgr.play("game_over_swoop")
+    }
+
+    // Loops for as long as the title screen is up; stop_intro_tune()
+    // ends it once ENTER starts play.
+    play_intro_tune() {
+        this.mgr.play_music("intro_tune")
+    }
+
+    stop_intro_tune() {
+        this.mgr.stop_music("intro_tune")
+    }
+
+    // Polls the intro tune's stream -- call once per frame, same
+    // requirement as sound_mgr.SoundManager.update() itself.
+    update() {
+        this.mgr.update()
+    }
+
+    close() {
+        sound.close()
+    }
+}
