@@ -1,0 +1,127 @@
+from gfx import *
+import sna
+import json
+import spectrum_attr
+import os
+import sys
+
+//
+// @file extract_start_screen.lox
+// @brief Extracts Manic Miner's start/title screen graphic from a .sna
+// snapshot into a Cavern-sibling pair of JSON files: an assets.lox-
+// compatible sprite sheet (the 256x128 pixel bitmap) and a small
+// attribute-grid file (ink/paper/bright per 8x8 cell).
+//
+// The screen only occupies the top two-thirds of the display (192px):
+// pixel data is a single contiguous 4096-byte run at 40960-45055, real
+// hardware bit-interleaved layout (see spectrum_screen.lox's own header)
+// relocated to that base -- 2 thirds x 2048 bytes/third, thirds 0-1
+// (rows 0-127). Its attribute cells are *not* similarly contiguous: the
+// game keeps its own working copies of the top third's row (8 cell rows,
+// 256 bytes) at 64512 and the middle third's row at 40448, per
+// disassembly. The bottom third (rows 128-191) is blank on this screen
+// and isn't extracted.
+//
+// Usage: odlox.exe extract_start_screen.lox <path.sna> <output_dir>
+//
+
+const PIXEL_BASE = 40960
+const SCREEN_WIDTH = 256
+const SCREEN_HEIGHT = 128        // top two thirds only; bottom third unused
+
+const ATTR_COLS = 32
+const TOP_ATTR_BASE = 64512
+const MID_ATTR_BASE = 40448
+const ATTR_ROWS_PER_THIRD = 8
+
+// Decodes `height` rows of the real Spectrum display file's bit-
+// interleaved pixel layout, relocated to `base` -- same address algebra
+// as spectrum_screen.pixel_addr_to_xy(), run forward (y -> byte offset)
+// instead of backward (offset -> y). Returns pixel row-strings ('.' off,
+// '#' on), assets.lox's "pixel" convention.
+func bytes_to_screen_pixel_rows(bytes, base, height) {
+    var rows = []
+    for (var y = 0; y < height; y = y + 1) {
+        var third = int(y / 64)
+        var rem = y % 64
+        var char_row = int(rem / 8)     // Y5 Y4 Y3
+        var pixel_line = rem % 8        // Y2 Y1 Y0
+        var row_base = base + third * 2048 + pixel_line * 256 + char_row * 32
+        var chars = []
+        for (var x_byte = 0; x_byte < SCREEN_WIDTH / 8; x_byte = x_byte + 1) {
+            var v = sna.read_u8(bytes, row_base + x_byte)
+            var divisor = 128
+            for (var p = 0; p < 8; p = p + 1) {
+                var bit = int(v / divisor) % 2
+                if (bit != 0) {
+                    chars.append("#")
+                } else {
+                    chars.append(".")
+                }
+                divisor = int(divisor / 2)
+            }
+        }
+        rows.append("".join(chars))
+    }
+    return rows
+}
+
+// Reads `rows` x ATTR_COLS attribute bytes starting at `base` (a plain
+// row-major grid, same shape as attr_addr_to_xy() assumes), decoding
+// each via spectrum_attr.decode_attribute. Returns a list of row-lists
+// of {ink, paper, bright}.
+func read_attr_rows(bytes, base, rows) {
+    var grid = []
+    for (var r = 0; r < rows; r = r + 1) {
+        var row = []
+        for (var c = 0; c < ATTR_COLS; c = c + 1) {
+            var byte = sna.read_u8(bytes, base + r * ATTR_COLS + c)
+            var colours = spectrum_attr.decode_attribute(byte)
+            row.append({"ink": colours["ink"], "paper": colours["paper"], "bright": colours["bright"]})
+        }
+        grid.append(row)
+    }
+    return grid
+}
+
+var argv = sys.args()
+if (len(argv) < 3) {
+    print("usage: extract_start_screen.lox <path.sna> <output_dir>")
+} else {
+    var bytes = sna.load(argv[1])
+    var out_dir = argv[2]
+    if (!os.exists(out_dir)) {
+        os.mkdir(out_dir)
+    }
+
+    var pixel_rows = bytes_to_screen_pixel_rows(bytes, PIXEL_BASE, SCREEN_HEIGHT)
+    var top_attrs = read_attr_rows(bytes, TOP_ATTR_BASE, ATTR_ROWS_PER_THIRD)
+    var mid_attrs = read_attr_rows(bytes, MID_ATTR_BASE, ATTR_ROWS_PER_THIRD)
+    var attr_rows = []
+    foreach (var row in top_attrs) {
+        attr_rows.append(row)
+    }
+    foreach (var row in mid_attrs) {
+        attr_rows.append(row)
+    }
+
+    var sprite = {"name": "start_screen", "data_type": "pixel", "data": pixel_rows}
+    var screen = {
+        "width": SCREEN_WIDTH, "height": SCREEN_HEIGHT,
+        "attr_cols": ATTR_COLS, "attr_rows": len(attr_rows),
+        "attributes": attr_rows,
+        "sprite": "start_screen"
+    }
+
+    var screen_path = os.join(out_dir, "start_screen.json")
+    var sprites_path = os.join(out_dir, "start_screen_sprites.json")
+    var f1 = os.open(screen_path, "w")
+    os.write(f1, json.encode(screen, 2))
+    os.close(f1)
+    var f2 = os.open(sprites_path, "w")
+    os.write(f2, json.encode([sprite], 2))
+    os.close(f2)
+
+    print(format("start screen: %dx%d pixels, %d attribute rows -> %s, %s",
+        SCREEN_WIDTH, SCREEN_HEIGHT, len(attr_rows), screen_path, sprites_path))
+}

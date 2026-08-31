@@ -66,6 +66,13 @@ drives).
   `assets.lox`-compatible sprite sheet, one entry per glyph keyed by the literal character itself
   (`lib.get(text[i])` needs no `ord()`/`chr()`, which this Lox dialect doesn't have). Producer side
   of `font_sprites.json` below.
+- `extract_start_screen.lox` — `odlox.exe extract_start_screen.lox <path.sna> <output_dir>`.
+  Extracts the start/title screen graphic: a single contiguous 4096-byte bit-interleaved pixel run
+  at 40960 (real hardware display-file layout, relocated — top two thirds of the screen, 256x128;
+  the unused bottom third isn't extracted), plus its attribute cells, which are *not* similarly
+  relocated as one block — the top third's row lives at 64512, the middle third's at 40448.
+  Writes `start_screen.json` (attribute grid) and `start_screen_sprites.json` (the pixel bitmap, in
+  `assets.lox`'s sprite-sheet shape).
 
 **Data**:
 - `willy_sprites.json` — Willy's 8 named frames (`willy_right_0..3`, `willy_left_0..3`).
@@ -74,6 +81,8 @@ drives).
 - `caverns/` — generated: `cavern_N.json` (layout grid, tile names, conveyor/portal/guardian
   records, `willy_start`, cavern `name`) + `cavern_N_sprites.json` (tile/guardian/portal graphics),
   one pair per cavern, indices 0-19. Produced by `extract_cavern.lox`, not hand-edited.
+- `start_screen.json` / `start_screen_sprites.json` — generated: the title screen's attribute grid
+  and pixel bitmap. Produced by `extract_start_screen.lox`, not hand-edited.
 
 The source `.sna` snapshot `extract_cavern.lox` reads from, and the `48.rom` dump `extract_font.lox`
 reads from, are both gitignored (see the repo `.gitignore`'s "Raw ZX Spectrum game snapshots"/"ROM
