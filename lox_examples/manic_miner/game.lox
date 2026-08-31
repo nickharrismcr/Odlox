@@ -79,6 +79,17 @@ const OXYGEN_BAR_WIDTH = 224  // pixel 25 .. 248 inclusive
 const OXYGEN_BAR_HEIGHT = 4
 const OXYGEN_BAR_Y = OXYGEN_ROW_Y + (8 - OXYGEN_BAR_HEIGHT) / 2  // vertically centred in the row
 
+// Level-end air-bar wipe (see state_portal()): blacks out the oxygen
+// bar's own cells (not the "AIR" label to its left), one column at a
+// time from the right, at whatever rate covers all of them by
+// PORTAL_TOTAL_TICKS -- so the whole bar is black exactly when the
+// level-end swoop clip ends.
+const OXYGEN_ROW_CY = int(OXYGEN_ROW_Y / 8)            // 17
+const AIR_WIPE_COL_FIRST = int(OXYGEN_BAR_X / 8)       // 3
+const AIR_WIPE_COL_LAST = 31                           // (OXYGEN_BAR_X + OXYGEN_BAR_WIDTH - 1) // 8
+const AIR_WIPE_COLS = AIR_WIPE_COL_LAST - AIR_WIPE_COL_FIRST + 1  // 29
+const AIR_WIPE_COLOUR = encode_rgba(0, 0, 0)
+
 // Game-over sequence: the plinth sits bottom-centre of the cavern area
 // (the 32x16-cell region above the HUD rows), Willy stands on it, and
 // the boot starts directly above both, at the very top. Everything's
@@ -284,19 +295,37 @@ func enter_portal(g, win) {
 
 // Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
 // pause out to PORTAL_TOTAL_TICKS, then the next cavern loads and play
-// resumes there.
+// resumes there. The air bar wipes to black from the right the whole
+// time, timed to finish exactly at PORTAL_TOTAL_TICKS (see
+// wipe_air_bar()).
 func state_portal(g, win) {
     if (g.portal_tick < PORTAL_FLASH_TICKS) {
         var ink_index = 7 - (g.portal_tick % PORTAL_FLASH_CYCLE_TICKS)
         g.disp.flash_ink(spectrum_attr.colour_to_rgba(ink_index, true))
     }
     g.portal_tick = g.portal_tick + 1
+    wipe_air_bar(g)
     if (g.portal_tick < PORTAL_TOTAL_TICKS) {
         return
     }
 
     win.set_target_fps(g.target_fps)
     enter_next_cavern(g)
+}
+
+// Blacks out AIR_WIPE_COLS oxygen-bar columns from the right, however
+// many g.portal_tick's own fraction of PORTAL_TOTAL_TICKS covers --
+// redraws every already-covered column each call (cheap: at most
+// AIR_WIPE_COLS set_attr calls), same cost profile as state_die/
+// state_game_over's own whole-area repaints every tick.
+func wipe_air_bar(g) {
+    var covered = int(AIR_WIPE_COLS * g.portal_tick / PORTAL_TOTAL_TICKS)
+    if (covered > AIR_WIPE_COLS) {
+        covered = AIR_WIPE_COLS
+    }
+    for (var i = 0; i < covered; i = i + 1) {
+        g.disp.set_attr(AIR_WIPE_COL_LAST - i, OXYGEN_ROW_CY, AIR_WIPE_COLOUR, AIR_WIPE_COLOUR)
+    }
 }
 
 // Loads cavern_<cavern_index>'s data/sprites and redraws disp with it --
