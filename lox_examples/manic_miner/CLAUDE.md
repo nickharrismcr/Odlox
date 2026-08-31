@@ -43,7 +43,10 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
 - `game_sprite.lox` — `Sprite`: animated/movable sprite, frame cycling, `Display.blit_sprite`
   based draw/erase. Base class for guardians (via `cavern.lox`) and for Willy.
 - `willy.lox` — Willy: subclasses `game_sprite.Sprite`; movement/jump/collision against a
-  `Cavern`; its own `state_*`/`enter_*` state machine (same convention as `game.lox`).
+  `Cavern`; its own `state_*`/`enter_*` state machine (same convention as `game.lox`). Takes the
+  shared `Sound` in its own `__init__`, stored as `this.sound`; `enter_jump`/`enter_fall` each fire
+  their own one-shot cue -- `enter_fall` is the single entry point for both a walked-off ledge and
+  a jump horizontally blocked into a fall, so the falling cue only needs firing there.
 - `willy_controller.lox` — `Controller`: polls input once per frame into `left`/`right`/`jump`
   flags (same convention as `defender/player/controller.lox`).
 - `assets.lox` — `SpriteAssets`: loads sprite graphics from JSON (`"pixel"` ASCII-row or `"byte"`
@@ -55,7 +58,8 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
   `main.lox`'s HUD, which still uses `win.text()`'s own font.
 - `game_sound.lox` — `Sound`: wraps `modules/sound_mgr.SoundManager` with one named method per cue
   (`play_next_tune_note`, `play_willy_dying`, `play_level_end_swoop`, `play_game_over_swoop`,
-  `play_intro_tune`/`stop_intro_tune`). Named `game_sound.lox`, not `sound.lox`, because `sound` is
+  `play_jump`, `play_falling`, `play_intro_tune`/`stop_intro_tune`). Named `game_sound.lox`, not
+  `sound.lox`, because `sound` is
   itself the native module (see `lox_examples/defender/game/game_sound.lox`'s identical naming for
   the same reason). The background tune is a sequence of short one-shot note samples rather than a
   synthesized waveform -- real beeper hardware just toggles a bit, so there's nothing to
@@ -69,9 +73,10 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
   `tune_6.wav`, `die.wav`, `air.wav` (level-end swoop), `game-over.wav` (game-over swoop), and
   `tune.wav` (intro tune) -- `SOUND_PATHS`/the `load_music` call in `Sound.__init__` are the map
   from cue name to actual filename, which don't all match the cue name (`air.wav`/`game-over.wav`
-  are reused/renamed clips, not new files matching their method names). `main.lox`'s `MUTE_SOUND`
-  is `false` now that these exist; `in-game-tune.wav`/`jumping.wav` are sourced but not wired to
-  any cue yet.
+  are reused/renamed clips, not new files matching their method names). `jumping.wav`/`falling.wav`
+  back `play_jump`/`play_falling`, fired from `willy.lox`'s `enter_jump`/`enter_fall`. `main.lox`'s
+  `MUTE_SOUND` is `false` now that these exist; `in-game-tune.wav` is sourced but not wired to any
+  cue yet.
 
 **Shared Spectrum-format decoding** (no game-state dependencies):
 - `spectrum_attr.lox` — decodes a raw Spectrum attribute byte into `{ink, paper, bright}`;

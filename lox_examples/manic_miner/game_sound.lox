@@ -20,7 +20,9 @@ import sound_mgr
 const SOUND_PATHS = {
     "die":              "assets/die.wav",
     "level_end_swoop":  "assets/air.wav",
-    "game_over_swoop":  "assets/game-over.wav"
+    "game_over_swoop":  "assets/game-over.wav",
+    "jump":             "assets/jumping.wav",
+    "fall":             "assets/falling.wav"
 }
 
 // Manic Miner's own tune data, from the disassembly's table at 34188
@@ -88,6 +90,14 @@ class Sound {
 
     play_game_over_swoop() {
         this.mgr.play("game_over_swoop")
+    }
+
+    play_jump() {
+        this.mgr.play("jump")
+    }
+
+    play_falling() {
+        this.mgr.play("fall")
     }
 
     // Loops for as long as the title screen is up; stop_intro_tune()

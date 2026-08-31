@@ -394,7 +394,7 @@ class Game {
         this.global_sprites.load("caverns/global_sprites.json")
         load_cavern(this, cavern_index)
 
-        this.willy = willy_module.Willy()
+        this.willy = willy_module.Willy(this.sound)
         this.willy.spawn(this.cavern)
         draw_static_hud(this)
 

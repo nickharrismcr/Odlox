@@ -80,8 +80,9 @@ class WalkCycle {
 }
 
 class Willy < Sprite {
-    __init__() {
+    __init__(sound) {
         super.__init__()
+        this.sound = sound
         this.type = "player"
         this.image_list = WILLY_FRAMES
         this.anim = WalkCycle()
@@ -462,10 +463,14 @@ func state_walk(w, input, room, disp, lib) {
 }
 
 // Records where the fall started, so state_fall can tell how far Willy
-// has dropped by the time he lands (see FALL_DEATH_HEIGHT).
+// has dropped by the time he lands (see FALL_DEATH_HEIGHT). Single entry
+// point for both a walked-off ledge (state_walk) and a jump cancelled by
+// a horizontal block (state_jump), so the falling cue only needs firing
+// here.
 func enter_fall(w) {
     w.update_func = state_fall
     w.fall_start_y = w.y
+    w.sound.play_falling()
 }
 
 // Falling never takes input or animates -- frame just holds. Dropping
@@ -496,6 +501,7 @@ func enter_jump(w, dx) {
     w.update_func = state_jump
     w.jump_tick = 0
     w.jump_dx = dx
+    w.sound.play_jump()
 }
 
 // jump_dx (captured at takeoff by enter_jump) drives movement for the
