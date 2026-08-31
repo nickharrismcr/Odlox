@@ -73,13 +73,15 @@ const OXYGEN_BAR_Y = OXYGEN_ROW_Y + (8 - OXYGEN_BAR_HEIGHT) / 2  // vertically c
 // (the 32x16-cell region above the HUD rows), Willy stands on it, and
 // the boot starts directly above both, at the very top. Everything's
 // white; the whole cavern area's paper cycles blue/red/magenta every
-// tick while the boot descends 2px/tick, its previous stamps never
-// erased (see state_game_over()), until it reaches Willy.
+// tick while the boot descends 2px per stamp, GAME_OVER_BOOT_STEPS_PER_TICK
+// stamps a tick (its previous stamps never erased, see state_game_over()),
+// until it reaches Willy.
 const GAME_OVER_X = 120            // (256 - 16) / 2 -- shared by plinth/Willy/boot
 const GAME_OVER_PLINTH_Y = 112     // bottom of the 128px-tall cavern area
 const GAME_OVER_WILLY_Y = 96       // GAME_OVER_PLINTH_Y - WILLY_HEIGHT
 const GAME_OVER_BOOT_START_Y = 0
 const GAME_OVER_BOOT_STEP = 2
+const GAME_OVER_BOOT_STEPS_PER_TICK = 2  // 2 stamps/tick -- doubles the fall speed without thinning the trail
 const GAME_OVER_INK = encode_rgba(255, 255, 255)
 const GAME_OVER_PAPER_CYCLE = [1, 2, 3]  // spectrum_attr indices: blue, red, magenta
 
@@ -349,9 +351,11 @@ func enter_game_over(g) {
 
 // Every tick: cycles the whole cavern area's paper through
 // GAME_OVER_PAPER_CYCLE (an attribute-only change, via set_attr -- never
-// touches the bitmap, so it can't disturb the boot's trail), then stamps
-// the boot 2px further down without erasing its previous stamps, so it
-// leaves a solid trail behind it as it falls. Stops advancing once it
+// touches the bitmap, so it can't disturb the boot's trail) once, then
+// stamps the boot GAME_OVER_BOOT_STEPS_PER_TICK times, 2px further down
+// each stamp, without erasing its previous stamps -- so it leaves a
+// solid trail behind it as it falls, twice as fast as one stamp/tick
+// would without thinning that trail out. Stops advancing once it
 // reaches Willy -- is_game_over() then tells the caller to stop calling
 // tick() (one more frame still renders the final stamp).
 func state_game_over(g, win) {
@@ -363,15 +367,17 @@ func state_game_over(g, win) {
         }
     }
 
-    if (g.game_over_boot_y >= GAME_OVER_WILLY_Y) {
-        g.update_func = state_game_over_done
-        return
+    for (var step = 0; step < GAME_OVER_BOOT_STEPS_PER_TICK; step = step + 1) {
+        if (g.game_over_boot_y >= GAME_OVER_WILLY_Y) {
+            g.update_func = state_game_over_done
+            return
+        }
+        g.game_over_boot_y = g.game_over_boot_y + GAME_OVER_BOOT_STEP
+        if (g.game_over_boot_y > GAME_OVER_WILLY_Y) {
+            g.game_over_boot_y = GAME_OVER_WILLY_Y
+        }
+        g.disp.blit_sprite(g.global_sprites.get("boot"), GAME_OVER_X, g.game_over_boot_y, GAME_OVER_INK, paper)
     }
-    g.game_over_boot_y = g.game_over_boot_y + GAME_OVER_BOOT_STEP
-    if (g.game_over_boot_y > GAME_OVER_WILLY_Y) {
-        g.game_over_boot_y = GAME_OVER_WILLY_Y
-    }
-    g.disp.blit_sprite(g.global_sprites.get("boot"), GAME_OVER_X, g.game_over_boot_y, GAME_OVER_INK, paper)
 }
 
 // Frozen -- is_game_over() tells the caller to stop calling tick().
