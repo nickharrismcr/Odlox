@@ -376,6 +376,22 @@ func extract_one(bytes, index, out_dir) {
         guardian_sprites.append({"name": gname, "data_type": "pixel", "data": bytes_to_pixel_rows(pixels, 16)})
     }
 
+    // Eugene's Lair (cavern 4) has one more graphic outside the normal
+    // per-cavern record layout: a 16x16 sprite for Eugene himself, fixed
+    // at Spectrum address 49888 per disassembly -- unlike everything
+    // else extracted here, not derived from `base`, and not tied to any
+    // cavern index but 4 (Eugene's actual movement mechanic isn't
+    // decoded yet -- see read_vertical_guardians()'s own comment -- so
+    // this is graphics only, not wired into a guardian record).
+    var eugene_sprite = nil
+    if (index == 4) {
+        var eugene_pixels = []
+        for (var i = 0; i < 32; i = i + 1) {
+            eugene_pixels.append(sna.read_u8(bytes, 49888 + i))
+        }
+        eugene_sprite = {"name": prefix & "_eugene", "data_type": "pixel", "data": bytes_to_pixel_rows(eugene_pixels, 16)}
+    }
+
     // -- Assemble output --
     var tile_names = []
     var tile_colours = []
@@ -394,6 +410,9 @@ func extract_one(bytes, index, out_dir) {
     sprite_sheet.append(item_sprite)
     foreach (var s in guardian_sprites) {
         sprite_sheet.append(s)
+    }
+    if (eugene_sprite != nil) {
+        sprite_sheet.append(eugene_sprite)
     }
 
     var cavern = {
@@ -414,6 +433,9 @@ func extract_one(bytes, index, out_dir) {
         "horizontal_guardians": horizontal_guardians,
         "vertical_guardians": vertical_guardians,
         "guardian_sprite_names": guardian_names
+    }
+    if (eugene_sprite != nil) {
+        cavern["eugene_sprite"] = eugene_sprite["name"]
     }
 
     var cavern_path = os.join(out_dir, format("cavern_%d.json", index))

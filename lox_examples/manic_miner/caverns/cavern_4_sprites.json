@@ -1,7 +1,5 @@
 [
   {
-    "data_type": "pixel",
-    "name": "cavern4_tile_background",
     "data": [
       "........",
       "........",
@@ -11,9 +9,12 @@
       "........",
       "........",
       "........"
-    ]
+    ],
+    "name": "cavern4_tile_background",
+    "data_type": "pixel"
   },
   {
+    "name": "cavern4_tile_floor",
     "data": [
       "########",
       "########",
@@ -24,12 +25,10 @@
       "........",
       "........"
     ],
-    "name": "cavern4_tile_floor",
     "data_type": "pixel"
   },
   {
     "data_type": "pixel",
-    "name": "cavern4_tile_crumbling_floor",
     "data": [
       "########",
       "##.##.##",
@@ -39,9 +38,11 @@
       "..#.....",
       "....#...",
       "........"
-    ]
+    ],
+    "name": "cavern4_tile_crumbling_floor"
   },
   {
+    "name": "cavern4_tile_wall",
     "data": [
       "..#...#.",
       "########",
@@ -52,10 +53,11 @@
       "#...#...",
       "########"
     ],
-    "name": "cavern4_tile_wall",
     "data_type": "pixel"
   },
   {
+    "name": "cavern4_tile_conveyor",
+    "data_type": "pixel",
     "data": [
       "######..",
       ".##..##.",
@@ -65,9 +67,7 @@
       "........",
       "........",
       "........"
-    ],
-    "name": "cavern4_tile_conveyor",
-    "data_type": "pixel"
+    ]
   },
   {
     "data": [
@@ -84,6 +84,8 @@
     "data_type": "pixel"
   },
   {
+    "name": "cavern4_tile_nasty2",
+    "data_type": "pixel",
     "data": [
       ".######.",
       "..####..",
@@ -93,11 +95,11 @@
       "....#...",
       "....#...",
       "....#..."
-    ],
-    "data_type": "pixel",
-    "name": "cavern4_tile_nasty2"
+    ]
   },
   {
+    "name": "cavern4_tile_extra",
+    "data_type": "pixel",
     "data": [
       "........",
       "........",
@@ -107,11 +109,11 @@
       "........",
       "........",
       "........"
-    ],
-    "name": "cavern4_tile_extra",
-    "data_type": "pixel"
+    ]
   },
   {
+    "name": "cavern4_portal",
+    "data_type": "pixel",
     "data": [
       "################",
       "#.#.#.#.#.#.#.#.",
@@ -129,11 +131,10 @@
       "#.#.#.#.#.#.#.#.",
       "#.#.#.#.#.#.#.#.",
       "################"
-    ],
-    "name": "cavern4_portal",
-    "data_type": "pixel"
+    ]
   },
   {
+    "name": "cavern4_item",
     "data": [
       "...#####",
       "..#...##",
@@ -144,7 +145,6 @@
       "#...##..",
       "#####..."
     ],
-    "name": "cavern4_item",
     "data_type": "pixel"
   },
   {
@@ -192,7 +192,6 @@
     "data_type": "pixel"
   },
   {
-    "data_type": "pixel",
     "name": "cavern4_guardian_2",
     "data": [
       "....##..........",
@@ -211,9 +210,11 @@
       "....########....",
       "....##.#####....",
       "....##.#####...."
-    ]
+    ],
+    "data_type": "pixel"
   },
   {
+    "data_type": "pixel",
     "data": [
       "......##........",
       "......##........",
@@ -232,7 +233,6 @@
       "......##.#####..",
       "......##.#####.."
     ],
-    "data_type": "pixel",
     "name": "cavern4_guardian_3"
   },
   {
@@ -258,7 +258,6 @@
     "name": "cavern4_guardian_4"
   },
   {
-    "data_type": "pixel",
     "data": [
       "..........##....",
       "..........##....",
@@ -277,6 +276,7 @@
       "....#####.##....",
       "....#####.##...."
     ],
+    "data_type": "pixel",
     "name": "cavern4_guardian_5"
   },
   {
@@ -302,8 +302,8 @@
     "name": "cavern4_guardian_6"
   },
   {
-    "data_type": "pixel",
     "name": "cavern4_guardian_7",
+    "data_type": "pixel",
     "data": [
       "..............##",
       "..............##",
@@ -322,5 +322,27 @@
       "........#####.##",
       "........#####.##"
     ]
+  },
+  {
+    "data": [
+      "......####......",
+      "....########....",
+      "...##########...",
+      "...##########...",
+      "..##...##...##..",
+      "....###..###....",
+      ".##.########.##.",
+      "#.#.###..###.#.#",
+      "#.##...##...##.#",
+      "#..##########..#",
+      "#..##.####.##..#",
+      "#...##....##...#",
+      ".#...######...#.",
+      "......#..#......",
+      "......#..#......",
+      "....###..###...."
+    ],
+    "name": "cavern4_eugene",
+    "data_type": "pixel"
   }
 ]

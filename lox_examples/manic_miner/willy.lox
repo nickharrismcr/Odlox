@@ -136,14 +136,21 @@ class Willy < Sprite {
         f(this, input, room, disp, lib)
     }
 
-    // Overrides Sprite.draw() entirely -- OR-blits over a platform tile,
-    // his own colour otherwise (see draw_footprint). restore_footprint()
-    // puts back whatever was actually there before (see its own
-    // comment), not a recomputed tile.
-    draw(disp, lib, room) {
+    // Erases wherever Willy last drew himself, restoring exactly what
+    // was there before (see restore_footprint()'s own comment) -- call
+    // for every moving sprite before any of them draws this tick
+    // (game.lox's state_running: clear phase, then move, then draw).
+    clear(disp) {
         if (this.last_x != nil) {
             restore_footprint(this, disp)
         }
+    }
+
+    // Overrides Sprite.draw() entirely -- OR-blits over a platform tile,
+    // his own colour otherwise (see draw_footprint). clear() must
+    // already have run this tick -- draw() itself no longer erases
+    // anything.
+    draw(disp, lib, room) {
         if (this.visible) {
             var img = lib.get(this.image_list[this.anim.index()])
             snapshot_footprint(this, disp, int(this.x), int(this.y))

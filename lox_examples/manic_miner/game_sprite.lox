@@ -195,13 +195,12 @@ class Sprite {
         }
     }
 
-    // Clears wherever this sprite last drew itself (a no-op the first call,
-    // since last_x starts nil), then looks up the current frame's sprite
-    // by name in `lib` and blits it onto `disp` at the current position,
-    // in this sprite's colour/paper. A horizontally moving sprite
-    // travelling left (dx < 0) indexes into image_list's second half, and
-    // counts down through it (2*frames-1 .. frames) as this.frame counts
-    // up (0 .. frames-1) -- see the class comment.
+    // Erases wherever this sprite last drew itself (a no-op the first
+    // call, since last_x starts nil) -- call for every moving sprite
+    // before any of them draws this tick (game.lox's state_running:
+    // clear phase, then move, then draw), so one sprite's fresh draw can
+    // never be wiped out by another sprite's clear running later in the
+    // same tick.
     //
     // The erase blit uses erase_ink/erase_paper, not a fixed colour: they
     // were captured from disp's own attribute grid at this same spot on
@@ -210,6 +209,19 @@ class Sprite {
     // assuming black. Approximated as one colour per erase (the cell the
     // sprite's top-left corner sits in), same granularity the erase blit
     // already had.
+    clear(disp) {
+        if (this.last_x != nil) {
+            disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
+        }
+    }
+
+    // Looks up the current frame's sprite by name in `lib` and blits it
+    // onto `disp` at the current position, in this sprite's
+    // colour/paper. A horizontally moving sprite travelling left (dx <
+    // 0) indexes into image_list's second half, and counts down through
+    // it (2*frames-1 .. frames) as this.frame counts up (0 .. frames-1)
+    // -- see the class comment. clear() must already have run this tick
+    // -- draw() itself no longer erases anything.
     draw(disp, lib) {
         var index = this.frame
         if (this.movement_type == "horizontal" and this.dx < 0) {
@@ -220,9 +232,6 @@ class Sprite {
 
         if (this.blank == nil) {
             this.blank = float_array(img.width(), img.height())
-        }
-        if (this.last_x != nil) {
-            disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
         }
 
         var cx = int(this.x / 8)

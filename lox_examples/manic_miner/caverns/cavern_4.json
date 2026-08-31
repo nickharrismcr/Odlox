@@ -1,13 +1,73 @@
 {
-  "portal": {
-    "bright": true,
-    "sprite": "cavern4_portal",
-    "x": 120,
-    "paper": 2,
-    "ink": 7,
-    "y": 104
+  "name": "         Eugene's Lair          ",
+  "eugene_sprite": "cavern4_eugene",
+  "conveyor": {
+    "direction": 0,
+    "y": 64,
+    "x": 144,
+    "length": 10
   },
-  "height": 16,
+  "air": 63,
+  "willy_start": {
+    "y_times_2": 48,
+    "airborne": 0,
+    "frame": 0,
+    "y": 24,
+    "x": 8,
+    "jump_counter": 0,
+    "direction": 0
+  },
+  "tile_colours": [
+    {
+      "bright": false,
+      "ink": 0,
+      "paper": 2,
+      "name": "cavern4_tile_background"
+    },
+    {
+      "paper": 2,
+      "name": "cavern4_tile_floor",
+      "ink": 5,
+      "bright": false
+    },
+    {
+      "bright": false,
+      "ink": 4,
+      "paper": 2,
+      "name": "cavern4_tile_crumbling_floor"
+    },
+    {
+      "ink": 6,
+      "bright": false,
+      "paper": 5,
+      "name": "cavern4_tile_wall"
+    },
+    {
+      "bright": true,
+      "ink": 6,
+      "paper": 2,
+      "name": "cavern4_tile_conveyor"
+    },
+    {
+      "name": "cavern4_tile_nasty1",
+      "bright": false,
+      "paper": 2,
+      "ink": 6
+    },
+    {
+      "ink": 3,
+      "bright": false,
+      "paper": 2,
+      "name": "cavern4_tile_nasty2"
+    },
+    {
+      "name": "cavern4_tile_extra",
+      "bright": false,
+      "ink": 0,
+      "paper": 0
+    }
+  ],
+  "vertical_guardians": [],
   "guardian_sprite_names": [
     "cavern4_guardian_0",
     "cavern4_guardian_1",
@@ -18,34 +78,6 @@
     "cavern4_guardian_6",
     "cavern4_guardian_7"
   ],
-  "horizontal_guardians": [
-    {
-      "paper": 2,
-      "ink": 6,
-      "bright": false,
-      "x": 96,
-      "min_x": 8,
-      "max_x": 96,
-      "y": 24
-    },
-    {
-      "paper": 2,
-      "ink": 0,
-      "bright": false,
-      "x": 32,
-      "min_x": 32,
-      "max_x": 96,
-      "y": 56
-    }
-  ],
-  "item_sprite": "cavern4_item",
-  "conveyor": {
-    "length": 10,
-    "y": 64,
-    "direction": 0,
-    "x": 144
-  },
-  "border_colour": 1,
   "tile_names": [
     "cavern4_tile_background",
     "cavern4_tile_floor",
@@ -56,7 +88,17 @@
     "cavern4_tile_nasty2",
     "cavern4_tile_extra"
   ],
-  "name": "         Eugene's Lair          ",
+  "width": 32,
+  "item_sprite": "cavern4_item",
+  "portal": {
+    "sprite": "cavern4_portal",
+    "bright": true,
+    "paper": 2,
+    "y": 104,
+    "ink": 7,
+    "x": 120
+  },
+  "border_colour": 1,
   "layout": [
     "30000000000000000000600000000003",
     "30000000000000000000000000000003",
@@ -75,124 +117,83 @@
     "30000500300000300333333355000003",
     "31111111333333333333333311111113"
   ],
-  "clock": 128,
-  "width": 32,
-  "willy_start": {
-    "frame": 0,
-    "y": 24,
-    "y_times_2": 48,
-    "direction": 0,
-    "x": 8,
-    "jump_counter": 0,
-    "airborne": 0
-  },
-  "tile_colours": [
-    {
-      "paper": 2,
-      "ink": 0,
-      "bright": false,
-      "name": "cavern4_tile_background"
-    },
-    {
-      "ink": 5,
-      "name": "cavern4_tile_floor",
-      "bright": false,
-      "paper": 2
-    },
-    {
-      "name": "cavern4_tile_crumbling_floor",
-      "paper": 2,
-      "ink": 4,
-      "bright": false
-    },
+  "horizontal_guardians": [
     {
       "ink": 6,
-      "name": "cavern4_tile_wall",
       "bright": false,
-      "paper": 5
-    },
-    {
-      "bright": true,
+      "max_x": 96,
       "paper": 2,
-      "ink": 6,
-      "name": "cavern4_tile_conveyor"
+      "x": 96,
+      "min_x": 8,
+      "y": 24
     },
     {
-      "bright": false,
-      "name": "cavern4_tile_nasty1",
-      "paper": 2,
-      "ink": 6
-    },
-    {
-      "bright": false,
-      "name": "cavern4_tile_nasty2",
-      "paper": 2,
-      "ink": 3
-    },
-    {
-      "paper": 0,
       "ink": 0,
+      "max_x": 96,
+      "paper": 2,
+      "y": 56,
+      "x": 32,
       "bright": false,
-      "name": "cavern4_tile_extra"
+      "min_x": 32
     }
   ],
-  "vertical_guardians": [],
-  "air": 63,
+  "height": 16,
+  "clock": 128,
   "items": [
     {
-      "init_bright": true,
-      "bright": true,
-      "init_ink": 7,
-      "paper": 4,
-      "init_paper": 7,
-      "x": 240,
       "y": 8,
-      "ink": 0,
-      "type": 19
-    },
-    {
+      "x": 240,
       "bright": true,
       "paper": 4,
-      "y": 48,
-      "init_ink": 7,
-      "init_paper": 7,
-      "x": 80,
-      "init_bright": true,
       "ink": 0,
-      "type": 20
-    },
-    {
-      "paper": 4,
-      "ink": 0,
-      "type": 21,
-      "bright": true,
       "init_bright": true,
-      "init_paper": 7,
-      "x": 232,
       "init_ink": 7,
-      "y": 56
-    },
-    {
-      "x": 56,
-      "bright": true,
-      "ink": 0,
-      "type": 22,
-      "init_ink": 7,
-      "init_bright": true,
-      "y": 96,
-      "paper": 5,
+      "type": 19,
       "init_paper": 7
     },
     {
-      "paper": 5,
+      "x": 80,
+      "y": 48,
+      "init_paper": 7,
+      "paper": 4,
+      "type": 20,
+      "init_bright": true,
       "init_ink": 7,
+      "ink": 0,
+      "bright": true
+    },
+    {
+      "type": 21,
       "bright": true,
       "ink": 0,
-      "type": 19,
-      "init_paper": 7,
-      "x": 72,
+      "paper": 4,
       "init_bright": true,
-      "y": 96
+      "init_ink": 7,
+      "y": 56,
+      "init_paper": 7,
+      "x": 232
+    },
+    {
+      "init_bright": true,
+      "init_ink": 7,
+      "ink": 0,
+      "init_paper": 7,
+      "paper": 5,
+      "y": 96,
+      "x": 56,
+      "bright": true,
+      "type": 22
+    },
+    {
+      "init_paper": 7,
+      "y": 96,
+      "init_bright": true,
+      "init_ink": 7,
+      "ink": 0,
+      "bright": true,
+      "type": 19,
+      "paper": 5,
+      "x": 72
     }
   ]
 }

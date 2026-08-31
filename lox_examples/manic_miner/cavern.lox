@@ -1,3 +1,4 @@
+from gfx import *
 import json
 import spectrum_attr
 import game_sprite
@@ -45,6 +46,11 @@ const PORTAL_FLASH_TICKS = 8
 // tile by this many positions one way, and row 2 the other way (rows 1
 // and 3-7 are untouched) -- there are no separate animation frames.
 const CONVEYOR_ROTATE = 2
+
+// Eugene's Lair only (see draw()/update_eugene()): Eugene's fixed
+// starting y, and his 16x16 sprite height (matching the portal's own).
+const EUGENE_START_Y = 0
+const EUGENE_HEIGHT = 16
 
 // Horizontal guardians hold their on-screen position for a full 4-frame
 // animation cycle then jump 8px in one go, the block-movement convention
@@ -135,6 +141,16 @@ class Cavern {
         this.guardian_sprites = []        // game_sprite.Sprite instances, built from the above by load_from_dict
         this.crumbled = {}                // "cx,cy" -> true once a crumbling-floor cell has given way
         this.crumble_timers = {}          // "cx,cy" -> ticks remaining while still being stood on
+
+        this.eugene_sprite = ""           // asset name pointer -- "" except Eugene's Lair (see extract_cavern.lox)
+        this.eugene_x = 0
+        this.eugene_y = 0
+        this.eugene_move_ticks = 0        // ticks spent moving so far, for the ink-cycle phase
+        this.eugene_last_x = nil          // wherever draw_eugene() last drew him -- nil means "never drawn yet"
+        this.eugene_last_y = nil
+        this.eugene_blank = nil           // lazily sized to eugene_sprite's own dimensions, reused every clear
+        this.eugene_erase_ink = 0         // the room's own ink/paper under the last drawn position,
+        this.eugene_erase_paper = 0       // captured just before it was painted over -- see draw_eugene()
     }
 
     // Sets every named field present in `d` (anything absent keeps its
@@ -159,6 +175,7 @@ class Cavern {
         this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
         this.crumbled = {}
         this.crumble_timers = {}
+        this.eugene_sprite = d.get("eugene_sprite", this.eugene_sprite)
 
         // The 8-frame guardian sheet is a fixed-size, per-cavern resource:
         // a cavern with only one guardian type gives it all 8 (frames=4,
@@ -425,6 +442,17 @@ class Cavern {
             }
         }
         this.draw_portal(disp, lib)
+
+        // Eugene's Lair only (eugene_sprite is "" for every other
+        // cavern): starts static, top-centre in line with the portal --
+        // reset here since draw() itself runs at cavern load and at
+        // every respawn.
+        if (this.eugene_sprite != "") {
+            this.eugene_x = this.portal["x"]
+            this.eugene_y = EUGENE_START_Y
+            this.eugene_move_ticks = 0
+            this.draw_eugene(disp, lib)
+        }
     }
 
     // Draws the portal at its own position in its own (non-flashing)
@@ -436,6 +464,62 @@ class Cavern {
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
         var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
         disp.blit_sprite(img, this.portal["x"], this.portal["y"], ink, paper)
+    }
+
+    // Eugene's Lair only: advances Eugene one pixel downwards, once all
+    // items are collected, until he's just above the portal (his own
+    // bottom edge level with the portal's top edge). A no-op for every
+    // other cavern (eugene_sprite == "") and once he's arrived.
+    update_eugene() {
+        if (this.eugene_sprite == "" or !this.all_items_collected()) {
+            return
+        }
+        var target_y = this.portal["y"] - EUGENE_HEIGHT
+        if (this.eugene_y >= target_y) {
+            return
+        }
+        this.eugene_y = this.eugene_y + 1
+        this.eugene_move_ticks = this.eugene_move_ticks + 1
+    }
+
+    // Eugene's Lair only: erases wherever Eugene last drew himself --
+    // call for every moving sprite before any of them draws this tick
+    // (game.lox's state_running: clear phase, then move, then draw). A
+    // no-op for every other cavern and before his first draw.
+    clear_eugene(disp) {
+        if (this.eugene_sprite == "" or this.eugene_last_x == nil) {
+            return
+        }
+        disp.blit_sprite(this.eugene_blank, this.eugene_last_x, this.eugene_last_y, this.eugene_erase_ink, this.eugene_erase_paper)
+    }
+
+    // Eugene's Lair only: draws Eugene at his current position, ink
+    // cycling 7 down to 0 (repeating) while he's actively moving
+    // downwards, plain white once static (either still waiting for all
+    // items, or already arrived). clear_eugene() must already have run
+    // this tick.
+    draw_eugene(disp, lib) {
+        if (this.eugene_sprite == "") {
+            return
+        }
+        var img = lib.get(this.eugene_sprite)
+        if (this.eugene_blank == nil) {
+            this.eugene_blank = float_array(img.width(), img.height())
+        }
+        var target_y = this.portal["y"] - EUGENE_HEIGHT
+        var moving = this.all_items_collected() and this.eugene_y < target_y
+        var ink = spectrum_attr.colour_to_rgba(7, true)
+        if (moving) {
+            var ink_index = 7 - (this.eugene_move_ticks % 8)
+            ink = spectrum_attr.colour_to_rgba(ink_index, true)
+        }
+        var cx = int(this.eugene_x / 8)
+        var cy = int(this.eugene_y / 8)
+        this.eugene_erase_ink = disp.get_ink(cx, cy)
+        this.eugene_erase_paper = disp.get_paper(cx, cy)
+        disp.blit_sprite(img, this.eugene_x, this.eugene_y, ink, this.background_paper())
+        this.eugene_last_x = this.eugene_x
+        this.eugene_last_y = this.eugene_y
     }
 
     // Redraws the portal every tick -- in its normal colour, or (once
@@ -505,16 +589,24 @@ class Cavern {
         }
     }
 
-    // Advances every guardian's animation/position by one tick. Call
-    // once per game tick, before draw_guardians().
+    // Erases every guardian's own last-drawn position -- call for every
+    // moving sprite before any of them draws this tick (game.lox's
+    // state_running: clear phase, then move, then draw).
+    clear_guardians(disp) {
+        foreach (var g in this.guardian_sprites) {
+            g.clear(disp)
+        }
+    }
+
+    // Advances every guardian's animation/position by one tick.
     update_guardians() {
         foreach (var g in this.guardian_sprites) {
             g.update()
         }
     }
 
-    // Draws every guardian at its current position -- each Sprite
-    // handles its own erase-before-redraw (see game_sprite.lox).
+    // Draws every guardian at its current position. clear_guardians()
+    // must already have run this tick (see game_sprite.lox's Sprite).
     draw_guardians(disp, lib) {
         foreach (var g in this.guardian_sprites) {
             g.draw(disp, lib)

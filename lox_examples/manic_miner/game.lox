@@ -159,14 +159,32 @@ func draw_lives(g) {
     }
 }
 
+// Every moving sprite (Willy, guardians, Eugene) goes through the same
+// three phases, each run to completion across all of them before the
+// next starts: clear (erase wherever it last drew itself), move
+// (position/animation/collision, no drawing), draw (paint at its new
+// position). Keeping the phases fully separate -- not interleaved
+// per-sprite -- means no sprite's fresh draw can ever be wiped out by
+// another sprite's clear running later in the same tick.
 func state_running(g, win) {
     g.controller.update(win)
+
+    g.willy.clear(g.disp)
+    g.cavern.clear_guardians(g.disp)
+    g.cavern.clear_eugene(g.disp)
+
+    // Guardians/Eugene move before Willy so his own pixel-perfect
+    // collision check (handle_items_and_hazards() -> guardian_hit())
+    // sees their current-tick position, not last tick's.
+    g.cavern.update_guardians()
+    g.cavern.update_eugene()
+    g.willy.step(g.controller, g.cavern, g.disp, g.lib)
+
     g.cavern.draw_items(g.disp, g.lib, g.frame_count)
     g.cavern.animate_conveyor(g.disp)
-    g.cavern.update_guardians()
-    g.cavern.draw_guardians(g.disp, g.lib)
-    g.willy.step(g.controller, g.cavern, g.disp, g.lib)
     g.willy.draw(g.disp, g.lib, g.cavern)
+    g.cavern.draw_guardians(g.disp, g.lib)
+    g.cavern.draw_eugene(g.disp, g.lib)
     // Last, so the portal always renders on top -- Willy disappears
     // underneath it rather than erasing it.
     g.cavern.set_portal_flash(g.disp, g.lib, g.frame_count)
