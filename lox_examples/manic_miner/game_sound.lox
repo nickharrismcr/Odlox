@@ -19,32 +19,35 @@ import sound_mgr
 
 const SOUND_PATHS = {
     "die":              "assets/die.wav",
-    "level_end_swoop":  "assets/level_end_swoop.wav",
-    "game_over_swoop":  "assets/game_over_swoop.wav"
+    "level_end_swoop":  "assets/air.wav",
+    "game_over_swoop":  "assets/game-over.wav"
 }
 
 // Manic Miner's own tune data, from the disassembly's table at 34188
-// (used by the play routine at 34574) -- its 64 raw note values, each
-// held for 2 ticks, already remapped to a sample index (0 = lowest note,
-// see TUNE_NOTE_VALUES) so play_next_tune_note() can index straight into
-// a sample name with no lookup. One play_next_tune_note() call per game
+// (used by the play routine at 34574) -- its 64 raw values are timer
+// periods, not pitches, so a *higher* raw value is a *lower* note (a
+// longer timer period means a slower/lower-frequency square wave).
+// Already remapped to a sample index (0 = lowest note, see
+// TUNE_NOTE_VALUES) so play_next_tune_note() can index straight into a
+// sample name with no lookup. One play_next_tune_note() call per game
 // tick, so every table entry sounds twice before the tune advances to
 // the next one.
 //
-// Raw values -> index, per TUNE_NOTE_VALUES below: 64->0, 81->1, 86->2,
-// 96->3, 102->4, 114->5, 128->6.
+// Raw values -> index, per TUNE_NOTE_VALUES below: 128->0, 114->1,
+// 102->2, 96->3, 86->4, 81->5, 64->6.
 const TUNE_TABLE = [
-    6, 5, 4, 3, 2, 4, 2, 2, 1, 3, 1, 1, 2, 4, 2, 2,
-    6, 5, 4, 3, 2, 4, 2, 2, 1, 3, 1, 1, 2, 2, 2, 2,
-    6, 5, 4, 3, 2, 4, 2, 2, 1, 3, 1, 1, 2, 4, 2, 2,
-    6, 5, 4, 3, 2, 4, 2, 0, 2, 4, 6, 4, 2, 2, 2, 2
+    0, 1, 2, 3, 4, 2, 4, 4, 5, 3, 5, 5, 4, 2, 4, 4,
+    0, 1, 2, 3, 4, 2, 4, 4, 5, 3, 5, 5, 4, 4, 4, 4,
+    0, 1, 2, 3, 4, 2, 4, 4, 5, 3, 5, 5, 4, 2, 4, 4,
+    0, 1, 2, 3, 4, 2, 4, 6, 4, 2, 0, 2, 4, 4, 4, 4
 ]
 
-// Every distinct value the disassembly's raw table contains, ascending
-// -- sample "tune_i" is TUNE_NOTE_VALUES[i], so tune_0 is always the
-// lowest note. Not read by code (TUNE_TABLE already holds indexes into
-// it); kept as the record of what each sample index means.
-const TUNE_NOTE_VALUES = [64, 81, 86, 96, 102, 114, 128]
+// Every distinct value the disassembly's raw table contains, ordered
+// from lowest note (highest timer period) to highest note (lowest
+// timer period) -- sample "tune_i" is TUNE_NOTE_VALUES[i], so tune_0 is
+// always the lowest note. Not read by code (TUNE_TABLE already holds
+// indexes into it); kept as the record of what each sample index means.
+const TUNE_NOTE_VALUES = [128, 114, 102, 96, 86, 81, 64]
 const TUNE_NOTE_PATH_FMT = "assets/tune_%d.wav"
 
 class Sound {
@@ -60,7 +63,7 @@ class Sound {
         }
         this.tune_tick = 0
 
-        this.mgr.load_music("intro_tune", "assets/intro_tune.wav")
+        this.mgr.load_music("intro_tune", "assets/tune.wav")
         this.mgr.set_music_looping("intro_tune", true)
     }
 

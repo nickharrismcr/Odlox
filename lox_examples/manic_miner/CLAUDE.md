@@ -62,12 +62,16 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
   synthesize; sampling the tune's own fixed notes stands in for it instead. `TUNE_TABLE` is the
   disassembly's actual 64-value tune data (address 34188, its play routine at 34574); each entry
   plays across 2 `play_next_tune_note()` calls before advancing, matching the real routine's own
-  timing. `TUNE_NOTE_VALUES` is every distinct value in that table, ascending, so sample `tune_0`
-  is always the lowest note regardless of table order. Wired into `game.lox`/`intro.lox` (see
-  above), but the sample files under `assets/` (`tune_0.wav`..`tune_6.wav`, `die.wav`,
-  `level_end_swoop.wav`, `game_over_swoop.wav`, `intro_tune.wav`) aren't sourced yet -- until they
-  are, `main.lox`'s `MUTE_SOUND` stays `true` (`SoundManager.load()` raises on a missing path, so
-  running unmuted right now would crash on startup).
+  timing. Its raw values are timer periods, not pitches -- a *higher* value is a *lower* note --
+  so `TUNE_NOTE_VALUES` orders every distinct value from lowest note (highest period) to highest
+  note (lowest period), and sample `tune_0` is always the lowest note regardless of table order.
+  Wired into `game.lox`/`intro.lox` (see above) and sourced under `assets/`: `tune_0.wav`..
+  `tune_6.wav`, `die.wav`, `air.wav` (level-end swoop), `game-over.wav` (game-over swoop), and
+  `tune.wav` (intro tune) -- `SOUND_PATHS`/the `load_music` call in `Sound.__init__` are the map
+  from cue name to actual filename, which don't all match the cue name (`air.wav`/`game-over.wav`
+  are reused/renamed clips, not new files matching their method names). `main.lox`'s `MUTE_SOUND`
+  is `false` now that these exist; `in-game-tune.wav`/`jumping.wav` are sourced but not wired to
+  any cue yet.
 
 **Shared Spectrum-format decoding** (no game-state dependencies):
 - `spectrum_attr.lox` — decodes a raw Spectrum attribute byte into `{ink, paper, bright}`;

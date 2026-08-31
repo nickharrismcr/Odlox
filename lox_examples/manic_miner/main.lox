@@ -26,11 +26,7 @@ if (len(argv) >= 2) {
 }
 
 const TARGET_FPS = 13   // Manic Miner's own tick rate -- see game_sprite.lox
-// True until the assets/*.wav clips game_sound.lox expects are sourced --
-// SoundManager.load() raises if a path doesn't exist, so this stays true
-// (skips every load) rather than crashing main.lox on startup. Flip once
-// the samples are in place.
-const MUTE_SOUND = true
+const MUTE_SOUND = false
 
 const SCALE = 3
 var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
