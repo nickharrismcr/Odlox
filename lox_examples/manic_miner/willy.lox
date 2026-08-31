@@ -446,7 +446,11 @@ func state_walk(w, input, room, disp, lib) {
     }
 
     if (input.jump) {
-        var jump_dx = dx
+        // move_dx, not the raw input dx: jumping against the conveyor's
+        // own direction is already zeroed there (see above), so that
+        // jump comes out purely vertical instead of leaping the way the
+        // player was pushing against the belt.
+        var jump_dx = move_dx
         if (blocked) {
             jump_dx = 0
         }
