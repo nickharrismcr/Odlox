@@ -21,6 +21,12 @@ const CAVERN_BASE = 45056
 const CAVERN_SIZE = 1024
 const NUM_CAVERNS = 20
 
+// Game-wide (not tied to any cavern), fixed Spectrum addresses per
+// disassembly: the "GAME OVER" plinth Willy ends up on, and the boot
+// that squashes him -- both 16x16, same shape as everything else here.
+const GAME_OVER_PLINTH_ADDR = 46816
+const BOOT_ADDR = 47840
+
 // "extra" is Central Cavern's own name for the 8th tile slot -- all-zero
 // there, but not universally unused (Skylab Landing Bay's layout
 // references it with real, non-zero graphics), so it holds whatever data
@@ -142,6 +148,29 @@ func read_fixed_slots(bytes, addr, record_size, count) {
         records.append(record)
     }
     return {"records": records, "next": addr + count * record_size + 1}
+}
+
+// Extracts the two game-wide 16x16 graphics (GAME_OVER_PLINTH_ADDR,
+// BOOT_ADDR) into global_sprites.json -- unlike everything else here,
+// not tied to any cavern index, so this runs once per invocation
+// regardless of which cavern(s) were requested.
+func extract_global_sprites(bytes, out_dir) {
+    func read_sprite16(addr, name) {
+        var pixels = []
+        for (var i = 0; i < 32; i = i + 1) {
+            pixels.append(sna.read_u8(bytes, addr + i))
+        }
+        return {"name": name, "data_type": "pixel", "data": bytes_to_pixel_rows(pixels, 16)}
+    }
+    var sprites = [
+        read_sprite16(GAME_OVER_PLINTH_ADDR, "game_over_plinth"),
+        read_sprite16(BOOT_ADDR, "boot")
+    ]
+    var path = os.join(out_dir, "global_sprites.json")
+    var f = os.open(path, "w")
+    os.write(f, json.encode(sprites, 2))
+    os.close(f)
+    print(format("global sprites: wrote %d entries to %s", len(sprites), path))
 }
 
 func extract_one(bytes, index, out_dir) {
@@ -460,6 +489,7 @@ if (len(argv) < 4) {
     if (!os.exists(out_dir)) {
         os.mkdir(out_dir)
     }
+    extract_global_sprites(bytes, out_dir)
     if (argv[2] == "all") {
         for (var i = 0; i < NUM_CAVERNS; i = i + 1) {
             extract_one(bytes, i, out_dir)
