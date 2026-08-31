@@ -66,6 +66,20 @@ const OXYGEN_BAR_WIDTH = 224  // pixel 25 .. 248 inclusive
 const OXYGEN_BAR_HEIGHT = 4
 const OXYGEN_BAR_Y = OXYGEN_ROW_Y + (8 - OXYGEN_BAR_HEIGHT) / 2  // vertically centred in the row
 
+// Game-over sequence: the plinth sits bottom-centre of the cavern area
+// (the 32x16-cell region above the HUD rows), Willy stands on it, and
+// the boot starts directly above both, at the very top. Everything's
+// white; the whole cavern area's paper cycles blue/red/magenta every
+// tick while the boot descends 2px/tick, its previous stamps never
+// erased (see state_game_over()), until it reaches Willy.
+const GAME_OVER_X = 120            // (256 - 16) / 2 -- shared by plinth/Willy/boot
+const GAME_OVER_PLINTH_Y = 112     // bottom of the 128px-tall cavern area
+const GAME_OVER_WILLY_Y = 96       // GAME_OVER_PLINTH_Y - WILLY_HEIGHT
+const GAME_OVER_BOOT_START_Y = 0
+const GAME_OVER_BOOT_STEP = 2
+const GAME_OVER_INK = encode_rgba(255, 255, 255)
+const GAME_OVER_PAPER_CYCLE = [1, 2, 3]  // spectrum_attr indices: blue, red, magenta
+
 func enter_running(g) {
     g.update_func = state_running
 }
@@ -225,17 +239,18 @@ func state_die(g, win) {
 
     win.set_target_fps(g.target_fps)
     g.lives = g.lives - 1
+
+    if (g.lives <= 0) {
+        enter_game_over(g)
+        return
+    }
+
     g.cavern.reset_for_respawn()
     g.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
     g.cavern.draw(g.disp, g.lib)
     g.willy.spawn(g.cavern)
     draw_static_hud(g)
-
-    if (g.lives <= 0) {
-        enter_game_over(g)
-    } else {
-        enter_running(g)
-    }
+    enter_running(g)
 }
 
 func enter_portal(g, win) {
@@ -288,12 +303,72 @@ func enter_next_cavern(g) {
     enter_running(g)
 }
 
+// Blanks the cavern area's bitmap and attribute cells (rows 0-15) to
+// ink/paper -- like Display.clear(), but leaves the HUD rows below
+// (16-23) untouched.
+func clear_cavern_area(g, ink, paper) {
+    for (var y = 0; y < 128; y = y + 1) {
+        for (var x = 0; x < 256; x = x + 1) {
+            g.disp.plot(x, y, 0.0)
+        }
+    }
+    for (var cy = 0; cy < 16; cy = cy + 1) {
+        for (var cx = 0; cx < 32; cx = cx + 1) {
+            g.disp.set_attr(cx, cy, ink, paper)
+        }
+    }
+}
+
+// Repaints the HUD (undoing the death flash's colour corruption, so
+// name/score/air/lives stay visible and correct throughout the
+// sequence), then clears just the cavern area and paints the game-over
+// tableau's static parts (plinth, Willy in his frame-3 pose) plus the
+// boot's starting frame -- all white on the first paper colour of the
+// cycle. state_game_over() takes over from here every tick.
 func enter_game_over(g) {
+    draw_static_hud(g)
+    draw_lives(g)
+
+    var paper = spectrum_attr.colour_to_rgba(GAME_OVER_PAPER_CYCLE[0], true)
+    clear_cavern_area(g, GAME_OVER_INK, paper)
+    g.disp.blit_sprite(g.global_sprites.get("game_over_plinth"), GAME_OVER_X, GAME_OVER_PLINTH_Y, GAME_OVER_INK, paper)
+    var willy_img = g.lib.get(g.willy.image_list[3])
+    g.disp.blit_sprite(willy_img, GAME_OVER_X, GAME_OVER_WILLY_Y, GAME_OVER_INK, paper)
+    g.game_over_paper_index = 0
+    g.game_over_boot_y = GAME_OVER_BOOT_START_Y
+    g.disp.blit_sprite(g.global_sprites.get("boot"), GAME_OVER_X, g.game_over_boot_y, GAME_OVER_INK, paper)
     g.update_func = state_game_over
 }
 
-// Frozen -- is_game_over() tells the caller to stop calling tick().
+// Every tick: cycles the whole cavern area's paper through
+// GAME_OVER_PAPER_CYCLE (an attribute-only change, via set_attr -- never
+// touches the bitmap, so it can't disturb the boot's trail), then stamps
+// the boot 2px further down without erasing its previous stamps, so it
+// leaves a solid trail behind it as it falls. Stops advancing once it
+// reaches Willy -- is_game_over() then tells the caller to stop calling
+// tick() (one more frame still renders the final stamp).
 func state_game_over(g, win) {
+    g.game_over_paper_index = (g.game_over_paper_index + 1) % len(GAME_OVER_PAPER_CYCLE)
+    var paper = spectrum_attr.colour_to_rgba(GAME_OVER_PAPER_CYCLE[g.game_over_paper_index], true)
+    for (var cy = 0; cy < 16; cy = cy + 1) {
+        for (var cx = 0; cx < 32; cx = cx + 1) {
+            g.disp.set_attr(cx, cy, GAME_OVER_INK, paper)
+        }
+    }
+
+    if (g.game_over_boot_y >= GAME_OVER_WILLY_Y) {
+        g.update_func = state_game_over_done
+        return
+    }
+    g.game_over_boot_y = g.game_over_boot_y + GAME_OVER_BOOT_STEP
+    if (g.game_over_boot_y > GAME_OVER_WILLY_Y) {
+        g.game_over_boot_y = GAME_OVER_WILLY_Y
+    }
+    g.disp.blit_sprite(g.global_sprites.get("boot"), GAME_OVER_X, g.game_over_boot_y, GAME_OVER_INK, paper)
+}
+
+// Frozen -- is_game_over() tells the caller to stop calling tick().
+func state_game_over_done(g, win) {
 }
 
 class Game {
@@ -301,6 +376,8 @@ class Game {
         this.disp = display.Display()
         this.font = assets.SpriteAssets()
         this.font.load("assets/font_sprites.json")
+        this.global_sprites = assets.SpriteAssets()
+        this.global_sprites.load("caverns/global_sprites.json")
         load_cavern(this, cavern_index)
 
         this.willy = willy_module.Willy()
@@ -312,13 +389,15 @@ class Game {
         this.frame_count = 0
         this.die_tick = 0
         this.portal_tick = 0
+        this.game_over_paper_index = 0
+        this.game_over_boot_y = 0
         this.lives = LIVES_START
         this.update_func = state_running
         this.target_fps = target_fps
     }
 
     is_game_over() -> bool {
-        return this.update_func == state_game_over
+        return this.update_func == state_game_over_done
     }
 
     is_dying() -> bool {
