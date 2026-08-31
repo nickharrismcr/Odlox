@@ -48,7 +48,8 @@ drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin pla
   their own one-shot cue -- `enter_fall` is the single entry point for both a walked-off ledge and
   a jump horizontally blocked into a fall, so the falling cue only needs firing there.
 - `willy_controller.lox` — `Controller`: polls input once per frame into `left`/`right`/`jump`
-  flags (same convention as `defender/player/controller.lox`).
+  flags (same convention as `defender/player/controller.lox`), plus `collect_all` (KEY_C,
+  edge-triggered -- the debug auto-collect cheat, see `game.lox`'s `ENABLE_AUTO_COLLECT_CHEAT`).
 - `assets.lox` — `SpriteAssets`: loads sprite graphics from JSON (`"pixel"` ASCII-row or `"byte"`
   packed-MSB ROM-shaped data) into `float_array`s keyed by name.
 - `display.lox` — `Display`: the bitmap+attribute compositor. See "GPU-composited display" below.

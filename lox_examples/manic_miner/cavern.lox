@@ -363,6 +363,20 @@ class Cavern {
         return nil
     }
 
+    // Marks every uncollected item collected and erases its icon -- the
+    // debug auto-collect cheat (see game.lox's ENABLE_AUTO_COLLECT_CHEAT),
+    // same effect as walking over every item via collect_item_at() but in
+    // one call.
+    collect_all_items(disp, lib) {
+        foreach (var item in this.items) {
+            if (item.get("collected", false)) {
+                continue
+            }
+            item["collected"] = true
+            this.redraw_tile_cell(disp, lib, int(item["x"] / 8), int(item["y"] / 8))
+        }
+    }
+
     // True once every item is collected -- the portal itself flashes
     // (see set_portal_flash()) and can be entered.
     is_portal_flashing() -> bool {

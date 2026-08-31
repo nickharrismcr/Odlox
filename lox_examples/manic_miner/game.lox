@@ -22,6 +22,12 @@ const DIE_FLASH_TICKS = 20  // one tick per ink value, 7 down to 0
 const LIVES_START = 3
 const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
 
+// Debug cheat: KEY_C (see willy_controller.lox's Controller.collect_all)
+// auto-collects every item in the current cavern. Set to false to
+// disable the key entirely -- the controller still polls it, but
+// state_running() ignores it.
+const ENABLE_AUTO_COLLECT_CHEAT = true
+
 // Portal-entry flash: two ink cycles of 7 down to 1 (blue) -- unlike the
 // death flash, black is never part of the cycle, so it ends on blue --
 // then a pause (placeholder for a remaining-air countdown) before the
@@ -195,6 +201,10 @@ func draw_lives(g) {
 func state_running(g, win) {
     g.controller.update(win)
     g.sound.play_next_tune_note()
+
+    if (ENABLE_AUTO_COLLECT_CHEAT and g.controller.collect_all) {
+        g.cavern.collect_all_items(g.disp, g.lib)
+    }
 
     g.willy.clear(g.disp)
     g.cavern.clear_guardians(g.disp)

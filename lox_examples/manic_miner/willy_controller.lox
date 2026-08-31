@@ -8,14 +8,16 @@
 
 class Controller {
     __init__() {
-        this.left = false    // held: move left
-        this.right = false   // held: move right
-        this.jump = false    // held: jump, or jump again immediately on landing
+        this.left = false        // held: move left
+        this.right = false       // held: move right
+        this.jump = false        // held: jump, or jump again immediately on landing
+        this.collect_all = false // pressed (edge, not held): auto-collect cheat -- see game.lox's ENABLE_AUTO_COLLECT_CHEAT
     }
 
     update(win) {
         this.left = win.key_down(win.KEY_Q)
         this.right = win.key_down(win.KEY_W)
         this.jump = win.key_down(win.KEY_SPACE)
+        this.collect_all = win.key_pressed(win.KEY_C)
     }
 }
