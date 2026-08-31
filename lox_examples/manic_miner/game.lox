@@ -24,11 +24,18 @@ const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
 
 // Portal-entry flash: two ink cycles of 7 down to 1 (blue) -- unlike the
 // death flash, black is never part of the cycle, so it ends on blue --
-// then a fixed pause (placeholder for a remaining-air countdown) before
-// the next cavern loads.
+// then a pause (placeholder for a remaining-air countdown) before the
+// next cavern loads. The whole state runs at g.target_fps throughout (no
+// temporary FPS bump, unlike state_die), so its total tick count is
+// computed straight from that in enter_portal() -- see
+// LEVEL_END_SWOOP_SECONDS.
 const PORTAL_FLASH_CYCLE_TICKS = 7
 const PORTAL_FLASH_TICKS = PORTAL_FLASH_CYCLE_TICKS * 2
-const PORTAL_PAUSE_TICKS = 30
+
+// The sourced level_end_swoop clip (assets/air.wav) runs about 3
+// seconds -- the portal state needs to persist at least that long so it
+// isn't cut off by the next cavern loading over it.
+const LEVEL_END_SWOOP_SECONDS = 3
 
 // HUD layout: six 8px rows in the blank strip below the cavern's own
 // tile rows (every cavern is 16 rows / 128px tall, but the display is
@@ -260,28 +267,35 @@ func state_die(g, win) {
     enter_running(g)
 }
 
+// portal_total_ticks is LEVEL_END_SWOOP_SECONDS worth of ticks at
+// g.target_fps (the master rate -- this state never bumps FPS the way
+// state_die does), floored up to at least PORTAL_FLASH_TICKS so the
+// flash itself is never truncated on a very low target_fps.
 func enter_portal(g, win) {
-    win.set_target_fps(30)
     g.update_func = state_portal
     g.portal_tick = 0
+    g.portal_total_ticks = LEVEL_END_SWOOP_SECONDS * g.target_fps
+    if (g.portal_total_ticks < PORTAL_FLASH_TICKS) {
+        g.portal_total_ticks = PORTAL_FLASH_TICKS
+    }
     g.disp.begin_flash()
     g.sound.play_level_end_swoop()
 }
 
 // Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
-// fixed pause (placeholder for a remaining-air countdown), then the next
-// cavern loads and play resumes there.
+// pause out to g.portal_total_ticks (computed in enter_portal() so the
+// whole state lasts LEVEL_END_SWOOP_SECONDS regardless of target_fps),
+// then the next cavern loads and play resumes there.
 func state_portal(g, win) {
     if (g.portal_tick < PORTAL_FLASH_TICKS) {
         var ink_index = 7 - (g.portal_tick % PORTAL_FLASH_CYCLE_TICKS)
         g.disp.flash_ink(spectrum_attr.colour_to_rgba(ink_index, true))
     }
     g.portal_tick = g.portal_tick + 1
-    if (g.portal_tick < PORTAL_FLASH_TICKS + PORTAL_PAUSE_TICKS) {
+    if (g.portal_tick < g.portal_total_ticks) {
         return
     }
 
-    win.set_target_fps(g.target_fps)
     enter_next_cavern(g)
 }
 
@@ -403,6 +417,7 @@ class Game {
         this.frame_count = 0
         this.die_tick = 0
         this.portal_tick = 0
+        this.portal_total_ticks = 0
         this.game_over_paper_index = 0
         this.game_over_boot_y = 0
         this.lives = LIVES_START
