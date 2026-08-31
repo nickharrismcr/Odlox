@@ -17,16 +17,21 @@ Run it with:
 bin/odlox.exe lox_examples/manic_miner/main.lox [cavern_index]
 ```
 
-`cavern_index` defaults to 3 (`main.lox`). Controls: LEFT/RIGHT to walk, UP or SPACE to jump, ESC
+`cavern_index` defaults to 0 (`main.lox`). Controls: LEFT/RIGHT to walk, UP or SPACE to jump, ESC
 to quit. `main.lox` runs at a fixed `TARGET_FPS = 15` — Manic Miner's own original tick rate, not
 this engine's usual 60fps target (see `game_sprite.lox` for the movement/animation code this rate
-drives).
+drives). Starts on the title screen (`intro.Intro`) — press ENTER to begin play.
 
 ## File map
 
 **Runtime game code**, in dependency order:
-- `main.lox` — window/presentation loop only. Owns nothing but the `win`/`Display` frame
-  lifecycle and HUD text; all session state lives in `game.Game`.
+- `main.lox` — window/presentation loop only. Runs an `intro.Intro` to completion, then a
+  `game.Game`. Owns nothing but the `win`/`Display` frame lifecycle and HUD text; all session state
+  lives in `game.Game` (and, before that, `intro.Intro`).
+- `intro.lox` — `Intro`: the title screen. Draws the cached `start_screen.json`/
+  `start_screen_sprites.json` (produced by `extract_start_screen.lox`) into its own `Display` once
+  at `__init__`, then `tick(win)` just watches for ENTER (`is_done()`) — same `__init__`/`tick(win)`
+  shape as `game.Game`, so `main.lox` drives either the same way.
 - `game.lox` — `Game`: one play session (cavern, Willy, controller, sprite assets, Display).
   `running`/`die`/`game_over` state machine.
 - `cavern.lox` — `Cavern`: one level's layout/tiles/items/conveyors/portals/guardians, loaded

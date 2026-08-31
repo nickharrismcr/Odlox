@@ -1,0 +1,55 @@
+from gfx import *
+import display
+import assets
+import json
+import spectrum_attr
+
+//
+// @file intro.lox
+// @brief Intro/title-screen game state: draws the cached start screen
+// (start_screen.json/start_screen_sprites.json, produced by
+// extract_start_screen.lox) into its own Display and waits for ENTER
+// before handing control to game.Game. Same __init__/tick(win) shape as
+// game.Game, so main.lox can drive either one identically.
+//
+
+class Intro {
+    __init__() {
+        this.disp = display.Display()
+        this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
+
+        var screen = json.load("start_screen.json")
+        var sprites = assets.SpriteAssets()
+        sprites.load("start_screen_sprites.json")
+        var img = sprites.get(screen["sprite"])
+
+        for (var y = 0; y < img.height(); y = y + 1) {
+            for (var x = 0; x < img.width(); x = x + 1) {
+                this.disp.plot(x, y, img.get(x, y))
+            }
+        }
+
+        var attr_rows = screen["attributes"]
+        for (var cy = 0; cy < len(attr_rows); cy = cy + 1) {
+            var row = attr_rows[cy]
+            for (var cx = 0; cx < len(row); cx = cx + 1) {
+                var cell = row[cx]
+                var ink = spectrum_attr.colour_to_rgba(cell["ink"], cell["bright"])
+                var paper = spectrum_attr.colour_to_rgba(cell["paper"], cell["bright"])
+                this.disp.set_attr(cx, cy, ink, paper)
+            }
+        }
+
+        this.done = false
+    }
+
+    tick(win) {
+        if (win.key_pressed(win.KEY_ENTER)) {
+            this.done = true
+        }
+    }
+
+    is_done() -> bool {
+        return this.done
+    }
+}
