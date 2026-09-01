@@ -15,6 +15,101 @@ import spectrum_attr
 // device for the whole process, so main.lox owns a single Sound and
 // hands it to both Intro and Game rather than each constructing its own.
 //
+// Also drives the piano-keyboard attribute highlight drawn across the
+// screen's middle third, cycling through TUNE_NOTE_TABLE (the disassembly's
+// own title-tune data, see intro_tune.z80) in step with tune.wav's
+// playback -- see tick_tune_display() below.
+//
+
+// Attribute row the piano keyboard graphic sits on, in the combined
+// 16-row attribute grid extract_start_screen.lox writes (rows 0-7 the top
+// third, 8-15 the middle third). Disassembly routine 932B (37675) always
+// resolves to real hardware attribute row 15, the middle third's last row
+// -- kept as a named constant, not hardcoded inline, in case the extracted
+// screen's keyboard graphic ever lands on a different row.
+const KEYBOARD_ATTR_ROW = 15
+
+// tune.wav's exact length -- the one knob to tweak against its actual
+// playback speed (main.lox's TARGET_FPS, 12, is the other factor in
+// TUNE_TOTAL_TICKS below, but that's the engine's own tick rate, not a
+// tuning knob for this display).
+const TUNE_LENGTH_SECONDS = 20.25
+const TUNE_TOTAL_TICKS = TUNE_LENGTH_SECONDS * 12.0
+
+// Attribute bytes the disassembly's routine at 37596 paints piano keys
+// with: two shades while a note plays (one per frequency byte -- the
+// routine alternates between them to produce the note's square wave, so
+// both light up, usually the same or an adjacent key), reset to a third
+// once the note ends.
+const KEY_ATTR_HIGHLIGHT_1 = 80   // INK 0: PAPER 2: BRIGHT 1
+const KEY_ATTR_HIGHLIGHT_2 = 40   // INK 0: PAPER 5: BRIGHT 0
+const KEY_ATTR_IDLE = 56          // INK 0: PAPER 7: BRIGHT 0
+
+// Title screen tune data (The Blue Danube), transcribed from the
+// disassembly's table at 33902 (intro_tune.z80): one [duration, freq1,
+// freq2] triple per note, played by the routine at 37596. freq1/freq2 are
+// raw timer-period bytes, converted to a piano-key attribute column by
+// piano_key_col() below. duration is the real hardware delay loop's
+// counter -- real elapsed time is proportional to it (not every note is
+// the same length: the first 3 notes hold for 80 against the usual 50, a
+// couple hold for 100, and the two before the final note for 25) -- see
+// TUNE_TICKS_PER_DURATION_UNIT, which turns it into a tick count.
+const TUNE_NOTE_TABLE = [
+    [80,128,129], [80,102,103], [80,86,87],  [50,86,87],   [50,171,203],
+    [50,43,51],   [50,43,51],   [50,171,203],[50,51,64],   [50,51,64],
+    [50,171,203], [50,128,129], [50,128,129],[50,102,103], [50,86,87],
+    [50,96,86],   [50,171,192], [50,43,48],  [50,43,48],   [50,171,192],
+    [50,48,68],   [50,48,68],   [50,171,192],[50,136,137], [50,136,137],
+    [50,114,115], [50,76,77],   [50,76,77],  [50,171,192], [50,38,48],
+    [50,38,48],   [50,171,192], [50,48,68],  [50,48,68],   [50,171,192],
+    [50,136,137], [50,136,137], [50,114,115],[50,76,77],   [50,76,77],
+    [50,171,203], [50,38,51],   [50,38,51],  [50,171,203], [50,51,64],
+    [50,51,64],   [50,171,203], [50,128,129],[50,128,129], [50,102,103],
+    [50,86,87],   [50,64,65],   [50,128,171],[50,32,43],   [50,32,43],
+    [50,128,171], [50,43,51],   [50,43,51],  [50,128,171], [50,128,129],
+    [50,128,129], [50,102,103], [50,86,87],  [50,64,65],   [50,128,152],
+    [50,32,38],   [50,32,38],   [50,128,152],[50,38,48],   [50,38,48],
+    [50,0,0],     [50,114,115], [50,114,115],[50,96,97],   [50,76,77],
+    [50,76,153],  [50,76,77],   [50,76,77],  [50,76,153],  [50,91,92],
+    [50,86,87],   [50,51,205],  [50,51,52],  [50,51,52],   [50,51,205],
+    [50,64,65],   [50,102,103], [100,102,103],[50,114,115],[100,76,77],
+    [50,86,87],   [50,128,203], [25,128,0],  [25,128,129], [50,128,203]
+]
+
+func tune_total_duration() {
+    var total = 0
+    foreach (var note in TUNE_NOTE_TABLE) {
+        total = total + note[0]
+    }
+    return total
+}
+
+// Ticks per unit of a note's duration byte -- multiplying by a given
+// note's duration (TUNE_NOTE_TABLE[i][0]) gives how many tick_tune_display()
+// calls its key highlight stays lit, so a duration-80 note holds noticeably
+// longer than a duration-50 one, matching their relative real-hardware
+// timing, while the table as a whole still spans exactly TUNE_TOTAL_TICKS.
+const TUNE_TICKS_PER_DURATION_UNIT = TUNE_TOTAL_TICKS / tune_total_duration()
+
+// Disassembly routine at 932B (37675): converts a raw frequency/timer-
+// period byte into the 0-31 attribute column of the piano key it lights up.
+// Real hardware does this as SUB 8 / RRCA x3 / CPL / OR 0xE0, which reduces
+// to K = 31 - floor(((F - 8) mod 256) / 8) -- done here in plain arithmetic.
+func piano_key_col(freq) {
+    var a = freq - 8
+    if (a < 0) { a = a + 256 }
+    return 31 - int(a / 8)
+}
+
+// Decodes a raw Spectrum attribute byte into the {ink, paper} packed-rgba
+// pair Display.set_attr() takes.
+func attr_byte_colours(byte) {
+    var c = spectrum_attr.decode_attribute(byte)
+    return {
+        "ink": spectrum_attr.colour_to_rgba(c["ink"], c["bright"]),
+        "paper": spectrum_attr.colour_to_rgba(c["paper"], c["bright"])
+    }
+}
 
 class Intro {
     __init__(sound) {
@@ -44,16 +139,63 @@ class Intro {
             }
         }
 
+        this.key_highlight_1 = attr_byte_colours(KEY_ATTR_HIGHLIGHT_1)
+        this.key_highlight_2 = attr_byte_colours(KEY_ATTR_HIGHLIGHT_2)
+        this.key_idle = attr_byte_colours(KEY_ATTR_IDLE)
+        this.tune_step = 0
+        this.tune_step_tick = 0.0
+        this.tune_step_cols = []
+        this.highlight_tune_step()
+        this.tune_elapsed_ticks = 0
+
         this.done = false
         this.sound.play_intro_tune()
     }
 
+    // Ends the title screen once tune.wav has played through once
+    // (tune_elapsed_ticks reaching TUNE_TOTAL_TICKS -- see
+    // TUNE_LENGTH_SECONDS), same as play_intro_tune() itself no longer
+    // looping, or early on ENTER.
     tick(win) {
         this.sound.update()
-        if (win.key_pressed(win.KEY_ENTER)) {
+        this.tick_tune_display()
+        this.tune_elapsed_ticks = this.tune_elapsed_ticks + 1
+        if (this.tune_elapsed_ticks >= TUNE_TOTAL_TICKS or win.key_pressed(win.KEY_ENTER)) {
             this.sound.stop_intro_tune()
             this.done = true
         }
+    }
+
+    // Lights up the piano key(s) for the current TUNE_NOTE_TABLE step for
+    // that note's own duration (TUNE_TICKS_PER_DURATION_UNIT * duration
+    // byte) ticks, then resets them to idle and advances to the next step,
+    // wrapping around -- kept in step with tune.wav's own looping playback
+    // (see play_intro_tune()). tune_step_tick accumulates and carries its
+    // remainder across steps (rather than resetting to 0) since each
+    // step's tick count is fractional -- resetting would round every step
+    // up to a whole tick count and drift the display out of sync with the
+    // tune over repeated loops.
+    tick_tune_display() {
+        this.tune_step_tick = this.tune_step_tick + 1
+        var step_ticks = TUNE_NOTE_TABLE[this.tune_step][0] * TUNE_TICKS_PER_DURATION_UNIT
+        if (this.tune_step_tick >= step_ticks) {
+            foreach (var col in this.tune_step_cols) {
+                this.disp.set_attr(col, KEYBOARD_ATTR_ROW, this.key_idle["ink"], this.key_idle["paper"])
+            }
+            this.tune_step_tick = this.tune_step_tick - step_ticks
+            this.tune_step = (this.tune_step + 1) % len(TUNE_NOTE_TABLE)
+            this.highlight_tune_step()
+        }
+    }
+
+    // Lights up the keys for TUNE_NOTE_TABLE[this.tune_step].
+    highlight_tune_step() {
+        var note = TUNE_NOTE_TABLE[this.tune_step]
+        var col1 = piano_key_col(note[1])
+        var col2 = piano_key_col(note[2])
+        this.disp.set_attr(col1, KEYBOARD_ATTR_ROW, this.key_highlight_1["ink"], this.key_highlight_1["paper"])
+        this.disp.set_attr(col2, KEYBOARD_ATTR_ROW, this.key_highlight_2["ink"], this.key_highlight_2["paper"])
+        this.tune_step_cols = [col1, col2]
     }
 
     is_done() -> bool {

@@ -1,0 +1,173 @@
+from gfx import *
+import display
+import assets
+import cavern as cavern_module
+import spectrum_attr
+import game as game_module
+
+//
+// @file demo.lox
+// @brief Attract-mode "demo" game state, run between Intro and Game:
+// cycles through every cavern in turn, showing each one (guardians/
+// conveyor/items animated, no Willy -- not playable) with the standard
+// HUD (name/score/air/lives rows, same as Game's -- reused directly from
+// game.lox, see refresh_hud()) for SHOW_TICKS ticks, then a level-end-
+// style ink flash down to blue (the same visual as game.lox's own
+// state_portal -- PORTAL_FLASH_CYCLE_TICKS/PORTAL_FLASH_TICKS there --
+// kept as a self-contained copy here rather than reused directly, since
+// state_portal is tightly coupled to a Game instance's own fields, e.g.
+// the air-bar wipe), before moving on to the next cavern, wrapping after
+// the last back to the first. Plays the same background tune as Game
+// (game_sound.Sound.play_next_tune_note(), see state_show()). Same
+// __init__/tick(win) shape as Intro/Game, so main.lox can drive it
+// identically, and takes the caller's shared game_sound.Sound rather
+// than owning one, same reason as Intro. is_done() goes true on ENTER,
+// same as Intro, letting the player skip straight to Game.
+//
+// State machine is function-pointer based (update_func reassigned to
+// state_show/state_flash), same convention as game.lox/willy.lox.
+//
+
+const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
+const SHOW_TICKS = 64
+
+// Level-end flash: one ink cycle of 7 down to 1 (blue) -- see game.lox's
+// PORTAL_FLASH_CYCLE_TICKS (there, two cycles: PORTAL_FLASH_TICKS =
+// PORTAL_FLASH_CYCLE_TICKS * 2 -- the demo's own transition is quicker).
+// Then a pause holding on blue before the next cavern loads -- same
+// two-phase shape as game.lox's state_portal (PORTAL_FLASH_TICKS then a
+// pause out to PORTAL_TOTAL_TICKS): without it, the cavern reload
+// (enter_next_cavern -> load_cavern's disp.clear()) lands in the very
+// same tick that draws the cycle's last colour, overwriting it before
+// it's ever presented -- so blue would never actually be seen, and the
+// last colour on screen would be the second-to-last one drawn (red).
+const FLASH_CYCLE_TICKS = 7
+const FLASH_PAUSE_TICKS = 10
+const FLASH_TOTAL_TICKS = FLASH_CYCLE_TICKS + FLASH_PAUSE_TICKS
+
+// Loads cavern_<cavern_index>'s data/sprites and redraws d.disp with it
+// (cavern art only, not the HUD -- see refresh_hud()) -- shared by
+// __init__ (first cavern) and enter_next_cavern (every cavern after).
+// Also loads willy_sprites.json, same as game.lox's load_cavern -- Willy
+// himself never appears, but the lives-icon HUD row draws his walk-cycle
+// frames.
+func load_cavern(d, cavern_index) {
+    d.cavern_index = cavern_index
+    d.lib = assets.SpriteAssets()
+    d.lib.load(format("caverns/cavern_%d_sprites.json", cavern_index))
+    d.lib.load("assets/willy_sprites.json")
+
+    d.cavern = cavern_module.Cavern()
+    d.cavern.load(format("caverns/cavern_%d.json", cavern_index))
+
+    d.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
+    d.cavern.draw(d.disp, d.lib)
+    d.frame_count = 0
+}
+
+// Repaints the HUD rows -- game.lox's own draw_static_hud()/draw_lives(),
+// reused directly rather than duplicated: draw_static_hud() picks up
+// d.cavern.name for the name row, so it changes automatically with the
+// cavern. Call after every load_cavern() (whose disp.clear() wipes it).
+func refresh_hud(d) {
+    game_module.draw_static_hud(d)
+    game_module.draw_lives(d)
+}
+
+func enter_show(d) {
+    d.update_func = state_show
+    d.show_tick = 0
+}
+
+// Animates the current cavern (guardians, conveyor, items) and advances
+// the background tune, exactly as game.lox's state_running does, minus
+// everything Willy-related.
+func state_show(d, win) {
+    d.sound.play_next_tune_note()
+
+    d.cavern.clear_guardians(d.disp)
+    d.cavern.clear_eugene(d.disp)
+    d.cavern.update_guardians()
+    d.cavern.update_eugene()
+    d.cavern.draw_items(d.disp, d.lib, d.frame_count)
+    d.cavern.animate_conveyor(d.disp)
+    d.cavern.draw_guardians(d.disp, d.lib)
+    d.cavern.draw_eugene(d.disp, d.lib)
+    game_module.draw_lives(d)
+    d.frame_count = d.frame_count + 1
+
+    d.show_tick = d.show_tick + 1
+    if (d.show_tick >= SHOW_TICKS) {
+        enter_flash(d)
+    }
+}
+
+func enter_flash(d) {
+    d.update_func = state_flash
+    d.flash_tick = 0
+}
+
+// Recolours every cavern-area (rows 0-15) cell's ink to `ink`, paper to
+// black -- same effect, scoped the same way, as game.lox's
+// flash_cavern_ink(). Never touches rows 16-23, so the HUD stays visible
+// through the flash, same as game.lox's own portal flash.
+func flash_cavern_ink(d, ink) {
+    var paper = encode_rgba(0, 0, 0)
+    for (var cy = 0; cy < 16; cy = cy + 1) {
+        for (var cx = 0; cx < 32; cx = cx + 1) {
+            d.disp.set_attr(cx, cy, ink, paper)
+        }
+    }
+}
+
+// One ink cycle of 7 down to 1 (blue), then a pause holding on blue
+// (see FLASH_TOTAL_TICKS), then the next cavern loads and state_show
+// resumes there.
+func state_flash(d, win) {
+    if (d.flash_tick < FLASH_CYCLE_TICKS) {
+        var ink_index = 7 - (d.flash_tick % FLASH_CYCLE_TICKS)
+        flash_cavern_ink(d, spectrum_attr.colour_to_rgba(ink_index, true))
+    }
+    d.flash_tick = d.flash_tick + 1
+    if (d.flash_tick < FLASH_TOTAL_TICKS) {
+        return
+    }
+    enter_next_cavern(d)
+}
+
+// Bumps the cavern counter (wrapping past the last cavern back to the
+// first) and starts the show state fresh in the new room.
+func enter_next_cavern(d) {
+    load_cavern(d, (d.cavern_index + 1) % CAVERN_COUNT)
+    refresh_hud(d)
+    enter_show(d)
+}
+
+class Demo {
+    __init__(sound) {
+        this.sound = sound
+        this.disp = display.Display()
+        this.font = assets.SpriteAssets()
+        this.font.load("assets/font_sprites.json")
+        this.lives = game_module.LIVES_START
+
+        load_cavern(this, 0)
+        refresh_hud(this)
+
+        this.done = false
+        enter_show(this)
+    }
+
+    tick(win) {
+        this.sound.update()
+        var f = this.update_func
+        f(this, win)
+        if (win.key_pressed(win.KEY_ENTER)) {
+            this.done = true
+        }
+    }
+
+    is_done() -> bool {
+        return this.done
+    }
+}

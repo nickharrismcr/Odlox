@@ -2,6 +2,7 @@ from gfx import *
 import display
 import colour
 import intro
+import demo
 import game
 import game_sound
 import sys
@@ -9,20 +10,29 @@ import sys
 //
 // @file main.lox
 // @brief Willy, playable: LEFT/RIGHT to walk, UP or SPACE to jump.
-// Drives an intro.Intro (title screen, waits for ENTER) then a game.Game
-// -- cavern/item/conveyor/guardian rendering, Willy's movement/collision/
-// death, and the running/die/game_over session state all live there. This
-// is just the window and presentation loop. ESC quits, at either stage.
-// Owns the one game_sound.Sound shared by both states -- there's a single
-// audio device for the whole process, not one per state.
+// Drives an intro.Intro (title screen, waits for ENTER), then a
+// demo.Demo (attract-mode cavern preview, also skippable with ENTER),
+// then a game.Game -- cavern/item/conveyor/guardian rendering, Willy's
+// movement/collision/death, and the running/die/game_over session state
+// all live there. This is just the window and presentation loop. ESC
+// quits, at any stage. Owns the one game_sound.Sound shared by all three
+// states -- there's a single audio device for the whole process, not one
+// per state.
 //
-// Usage: odlox.exe main.lox [cavern_index]
+// Usage: odlox.exe main.lox [cavern_index] [--demo]
+// --demo skips straight past Intro into the attract-mode Demo state
+// (cavern_index still selects Game's own starting cavern once Demo ends).
 //
 
 var argv = sys.args()
 var index = 0
-if (len(argv) >= 2) {
-    index = int(argv[1])
+var start_demo = false
+for (var i = 1; i < len(argv); i = i + 1) {
+    if (argv[i] == "--demo") {
+        start_demo = true
+    } else {
+        index = int(argv[i])
+    }
 }
 
 const TARGET_FPS = 12   // Manic Miner's own tick rate -- see game_sprite.lox
@@ -37,21 +47,45 @@ var snd = game_sound.Sound(MUTE_SOUND)
 
 // Intro.__init__/Game.__init__ both create a Display (and its GPU render
 // texture), which needs win.init()'s GL context to already exist.
-var title = intro.Intro(snd)
-title.disp.upload()
 var quit = false
 
-while (!win.should_close() and !title.is_done()) {
+if (!start_demo) {
+    var title = intro.Intro(snd)
+
+    while (!win.should_close() and !title.is_done()) {
+        if (win.key_pressed(win.KEY_ESCAPE)) {
+            quit = true
+            break
+        }
+
+        title.tick(win)
+        title.disp.upload()
+
+        win.begin()
+        win.clear(colour.BLACK)
+        title.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+        win.end()
+    }
+}
+
+var attract = nil
+if (!quit) {
+    attract = demo.Demo(snd)
+    attract.disp.upload()
+}
+
+while (!quit and !win.should_close() and !attract.is_done()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
         quit = true
         break
     }
 
-    title.tick(win)
+    attract.tick(win)
+    attract.disp.upload()
 
     win.begin()
     win.clear(colour.BLACK)
-    title.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+    attract.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
     win.end()
 }
 

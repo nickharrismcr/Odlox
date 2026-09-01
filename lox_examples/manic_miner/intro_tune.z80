@@ -1,0 +1,140 @@
+33902: Title screen tune data (The Blue Danube)
+Used by the routine at 37596. The tune data is organised into 95 groups of three bytes each, one group for each note in the tune. The first byte in each group determines the duration of the note, and the second and third bytes determine the frequency (and also the piano keys that light up).
+33902	DEFB 80,128,129	
+33905	DEFB 80,102,103	
+33908	DEFB 80,86,87	
+33911	DEFB 50,86,87	
+33914	DEFB 50,171,203	
+33917	DEFB 50,43,51	
+33920	DEFB 50,43,51	
+33923	DEFB 50,171,203	
+33926	DEFB 50,51,64	
+33929	DEFB 50,51,64	
+33932	DEFB 50,171,203	
+33935	DEFB 50,128,129	
+33938	DEFB 50,128,129	
+33941	DEFB 50,102,103	
+33944	DEFB 50,86,87	
+33947	DEFB 50,96,86	
+33950	DEFB 50,171,192	
+33953	DEFB 50,43,48	
+33956	DEFB 50,43,48	
+33959	DEFB 50,171,192	
+33962	DEFB 50,48,68	
+33965	DEFB 50,48,68	
+33968	DEFB 50,171,192	
+33971	DEFB 50,136,137	
+33974	DEFB 50,136,137	
+33977	DEFB 50,114,115	
+33980	DEFB 50,76,77	
+33983	DEFB 50,76,77	
+33986	DEFB 50,171,192	
+33989	DEFB 50,38,48	
+33992	DEFB 50,38,48	
+33995	DEFB 50,171,192	
+33998	DEFB 50,48,68	
+34001	DEFB 50,48,68	
+34004	DEFB 50,171,192	
+34007	DEFB 50,136,137	
+34010	DEFB 50,136,137	
+34013	DEFB 50,114,115	
+34016	DEFB 50,76,77	
+34019	DEFB 50,76,77	
+34022	DEFB 50,171,203	
+34025	DEFB 50,38,51	
+34028	DEFB 50,38,51	
+34031	DEFB 50,171,203	
+34034	DEFB 50,51,64	
+34037	DEFB 50,51,64	
+34040	DEFB 50,171,203	
+34043	DEFB 50,128,129	
+34046	DEFB 50,128,129	
+34049	DEFB 50,102,103	
+34052	DEFB 50,86,87	
+34055	DEFB 50,64,65	
+34058	DEFB 50,128,171	
+34061	DEFB 50,32,43	
+34064	DEFB 50,32,43	
+34067	DEFB 50,128,171	
+34070	DEFB 50,43,51	
+34073	DEFB 50,43,51	
+34076	DEFB 50,128,171	
+34079	DEFB 50,128,129	
+34082	DEFB 50,128,129	
+34085	DEFB 50,102,103	
+34088	DEFB 50,86,87	
+34091	DEFB 50,64,65	
+34094	DEFB 50,128,152	
+34097	DEFB 50,32,38	
+34100	DEFB 50,32,38	
+34103	DEFB 50,128,152	
+34106	DEFB 50,38,48	
+34109	DEFB 50,38,48	
+34112	DEFB 50,0,0	
+34115	DEFB 50,114,115	
+34118	DEFB 50,114,115	
+34121	DEFB 50,96,97	
+34124	DEFB 50,76,77	
+34127	DEFB 50,76,153	
+34130	DEFB 50,76,77	
+34133	DEFB 50,76,77	
+34136	DEFB 50,76,153	
+34139	DEFB 50,91,92	
+34142	DEFB 50,86,87	
+34145	DEFB 50,51,205	
+34148	DEFB 50,51,52	
+34151	DEFB 50,51,52	
+34154	DEFB 50,51,205	
+34157	DEFB 50,64,65	
+34160	DEFB 50,102,103	
+34163	DEFB 100,102,103	
+34166	DEFB 50,114,115	
+34169	DEFB 100,76,77	
+34172	DEFB 50,86,87	
+34175	DEFB 50,128,203	
+34178	DEFB 25,128,0	
+34181	DEFB 25,128,129	
+34184	DEFB 50,128,203	
+34187	DEFB 255	End marker
+
+
+37596	LD A,(IY+0)	Pick up the next byte of tune data from the table at 33902
+37599	CP 255	Has the tune finished?
+37601	RET Z	Return (with the zero flag set) if so
+37602	LD C,A	Copy the first byte of data for this note (which determines the duration) to C
+37603	LD B,0	Initialise B, which will be used as a delay counter in the note-producing loop
+37605	XOR A	Set A=0 (for no apparent reasaon)
+37606	LD D,(IY+1)	Pick up the second byte of data for this note
+37609	LD A,D	Copy it to A
+37610	CALL 37675	Calculate the attribute file address for the corresponding piano key
+37613	LD (HL),80	Set the attribute byte for the piano key to 80 (INK 0: PAPER 2: BRIGHT 1)
+37615	LD E,(IY+2)	Pick up the third byte of data for this note
+37618	LD A,E	Copy it to A
+37619	CALL 37675	Calculate the attribute file address for the corresponding piano key
+37622	LD (HL),40	Set the attribute byte for the piano key to 40 (INK 0: PAPER 5: BRIGHT 0)
+37624	OUT (254),A	Produce a sound based on the frequency parameters in the second and third bytes of data for this note (copied into D and E)
+37626	DEC D
+37627	JR NZ,37634
+37629	LD D,(IY+1)
+37632	XOR 24
+37634	DEC E
+37635	JR NZ,37642
+37637	LD E,(IY+2)
+37640	XOR 24
+37642	DJNZ 37624
+37644	DEC C
+37645	JR NZ,37624
+37647	CALL 37687	Check whether ENTER or the fire button is being pressed
+37650	RET NZ	Return (with the zero flag reset) if it is
+37651	LD A,(IY+1)	Pick up the second byte of data for this note
+37654	CALL 37675	Calculate the attribute file address for the corresponding piano key
+37657	LD (HL),56	Set the attribute byte for the piano key back to 56 (INK 0: PAPER 7: BRIGHT 0)
+37659	LD A,(IY+2)	Pick up the third byte of data for this note
+37662	CALL 37675	Calculate the attribute file address for the corresponding piano key
+37665	LD (HL),56	Set the attribute byte for the piano key back to 56 (INK 0: PAPER 7: BRIGHT 0)
+37667	INC IY	Move IY along to the data for the next note in the tune
+37669	INC IY
+37671	INC IY
+37673	JR 37596	Jump back to play the next note
+
+
