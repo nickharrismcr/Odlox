@@ -138,6 +138,7 @@ class Cavern {
         this.horizontal_guardians = []   // list of {x, y, ink, paper, bright, min_x, max_x} -- min_x/max_x already in pixels
         this.vertical_guardians = []
         this.guardian_sprite_names = []   // 8 asset-name pointers (right_0..3, left_0..3)
+        this.kong_beast = false           // true only for cavern 7/11 -- see load_from_dict()
         this.guardian_sprites = []        // game_sprite.Sprite instances, built from the above by load_from_dict
         this.crumbled = {}                // "cx,cy" -> true once a crumbling-floor cell has given way
         this.crumble_timers = {}          // "cx,cy" -> ticks remaining while still being stood on
@@ -173,6 +174,7 @@ class Cavern {
         this.horizontal_guardians = d.get("horizontal_guardians", this.horizontal_guardians)
         this.vertical_guardians = d.get("vertical_guardians", this.vertical_guardians)
         this.guardian_sprite_names = d.get("guardian_sprite_names", this.guardian_sprite_names)
+        this.kong_beast = d.get("kong_beast", this.kong_beast)
         this.crumbled = {}
         this.crumble_timers = {}
         this.eugene_sprite = d.get("eugene_sprite", this.eugene_sprite)
@@ -182,10 +184,21 @@ class Cavern {
         // right+left); a cavern with both splits it in half, frames 0-3
         // for vertical (already how vertical indexes, frames=4 unchanged)
         // and 4-7 for horizontal (frames=2, so still right+left within
-        // its half).
+        // its half). Kong Beast caverns (7, 11) are a third case: frames
+        // 0-3 belong to the Kong Beast himself (not drawn yet), and 4-7
+        // are the horizontal guardians' *only* art -- no mirrored
+        // left-facing frames exist. Duplicating them into both halves of
+        // image_list reuses Sprite.draw()'s existing left-facing index
+        // (2*frames-1-frame) to read the same 4 frames back to front for
+        // left-facing movement, with no change needed in game_sprite.lox.
         var horizontal_image_list = this.guardian_sprite_names
         var horizontal_frames = GUARDIAN_FRAMES
-        if (len(this.vertical_guardians) > 0) {
+        if (this.kong_beast) {
+            var kong_guardian_frames = this.guardian_sprite_names[4:8]
+            horizontal_image_list = []
+            foreach (var name in kong_guardian_frames) { horizontal_image_list.append(name) }
+            foreach (var name in kong_guardian_frames) { horizontal_image_list.append(name) }
+        } else if (len(this.vertical_guardians) > 0) {
             horizontal_image_list = this.guardian_sprite_names[4:8]
             horizontal_frames = 2
         }

@@ -444,6 +444,15 @@ func extract_one(bytes, index, out_dir) {
         sprite_sheet.append(eugene_sprite)
     }
 
+    // Kong Beast caverns (7, "Miner Willy Meets The Kong Beast"; 11,
+    // "Return Of The Alien Kong Beast") are a special case, hardcoded by
+    // index -- same as is_skylab/Eugene's Lair above: frames 0-3 of the
+    // guardian sprite sheet belong to the Kong Beast himself (drawn
+    // separately -- not yet implemented), not a horizontal guardian.
+    // cavern.lox's load_from_dict() reads this flag to pick frames 4-7
+    // for the horizontal guardians instead of the usual 0-7 split.
+    var kong_beast = (index == 7 or index == 11)
+
     var cavern = {
         "name": name,
         "width": 32, "height": 16,
@@ -461,7 +470,8 @@ func extract_one(bytes, index, out_dir) {
         "air": air, "clock": clock,
         "horizontal_guardians": horizontal_guardians,
         "vertical_guardians": vertical_guardians,
-        "guardian_sprite_names": guardian_names
+        "guardian_sprite_names": guardian_names,
+        "kong_beast": kong_beast
     }
     if (eugene_sprite != nil) {
         cavern["eugene_sprite"] = eugene_sprite["name"]

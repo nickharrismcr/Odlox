@@ -1,112 +1,73 @@
 {
+  "height": 16,
   "clock": 128,
   "name": "Miner Willy meets the Kong Beast",
-  "tile_colours": [
+  "conveyor": {
+    "y": 104,
+    "length": 3,
+    "x": 88,
+    "direction": 1
+  },
+  "vertical_guardians": [],
+  "portal": {
+    "ink": 6,
+    "x": 120,
+    "bright": false,
+    "sprite": "cavern7_portal",
+    "y": 104,
+    "paper": 1
+  },
+  "border_colour": 2,
+  "willy_start": {
+    "y_times_2": 208,
+    "jump_counter": 0,
+    "y": 104,
+    "frame": 0,
+    "airborne": 0,
+    "direction": 0,
+    "x": 16
+  },
+  "tile_names": [
+    "cavern7_tile_background",
+    "cavern7_tile_floor",
+    "cavern7_tile_crumbling_floor",
+    "cavern7_tile_wall",
+    "cavern7_tile_conveyor",
+    "cavern7_tile_nasty1",
+    "cavern7_tile_nasty2",
+    "cavern7_tile_extra"
+  ],
+  "horizontal_guardians": [
     {
-      "bright": false,
-      "paper": 0,
-      "ink": 0,
-      "name": "cavern7_tile_background"
-    },
-    {
-      "paper": 0,
-      "ink": 2,
-      "name": "cavern7_tile_floor",
-      "bright": true
-    },
-    {
-      "name": "cavern7_tile_crumbling_floor",
-      "paper": 0,
-      "ink": 2,
-      "bright": false
-    },
-    {
-      "paper": 6,
-      "ink": 2,
-      "bright": true,
-      "name": "cavern7_tile_wall"
-    },
-    {
-      "bright": true,
-      "paper": 0,
+      "min_x": 8,
       "ink": 4,
-      "name": "cavern7_tile_conveyor"
+      "y": 104,
+      "paper": 0,
+      "x": 72,
+      "bright": true,
+      "max_x": 72
     },
     {
-      "name": "cavern7_tile_nasty1",
+      "x": 88,
       "paper": 0,
-      "ink": 4,
-      "bright": false
+      "max_x": 120,
+      "ink": 3,
+      "bright": true,
+      "y": 88,
+      "min_x": 88
     },
     {
-      "paper": 0,
       "ink": 5,
-      "bright": false,
-      "name": "cavern7_tile_nasty2"
-    },
-    {
+      "min_x": 144,
       "paper": 0,
-      "ink": 6,
       "bright": false,
-      "name": "cavern7_tile_extra"
+      "x": 144,
+      "y": 56,
+      "max_x": 168
     }
   ],
   "air": 63,
-  "items": [
-    {
-      "init_bright": true,
-      "y": 16,
-      "paper": 4,
-      "init_paper": 7,
-      "x": 104,
-      "bright": true,
-      "ink": 0,
-      "type": 3,
-      "init_ink": 7
-    },
-    {
-      "init_paper": 7,
-      "x": 112,
-      "init_bright": true,
-      "ink": 0,
-      "type": 4,
-      "bright": true,
-      "paper": 4,
-      "y": 48,
-      "init_ink": 7
-    },
-    {
-      "y": 64,
-      "init_paper": 7,
-      "x": 16,
-      "init_ink": 7,
-      "paper": 5,
-      "ink": 0,
-      "type": 5,
-      "bright": true,
-      "init_bright": true
-    },
-    {
-      "paper": 5,
-      "init_ink": 7,
-      "y": 104,
-      "ink": 0,
-      "type": 6,
-      "init_bright": true,
-      "bright": true,
-      "x": 232,
-      "init_paper": 7
-    }
-  ],
-  "portal": {
-    "sprite": "cavern7_portal",
-    "bright": false,
-    "y": 104,
-    "paper": 1,
-    "ink": 6,
-    "x": 120
-  },
-  "height": 16,
+  "width": 32,
   "layout": [
     "30600070006000000370300000000003",
     "30000000000000000300300000000003",
@@ -125,19 +86,56 @@
     "30000000000000300300000500000003",
     "31111111111111111111111111111113"
   ],
-  "border_colour": 2,
-  "tile_names": [
-    "cavern7_tile_background",
-    "cavern7_tile_floor",
-    "cavern7_tile_crumbling_floor",
-    "cavern7_tile_wall",
-    "cavern7_tile_conveyor",
-    "cavern7_tile_nasty1",
-    "cavern7_tile_nasty2",
-    "cavern7_tile_extra"
+  "tile_colours": [
+    {
+      "ink": 0,
+      "paper": 0,
+      "name": "cavern7_tile_background",
+      "bright": false
+    },
+    {
+      "ink": 2,
+      "bright": true,
+      "name": "cavern7_tile_floor",
+      "paper": 0
+    },
+    {
+      "name": "cavern7_tile_crumbling_floor",
+      "bright": false,
+      "ink": 2,
+      "paper": 0
+    },
+    {
+      "name": "cavern7_tile_wall",
+      "bright": true,
+      "ink": 2,
+      "paper": 6
+    },
+    {
+      "name": "cavern7_tile_conveyor",
+      "ink": 4,
+      "bright": true,
+      "paper": 0
+    },
+    {
+      "name": "cavern7_tile_nasty1",
+      "paper": 0,
+      "bright": false,
+      "ink": 4
+    },
+    {
+      "paper": 0,
+      "ink": 5,
+      "bright": false,
+      "name": "cavern7_tile_nasty2"
+    },
+    {
+      "name": "cavern7_tile_extra",
+      "paper": 0,
+      "bright": false,
+      "ink": 6
+    }
   ],
-  "width": 32,
-  "vertical_guardians": [],
   "guardian_sprite_names": [
     "cavern7_guardian_0",
     "cavern7_guardian_1",
@@ -148,49 +146,52 @@
     "cavern7_guardian_6",
     "cavern7_guardian_7"
   ],
-  "horizontal_guardians": [
+  "item_sprite": "cavern7_item",
+  "kong_beast": true,
+  "items": [
     {
-      "paper": 0,
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 4,
       "bright": true,
-      "max_x": 72,
-      "ink": 4,
-      "min_x": 8,
-      "x": 72,
-      "y": 104
+      "ink": 0,
+      "type": 3,
+      "x": 104,
+      "y": 16,
+      "init_paper": 7
     },
     {
-      "x": 88,
-      "max_x": 120,
-      "ink": 3,
-      "min_x": 88,
+      "y": 48,
+      "init_paper": 7,
       "bright": true,
-      "paper": 0,
-      "y": 88
+      "ink": 0,
+      "type": 4,
+      "paper": 4,
+      "x": 112,
+      "init_ink": 7,
+      "init_bright": true
     },
     {
-      "x": 144,
-      "min_x": 144,
-      "max_x": 168,
-      "y": 56,
-      "paper": 0,
-      "ink": 5,
-      "bright": false
+      "paper": 5,
+      "init_paper": 7,
+      "bright": true,
+      "x": 16,
+      "y": 64,
+      "init_ink": 7,
+      "ink": 0,
+      "type": 5,
+      "init_bright": true
+    },
+    {
+      "init_bright": true,
+      "init_ink": 7,
+      "paper": 5,
+      "bright": true,
+      "ink": 0,
+      "type": 6,
+      "x": 232,
+      "y": 104,
+      "init_paper": 7
     }
-  ],
-  "conveyor": {
-    "y": 104,
-    "direction": 1,
-    "x": 88,
-    "length": 3
-  },
-  "willy_start": {
-    "airborne": 0,
-    "jump_counter": 0,
-    "direction": 0,
-    "x": 16,
-    "y": 104,
-    "y_times_2": 208,
-    "frame": 0
-  },
-  "item_sprite": "cavern7_item"
+  ]
 }
