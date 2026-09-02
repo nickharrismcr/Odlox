@@ -93,6 +93,13 @@ func state_show(d, win) {
     d.cavern.animate_conveyor(d.disp)
     d.cavern.draw_guardians(d.disp, d.lib)
     d.cavern.draw_eugene(d.disp, d.lib)
+    // Last, so the portal always renders on top -- otherwise a
+    // guardian's own clear_guardians() erase blit (which recolours
+    // whatever attribute cells and pixels its bounding box last
+    // overlapped) can blank the portal's art for good once a guardian
+    // passes over it, since nothing else here ever redraws it. Same
+    // ordering reason as game.lox's state_running.
+    d.cavern.set_portal_flash(d.disp, d.lib, d.frame_count)
     game_module.draw_lives(d)
     d.frame_count = d.frame_count + 1
 
