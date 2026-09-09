@@ -1,10 +1,7 @@
-//
 // @file willy_controller.lox
-// @brief Single place all keyboard polling happens for Willy, mirroring
-// lox_examples/defender/player/controller.lox's convention: update(win)
-// is called once per frame, everything else reads the resulting flags
-// rather than calling win.key_down/key_pressed itself.
-//
+// @brief Single place all keyboard polling happens for Willy: update(win)
+// is called once per frame, and everything else reads the resulting
+// flags rather than calling win.key_down/key_pressed itself.
 
 class Controller {
     __init__() {

@@ -3,12 +3,10 @@ from game_sprite import Sprite
 import cavern as cavern_module
 import inspect
 
-//
 // @file willy.lox
 // @brief Miner Willy: movement, jump, and tile/item/guardian collision
-// against a Cavern (`room`). Animation lives in this.anim (a WalkCycle);
-// movement is a state machine of state_<name>/enter_<name> functions.
-//
+// against a Cavern. Movement is a state machine of
+// state_<name>/enter_<name> functions; animation lives in this.anim.
 
 const WILLY_WIDTH = 16
 const WILLY_HEIGHT = 16
@@ -98,10 +96,8 @@ class Willy < Sprite {
         this.update_func = state_walk
 
         // Save-under scratch buffers for draw()'s restore_footprint(),
-        // sized once for a WILLY_WIDTH x WILLY_HEIGHT footprint (up to a
-        // 3x3 attribute-cell span) and reused every tick -- see
-        // snapshot_footprint()'s own comment for why this replaces
-        // recomputing the tile from static data.
+        // sized for a WILLY_WIDTH x WILLY_HEIGHT footprint (up to a
+        // 3x3 attribute-cell span) and reused every tick.
         this.saved_pixels = float_array(WILLY_WIDTH, WILLY_HEIGHT)
         this.saved_ink = float_array(3, 3)
         this.saved_paper = float_array(3, 3)
@@ -211,16 +207,10 @@ func draw_footprint(w, room, disp, img, x, y) {
     }
 }
 
-// Snapshots the display's actual pixels and per-cell ink/paper under
-// Willy's footprint at (x, y) into w's own scratch buffers, just before
-// draw_footprint() overwrites them -- so restore_footprint() can put
-// back exactly what was there next time, whatever it was (a partially
-// crumbled floor mid-erosion, a conveyor mid-animation, another
-// sprite), rather than recomputing the tile from static data and losing
-// that dynamic state. w.saved_ink/saved_paper are indexed relative to
-// this footprint's own top-left cell (cx0, cy0), not absolute grid
-// coordinates -- restore_footprint() re-derives the same origin from
-// w.last_x/last_y.
+// Snapshots the pixels and per-cell ink/paper under Willy's footprint
+// before draw_footprint() overwrites them, so restore_footprint() can
+// restore exactly what was there. saved_ink/saved_paper are indexed
+// relative to this footprint's top-left cell, not absolute grid coords.
 func snapshot_footprint(w, disp, x, y) {
     var cx0 = int(x / 8)
     var cy0 = int(y / 8)
@@ -467,11 +457,9 @@ func state_walk(w, input, room, disp, lib) {
 }
 
 // Records where the fall started, so state_fall can tell how far Willy
-// has dropped by the time he lands (see FALL_DEATH_HEIGHT). Single entry
-// point for both a walked-off ledge (state_walk) and a jump cancelled by
-// a horizontal block (state_jump), so the falling cue only needs firing
-// here -- stop_jump() cuts off the jump clip on that second path, in case
-// it's still playing into the cancelled jump.
+// dropped by landing time (FALL_DEATH_HEIGHT). Single entry point for
+// both a walked-off ledge and a jump cancelled by a horizontal block,
+// so the falling cue and stop_jump() only need firing here.
 func enter_fall(w) {
     w.update_func = state_fall
     w.fall_start_y = w.y

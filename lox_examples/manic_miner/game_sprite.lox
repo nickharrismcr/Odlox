@@ -1,32 +1,9 @@
 from gfx import *
 
-//
 // @file game_sprite.lox
 // @brief An animated, optionally moving sprite: cycles through
-// image_list's frames over time and, for a "moving" sprite, bounces a
-// position back and forth between (start_x, start_y) and (end_x, end_y)
-// at movement_speed pixels/tick. draw() resolves the current frame's name
-// through a SpriteAssets instance and blits it onto a Display in this
-// sprite's ink/paper -- paper is a real attribute colour, not just a
-// transparent backdrop, so this doubles as how walls get drawn.
-//
-// A horizontally moving sprite needs distinct left/right art (no
-// runtime mirroring) -- image_list always holds 2x frames entries: the
-// first `frames` for moving right (dx >= 0), the next `frames` for
-// moving left (dx < 0). draw() indexes into the right half normally, and
-// into the left half counting down (last entry first) as the animation
-// counts up, so frame 0 of each direction lines up with the other's last
-// entry.
-//
-// step_movement covers guardians that hold their on-screen position for a
-// full animation cycle, then jump movement_speed pixels in one go (the
-// classic Spectrum-era pattern of syncing movement to 8px attribute-cell
-// boundaries instead of gliding continuously) -- see update().
-//
-// __init__ takes no arguments -- every field starts at a default and is
-// set via load_from_dict(), a prelude to loading sprite definitions
-// straight from data alongside the graphics in assets.lox.
-//
+// image_list's frames and, for a "moving" sprite, bounces between
+// (start_x, start_y) and (end_x, end_y) at movement_speed pixels/tick.
 
 class Sprite {
     __init__() {
@@ -66,9 +43,8 @@ class Sprite {
 
     // Sets every named field present in `d` (anything absent keeps its
     // current value), then re-derives position/delta from start_x/y and
-    // movement_type/speed -- the same setup __init__ used to do inline.
-    // init_x/init_y let a "moving" sprite spawn somewhere other than
-    // start_x/start_y (e.g. mid-range, not right at a bounce bound).
+    // movement_type/speed. init_x/init_y let a "moving" sprite spawn
+    // somewhere other than start_x/start_y (e.g. mid-range).
     load_from_dict(d) {
         this.type = d.get("type", this.type)
         this.frames = d.get("frames", this.frames)
@@ -112,24 +88,10 @@ class Sprite {
         this.pending_flip = false
     }
 
-    // Advances the animation frame every animation_speed ticks. For a
-    // "moving" sprite, also advances position by the delta, reversing it
-    // on whichever axis it moves along once that axis reaches its
-    // start/end bound. "fixed" and "player" sprites never move here --
-    // a player's position is driven externally (input), not this loop.
-    //
-    // If step_movement is set, the position only advances on the tick a
-    // full animation cycle wraps back to frame 0 -- otherwise it holds,
-    // so the sprite stays put through frames 1..frames-1 and only jumps
-    // once every `frames` animation frames.
-    //
-    // crash_respawn replaces all of the above with Skylab Landing Bay's
-    // own fall/crash/respawn cycle: y increases by dy each tick until it
-    // reaches end_y (no bounce), then holds there while frame advances
-    // through the full cycle once; on wrap, x jumps 8 columns (64px,
-    // wrapping at the screen edge -- the real routine adds 8 to the raw
-    // 0-31 column byte, not to a pixel x) and y resets to start_y to
-    // fall again.
+    // Advances the animation frame every animation_speed ticks, and for
+    // a "moving" sprite (not "fixed"/"player"), the position too,
+    // reversing at start/end. step_movement holds position until a full
+    // cycle wraps; crash_respawn instead runs a fall/crash/respawn cycle.
     update() {
         if (this.crash_respawn) {
             if (this.y >= this.end_y) {
@@ -165,12 +127,9 @@ class Sprite {
         }
 
         // Horizontal movement defers a boundary reversal by a full cycle:
-        // the cycle that reaches start/end clamps onto it and plays out
-        // fully there, so the sprite genuinely reaches the boundary
-        // instead of stopping short; only the cycle after that flips
-        // direction, moving nowhere on its own first tick. Without this,
-        // step_movement's hold would switch facing immediately instead of
-        // after landing exactly on start_x/end_x.
+        // the cycle reaching start/end clamps and plays out there fully;
+        // only the next cycle flips direction. Otherwise step_movement's
+        // hold would switch facing before landing exactly on the bound.
         if (this.movement_type == "horizontal") {
             if (this.pending_flip) {
                 this.dx = -this.dx
@@ -195,33 +154,20 @@ class Sprite {
         }
     }
 
-    // Erases wherever this sprite last drew itself (a no-op the first
-    // call, since last_x starts nil) -- call for every moving sprite
-    // before any of them draws this tick (game.lox's state_running:
-    // clear phase, then move, then draw), so one sprite's fresh draw can
-    // never be wiped out by another sprite's clear running later in the
-    // same tick.
-    //
-    // The erase blit uses erase_ink/erase_paper, not a fixed colour: they
-    // were captured from disp's own attribute grid at this same spot on
-    // the *previous* draw() call, just before that call painted over it --
-    // so erasing restores the room's actual background there rather than
-    // assuming black. Approximated as one colour per erase (the cell the
-    // sprite's top-left corner sits in), same granularity the erase blit
-    // already had.
+    // Erases wherever this sprite last drew itself (a no-op on the first
+    // call, since last_x is nil) before any sprite draws this tick, so a
+    // fresh draw isn't wiped by a later clear. Uses erase_ink/erase_paper
+    // captured from disp just before the previous draw(), not black.
     clear(disp) {
         if (this.last_x != nil) {
             disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
         }
     }
 
-    // Looks up the current frame's sprite by name in `lib` and blits it
-    // onto `disp` at the current position, in this sprite's
-    // colour/paper. A horizontally moving sprite travelling left (dx <
-    // 0) indexes into image_list's second half, and counts down through
-    // it (2*frames-1 .. frames) as this.frame counts up (0 .. frames-1)
-    // -- see the class comment. clear() must already have run this tick
-    // -- draw() itself no longer erases anything.
+    // Looks up the current frame's sprite in `lib` and blits it onto
+    // `disp` at the current position, in this sprite's colour/paper. A
+    // sprite moving left indexes into image_list's second half, counting
+    // down as this.frame counts up. clear() must already run first.
     draw(disp, lib) {
         var index = this.frame
         if (this.movement_type == "horizontal" and this.dx < 0) {

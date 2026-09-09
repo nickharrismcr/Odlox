@@ -3,12 +3,8 @@ import colour
 
 //
 // @file display.lox
-// @brief ZX Spectrum-style display: a 256x192 1-bit pixel bitmap plus a
-// 32x24 attribute grid (ink/paper colour per 8x8 cell). Colour resolution
-// happens on the GPU: bitmap/ink/paper each upload to their own texture
-// unchanged, and a fragment shader composites them every frame. Mirrors
-// the real hardware's separation: plotting a pixel never touches colour,
-// and recolouring an attribute cell never touches which pixels are set.
+// @brief ZX Spectrum-style display: 256x192 1-bit bitmap plus a 32x24
+// ink/paper attribute grid, composited on the GPU every frame.
 //
 
 const SCREEN_W = 256
@@ -53,10 +49,9 @@ void main()
 "
 
 // Composites bitmap/ink/paper into the final image. inkTex/paperTex are
-// only 32x24 texels; with FILTER_POINT + WRAP_CLAMP (set on ink_rt/
-// paper_rt below), the GPU's own texture-coordinate mapping quantizes
-// each fragment to its containing 8x8 cell, so no cell-index math is
-// needed here.
+// 32x24 texels; FILTER_POINT + WRAP_CLAMP (set on ink_rt/paper_rt below)
+// makes the GPU's texture-coordinate mapping quantize each fragment to
+// its containing 8x8 cell, so no cell-index math is needed here.
 var COMPOSITE_SHADER_SRC = "
 #version 330
 in vec2 fragTexCoord;
@@ -151,13 +146,10 @@ class Display {
         this.attr_dirty = true
     }
 
-    // Blits a monochrome sprite (a small float_array of 0.0/1.0 bits)
-    // with its top-left at (x, y), then colours every attribute cell its
-    // bounding box overlaps with ink/paper -- covering the whole cell,
-    // not just the sprite's own pixels, so an unaligned sprite bleeds
-    // colour onto its neighbours (real Spectrum attribute clash). reverse
-    // mirrors the sprite left-right as it's blitted, so one set of frames
-    // covers both facings.
+    // Blits a monochrome sprite (float_array of 0.0/1.0 bits) with its
+    // top-left at (x, y), then colours every attribute cell its bounding
+    // box overlaps with ink/paper -- the whole cell, not just the sprite's
+    // own pixels (real Spectrum attribute clash). reverse mirrors it left-right.
     blit_sprite(sprite, x, y, ink, paper, reverse: bool = false) {
         var sw = sprite.width()
         var sh = sprite.height()
@@ -188,12 +180,9 @@ class Display {
         }
     }
 
-    // Rotates a width-pixel row starting at (x, y) circularly left by
-    // `amount` positions -- e.g. Manic Miner's conveyor animation, which
-    // bit-rotates specific pixel rows of its already-drawn tile graphic
-    // in place every tick (RLC on real hardware) instead of cycling
-    // through separate animation frames. Reads/writes through plot(), so
-    // re-plotting an already-encoded value stays idempotent.
+    // Rotates a width-pixel row at (x, y) circularly left by `amount`
+    // positions (RLC on real hardware) -- e.g. the conveyor animation.
+    // Reads/writes through plot(), so re-plotting stays idempotent.
     rotate_row_left(x, y, width, amount) {
         var old = []
         for (var i = 0; i < width; i = i + 1) {
@@ -217,10 +206,9 @@ class Display {
     }
 
     // Shifts a width x height pixel block at (x, y) down by one row,
-    // discarding the row that falls off the bottom and blanking the row
-    // left at the top -- Manic Miner's crumbling-floor animation. Unlike
-    // rotate_row_left/right this is a shift, not a wraparound: after
-    // `height` calls the whole block is blank regardless of its start.
+    // discarding the bottom row and blanking the top -- the
+    // crumbling-floor animation. A shift, not a wraparound: after
+    // `height` calls the block is blank regardless of its start.
     shift_rows_down(x, y, width, height) {
         for (var row = height - 1; row > 0; row = row - 1) {
             for (var col = 0; col < width; col = col + 1) {
@@ -240,13 +228,10 @@ class Display {
         return this.attr_paper.get(cx, cy)
     }
 
-    // Uploads bitmap to the GPU every frame; ink/paper only when dirty
-    // (attribute changes are far rarer than pixel plots). attr_dirty
-    // itself is cleared by draw(), once the shader's inkTex/paperTex
-    // uniforms are actually rebound -- see draw()'s own comment. Caller
-    // still does its own win.begin()/draw()/win.end() -- Display owns
-    // the pixel/attribute data and how to present its own texture, not
-    // the frame lifecycle.
+    // Uploads bitmap every frame; ink/paper only when attr_dirty (attribute
+    // changes are rarer than pixel plots). attr_dirty is cleared by draw(),
+    // once its uniforms are actually rebound. Caller still does its own
+    // win.begin()/draw()/win.end() around this.
     upload() {
         this.bitmap_rt.draw_array_fast(this.bitmap)
         if (this.attr_dirty) {
@@ -256,10 +241,9 @@ class Display {
     }
 
     // Composites bitmap_rt/ink_rt/paper_rt into rt via the shader, then
-    // draws rt scaled to (w, h) at (x, y) in the caller's window.
-    // Negative source heights compensate for render textures' bottom-up
-    // storage (see game_of_life.lox's identical use of this) -- callers
-    // don't need to know about it.
+    // draws rt scaled to (w, h) at (x, y). Negative source heights
+    // compensate for render textures' bottom-up storage (see
+    // game_of_life.lox's identical use of this).
     draw(win, x, y, w, h) {
         win.begin_texture_mode(this.rt)
         win.begin_shader_mode(this.composite)

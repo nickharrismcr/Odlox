@@ -1,20 +1,7 @@
-//
 // @file spectrum_screen.lox
-// @brief Converts ZX Spectrum screen/attribute memory addresses into
-// pixel (x, y) coordinates. Two address shapes appear in Manic Miner's
-// data, both relative to a caller-supplied buffer base (not necessarily
-// the real hardware base -- the game keeps its own working copies of
-// these buffers at other addresses; see extract_cavern.lox's call sites
-// for which base applies to which field):
-//
-//  - Attribute-style: a plain 32-column row-major grid, same shape as
-//    the real hardware attribute file (22528, 32x24) -- attr_addr_to_xy().
-//  - Pixel/bitmap-style: the real hardware display file's well-known
-//    bit-interleaved address layout (see e.g.
-//    https://en.wikipedia.org/wiki/ZX_Spectrum -- "Screen memory format"
-//    -- or chuckbatson.org's bit-level diagram of it), relocated to a
-//    different base -- pixel_addr_to_xy().
-//
+// @brief Converts ZX Spectrum screen/attribute memory addresses to pixel
+// (x, y) coordinates: attr_addr_to_xy() for the plain attribute grid,
+// pixel_addr_to_xy() for the real hardware's bit-interleaved bitmap layout.
 
 // Attribute-style: addr indexes a plain 32-wide row-major grid starting
 // at base. Returns the pixel (x, y) of that 8x8 cell's top-left corner.
@@ -25,12 +12,10 @@ func attr_addr_to_xy(addr, base) {
     return {"x": col * 8, "y": row * 8}
 }
 
-// Pixel/bitmap-style: addr indexes a buffer laid out exactly like the
-// real ZX Spectrum display file, just relocated to base. The relative
-// address's bits, MSB to LSB, are Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X4 X3 X2 X1 X0
-// -- decoded here via integer division/modulo since this Lox dialect has
-// no bitwise operators. Byte-addressed, so x always lands on an 8px
-// boundary; y is a true pixel row (0-191).
+// addr indexes a buffer laid out like the real Spectrum display file,
+// relocated to base. Bits MSB to LSB: Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X4 X3 X2 X1 X0
+// -- decoded via integer division/modulo (no bitwise ops in this dialect).
+// Byte-addressed: x lands on an 8px boundary; y is a true pixel row.
 func pixel_addr_to_xy(addr, base) {
     var offset = addr - base
     var x_byte = offset % 32

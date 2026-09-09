@@ -1,12 +1,9 @@
 import os
 
-//
 // @file sna.lox
-// @brief Thin helpers for reading a standard 48K ZX Spectrum .sna
-// snapshot: a fixed 27-byte header followed by the full 16384-65535 RAM
-// image. Every function here takes a Spectrum memory address, not a raw
-// file offset -- the header adjustment is internal.
-//
+// @brief Reads a standard 48K ZX Spectrum .sna snapshot: a fixed 27-byte
+// header followed by the 16384-65535 RAM image. Functions take a
+// Spectrum memory address, not a raw file offset.
 
 const HEADER_SIZE = 27
 const RAM_SIZE = 49152          // 16384..65535

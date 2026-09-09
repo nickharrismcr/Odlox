@@ -3,18 +3,9 @@ import sound_mgr
 
 //
 // @file game_sound.lox
-// @brief Wraps a sound_mgr.SoundManager with Manic Miner's own sound
-// cues, one named method per game-state trigger -- same wrapping
-// convention as lox_examples/defender/game/game_sound.lox (also named
-// game_sound.lox: `sound` itself is the native module, so the wrapper
-// can't be named that). The background tune plays as a sequence of
-// short one-shot note samples (real beeper hardware just toggles a bit,
-// so there's no waveform to synthesize -- sampling the tune's own fixed
-// set of notes stands in for it), one per call to play_next_tune_note()
-// (one call per game tick).
-//
-// Clips are checked in under assets/, same as defender's own assets/
-// *.wav.
+// @brief Wraps a sound_mgr.SoundManager with one named method per game
+// sound cue. The background tune plays as one-shot note samples via
+// play_next_tune_note(), one call per game tick.
 //
 
 const SOUND_PATHS = {
@@ -25,18 +16,10 @@ const SOUND_PATHS = {
     "fall":             "assets/falling.wav"
 }
 
-// Manic Miner's own tune data, from the disassembly's table at 34188
-// (used by the play routine at 34574) -- its 64 raw values are timer
-// periods, not pitches, so a *higher* raw value is a *lower* note (a
-// longer timer period means a slower/lower-frequency square wave).
-// Already remapped to a sample index (0 = lowest note, see
+// Manic Miner's tune data (disassembly table at 34188), remapped from
+// raw timer-period values to a sample index (0 = lowest note, see
 // TUNE_NOTE_VALUES) so play_next_tune_note() can index straight into a
-// sample name with no lookup. One play_next_tune_note() call per game
-// tick, so every table entry sounds twice before the tune advances to
-// the next one.
-//
-// Raw values -> index, per TUNE_NOTE_VALUES below: 128->0, 114->1,
-// 102->2, 96->3, 86->4, 81->5, 64->6.
+// sample name. Each entry sounds across 2 calls before advancing.
 const TUNE_TABLE = [
     0, 1, 2, 3, 4, 2, 4, 4, 5, 3, 5, 5, 4, 2, 4, 4,
     0, 1, 2, 3, 4, 2, 4, 4, 5, 3, 5, 5, 4, 4, 4, 4,
@@ -44,11 +27,10 @@ const TUNE_TABLE = [
     0, 1, 2, 3, 4, 2, 4, 6, 4, 2, 0, 2, 4, 4, 4, 4
 ]
 
-// Every distinct value the disassembly's raw table contains, ordered
-// from lowest note (highest timer period) to highest note (lowest
-// timer period) -- sample "tune_i" is TUNE_NOTE_VALUES[i], so tune_0 is
-// always the lowest note. Not read by code (TUNE_TABLE already holds
-// indexes into it); kept as the record of what each sample index means.
+// Every distinct raw value in the disassembly's table, ordered from
+// lowest note (highest timer period) to highest -- sample "tune_i" is
+// TUNE_NOTE_VALUES[i]. Not read by code; kept as a record of what each
+// sample index means.
 const TUNE_NOTE_VALUES = [128, 114, 102, 96, 86, 81, 64]
 const TUNE_NOTE_PATH_FMT = "assets/tune_%d.wav"
 

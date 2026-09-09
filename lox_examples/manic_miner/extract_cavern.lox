@@ -6,16 +6,10 @@ import spectrum_screen
 import os
 import sys
 
-//
 // @file extract_cavern.lox
-// @brief Extracts one Manic Miner cavern's layout/metadata/graphics from
-// a .sna snapshot into two JSON files: a Cavern-shaped data file and an
-// assets.lox-compatible sprite sheet (tiles, guardian frames, portal,
-// item graphic). Cavern records are 1024 bytes each, starting at 45056,
-// formulaically addressed (45056 + index*1024) for all 20 caverns.
-//
-// Usage: odlox.exe extract_cavern.lox <path.sna> <index|all> <output_dir>
-//
+// @brief Extracts one Manic Miner cavern's layout/metadata/graphics from a
+// .sna snapshot into a Cavern-shaped JSON file and an assets.lox-compatible
+// sprite sheet. Usage: odlox.exe extract_cavern.lox <path.sna> <index|all> <output_dir>
 
 const CAVERN_BASE = 45056
 const CAVERN_SIZE = 1024
@@ -34,10 +28,9 @@ const BOOT_ADDR = 47840
 const TILE_NAMES = ["background", "floor", "crumbling_floor", "wall", "conveyor", "nasty1", "nasty2", "extra"]
 
 // Buffer bases for spectrum_screen's address decoders: willy/items/
-// guardians' "addr" fields index a plain attribute-style buffer at
-// ATTR_BUFFER_BASE; the conveyor and portal's own "screen_addr" fields
-// each index a *separate* pixel/bitmap-style buffer, at their own
-// distinct bases.
+// guardians' "addr" fields index the attribute-style buffer at
+// ATTR_BUFFER_BASE; conveyor/portal's "screen_addr" fields index a
+// separate pixel/bitmap-style buffer at their own distinct bases.
 const ATTR_BUFFER_BASE = 23552
 const CONVEYOR_SCREEN_BASE = 28672
 const PORTAL_SCREEN_BASE = 24576
@@ -106,13 +99,10 @@ func read_tiles(bytes, addr, prefix) {
     return tiles
 }
 
-// Reads up to max_count fixed-width records starting at addr, stopping
-// at a terminator byte (255) in a record's first byte. Returns
-// {"records": [...], "next": addr right after the terminator byte (or
-// after the last record read, if max_count was hit with no terminator)}
-// -- "next" lets a variable-length section feed directly into where the
-// following section starts, since these records are not padded to a
-// fixed size.
+// Reads up to max_count fixed-width records starting at addr, stopping at
+// a terminator byte (255) in a record's first byte. Returns {"records":
+// [...], "next": addr right after the terminator (or after the last
+// record, if max_count was hit with no terminator)} for chaining into the next section.
 func read_terminated_records(bytes, addr, record_size, max_count) {
     var records = []
     var pos = addr
@@ -132,11 +122,9 @@ func read_terminated_records(bytes, addr, record_size, max_count) {
     return {"records": records, "next": pos}
 }
 
-// Reads exactly count fixed-width records starting at addr, then skips
-// one trailing terminator byte -- for a section that always reserves a
-// fixed slot count regardless of how many are real (items, like the
-// guardian lists), where a slot's own first byte can legitimately be 0
-// or 255 ("unused") without ending the section early. Returns
+// Reads exactly count fixed-width records starting at addr, then skips a
+// trailing terminator byte -- for a section with a fixed slot count where
+// an unused slot's first byte can legitimately be 0 or 255. Returns
 // {"records": [...], "next": addr right after the terminator byte}.
 func read_fixed_slots(bytes, addr, record_size, count) {
     var records = []
@@ -191,13 +179,10 @@ func extract_one(bytes, index, out_dir) {
     var name = read_ascii(bytes, base + 512, 32)
     var tiles = read_tiles(bytes, base + 544, prefix)
 
-    // The layout grid's raw byte at each cell is that tile's own
-    // attribute byte, not a plain 0-7 index -- remap to a clean index
-    // into tile_names here so Cavern doesn't need to know about raw
-    // Spectrum attribute bytes at all. First-wins: "extra" (the unused
-    // 8th tile slot) has an all-zero attribute byte too, colliding with
-    // "background"'s -- background must win, since "extra" is never
-    // meant to be placed in a real layout.
+    // The layout grid's raw byte at each cell is the tile's own attribute
+    // byte, not a plain 0-7 index -- remap to a clean tile_names index here.
+    // First-wins: "extra" has an all-zero attribute byte too, colliding with
+    // "background"'s, which must win since "extra" is never placed in a real layout.
     var attr_to_index = {}
     for (var t = 0; t < len(tiles); t = t + 1) {
         var key = str(tiles[t]["attr"])
@@ -241,13 +226,10 @@ func extract_one(bytes, index, out_dir) {
 
     var border_colour = sna.read_u8(bytes, base + 627)
 
-    // Items: a fixed 5-slot reserved block (5 bytes each: type, addr lo,
-    // addr hi, colour, init colour), always followed by one terminator
-    // byte, exactly like the guardian lists -- an unused slot's own type
-    // byte can legitimately be 0 or 255 without ending the section early
-    // (confirmed against real disassembly for both Wacky Amoebatrons and
-    // Skylab Landing Bay), so the portal and everything after it always
-    // starts exactly 26 bytes past the items list's own start.
+    // Items: a fixed 5-slot block (5 bytes each: type, addr lo, addr hi,
+    // colour, init colour), followed by one terminator byte, like the
+    // guardian lists -- an unused slot's type byte can be 0 or 255 without
+    // ending the section early, so the portal always starts 26 bytes past the items list's start.
     var item_result = read_fixed_slots(bytes, base + 629, 5, 5)
     var items = []
     foreach (var r in item_result["records"]) {
@@ -259,12 +241,10 @@ func extract_one(bytes, index, out_dir) {
         if (item_xy["x"] > 255 or item_xy["y"] > 191) {
             continue
         }
-        // colour/init_colour are raw attribute bytes, same encoding as a
-        // tile's own "attr" -- decode both, don't keep the raw byte once
-        // decoded. The item twinkle animation (Cavern.draw_items()) cycles
-        // ink through 3,4,5,6 per tick over the room tile's own paper, not
-        // by alternating colour/init_colour; init_ink/init_paper are kept
-        // as decoded data regardless.
+        // colour/init_colour are raw attribute bytes, same encoding as a tile's
+        // "attr" -- decode both, don't keep the raw byte. The item twinkle
+        // animation (Cavern.draw_items()) cycles ink through 3,4,5,6 over the
+        // room's own paper, not by alternating colour/init_colour.
         var colours = spectrum_attr.decode_attribute(r[3])
         var init_colours = spectrum_attr.decode_attribute(r[4])
         items.append({
@@ -308,13 +288,10 @@ func extract_one(bytes, index, out_dir) {
     var air = sna.read_u8(bytes, air_addr)
     var clock = sna.read_u8(bytes, air_addr + 1)
 
-    // Horizontal guardian record (7 bytes): byte0 = attribute/colour
-    // (bit7 doubles as an unmodelled animation-speed flag); byte1-2 =
-    // 16-bit attribute-buffer address of the starting cell, decoded into
-    // (x, y) like items/Willy; byte3-4 unused; byte5-6 = min/max bound,
-    // compared against byte1 itself, so (bound_byte - byte1) gives the
-    // travel range in columns rather than an absolute pixel x. byte0 == 0
-    // is a blank slot (scan continues); 255 still terminates the list.
+    // Horizontal guardian record (7 bytes): byte0 = attribute/colour (0 =
+    // blank slot, 255 terminates); byte1-2 = attribute-buffer address of the
+    // starting cell, decoded like items/Willy; byte5-6 = min/max bound,
+    // compared against byte1 to give travel range in columns, not absolute pixels.
     func read_horizontal_guardians(addr) {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
@@ -343,22 +320,17 @@ func extract_one(bytes, index, out_dir) {
     }
     var horizontal_guardians = read_horizontal_guardians(air_addr + 2)
 
-    // Vertical guardian record (7 bytes), in its own fixed 4-slot block
-    // starting 3 bytes after the horizontal block's terminator: byte0 =
-    // attribute/colour (255 terminates, 0 is a blank slot); byte1 = live
-    // frame counter (not extracted, the engine tracks its own); byte2 =
-    // starting pixel y; byte3 = x column (0-31, x = byte3*8); byte4-6
-    // vary by cavern -- see is_skylab below.
+    // Vertical guardian record (7 bytes), in its own fixed 4-slot block:
+    // byte0 = attribute/colour (255 terminates, 0 blank); byte2 = starting
+    // pixel y; byte3 = x column (0-31, x = byte3*8); byte4-6 vary by cavern,
+    // see is_skylab below.
     func read_vertical_guardians(addr) {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
-        // Skylab Landing Bay's guardians move via a different real-game
-        // routine (fall to byte6 then hold, disintegrate over 8 frames,
-        // respawn at byte5/x+8): byte4 is a plain unsigned fall speed,
-        // and byte5/byte6 are respawn-y/crash-y rather than a min/max
-        // bounce range. Every other cavern's guardians bounce instead,
-        // with byte4 signed for initial direction and byte5<=byte6 a
-        // min/max range.
+        // Skylab Landing Bay's guardians fall to byte6, disintegrate, and
+        // respawn at byte5/x+8 instead of bouncing: byte4 is an unsigned
+        // fall speed, and byte5/byte6 are respawn-y/crash-y rather than a
+        // min/max range. Every other cavern's guardians bounce, with byte4 signed and byte5<=byte6 a min/max range.
         var is_skylab = (index == 13)
         foreach (var r in result["records"]) {
             if (r[0] == 0) {
@@ -406,12 +378,9 @@ func extract_one(bytes, index, out_dir) {
     }
 
     // Eugene's Lair (cavern 4) has one more graphic outside the normal
-    // per-cavern record layout: a 16x16 sprite for Eugene himself, fixed
-    // at Spectrum address 49888 per disassembly -- unlike everything
-    // else extracted here, not derived from `base`, and not tied to any
-    // cavern index but 4 (Eugene's actual movement mechanic isn't
-    // decoded yet -- see read_vertical_guardians()'s own comment -- so
-    // this is graphics only, not wired into a guardian record).
+    // per-cavern record: a 16x16 sprite for Eugene, fixed at Spectrum
+    // address 49888, not derived from `base`. Graphics only -- his movement
+    // mechanic isn't decoded yet, so this isn't wired into a guardian record.
     var eugene_sprite = nil
     if (index == 4) {
         var eugene_pixels = []
@@ -444,13 +413,10 @@ func extract_one(bytes, index, out_dir) {
         sprite_sheet.append(eugene_sprite)
     }
 
-    // Kong Beast caverns (7, "Miner Willy Meets The Kong Beast"; 11,
-    // "Return Of The Alien Kong Beast") are a special case, hardcoded by
-    // index -- same as is_skylab/Eugene's Lair above: frames 0-3 of the
-    // guardian sprite sheet belong to the Kong Beast himself (drawn
-    // separately -- not yet implemented), not a horizontal guardian.
-    // cavern.lox's load_from_dict() reads this flag to pick frames 4-7
-    // for the horizontal guardians instead of the usual 0-7 split.
+    // Kong Beast caverns (7 and 11) are a special case, hardcoded by index:
+    // frames 0-3 of the guardian sprite sheet belong to the Kong Beast
+    // himself (not yet drawn), not a horizontal guardian. cavern.lox's
+    // load_from_dict() reads this flag to use frames 4-7 for horizontal guardians instead.
     var kong_beast = (index == 7 or index == 11)
 
     var cavern = {

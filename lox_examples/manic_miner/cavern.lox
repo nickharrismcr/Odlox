@@ -3,19 +3,10 @@ import json
 import spectrum_attr
 import game_sprite
 
-//
 // @file cavern.lox
-// @brief Holds one Manic Miner cavern's layout and metadata, as produced
-// by extract_cavern.lox. Graphics are never owned here -- layout cells,
-// item_sprite, and portal.sprite are asset name *pointers*, resolved
-// through a SpriteAssets instance (every draw method takes one).
-// Guardians are the exception: load_from_dict() builds a real
-// game_sprite.Sprite per guardian, driven by update_guardians()/
-// draw_guardians(). Portal gameplay isn't implemented yet.
-//
-// Same __init__-defaults + load_from_dict(d) convention as
-// game_sprite.Sprite, plus load(path) to read straight from a JSON file.
-//
+// @brief One Manic Miner cavern's layout and metadata, produced by
+// extract_cavern.lox. Graphics are asset-name pointers resolved through a
+// SpriteAssets, except guardians, which load_from_dict() builds into real Sprites.
 
 // Layout digit values, matching extract_cavern.lox's own TILE_NAMES order
 // exactly -- this.layout[y][x] is already one of these as a character.
@@ -52,29 +43,19 @@ const CONVEYOR_ROTATE = 2
 const EUGENE_START_Y = 0
 const EUGENE_HEIGHT = 16
 
-// Horizontal guardians hold their on-screen position for a full 4-frame
-// animation cycle then jump 8px in one go, the block-movement convention
-// already established and tested for Willy (game_sprite.lox) -- the
-// 7-byte horizontal record has no speed byte, so movement_speed/
-// animation_speed are fixed constants, not extracted data. Vertical
-// guardians instead move continuously, 1 tick's animation speed and its
-// own signed per-tick delta (g["dy"]) at a time -- see extract_cavern.lox.
+// Horizontal guardians hold position for a 4-frame animation cycle then
+// jump 8px at once, using fixed movement/animation-speed constants (the
+// 7-byte horizontal record has no speed byte). Vertical guardians move
+// continuously instead, using their own signed per-tick delta (g["dy"]).
 const GUARDIAN_FRAMES = 4
 const GUARDIAN_MOVEMENT_SPEED = 8
 const GUARDIAN_ANIMATION_SPEED = 1
 const SKYLAB_FRAMES = 8
 
-// Builds a game_sprite.Sprite for one guardian record. g's min_x/max_x
-// are reused as the bound pair for whichever axis movement_type is
-// (min/max y for "vertical"), overwriting start_x/y or end_x/y -- but
-// g["x"]/g["y"] (its real starting position, not necessarily either
-// bound) is preserved separately as init_x/init_y so the sprite spawns
-// there rather than always snapping to a bound. A vertical guardian tagged
-// "style": "skylab" (Skylab Landing Bay only) uses crash_respawn instead
-// of bouncing -- see game_sprite.lox's update(). `frames` and
-// `image_list` are caller-supplied (not fixed constants) because a
-// cavern with both horizontal and vertical guardians splits the shared
-// 8-frame sheet between them -- see load_from_dict().
+// Builds a Sprite for one guardian record. g's min_x/max_x become the
+// bound pair for movement_type's axis; g["x"]/g["y"] are kept separately
+// as init_x/init_y so the sprite spawns at its real start position. A
+// "skylab" vertical guardian uses crash_respawn instead of bouncing.
 func make_guardian_sprite(g, movement_type, image_list, frames) {
     var ink = spectrum_attr.colour_to_rgba(g["ink"], g["bright"])
     var paper = spectrum_attr.colour_to_rgba(g["paper"], g["bright"])
@@ -179,18 +160,10 @@ class Cavern {
         this.crumble_timers = {}
         this.eugene_sprite = d.get("eugene_sprite", this.eugene_sprite)
 
-        // The 8-frame guardian sheet is a fixed-size, per-cavern resource:
-        // a cavern with only one guardian type gives it all 8 (frames=4,
-        // right+left); a cavern with both splits it in half, frames 0-3
-        // for vertical (already how vertical indexes, frames=4 unchanged)
-        // and 4-7 for horizontal (frames=2, so still right+left within
-        // its half). Kong Beast caverns (7, 11) are a third case: frames
-        // 0-3 belong to the Kong Beast himself (not drawn yet), and 4-7
-        // are the horizontal guardians' *only* art -- no mirrored
-        // left-facing frames exist. Duplicating them into both halves of
-        // image_list reuses Sprite.draw()'s existing left-facing index
-        // (2*frames-1-frame) to read the same 4 frames back to front for
-        // left-facing movement, with no change needed in game_sprite.lox.
+        // The 8-frame guardian sheet is split by cavern shape: one guardian
+        // type gets all 8 frames; both types split it in half (vertical
+        // 0-3, horizontal 4-7). Kong Beast caverns (7, 11) reserve 0-3 for
+        // the Kong Beast and duplicate 4-7 into both halves so Sprite.draw()'s left-facing index works.
         var horizontal_image_list = this.guardian_sprite_names
         var horizontal_frames = GUARDIAN_FRAMES
         if (this.kong_beast) {
@@ -245,11 +218,9 @@ class Cavern {
     }
 
     // Returns the TILE_* type at pixel position (px, py), for collision.
-    // Out-of-bounds (below/beside the playfield) reads as TILE_WALL, a
-    // safety floor rather than an index-out-of-range crash -- the real
-    // playfield is always walled in on every side anyway. A collapsed
-    // crumbling-floor cell reads as TILE_BACKGROUND without this.layout
-    // itself ever being mutated.
+    // Out-of-bounds reads as TILE_WALL (a safety floor, not a crash) since
+    // the playfield is always walled in. A collapsed crumbling-floor cell
+    // reads as TILE_BACKGROUND without this.layout itself being mutated.
     tile_type_at(px, py) -> int {
         var cx = int(px / 8)
         var cy = int(py / 8)
@@ -263,14 +234,10 @@ class Cavern {
         return int(this.layout[cy][cx])
     }
 
-    // True if the tile at pixel (px, py) fully blocks movement in every
-    // direction. Real game's collision rule: a non-background tile whose
-    // own paper differs from the room's background paper (tile_colours'
-    // TILE_BACKGROUND entry) is a full wall; one whose paper *matches* is
-    // a one-way platform instead -- passable sideways and from below
-    // (walking or jumping through it), but still supports Willy landing
-    // on it from above (see tile_supports_landing()). Plain background
-    // never blocks at all.
+    // True if the tile at (px, py) fully blocks movement. A non-background
+    // tile whose paper differs from the room's background paper is a full
+    // wall; one whose paper matches is a one-way platform instead (passable
+    // sideways/from below, but still supports landing from above).
     tile_blocks(px, py) -> bool {
         var t = this.tile_type_at(px, py)
         if (t == TILE_BACKGROUND) {
@@ -294,11 +261,10 @@ class Cavern {
         return true
     }
 
-    // True if the tile at (px, py) is a one-way platform: a real,
-    // non-background tile that doesn't tile_blocks(). Willy renders in
-    // *its* ink while overlapping one (see willy.lox's draw()) rather
-    // than his own fixed colour -- plain background isn't a "block" at
-    // all, so it doesn't count even though it also doesn't block.
+    // True if the tile at (px, py) is a one-way platform: a non-background
+    // tile that doesn't tile_blocks(). Willy renders in its ink while
+    // overlapping one (see willy.lox's draw()) rather than his own fixed
+    // colour; plain background doesn't count even though it also doesn't block.
     tile_is_platform(px, py) -> bool {
         var t = this.tile_type_at(px, py)
         if (t == TILE_BACKGROUND) {
@@ -315,15 +281,10 @@ class Cavern {
         return spectrum_attr.colour_to_rgba(bg["paper"], bg["bright"])
     }
 
-    // Call once per tick while Willy is standing on a still-solid
-    // crumbling-floor cell at pixel position (px, py); each call shifts
-    // the cell's own 8 pixel rows down by one (the row that falls off the
-    // bottom is gone, the row left at top is blank), so after
-    // CRUMBLE_TICKS calls the cell is visually empty and collapses
-    // (tile_type_at() then reads it as TILE_BACKGROUND, and the cell is
-    // redrawn to match its true background attribute). Calling this on a
-    // cell that isn't TILE_CRUMBLING_FLOOR, or that has already collapsed,
-    // is harmless.
+    // Call once per tick while Willy stands on a still-solid crumbling-floor
+    // cell at (px, py); each call shifts the cell's 8 pixel rows down by one.
+    // After CRUMBLE_TICKS calls, the cell collapses to TILE_BACKGROUND.
+    // Harmless to call on a non-crumbling or already-collapsed cell.
     tick_crumble(disp, lib, px, py) {
         var cx = int(px / 8)
         var cy = int(py / 8)
@@ -341,12 +302,10 @@ class Cavern {
         }
     }
 
-    // Redraws whatever tile currently occupies grid cell (cx, cy) --
-    // tile_type_at()'s own crumbled-overlay check, not the raw layout
-    // digit, so a collapsed cell redraws as TILE_BACKGROUND. Used to erase
-    // an item's icon once collect_item_at() removes it (items are drawn
-    // straight onto disp's bitmap with no erase-tracking of their own,
-    // unlike game_sprite.Sprite) and to reveal a crumbled floor cell.
+    // Redraws whatever tile occupies grid cell (cx, cy), via tile_type_at()'s
+    // crumbled-overlay check so a collapsed cell redraws as TILE_BACKGROUND.
+    // Used to erase an item's icon after collect_item_at() (items have no
+    // erase-tracking of their own, unlike game_sprite.Sprite) and to reveal a crumbled cell.
     redraw_tile_cell(disp, lib, cx, cy) {
         var index = this.tile_type_at(cx * 8, cy * 8)
         var tile = this.tile_colours[index]
@@ -405,16 +364,10 @@ class Cavern {
         return true
     }
 
-    // Pixel-perfect collision: tests willy_img (Willy's current sprite
-    // frame, at wx/wy) against every guardian's own current sprite
-    // frame (at its own x/y) for any coincident "on" pixel -- a direct
-    // sprite-vs-sprite intersection test. Deliberately doesn't read the
-    // shared display bitmap the way a draw-time check would: that can't
-    // tell a guardian's own leftover ink, the portal's static art, or
-    // level geometry apart from Willy himself, so it false-positives
-    // (or, once a sprite's own residue is excluded, false-negatives)
-    // depending on draw order and timing. This test only ever compares
-    // the two sprites' own pixels against each other.
+    // Pixel-perfect collision: tests willy_img against every guardian's own
+    // current sprite frame for any coincident "on" pixel. Deliberately
+    // doesn't read the shared display bitmap, which can't distinguish a
+    // guardian's leftover ink or level geometry from Willy himself.
     guardian_hit(lib, willy_img, wx, wy) -> bool {
         var iwx = int(wx)
         var iwy = int(wy)
@@ -445,12 +398,10 @@ class Cavern {
         return false
     }
 
-    // Draws every layout cell's tile onto disp (an 8px-aligned blit per
-    // cell, so no attribute clash between neighbouring tiles), resolving
-    // graphics through lib -- a SpriteAssets loaded from this cavern's
-    // own *_sprites.json. tile_colours' ink/paper are 0-7 palette
-    // indices, resolved to actual colours once per tile here (not once
-    // per cell) via spectrum_attr.colour_to_rgba().
+    // Draws every layout cell's tile onto disp (8px-aligned blit per cell),
+    // resolving graphics through lib (a SpriteAssets loaded from this
+    // cavern's *_sprites.json). tile_colours' ink/paper indices are resolved
+    // to actual colours once per tile, not once per cell.
     draw(disp, lib) {
         var resolved = []
         foreach (var tile in this.tile_colours) {
@@ -520,11 +471,9 @@ class Cavern {
         disp.blit_sprite(this.eugene_blank, this.eugene_last_x, this.eugene_last_y, this.eugene_erase_ink, this.eugene_erase_paper)
     }
 
-    // Eugene's Lair only: draws Eugene at his current position, ink
-    // cycling 7 down to 0 (repeating) while he's actively moving
-    // downwards, plain white once static (either still waiting for all
-    // items, or already arrived). clear_eugene() must already have run
-    // this tick.
+    // Eugene's Lair only: draws Eugene at his current position, ink cycling
+    // 7 down to 0 while moving downwards, plain white once static. Requires
+    // clear_eugene() to already have run this tick.
     draw_eugene(disp, lib) {
         if (this.eugene_sprite == "") {
             return
@@ -549,11 +498,10 @@ class Cavern {
         this.eugene_last_y = this.eugene_y
     }
 
-    // Redraws the portal every tick -- in its normal colour, or (once
-    // all_items_collected()) alternating with it swapped every
-    // PORTAL_FLASH_TICKS ticks. Call this LAST each tick, after Willy and
-    // the guardians: the real game always shows the portal on top, so
-    // Willy disappears underneath it rather than erasing it.
+    // Redraws the portal every tick, alternating swapped colours every
+    // PORTAL_FLASH_TICKS ticks once all_items_collected(). Call this LAST
+    // each tick, after Willy and the guardians, so the portal always shows
+    // on top rather than being erased by them.
     set_portal_flash(disp, lib, tick) {
         var img = lib.get(this.portal["sprite"])
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
@@ -565,13 +513,10 @@ class Cavern {
         }
     }
 
-    // Draws every (uncollected) item using the shared item_sprite icon.
-    // Ink cycles through ITEM_INK_CYCLE once per tick, offset by each
-    // item's own index so items shimmer in a staggered wave rather than
-    // flashing in unison; tick is owned by the caller (game_sprite.Sprite
-    // callers do the same). Paper/bright come from the room tile
-    // occupying the item's cell, not the item's own extracted paper/
-    // bright. Items never move, so no erase step is needed.
+    // Draws every uncollected item using the shared item_sprite icon. Ink
+    // cycles through ITEM_INK_CYCLE once per tick, offset by index so items
+    // shimmer in a staggered wave. Paper/bright come from the room tile
+    // occupying the item's cell, not the item's own extracted values.
     draw_items(disp, lib, tick) {
         var img = lib.get(this.item_sprite)
         for (var i = 0; i < len(this.items); i = i + 1) {
@@ -591,11 +536,9 @@ class Cavern {
     }
 
     // Bit-rotates pixel rows 0 and 2 of every belt tile already on the
-    // display -- no separate animation frames, no frame/tick state of its
-    // own. direction 0 ("moving left") rotates row 0 left and row 2
-    // right; any other value ("moving right") does the opposite. Requires
-    // this.conveyor's tiles to already be drawn, and does nothing if
-    // length is 0.
+    // display; no separate animation frames or state of its own. direction 0
+    // rotates row 0 left and row 2 right, any other value the opposite.
+    // Requires this.conveyor's tiles to already be drawn.
     animate_conveyor(disp) {
         var length = this.conveyor.get("length", 0)
         if (length <= 0) {

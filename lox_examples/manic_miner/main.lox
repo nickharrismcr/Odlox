@@ -9,19 +9,9 @@ import sys
 
 //
 // @file main.lox
-// @brief Willy, playable: LEFT/RIGHT to walk, UP or SPACE to jump.
-// Drives an intro.Intro (title screen, waits for ENTER), then a
-// demo.Demo (attract-mode cavern preview, also skippable with ENTER),
-// then a game.Game -- cavern/item/conveyor/guardian rendering, Willy's
-// movement/collision/death, and the running/die/game_over session state
-// all live there. This is just the window and presentation loop. ESC
-// quits, at any stage. Owns the one game_sound.Sound shared by all three
-// states -- there's a single audio device for the whole process, not one
-// per state.
-//
-// Usage: odlox.exe main.lox [cavern_index] [--demo]
-// --demo skips straight past Intro into the attract-mode Demo state
-// (cavern_index still selects Game's own starting cavern once Demo ends).
+// @brief Window/presentation loop: drives intro.Intro, then demo.Demo,
+// then game.Game in sequence (ENTER skips Intro/Demo, ESC quits any
+// stage). Usage: odlox.exe main.lox [cavern_index] [--demo].
 //
 
 var argv = sys.args()

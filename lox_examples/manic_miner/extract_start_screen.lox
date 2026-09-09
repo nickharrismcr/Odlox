@@ -5,25 +5,11 @@ import spectrum_attr
 import os
 import sys
 
-//
 // @file extract_start_screen.lox
-// @brief Extracts Manic Miner's start/title screen graphic from a .sna
-// snapshot into a Cavern-sibling pair of JSON files: an assets.lox-
-// compatible sprite sheet (the 256x128 pixel bitmap) and a small
-// attribute-grid file (ink/paper/bright per 8x8 cell).
-//
-// The screen only occupies the top two-thirds of the display (192px):
-// pixel data is a single contiguous 4096-byte run at 40960-45055, real
-// hardware bit-interleaved layout (see spectrum_screen.lox's own header)
-// relocated to that base -- 2 thirds x 2048 bytes/third, thirds 0-1
-// (rows 0-127). Its attribute cells are *not* similarly contiguous: the
-// game keeps its own working copies of the top third's row (8 cell rows,
-// 256 bytes) at 64512 and the middle third's row at 40448, per
-// disassembly. The bottom third (rows 128-191) is blank on this screen
-// and isn't extracted.
-//
+// @brief Extracts the start/title screen (top two-thirds, 256x128) from
+// a .sna into a Cavern-sibling JSON pair. Attribute cells aren't
+// contiguous: top third's row is at 64512, middle third's at 40448.
 // Usage: odlox.exe extract_start_screen.lox <path.sna> <output_dir>
-//
 
 const PIXEL_BASE = 40960
 const SCREEN_WIDTH = 256
@@ -36,9 +22,8 @@ const ATTR_ROWS_PER_THIRD = 8
 
 // Decodes `height` rows of the real Spectrum display file's bit-
 // interleaved pixel layout, relocated to `base` -- same address algebra
-// as spectrum_screen.pixel_addr_to_xy(), run forward (y -> byte offset)
-// instead of backward (offset -> y). Returns pixel row-strings ('.' off,
-// '#' on), assets.lox's "pixel" convention.
+// as spectrum_screen.pixel_addr_to_xy(), run forward (y -> byte offset).
+// Returns pixel row-strings ('.' off, '#' on), assets.lox's convention.
 func bytes_to_screen_pixel_rows(bytes, base, height) {
     var rows = []
     for (var y = 0; y < height; y = y + 1) {

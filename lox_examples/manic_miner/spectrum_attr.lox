@@ -1,19 +1,9 @@
 from gfx import *
 
-//
 // @file spectrum_attr.lox
 // @brief Decodes a raw ZX Spectrum attribute byte (bits 0-2 ink, 3-5
-// paper, 6 bright, 7 flash -- flash is unused here, this project doesn't
-// implement screen flashing) into a plain {ink, paper, bright} record --
-// ink/paper are 0-7 palette indices, not packed colours, since there are
-// only 8 Spectrum colours (+ bright variants): an index round-trips
-// through JSON as a small readable int rather than a big packed float in
-// scientific notation. colour_to_rgba() converts an index (+bright) to an
-// actual packed-rgba colour at render time. Kept local to manic_miner/
-// rather than modules/colour.lox, which is a general-purpose colour
-// module shared by unrelated example projects -- this is specific to how
-// Spectrum attribute bytes encode colour, not a general utility.
-//
+// paper, 6 bright; flash bit 7 is unused) into {ink, paper, bright}.
+// colour_to_rgba() converts an index+bright to a packed-rgba colour.
 
 // Colour component bits, no native bitwise ops in this Lox dialect:
 // blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2

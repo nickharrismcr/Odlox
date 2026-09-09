@@ -1,15 +1,10 @@
 import assets
 import sys
 
-//
 // @file dump_sprites.lox
-// @brief Loads a sprite JSON file and dumps every entry back out as ASCII
-// art (in file order), so a "pixel"/"byte" datafile's decode -- and the
-// order/naming of its entries -- can be checked by eye against source
-// data (a disassembly listing, an original screenshot, etc).
-//
-// Usage: odlox.exe dump_sprites.lox <path/to/sprites.json>
-//
+// @brief Loads a sprite JSON file and dumps every entry back out as
+// ASCII art, so a "pixel"/"byte" datafile's decode can be checked by
+// eye against source. Usage: odlox.exe dump_sprites.lox <sprites.json>
 
 // sys.args()[0] is this script's own path -- the real argument starts at [1].
 var argv = sys.args()

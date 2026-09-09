@@ -10,12 +10,8 @@ import font
 //
 // @file game.lox
 // @brief Owns one Manic Miner play session: cavern/Willy/controller,
-// ticked from running/die/game_over -- a state machine of update_func
-// funcs, same convention as willy.lox. The caller still owns the window
-// (create it, poll input via tick(win), upload/present the Display) and
-// the game_sound.Sound passed into __init__ -- shared with intro.Intro
-// rather than owned here, since there's only one audio device for the
-// whole process.
+// ticked via a running/die/game_over update_func state machine. The
+// caller owns the window and the shared game_sound.Sound.
 //
 
 const DIE_FLASH_TICKS = 20  // one tick per ink value, 7 down to 0
@@ -28,14 +24,10 @@ const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
 // state_running() ignores it.
 const ENABLE_AUTO_COLLECT_CHEAT = true
 
-// Portal-entry flash: two ink cycles of 7 down to 1 (blue) -- unlike the
-// death flash, black is never part of the cycle, so it ends on blue --
-// then a pause (placeholder for a remaining-air countdown) before the
-// next cavern loads. Bumps to 30fps for the whole state (see
-// enter_portal()), same as state_die -- PORTAL_TOTAL_TICKS is 90 ticks
-// at that rate, 3s, matching the sourced level_end_swoop clip
-// (assets/air.wav)'s own length, so it isn't cut off by the next
-// cavern loading over it.
+// Portal-entry flash: two ink cycles of 7 down to 1 (blue), then a pause
+// before the next cavern loads. Runs at 30fps (see enter_portal());
+// PORTAL_TOTAL_TICKS = 90 ticks (3s) matches the level_end_swoop clip
+// (assets/air.wav)'s length.
 const PORTAL_FLASH_CYCLE_TICKS = 7
 const PORTAL_FLASH_TICKS = PORTAL_FLASH_CYCLE_TICKS * 2
 const PORTAL_TOTAL_TICKS = 90
@@ -58,17 +50,13 @@ const LIVES_ICON_INK = encode_rgba(0, 255, 255)
 const LIVES_ICON_X = 8
 const LIVES_ICON_Y = 168
 const LIVES_ICON_STRIDE = 24  // 16px sprite + 8px gap
-const LIVES_ANIM_TICKS = 8  // halved speed (was 4)
+const LIVES_ANIM_TICKS = 8  // ticks per animation frame
 const LIVES_FRAMES = ["willy_right_0", "willy_right_1", "willy_right_2", "willy_right_3"]
 
-// Oxygen row: red paper for its left 80px (10 cells), green for the
-// rest, "AIR" labelled in white at the left, then a bar (also white)
-// spanning pixel 25-248 that empties from the right as air runs out --
-// wherever the bar's bit is 0, that cell's red/green paper shows
-// through instead. draw_oxygen_row_background()/draw_oxygen_bar_fill()
-// paint it solid at spawn/respawn/cavern-change; update_oxygen_bar()
-// then only re-plots the newly-emptied columns each tick -- O(1)
-// amortized over the bar's lifetime rather than redrawing it every frame.
+// Oxygen row: red paper for the left 80px (10 cells), green for the
+// rest, "AIR" labelled in white, then a white bar spanning pixel 25-248
+// that empties from the right as air runs out, revealing the red/green
+// paper beneath. update_oxygen_bar() only re-plots newly-emptied columns.
 const OXYGEN_ROW_Y = 136
 const OXYGEN_INK = encode_rgba(255, 255, 255)
 const OXYGEN_PAPER_RED = encode_rgba(255, 0, 0)
@@ -80,23 +68,19 @@ const OXYGEN_BAR_HEIGHT = 4
 const OXYGEN_BAR_Y = OXYGEN_ROW_Y + (8 - OXYGEN_BAR_HEIGHT) / 2  // vertically centred in the row
 
 // Level-end air-bar wipe (see state_portal()): blacks out the oxygen
-// bar's own cells (not the "AIR" label to its left), one column at a
-// time from the right, at whatever rate covers all of them by
-// PORTAL_TOTAL_TICKS -- so the whole bar is black exactly when the
-// level-end swoop clip ends.
+// bar's cells one column at a time from the right, timed so the whole
+// bar is black exactly when PORTAL_TOTAL_TICKS (the level-end swoop
+// clip) ends.
 const OXYGEN_ROW_CY = int(OXYGEN_ROW_Y / 8)            // 17
 const AIR_WIPE_COL_FIRST = int(OXYGEN_BAR_X / 8)       // 3
 const AIR_WIPE_COL_LAST = 31                           // (OXYGEN_BAR_X + OXYGEN_BAR_WIDTH - 1) // 8
 const AIR_WIPE_COLS = AIR_WIPE_COL_LAST - AIR_WIPE_COL_FIRST + 1  // 29
 const AIR_WIPE_COLOUR = encode_rgba(0, 0, 0)
 
-// Game-over sequence: the plinth sits bottom-centre of the cavern area
-// (the 32x16-cell region above the HUD rows), Willy stands on it, and
-// the boot starts directly above both, at the very top. Everything's
-// white; the whole cavern area's paper cycles blue/red/magenta every
-// tick while the boot descends 2px per stamp, GAME_OVER_BOOT_STEPS_PER_TICK
-// stamps a tick (its previous stamps never erased, see state_game_over()),
-// until it reaches Willy.
+// Game-over sequence: plinth bottom-centre of the cavern area, Willy on
+// it, boot starting at the top -- all white, cavern paper cycling
+// blue/red/magenta each tick while the boot descends 2px per stamp
+// (stamps never erased, see state_game_over()) until it reaches Willy.
 const GAME_OVER_X = 120            // (256 - 16) / 2 -- shared by plinth/Willy/boot
 const GAME_OVER_PLINTH_Y = 112     // bottom of the 128px-tall cavern area
 const GAME_OVER_WILLY_Y = 96       // GAME_OVER_PLINTH_Y - WILLY_HEIGHT
@@ -155,14 +139,10 @@ func draw_oxygen_bar_fill(g) {
     g.oxygen_drawn_width = OXYGEN_BAR_WIDTH
 }
 
-// Re-plots (to background) only the columns that have newly emptied
-// since the last call -- the bar's width tracks air_remaining /
-// willy.AIR_MAX (1 air unit = 1px, every cavern gives the same budget,
-// see willy.lox), and air only ever counts down, so this is a one-way
-// shrink. air_remaining alone only steps once every AIR_TICKS_PER_UNIT
-// ticks, which would jump the bar several pixels at once -- willy.air_tick
-// (the tick count within the current air unit) fills in the gap so the
-// bar empties smoothly, never more than a pixel at a time.
+// Re-plots only the columns newly emptied since the last call. Bar width
+// tracks air_remaining / willy.AIR_MAX (1 air unit = 1px); willy.air_tick
+// fills in the sub-unit fraction so the bar empties smoothly, never more
+// than a pixel per call, instead of jumping several pixels at once.
 func update_oxygen_bar(g) {
     var fractional_air = g.willy.air_remaining - g.willy.air_tick / willy_module.AIR_TICKS_PER_UNIT
     var target = int(OXYGEN_BAR_WIDTH * fractional_air / willy_module.AIR_MAX)
@@ -200,12 +180,9 @@ func draw_lives(g) {
 }
 
 // Every moving sprite (Willy, guardians, Eugene) goes through the same
-// three phases, each run to completion across all of them before the
-// next starts: clear (erase wherever it last drew itself), move
-// (position/animation/collision, no drawing), draw (paint at its new
-// position). Keeping the phases fully separate -- not interleaved
-// per-sprite -- means no sprite's fresh draw can ever be wiped out by
-// another sprite's clear running later in the same tick.
+// three phases, each completed across all sprites before the next
+// starts: clear, move (position/animation/collision), draw. Keeping
+// phases separate stops one sprite's clear from wiping another's draw.
 func state_running(g, win) {
     g.controller.update(win)
     g.sound.play_next_tune_note()
@@ -293,11 +270,9 @@ func enter_portal(g, win) {
 }
 
 // Recolours every cavern-area (rows 0-15) cell's ink to `ink`, paper to
-// black -- the level-end flash's own ink-only recolour, scoped to the
-// cavern graphics so the HUD rows below are never touched. Unlike
-// Display.flash_ink()/begin_flash() (which recolour the whole 24-row
-// screen, HUD included -- see state_die's own death flash, which is
-// meant to cover everything), this only ever writes cy 0-15.
+// black, leaving the HUD rows untouched. Unlike Display.flash_ink()/
+// begin_flash() (used by state_die's death flash), which recolour the
+// whole 24-row screen including the HUD.
 func flash_cavern_ink(g, ink) {
     var paper = encode_rgba(0, 0, 0)
     for (var cy = 0; cy < 16; cy = cy + 1) {
@@ -307,10 +282,9 @@ func flash_cavern_ink(g, ink) {
     }
 }
 
-// Two ink cycles of 7 down to 1 (blue -- see PORTAL_FLASH_TICKS), then a
-// pause out to PORTAL_TOTAL_TICKS, then the next cavern loads and play
-// resumes there. The air bar wipes to black from the right the whole
-// time, timed to finish exactly at PORTAL_TOTAL_TICKS (see
+// Two ink cycles of 7 down to 1 (blue, see PORTAL_FLASH_TICKS), then a
+// pause out to PORTAL_TOTAL_TICKS before the next cavern loads. The air
+// bar wipes to black from the right over the same span (see
 // wipe_air_bar()).
 func state_portal(g, win) {
     if (g.portal_tick < PORTAL_FLASH_TICKS) {
@@ -327,11 +301,10 @@ func state_portal(g, win) {
     enter_next_cavern(g)
 }
 
-// Blacks out AIR_WIPE_COLS oxygen-bar columns from the right, however
-// many g.portal_tick's own fraction of PORTAL_TOTAL_TICKS covers --
-// redraws every already-covered column each call (cheap: at most
-// AIR_WIPE_COLS set_attr calls), same cost profile as state_die/
-// state_game_over's own whole-area repaints every tick.
+// Blacks out AIR_WIPE_COLS oxygen-bar columns from the right, covering
+// as many as g.portal_tick's fraction of PORTAL_TOTAL_TICKS calls for.
+// Redraws every already-covered column each call (at most AIR_WIPE_COLS
+// set_attr calls).
 func wipe_air_bar(g) {
     var covered = int(AIR_WIPE_COLS * g.portal_tick / PORTAL_TOTAL_TICKS)
     if (covered > AIR_WIPE_COLS) {
@@ -384,12 +357,10 @@ func clear_cavern_area(g, ink, paper) {
     }
 }
 
-// Repaints the HUD (undoing the death flash's colour corruption, so
-// name/score/air/lives stay visible and correct throughout the
-// sequence), then clears just the cavern area and paints the game-over
-// tableau's static parts (plinth, Willy in his frame-3 pose) plus the
-// boot's starting frame -- all white on the first paper colour of the
-// cycle. state_game_over() takes over from here every tick.
+// Repaints the HUD (undoing the death flash's colour corruption), then
+// clears the cavern area and paints the game-over tableau's static
+// parts (plinth, Willy in his frame-3 pose, boot's starting frame), all
+// white on the cycle's first paper colour. state_game_over() takes over.
 func enter_game_over(g) {
     g.sound.play_game_over_swoop()
     draw_static_hud(g)
@@ -406,15 +377,10 @@ func enter_game_over(g) {
     g.update_func = state_game_over
 }
 
-// Every tick: cycles the whole cavern area's paper through
-// GAME_OVER_PAPER_CYCLE (an attribute-only change, via set_attr -- never
-// touches the bitmap, so it can't disturb the boot's trail) once, then
-// stamps the boot GAME_OVER_BOOT_STEPS_PER_TICK times, 2px further down
-// each stamp, without erasing its previous stamps -- so it leaves a
-// solid trail behind it as it falls, twice as fast as one stamp/tick
-// would without thinning that trail out. Stops advancing once it
-// reaches Willy -- is_game_over() then tells the caller to stop calling
-// tick() (one more frame still renders the final stamp).
+// Every tick: cycles the cavern area's paper through GAME_OVER_PAPER_CYCLE
+// (attribute-only, never touches the bitmap), then stamps the boot
+// GAME_OVER_BOOT_STEPS_PER_TICK times, 2px lower each stamp, without
+// erasing previous stamps, until it reaches Willy (see is_game_over()).
 func state_game_over(g, win) {
     g.game_over_paper_index = (g.game_over_paper_index + 1) % len(GAME_OVER_PAPER_CYCLE)
     var paper = spectrum_attr.colour_to_rgba(GAME_OVER_PAPER_CYCLE[g.game_over_paper_index], true)

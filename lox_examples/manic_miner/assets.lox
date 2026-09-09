@@ -1,23 +1,10 @@
 from gfx import *
 import json
 
-//
 // @file assets.lox
-// @brief Loads sprite graphics data from an external JSON datafile into
-// float_arrays (0.0/1.0 per pixel), keyed by name. The JSON is a list of
-// {"name", "data_type", "data"} objects:
-//
-//   data_type "pixel": data is a list of row strings, one per pixel row.
-//     '.' or ' ' is an off/paper pixel, any other character is on/ink.
-//
-//   data_type "byte": data is a flat list of byte values (0-255), one row
-//     at a time, most-significant-bit first (bit 7 = leftmost pixel of
-//     that byte's 8), matching the layout a Spectrum ROM stores sprite
-//     graphics in. An optional "width" (pixel width, default 8, must be a
-//     multiple of 8) gives the bytes-per-row for sprites wider than one
-//     byte -- this is the shape a separate .z80-ROM extraction tool would
-//     produce directly, without needing to re-render to ASCII first.
-//
+// @brief Loads sprite graphics from JSON into float_arrays (0.0/1.0 per
+// pixel): "pixel" entries are ASCII rows, "byte" entries are packed
+// MSB-first bytes (Spectrum ROM sprite layout), row width a multiple of 8.
 
 // Decodes a "pixel" sprite's row strings into a float_array.
 func decode_pixel_rows(rows) {

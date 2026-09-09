@@ -7,50 +7,26 @@ import game as game_module
 
 //
 // @file demo.lox
-// @brief Attract-mode "demo" game state, run between Intro and Game:
-// cycles through every cavern in turn, showing each one (guardians/
-// conveyor/items animated, no Willy -- not playable) with the standard
-// HUD (name/score/air/lives rows, same as Game's -- reused directly from
-// game.lox, see refresh_hud()) for SHOW_TICKS ticks, then a level-end-
-// style ink flash down to blue (the same visual as game.lox's own
-// state_portal -- PORTAL_FLASH_CYCLE_TICKS/PORTAL_FLASH_TICKS there --
-// kept as a self-contained copy here rather than reused directly, since
-// state_portal is tightly coupled to a Game instance's own fields, e.g.
-// the air-bar wipe), before moving on to the next cavern, wrapping after
-// the last back to the first. Plays the same background tune as Game
-// (game_sound.Sound.play_next_tune_note(), see state_show()). Same
-// __init__/tick(win) shape as Intro/Game, so main.lox can drive it
-// identically, and takes the caller's shared game_sound.Sound rather
-// than owning one, same reason as Intro. is_done() goes true on ENTER,
-// same as Intro, letting the player skip straight to Game.
-//
-// State machine is function-pointer based (update_func reassigned to
-// state_show/state_flash), same convention as game.lox/willy.lox.
+// @brief Attract-mode state between Intro and Game: cycles every
+// cavern (no Willy) for SHOW_TICKS ticks, flashing blue between each.
+// Same tick(win) shape as Intro/Game.
 //
 
 const CAVERN_COUNT = 20  // caverns/cavern_0.json .. cavern_19.json
 const SHOW_TICKS = 64
 
-// Level-end flash: one ink cycle of 7 down to 1 (blue) -- see game.lox's
-// PORTAL_FLASH_CYCLE_TICKS (there, two cycles: PORTAL_FLASH_TICKS =
-// PORTAL_FLASH_CYCLE_TICKS * 2 -- the demo's own transition is quicker).
-// Then a pause holding on blue before the next cavern loads -- same
-// two-phase shape as game.lox's state_portal (PORTAL_FLASH_TICKS then a
-// pause out to PORTAL_TOTAL_TICKS): without it, the cavern reload
-// (enter_next_cavern -> load_cavern's disp.clear()) lands in the very
-// same tick that draws the cycle's last colour, overwriting it before
-// it's ever presented -- so blue would never actually be seen, and the
-// last colour on screen would be the second-to-last one drawn (red).
+// Level-end flash: one ink cycle of 7 down to 1 (blue), then a pause
+// holding on blue before the next cavern loads -- same two-phase shape
+// as game.lox's state_portal. The pause is required: without it the
+// cavern reload lands in the same tick as blue, so blue is never seen.
 const FLASH_CYCLE_TICKS = 7
 const FLASH_PAUSE_TICKS = 10
 const FLASH_TOTAL_TICKS = FLASH_CYCLE_TICKS + FLASH_PAUSE_TICKS
 
-// Loads cavern_<cavern_index>'s data/sprites and redraws d.disp with it
-// (cavern art only, not the HUD -- see refresh_hud()) -- shared by
-// __init__ (first cavern) and enter_next_cavern (every cavern after).
-// Also loads willy_sprites.json, same as game.lox's load_cavern -- Willy
-// himself never appears, but the lives-icon HUD row draws his walk-cycle
-// frames.
+// Loads cavern_<cavern_index>'s data/sprites and redraws d.disp (cavern
+// art only, not the HUD -- see refresh_hud()). Shared by __init__ and
+// enter_next_cavern. Also loads willy_sprites.json for the lives-icon
+// HUD row, though Willy himself never appears.
 func load_cavern(d, cavern_index) {
     d.cavern_index = cavern_index
     d.lib = assets.SpriteAssets()
@@ -94,11 +70,9 @@ func state_show(d, win) {
     d.cavern.draw_guardians(d.disp, d.lib)
     d.cavern.draw_eugene(d.disp, d.lib)
     // Last, so the portal always renders on top -- otherwise a
-    // guardian's own clear_guardians() erase blit (which recolours
-    // whatever attribute cells and pixels its bounding box last
-    // overlapped) can blank the portal's art for good once a guardian
-    // passes over it, since nothing else here ever redraws it. Same
-    // ordering reason as game.lox's state_running.
+    // guardian's clear_guardians() erase blit can blank the portal's
+    // art for good once a guardian passes over it, since nothing else
+    // here redraws it. Same ordering reason as game.lox's state_running.
     d.cavern.set_portal_flash(d.disp, d.lib, d.frame_count)
     game_module.draw_lives(d)
     d.frame_count = d.frame_count + 1
