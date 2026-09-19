@@ -2,13 +2,17 @@ from gfx import *
 import display
 import assets
 import platform as platform_module
+import jetman as jetman_module
+import jetman_controller
 import json
 
 // @file game.lox
-// @brief Owns one Jetpac play session. Step-3 stub: draws the static
-// scene (platforms, rocket base, a stationary Jetman), no movement or
-// input yet -- jetman.lox/rocket.lox (later build steps) replace the
-// two fixed blit_sprite calls below with real Jetman/Rocket classes.
+// @brief Owns one Jetpac play session: platforms/Jetman/controller,
+// ticked each frame via a clear/move/draw phase order (see
+// state_running). The rocket is still a fixed 3-tile stub blit --
+// rocket.lox (a later build step) replaces it with a real Rocket class
+// that tracks modules/fuel. Items/aliens/lasers/HUD/audio land in
+// later build steps too (see docs/plans/jetpac-port.md Part 5).
 
 class Game {
     __init__(sound) {
@@ -34,12 +38,18 @@ class Game {
         this.disp.blit_sprite(this.lib.get("rocket_u1_middle"), r["x"], r["y"] - 32, white, black)
         this.disp.blit_sprite(this.lib.get("rocket_u1_top"), r["x"], r["y"] - 48, white, black)
 
-        // Standing pose (not flying), feet at the ground row.
-        var j = this.static_data["default_jetman"]
-        this.disp.blit_sprite(this.lib.get("jetman_walk_right_shift0"), j["x"], j["y"] - 24, white, black)
+        this.jetman = jetman_module.Jetman()
+        this.jetman.spawn(this.static_data)
+
+        this.controller = jetman_controller.Controller()
     }
 
     tick(win) {
+        this.controller.update(win)
+
+        this.jetman.clear(this.disp)
+        this.jetman.step(this.controller, this.platforms)
+        this.jetman.draw(this.disp, this.lib)
     }
 
     is_done() -> bool {

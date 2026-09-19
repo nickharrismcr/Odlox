@@ -1,0 +1,21 @@
+// @file jetman_controller.lox
+// @brief Single place all keyboard polling happens during play --
+// update(win) is called once per frame from game.lox; everything else
+// reads the resulting flags rather than calling win.key_down/key_pressed
+// itself.
+
+class Controller {
+    __init__() {
+        this.left = false     // held: thrust/walk left
+        this.right = false    // held: thrust/walk right
+        this.thrust = false   // held: thrust upward
+        this.fire = false     // edge-triggered: fire the laser
+    }
+
+    update(win) {
+        this.left = win.key_down(win.KEY_LEFT)
+        this.right = win.key_down(win.KEY_RIGHT)
+        this.thrust = win.key_down(win.KEY_UP) or win.key_down(win.KEY_SPACE)
+        this.fire = win.key_pressed(win.KEY_ENTER)
+    }
+}

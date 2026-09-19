@@ -1,0 +1,253 @@
+from gfx import *
+from game_sprite import Sprite
+
+// @file jetman.lox
+// @brief Jetman: fly/walk states and physics, derived from
+// JetmanFlyThrust ($739E), JetmanWalk ($753C) and PlatformCollision
+// ($75FC, see platform.lox). Movement is a state machine of
+// state_<name>/enter_<name> functions, matching this codebase's
+// established convention; everything but __init__/spawn/step/draw is a
+// module-level free function taking j first.
+
+// Physics constants, decimal (this dialect has no hex literals), each
+// with the disassembly address it came from.
+const VEL_ACCEL          = 8    // $73C3/$7425: 8 minus the velocity modifier
+const VEL_MODIFIER       = 4    // $5DCA: 0 or 4, halving acceleration
+const ACCEL_STEP         = VEL_ACCEL - VEL_MODIFIER  // per-tick velocity change, accelerating or braking
+const MAX_VEL_X_FLYING   = 64   // $40, $73D6 clamp
+const MAX_VEL_X_WALKING  = 32   // $20, $757C/$75B8
+const MAX_VEL_Y          = 63   // $3F, $7448 clamp
+const WALK_STEP          = 1    // $75AD/$75BF: 1 pixel per tick
+const SCREEN_TOP_Y        = 42  // $2A, $746B: flight clamped to 42..192
+const SCREEN_BOTTOM_Y     = 192 // $C0
+const JETMAN_HEIGHT       = 36  // $24, default_player_state byte 7
+const ALIEN_HIT_DX        = 12  // $0C, $6E00 -- alien.lox's collision test
+const ALIEN_HIT_DY        = 21  // $15, $6E14
+
+const SCREEN_W = 256.0
+
+// Jetman's X position wraps mod 256 -- a free side effect of it being a
+// single 8-bit byte on real hardware (JetmanFlyHorizontal never clamps
+// it), not a deliberate design choice this port re-derives.
+func wrap_x(x) {
+    var w = x % SCREEN_W
+    if (w < 0.0) {
+        w = w + SCREEN_W
+    }
+    return w
+}
+
+// Moves vel toward max by ACCEL_STEP if want_this_dir (accelerating in
+// the currently facing/moving direction); else brakes toward zero
+// first, only flipping (returned as "flip") once vel would go negative
+// -- same shape as JetmanVelIncX/JetmanDirFlipX (and their Y-axis
+// equivalents), so a direction change decelerates smoothly rather than
+// snapping straight to the opposite facing.
+func accel_or_flip(vel, want_this_dir, max_vel) {
+    if (want_this_dir) {
+        var nv = vel + ACCEL_STEP
+        if (nv > max_vel) {
+            nv = max_vel
+        }
+        return {"vel": nv, "flip": false}
+    }
+    var nv = vel - ACCEL_STEP
+    if (nv <= 0) {
+        return {"vel": 0, "flip": true}
+    }
+    return {"vel": nv, "flip": false}
+}
+
+class Jetman < Sprite {
+    __init__() {
+        super.__init__()
+        this.frames = 1
+        this.colour = encode_rgba(255, 255, 255)
+        this.paper = encode_rgba(0, 0, 0)
+        this.facing_left = false
+        this.moving_down = true
+        this.vel_x = 0
+        this.vel_y = 0
+        this.dead = false
+        this.update_func = state_fly
+    }
+
+    // (Re)spawns from data/jetpac_static.json's default_jetman record --
+    // used both for the initial spawn and every respawn after death.
+    // default_jetman's own motion=1 (bit0 "flying", bit7 "fly up") is
+    // why Jetman starts airborne rather than standing.
+    spawn(static_data) {
+        var d = static_data["default_jetman"]
+        this.x = float(d["x"])
+        this.y = float(d["y"])
+        this.facing_left = false
+        this.moving_down = false
+        this.vel_x = 0
+        this.vel_y = 0
+        this.dead = false
+        this.last_x = nil
+        this.last_y = nil
+        enter_fly(this)
+    }
+
+    // Dispatches through update_func -- named step() to avoid colliding
+    // with Sprite's own per-frame bookkeeping.
+    step(input, platforms) {
+        var f = this.update_func
+        f(this, input, platforms)
+    }
+
+    is_dead() -> bool {
+        return this.update_func == state_dying
+    }
+
+    // Overrides Sprite.draw(): Jetman doesn't animate (see
+    // docs/plans/jetpac-port.md Part 2 -- ActorGetSpriteAddress indexes
+    // jetman_sprite_table by x&$06, a pixel-shift copy for the ROM's
+    // byte-aligned blitter, not a frame counter; Display.blit_sprite
+    // plots at an arbitrary x, so only the shift0 sprite is needed), so
+    // the "frame" is really a pose/facing lookup, picked fresh each tick.
+    draw(disp, lib) {
+        this.image_list = [current_sprite_name(this)]
+        this.frame = 0
+        super.draw(disp, lib)
+    }
+}
+
+func current_sprite_name(j) {
+    var motion = "fly"
+    if (j.update_func == state_walk) {
+        motion = "walk"
+    }
+    var dir = "right"
+    if (j.facing_left) {
+        dir = "left"
+    }
+    return format("jetman_%s_%s_shift0", motion, dir)
+}
+
+func enter_fly(j) {
+    j.update_func = state_fly
+}
+
+func enter_walk(j) {
+    j.update_func = state_walk
+    j.vel_x = 0
+}
+
+func enter_dying(j) {
+    j.dead = true
+    j.update_func = state_dying
+}
+
+// Horizontal flight: accelerates toward max speed in the held
+// direction, brakes toward zero (then flips facing) on a direction
+// change, and drag-decelerates to a stop with no input held. Position
+// wraps at the screen edges (see wrap_x).
+func fly_horizontal(j, input) {
+    if (!input.left and !input.right) {
+        var nv = j.vel_x - ACCEL_STEP
+        if (nv < 0) {
+            nv = 0
+        }
+        j.vel_x = nv
+    } else {
+        var want_right = input.right
+        var currently_right = !j.facing_left
+        var r = accel_or_flip(j.vel_x, want_right == currently_right, MAX_VEL_X_FLYING)
+        j.vel_x = r["vel"]
+        if (r["flip"]) {
+            j.facing_left = !j.facing_left
+        }
+    }
+    var dx = j.vel_x / 32.0
+    if (j.facing_left) {
+        dx = -dx
+    }
+    j.x = wrap_x(j.x + dx)
+}
+
+// Vertical flight: accelerates upward while thrust is held, otherwise
+// gravity accelerates downward at the same rate; releasing thrust while
+// rising brakes first (accel_or_flip), so the transition to falling is
+// smooth rather than an instant velocity reset. Bounces softly off the
+// screen's top/bottom (JetmanStateSetDownSlow/JetmanStateSetUp) --
+// platform landing is a separate check in state_fly, since it can
+// happen anywhere in between.
+func fly_vertical(j, input) {
+    var want_up = input.thrust
+    var currently_up = !j.moving_down
+    var r = accel_or_flip(j.vel_y, want_up == currently_up, MAX_VEL_Y)
+    j.vel_y = r["vel"]
+    if (r["flip"]) {
+        j.moving_down = !j.moving_down
+    }
+
+    var dy = j.vel_y / 32.0
+    if (j.moving_down) {
+        j.y = j.y + dy
+    } else {
+        j.y = j.y - dy
+    }
+
+    if (j.y < SCREEN_TOP_Y) {
+        j.y = float(SCREEN_TOP_Y)
+        j.vel_y = int(j.vel_y / 2)
+        j.moving_down = true
+    } else if (j.y > SCREEN_BOTTOM_Y) {
+        j.y = float(SCREEN_BOTTOM_Y)
+        j.moving_down = false
+    }
+}
+
+func state_fly(j, input, platforms) {
+    var old_y = j.y
+    fly_horizontal(j, input)
+    fly_vertical(j, input)
+
+    // landed/head_bump are only honoured while actually travelling that
+    // direction (falling onto a surface, rising into one) -- otherwise
+    // jetmanLeavePlatform's own 2px liftoff hop is smaller than
+    // LAND_TOLERANCE, and the very next tick would re-land on the
+    // platform Jetman just launched from.
+    var result = platforms.collide(j.x, old_y, j.y, JETMAN_HEIGHT)
+    if (result["landed"] and j.moving_down) {
+        j.y = result["snap_y"]
+        enter_walk(j)
+    } else if (result["head_bump"] and !j.moving_down) {
+        j.moving_down = true
+    } else if (result["blocked_x"]) {
+        j.facing_left = !j.facing_left
+        j.vel_x = 0
+    }
+}
+
+// Walking moves a flat WALK_STEP per tick (no accel curve, matching
+// JetmanWalk's unconditional inc/dec), then checks THRUST -- held, or
+// no longer supported underfoot (walked off an edge) -- to launch back
+// into flight (jetmanLeavePlatform's small hop off the surface).
+func state_walk(j, input, platforms) {
+    if (input.right) {
+        j.x = wrap_x(j.x + WALK_STEP)
+        j.facing_left = false
+        j.vel_x = MAX_VEL_X_WALKING
+    } else if (input.left) {
+        j.x = wrap_x(j.x - WALK_STEP)
+        j.facing_left = true
+        j.vel_x = MAX_VEL_X_WALKING
+    } else {
+        j.vel_x = 0
+    }
+
+    var result = platforms.collide(j.x, j.y, j.y, JETMAN_HEIGHT)
+    if (input.thrust or !result["landed"]) {
+        enter_fly(j)
+        j.y = j.y - 2.0
+        j.moving_down = false
+    }
+}
+
+// Frozen while dead -- the owning Game drives death timing and calls
+// spawn() again once it's done.
+func state_dying(j, input, platforms) {
+}

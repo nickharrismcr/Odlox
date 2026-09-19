@@ -3,21 +3,43 @@ import spectrum_attr
 
 // @file platform.lox
 // @brief The 4 static platforms: tile-row draw, mirroring DrawPlatforms
-// ($7638). Collision (PlatformCollision $75FC) is added alongside
-// jetman.lox, the first caller that needs it.
+// ($7638), and collision, mirroring PlatformCollision ($75FC) --
+// deliberately position-based rather than pixel-based, per the
+// disassembly's own comment on that routine ("collision detection is
+// location based not pixel/colour based, so even if platform tiles are
+// not drawn, a collision will be detected!").
 
 const TILE = 8
 
+// A generous band (px) around a platform's own y for "close enough to
+// land" -- PlatformCollision's real test is a 2px window on a raw
+// 8-bit position, too tight for this port's float positions/variable
+// tick rate; this is the tuned equivalent (see main.lox's TARGET_FPS
+// comment for the same kind of deviation).
+const LAND_TOLERANCE = 3
+
+func abs_value(v) {
+    if (v < 0) {
+        return -v
+    }
+    return v
+}
+
 // DrawPlatforms draws a left tile at x - (width & ~3) + 16, then
 // (width>>2)-4 middle tiles, then a right tile -- precomputed once here
-// so draw() (and later collide()) don't redo the arithmetic every call.
+// so draw() doesn't redo the arithmetic every call. Collision (below)
+// uses the raw x/width fields directly, matching PlatformCollision's
+// own test (abs(actorX - platformX) < width) -- not left_x/span_px,
+// which is why both are kept.
 func platform_span(rec) {
     var width = rec["width"]
     var left_x = rec["x"] - int(width / 4) * 4 + 16
     var middle_count = int(width / 4) - 4
     return {
         "attr": rec["attr"],
+        "x": rec["x"],
         "y": rec["y"],
+        "width": width,
         "name": rec["name"],
         "left_x": left_x,
         "middle_count": middle_count,
@@ -59,5 +81,42 @@ class Platforms {
             }
             disp.blit_sprite(lib.get("platform_right"), tile_x, rec["y"], colours["ink"], colours["paper"])
         }
+    }
+
+    // Position-based collision for a vertically-moving actor (Jetman or
+    // an alien): x is a single reference column (PlatformCollision
+    // tests the actor as a point, not a box, on this axis), old_y/new_y
+    // are feet position before/after this tick's move, height is the
+    // actor's own reach zone below the platform's own y (matching
+    // PlatformCollision's use of the actor's own height field, not the
+    // platform's -- see docs/plans/jetpac-port.md Part 4).
+    //
+    // Returns {"landed", "snap_y", "blocked_x", "head_bump"}: landed on
+    // crossing down onto a platform's y from at-or-above it; head_bump
+    // in the last LAND_TOLERANCE px of the reach zone (flying up into
+    // the underside); blocked_x anywhere else inside the zone (hit the
+    // platform's side, like a wall).
+    collide(x, old_y, new_y, height) {
+        var result = {"landed": false, "snap_y": new_y, "blocked_x": false, "head_bump": false}
+        foreach (var rec in this.records) {
+            if (rec["attr"] == 0) {
+                continue
+            }
+            if (abs_value(x - rec["x"]) >= rec["width"]) {
+                continue
+            }
+            var dy = new_y - rec["y"]
+            if (dy >= -LAND_TOLERANCE and dy < LAND_TOLERANCE and old_y <= rec["y"] + LAND_TOLERANCE) {
+                result["landed"] = true
+                result["snap_y"] = float(rec["y"])
+            } else if (dy >= 0 and dy < height) {
+                if (dy >= height - LAND_TOLERANCE) {
+                    result["head_bump"] = true
+                } else {
+                    result["blocked_x"] = true
+                }
+            }
+        }
+        return result
     }
 }
