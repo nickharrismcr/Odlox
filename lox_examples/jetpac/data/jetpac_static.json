@@ -1,0 +1,112 @@
+{
+  "default_rocket": {
+    "fuel": 0,
+    "move": 9,
+    "x": 168,
+    "modules": 1,
+    "attr": 2,
+    "height": 28,
+    "y": 183
+  },
+  "collectible_sprites": {
+    "34": "radiation",
+    "36": "chemical_weapon",
+    "40": "diamond",
+    "38": "plutonium",
+    "32": "gold_bar"
+  },
+  "default_top_module": {
+    "x": 48,
+    "type": 4,
+    "attr": 71,
+    "state": 0,
+    "height": 24,
+    "sprite": 16,
+    "y": 71
+  },
+  "default_fuel_pod": {
+    "y": 32,
+    "attr": 67,
+    "state": 1,
+    "height": 24,
+    "type": 4,
+    "sprite": 24,
+    "x": 0
+  },
+  "default_middle_module": {
+    "height": 24,
+    "state": 1,
+    "type": 4,
+    "x": 128,
+    "sprite": 8,
+    "y": 95,
+    "attr": 71
+  },
+  "item_drop_columns": [
+    8,
+    32,
+    40,
+    48,
+    56,
+    64,
+    88,
+    96,
+    120,
+    128,
+    136,
+    192,
+    224,
+    8,
+    88,
+    96
+  ],
+  "default_jetman": {
+    "motion": 1,
+    "height": 36,
+    "state": 0,
+    "vy": 0,
+    "y": 183,
+    "x": 128,
+    "attr": 71,
+    "vx": 0
+  },
+  "default_item": {
+    "state": 0,
+    "height": 24,
+    "type": 14,
+    "attr": 0,
+    "y": 32,
+    "x": 0,
+    "sprite": 0
+  },
+  "platforms": [
+    {
+      "x": 128,
+      "width": 27,
+      "name": "middle",
+      "attr": 4,
+      "y": 96
+    },
+    {
+      "x": 120,
+      "name": "ground",
+      "y": 184,
+      "attr": 6,
+      "width": 136
+    },
+    {
+      "attr": 4,
+      "width": 35,
+      "y": 72,
+      "x": 48,
+      "name": "left"
+    },
+    {
+      "attr": 4,
+      "width": 35,
+      "x": 208,
+      "name": "right",
+      "y": 48
+    }
+  ]
+}

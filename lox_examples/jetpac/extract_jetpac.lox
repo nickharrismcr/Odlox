@@ -1,0 +1,254 @@
+import os
+import json
+import sys
+import skool as skool_module
+
+// @file extract_jetpac.lox
+// @brief Offline: parses jetpac.skool into assets/jetpac_sprites.json,
+// assets/font_sprites.json and data/jetpac_static.json.
+// Usage (from this directory): ../../bin/odlox.exe extract_jetpac.lox jetpac.skool
+
+// DrawFontChar ($7115) computes byte_addr = char*8 + (system_font_addr -
+// 256), so system_font's own label address is character 32 (' '); the
+// block runs 480 bytes = 60 glyphs before the next label.
+const FONT_FIRST_CHAR = 32
+const FONT_CHAR_COUNT = 60
+
+// Reads a 3-byte-header sprite ([x offset (unused here), width in
+// tiles, height in pixels], then width*height packed MSB-first bytes)
+// at label, appending a jetpac_sprites.json entry named `name`.
+func emit_byte_sprite(sk, label, name, sprites) {
+    var header = sk.bytes_at_label(label, 3)
+    var tiles = header[1]
+    var height = header[2]
+    var base = sk.addr_of(label) + 3
+    var data = sk.bytes(base, tiles * height)
+    sprites.append({"name": name, "data_type": "byte", "width": tiles * 8, "data": data})
+}
+
+// Reads a 1-byte-header alien sprite ([height], always 16px/2 bytes wide).
+func emit_alien_sprite(sk, label, name, sprites) {
+    var header = sk.bytes_at_label(label, 1)
+    var height = header[0]
+    var base = sk.addr_of(label) + 1
+    var data = sk.bytes(base, 2 * height)
+    sprites.append({"name": name, "data_type": "byte", "width": 16, "data": data})
+}
+
+// Reads a headerless 8x8 single-tile sprite (platform/life-icon tiles).
+func emit_tile_sprite(sk, label, name, sprites) {
+    var data = sk.bytes_at_label(label, 8)
+    sprites.append({"name": name, "data_type": "byte", "width": 8, "data": data})
+}
+
+// jetman_sprite_table ($76C5) packs 16 entries: 4 poses of 4 pre-shifted
+// copies each (0/2/4/6 pixels, for the ROM's byte-aligned blitter --
+// ActorGetSpriteAddress indexes by x&$06, not a frame counter).
+// Display.blit_sprite plots at an arbitrary x, so the runtime only
+// loads the shift0 sprite of each pose; all 16 are still emitted so the
+// choice is auditable from the JSON.
+const JETMAN_POSES = [
+    {"label_prefix": "gfx_jetman_fly_right", "name_prefix": "jetman_fly_right"},
+    {"label_prefix": "gfx_jetman_fly_left", "name_prefix": "jetman_fly_left"},
+    {"label_prefix": "gfx_jetman_walk_right", "name_prefix": "jetman_walk_right"},
+    {"label_prefix": "gfx_jetman_walk_left", "name_prefix": "jetman_walk_left"}
+]
+const SHIFT_SUFFIXES = ["0", "2", "4", "6"]
+
+func emit_jetman_sprites(sk, sprites) {
+    foreach (var pose in JETMAN_POSES) {
+        for (var i = 0; i < 4; i = i + 1) {
+            var label = format("%s%d", pose["label_prefix"], i + 1)
+            var name = format("%s_shift%s", pose["name_prefix"], SHIFT_SUFFIXES[i])
+            emit_byte_sprite(sk, label, name, sprites)
+        }
+    }
+}
+
+const ROCKET_UPGRADES = [1, 3, 4, 5]
+const ROCKET_PARTS = ["bottom", "middle", "top"]
+
+func emit_rocket_sprites(sk, sprites) {
+    foreach (var u in ROCKET_UPGRADES) {
+        foreach (var part in ROCKET_PARTS) {
+            var label = format("gfx_rocket_u%d_%s", u, part)
+            var name = format("rocket_u%d_%s", u, part)
+            emit_byte_sprite(sk, label, name, sprites)
+        }
+    }
+    emit_byte_sprite(sk, "gfx_rocket_flames1", "rocket_flames_0", sprites)
+    emit_byte_sprite(sk, "gfx_rocket_flames2", "rocket_flames_1", sprites)
+}
+
+// label -> runtime name, shared with extract_collectible_sprites() below
+// (which resolves collectible_sprite_table's word entries back to these
+// same labels via sk.label_at()).
+const ITEM_LABELS = [
+    {"label": "gfx_fuel_pod", "name": "fuel_pod"},
+    {"label": "gfx_gold_bar", "name": "gold_bar"},
+    {"label": "gfx_radiation", "name": "radiation"},
+    {"label": "gfx_chemical_weapon", "name": "chemical_weapon"},
+    {"label": "gfx_plutonium", "name": "plutonium"},
+    {"label": "gfx_diamond", "name": "diamond"}
+]
+
+func emit_item_sprites(sk, sprites) {
+    foreach (var item in ITEM_LABELS) {
+        emit_byte_sprite(sk, item["label"], item["name"], sprites)
+    }
+}
+
+// Level 1 scope: meteor only (alien_sprite_table's other 7 pairs are
+// the seam for later levels, left untouched here).
+func emit_alien_sprites(sk, sprites) {
+    emit_alien_sprite(sk, "gfx_meteor1", "meteor_0", sprites)
+    emit_alien_sprite(sk, "gfx_meteor2", "meteor_1", sprites)
+}
+
+func emit_explosion_sprites(sk, sprites) {
+    emit_byte_sprite(sk, "gfx_explosion_big", "explosion_big", sprites)
+    emit_byte_sprite(sk, "gfx_explosion_medium", "explosion_medium", sprites)
+    emit_byte_sprite(sk, "gfx_explosion_small", "explosion_small", sprites)
+}
+
+func emit_tile_sprites(sk, sprites) {
+    emit_tile_sprite(sk, "tile_platform_left", "platform_left", sprites)
+    emit_tile_sprite(sk, "tile_platfor_mmiddle", "platform_middle", sprites)  // sic -- the skool's own typo
+    emit_tile_sprite(sk, "tile_platform_right", "platform_right", sprites)
+    emit_tile_sprite(sk, "tile_life_icon", "life_icon", sprites)
+}
+
+func emit_font_sprites(sk) {
+    var glyphs = []
+    var base = sk.addr_of("system_font")
+    for (var i = 0; i < FONT_CHAR_COUNT; i = i + 1) {
+        var code = FONT_FIRST_CHAR + i
+        var data = sk.bytes(base + i * 8, 8)
+        var ch = format("%c", code)
+        glyphs.append({"name": ch, "data_type": "byte", "width": 8, "data": data})
+    }
+    return glyphs
+}
+
+// -----------------------------------------------------------------------
+// Static data: gfx_params_platforms ($6003), item_drop_positions_table
+// ($65E9), default_player_state ($6013), default_rocket_state ($601B,
+// 3 consecutive 8-byte records), default_rocket_module_state ($6033),
+// default_item_state ($603B), collectible_sprite_table ($678C). Every
+// number below is read out of the skool, not typed in by hand.
+
+const PLATFORM_NAMES = ["middle", "ground", "left", "right"]  // gfx_params_platforms' own comment order
+
+func extract_platforms(sk) {
+    var base = sk.addr_of("gfx_params_platforms")
+    var out = []
+    for (var i = 0; i < 4; i = i + 1) {
+        var rec = sk.bytes(base + i * 4, 4)
+        out.append({"attr": rec[0], "x": rec[1], "y": rec[2], "width": rec[3], "name": PLATFORM_NAMES[i]})
+    }
+    return out
+}
+
+// field_names[i] names byte i of an 8-byte object-state record; nil
+// skips a byte not needed by the runtime.
+func record_from_bytes(rec, field_names) {
+    var out = {}
+    for (var i = 0; i < len(field_names); i = i + 1) {
+        var key = field_names[i]
+        if (key != nil) {
+            out[key] = rec[i]
+        }
+    }
+    return out
+}
+
+const JETMAN_FIELDS = ["motion", "x", "y", "attr", "state", "vx", "vy", "height"]
+const ROCKET_FIELDS = ["move", "x", "y", "attr", "modules", "fuel", nil, "height"]
+const OBJECT_FIELDS = ["type", "x", "y", "attr", "state", nil, "sprite", "height"]
+
+func item_label_to_name_map() {
+    var m = {}
+    foreach (var item in ITEM_LABELS) {
+        m[item["label"]] = item["name"]
+    }
+    return m
+}
+
+// collectible_sprite_table's offsets are themselves the "sprite" field
+// value a spawned Item's state record carries (see default_fuel_pod's
+// sprite=24 == offset $18's "Fuel Cell" entry) -- offsets $20/$22/$24/
+// $26/$28 are the 5 pickup collectibles, resolved back to a runtime
+// sprite name via sk.label_at() + the same label->name map item
+// sprites are emitted with.
+const COLLECTIBLE_OFFSETS = [32, 34, 36, 38, 40]
+
+func extract_collectible_sprites(sk) {
+    var base = sk.addr_of("collectible_sprite_table")
+    var label_to_name = item_label_to_name_map()
+    var out = {}
+    foreach (var offset in COLLECTIBLE_OFFSETS) {
+        var target_addr = sk.word(base + offset)
+        var label = sk.label_at(target_addr)
+        var name = label_to_name.get(label, nil)
+        if (name == nil) {
+            raise Exception(format("extract_jetpac: no sprite name for collectible label '%s' at offset %d", label, offset))
+        }
+        out[str(offset)] = name
+    }
+    return out
+}
+
+func extract_static(sk) {
+    var out = {}
+    out["platforms"] = extract_platforms(sk)
+    out["item_drop_columns"] = sk.bytes_at_label("item_drop_positions_table", 16)
+    out["default_jetman"] = record_from_bytes(sk.bytes_at_label("default_player_state", 8), JETMAN_FIELDS)
+
+    var rocket_base = sk.addr_of("default_rocket_state")
+    out["default_rocket"] = record_from_bytes(sk.bytes(rocket_base, 8), ROCKET_FIELDS)
+    out["default_top_module"] = record_from_bytes(sk.bytes(rocket_base + 8, 8), OBJECT_FIELDS)
+    out["default_middle_module"] = record_from_bytes(sk.bytes(rocket_base + 16, 8), OBJECT_FIELDS)
+
+    out["default_fuel_pod"] = record_from_bytes(sk.bytes_at_label("default_rocket_module_state", 8), OBJECT_FIELDS)
+    out["default_item"] = record_from_bytes(sk.bytes_at_label("default_item_state", 8), OBJECT_FIELDS)
+
+    out["collectible_sprites"] = extract_collectible_sprites(sk)
+    return out
+}
+
+func ensure_dir(path) {
+    if (!os.exists(path)) {
+        os.mkdir(path)
+    }
+}
+
+func write_json(path, value) {
+    var f = os.open(path, "w")
+    os.write(f, json.encode(value, 2))
+    os.close(f)
+}
+
+var argv = sys.args()
+if (len(argv) < 2) {
+    print("usage: extract_jetpac.lox <path/to/jetpac.skool>")
+} else {
+    var sk = skool_module.Skool(argv[1])
+
+    var sprites = []
+    emit_jetman_sprites(sk, sprites)
+    emit_rocket_sprites(sk, sprites)
+    emit_item_sprites(sk, sprites)
+    emit_alien_sprites(sk, sprites)
+    emit_explosion_sprites(sk, sprites)
+    emit_tile_sprites(sk, sprites)
+    var font_sprites = emit_font_sprites(sk)
+    var static_data = extract_static(sk)
+
+    ensure_dir("assets")
+    ensure_dir("data")
+    write_json("assets/jetpac_sprites.json", sprites)
+    write_json("assets/font_sprites.json", font_sprites)
+    write_json("data/jetpac_static.json", static_data)
+
+    print(format("wrote %d sprites, %d font glyphs, and static data", len(sprites), len(font_sprites)))
+}
