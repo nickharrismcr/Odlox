@@ -1,0 +1,43 @@
+from gfx import *
+import display
+import assets
+import platform as platform_module
+import json
+
+// @file game.lox
+// @brief Owns one Jetpac play session. Step-3 stub: draws the static
+// scene (platforms, rocket base, a stationary Jetman), no movement or
+// input yet -- jetman.lox/rocket.lox (later build steps) replace the
+// two fixed blit_sprite calls below with real Jetman/Rocket classes.
+
+class Game {
+    __init__(sound) {
+        this.sound = sound
+        this.disp = display.Display()
+        this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))
+
+        this.lib = assets.SpriteAssets()
+        this.lib.load("assets/jetpac_sprites.json")
+
+        this.static_data = json.load("data/jetpac_static.json")
+
+        this.platforms = platform_module.Platforms(this.static_data)
+        this.platforms.draw(this.disp, this.lib)
+
+        var white = encode_rgba(255, 255, 255)
+        var black = encode_rgba(0, 0, 0)
+
+        var r = this.static_data["default_rocket"]
+        this.disp.blit_sprite(this.lib.get("rocket_u1_bottom"), r["x"], r["y"] - 16, white, black)
+
+        var j = this.static_data["default_jetman"]
+        this.disp.blit_sprite(this.lib.get("jetman_fly_right_shift0"), j["x"], j["y"] - 24, white, black)
+    }
+
+    tick(win) {
+    }
+
+    is_done() -> bool {
+        return false
+    }
+}

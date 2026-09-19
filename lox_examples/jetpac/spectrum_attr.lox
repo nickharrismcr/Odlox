@@ -1,0 +1,37 @@
+from gfx import *
+
+// @file spectrum_attr.lox
+// @brief Decodes a raw ZX Spectrum attribute byte (bits 0-2 ink, 3-5
+// paper, 6 bright; flash bit 7 is unused) into {ink, paper, bright}.
+// colour_to_rgba() converts an index+bright to a packed-rgba colour.
+
+// Colour component bits, no native bitwise ops in this Lox dialect:
+// blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2
+// (e.g. 3 = magenta = R1G0B1, 6 = yellow = R1G1B0).
+func colour_to_rgba(value, bright) {
+    var level = 205
+    if (bright) {
+        level = 255
+    }
+    var blue = value % 2
+    var red = int(value / 2) % 2
+    var green = int(value / 4) % 2
+
+    var r = 0
+    var g = 0
+    var b = 0
+    if (red != 0) { r = level }
+    if (green != 0) { g = level }
+    if (blue != 0) { b = level }
+    return encode_rgba(r, g, b)
+}
+
+// Returns {"ink": 0-7, "paper": 0-7, "bright": bool} for a raw Spectrum
+// attribute byte -- bright applies to both ink and paper together on
+// real hardware, so it's one shared flag, not per-colour.
+func decode_attribute(byte) {
+    var ink = byte % 8
+    var paper = int(byte / 8) % 8
+    var bright = int(byte / 64) % 2 != 0
+    return {"ink": ink, "paper": paper, "bright": bright}
+}

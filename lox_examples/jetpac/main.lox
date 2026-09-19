@@ -1,0 +1,45 @@
+from gfx import *
+import display
+import colour
+import game
+import sys
+
+//
+// @file main.lox
+// @brief Window + stage lifecycle only. Usage: odlox.exe main.lox
+// (run with cwd = lox_examples/jetpac). No Intro/Demo stage in this
+// scope (see docs/plans/jetpac-port.md) -- straight into Game.
+//
+
+// Original runs one MainLoop pass per 50Hz interrupt but executes only
+// one jump-table entry per pass, so a straight 50fps port moves
+// everything too fast -- 25 is a tuned starting point, not a
+// transcribed rate (see docs/plans/jetpac-port.md Part 4).
+const TARGET_FPS = 25
+const SCALE = 3
+
+var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+win.init()
+win.set_target_fps(TARGET_FPS)
+
+// Display.__init__ builds render textures, so it must be constructed
+// after win.init()'s GL context exists -- Game.__init__ does this.
+var g = game.Game(nil)
+
+while (!win.should_close()) {
+    if (win.key_pressed(win.KEY_ESCAPE)) {
+        break
+    }
+    if (g.is_done()) {
+        break
+    }
+
+    g.tick(win)
+    g.disp.upload()
+
+    win.begin()
+    win.clear(colour.BLACK)
+    g.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
+    win.end()
+}
+win.close()

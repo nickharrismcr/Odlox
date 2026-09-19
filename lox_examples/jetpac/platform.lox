@@ -1,0 +1,63 @@
+from gfx import *
+import spectrum_attr
+
+// @file platform.lox
+// @brief The 4 static platforms: tile-row draw, mirroring DrawPlatforms
+// ($7638). Collision (PlatformCollision $75FC) is added alongside
+// jetman.lox, the first caller that needs it.
+
+const TILE = 8
+
+// DrawPlatforms draws a left tile at x - (width & ~3) + 16, then
+// (width>>2)-4 middle tiles, then a right tile -- precomputed once here
+// so draw() (and later collide()) don't redo the arithmetic every call.
+func platform_span(rec) {
+    var width = rec["width"]
+    var left_x = rec["x"] - int(width / 4) * 4 + 16
+    var middle_count = int(width / 4) - 4
+    return {
+        "attr": rec["attr"],
+        "y": rec["y"],
+        "name": rec["name"],
+        "left_x": left_x,
+        "middle_count": middle_count,
+        "span_px": (middle_count + 2) * TILE
+    }
+}
+
+func platform_colours(attr) {
+    var d = spectrum_attr.decode_attribute(attr)
+    return {
+        "ink": spectrum_attr.colour_to_rgba(d["ink"], d["bright"]),
+        "paper": spectrum_attr.colour_to_rgba(d["paper"], d["bright"])
+    }
+}
+
+class Platforms {
+    __init__(static_data) {
+        this.records = []
+        foreach (var rec in static_data["platforms"]) {
+            this.records.append(platform_span(rec))
+        }
+    }
+
+    // Call once at level init -- platforms never move, and nothing
+    // erases them except a sprite passing over (the save-under restore
+    // that sprite's own clear() already handles).
+    draw(disp, lib) {
+        foreach (var rec in this.records) {
+            if (rec["attr"] == 0) {
+                continue  // colour-0 record: a disabled/unused platform slot
+            }
+            var colours = platform_colours(rec["attr"])
+            var tile_x = rec["left_x"]
+            disp.blit_sprite(lib.get("platform_left"), tile_x, rec["y"], colours["ink"], colours["paper"])
+            tile_x = tile_x + TILE
+            for (var i = 0; i < rec["middle_count"]; i = i + 1) {
+                disp.blit_sprite(lib.get("platform_middle"), tile_x, rec["y"], colours["ink"], colours["paper"])
+                tile_x = tile_x + TILE
+            }
+            disp.blit_sprite(lib.get("platform_right"), tile_x, rec["y"], colours["ink"], colours["paper"])
+        }
+    }
+}
