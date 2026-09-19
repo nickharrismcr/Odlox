@@ -101,6 +101,13 @@ class Jetman < Sprite {
         return this.update_func == state_dying
     }
 
+    // Alien contact / falling too far / running out of air -- whatever
+    // kills Jetman calls this rather than reaching into enter_dying
+    // directly.
+    kill() {
+        enter_dying(this)
+    }
+
     // Overrides Sprite.draw(): Jetman doesn't animate (see
     // docs/plans/jetpac-port.md Part 2 -- ActorGetSpriteAddress indexes
     // jetman_sprite_table by x&$06, a pixel-shift copy for the ROM's

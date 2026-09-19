@@ -6,25 +6,32 @@ import jetman as jetman_module
 import jetman_controller
 import rocket as rocket_module
 import item as item_module
+import alien as alien_module
+import laser as laser_module
+import explosion as explosion_module
+import spawner as spawner_module
 import json
 
 // @file game.lox
-// @brief Owns one Jetpac play session: platforms/Jetman/Rocket/items,
-// ticked each frame via a clear/move/draw phase order (see tick()).
-// Aliens/lasers/HUD/audio land in later build steps (see
-// docs/plans/jetpac-port.md Part 5).
+// @brief Owns one Jetpac play session: platforms/Jetman/Rocket/items/
+// aliens/lasers/explosions, ticked each frame via a clear/move/draw
+// phase order (see tick()). HUD/audio land in later build steps (see
+// docs/plans/jetpac-port.md Part 5). Core loop complete, silent.
 //
 // Item spawning: the skool has exactly one rocket-module/fuel-pod slot
 // and one collectible slot live at a time (they share $5D38/$5D40), so
-// there are exactly two Item instances here. spawner.lox (a later
-// build step) will own the timer that gates spawn_module/
-// spawn_fuel_pod/spawn_collectible -- SPAWN_TICKS is this step's own
-// stand-in.
+// there are exactly two Item instances here; spawner.lox owns the
+// timer that gates all spawning. The alien pool (6) and explosion pool
+// (4) are allocated once here and reused, per the root CLAUDE.md's
+// per-frame allocation discipline.
 
-const SPAWN_TICKS = 40
+const ALIEN_COUNT = 6
+const EXPLOSION_COUNT = 4
+const LIVES_START = 3
+const DEATH_TICKS = 30  // ticks Jetman's own death explosion plays before respawn
 
 // Scoring isn't displayed until hud.lox lands; kept minimal here so
-// item.lox has somewhere to report points.
+// item.lox/alien.lox have somewhere to report points.
 class Score {
     __init__() {
         this.total = 0
@@ -59,7 +66,42 @@ class Game {
 
         this.rocket_item = item_module.Item()
         this.collectible_item = item_module.Item()
-        this.spawn_tick = 0
+
+        this.aliens = []
+        for (var i = 0; i < ALIEN_COUNT; i = i + 1) {
+            this.aliens.append(alien_module.Alien())
+        }
+
+        this.explosions = []
+        for (var i = 0; i < EXPLOSION_COUNT; i = i + 1) {
+            this.explosions.append(explosion_module.Explosion())
+        }
+
+        this.lasers = laser_module.LaserPool()
+        this.spawner = spawner_module.Spawner()
+
+        this.lives = LIVES_START
+        this.die_tick = -1  // -1: not dying
+    }
+
+    // Finds an inactive explosion slot and starts it at (x, y) --
+    // silently drops the explosion if all EXPLOSION_COUNT slots are
+    // busy, which in practice never happens at this scale.
+    spawn_explosion(x, y) {
+        foreach (var e in this.explosions) {
+            if (!e.is_active()) {
+                e.spawn(x, y)
+                return
+            }
+        }
+    }
+
+    is_game_over() -> bool {
+        return this.lives <= 0 and this.die_tick == -1
+    }
+
+    is_done() -> bool {
+        return this.is_game_over()
     }
 
     tick(win) {
@@ -69,19 +111,32 @@ class Game {
         this.rocket.clear(this.disp)
         this.rocket_item.clear(this.disp)
         this.collectible_item.clear(this.disp)
+        foreach (var a in this.aliens) {
+            a.clear(this.disp)
+        }
+        this.lasers.clear(this.disp)
+        foreach (var e in this.explosions) {
+            e.clear(this.disp)
+        }
 
-        this.jetman.step(this.controller, this.platforms)
+        if (!this.jetman.is_dead()) {
+            this.jetman.step(this.controller, this.platforms)
+            if (this.controller.fire) {
+                this.lasers.fire(this.jetman)
+            }
+        }
         this.rocket.step()
         this.rocket_item.step(this.jetman, this.rocket, this.platforms, this.score)
         this.collectible_item.step(this.jetman, this.rocket, this.platforms, this.score)
-        this.spawn_tick = this.spawn_tick + 1
-        if (this.spawn_tick >= SPAWN_TICKS) {
-            this.spawn_tick = 0
-            if (!item_module.spawn_module(this.rocket_item, this.jetman, this.rocket, this.static_data)) {
-                item_module.spawn_fuel_pod(this.rocket_item, this.jetman, this.rocket, this.static_data)
-            }
-            item_module.spawn_collectible(this.collectible_item, this.jetman, this.static_data)
+        foreach (var a in this.aliens) {
+            a.step(this.jetman, this.platforms, this.lasers, this.score, this)
         }
+        this.lasers.update()
+        foreach (var e in this.explosions) {
+            e.step()
+        }
+        this.spawner.tick(this)
+        step_death(this)
 
         this.rocket.draw(this.disp, this.lib)
         if (this.rocket_item.is_active()) {
@@ -90,10 +145,44 @@ class Game {
         if (this.collectible_item.is_active()) {
             this.collectible_item.draw(this.disp, this.lib)
         }
-        this.jetman.draw(this.disp, this.lib)
+        foreach (var a in this.aliens) {
+            if (a.is_active()) {
+                a.draw(this.disp, this.lib)
+            }
+        }
+        this.lasers.draw(this.disp)
+        foreach (var e in this.explosions) {
+            if (e.is_active()) {
+                e.draw(this.disp, this.lib)
+            }
+        }
+        if (!this.jetman.is_dead()) {
+            this.jetman.draw(this.disp, this.lib)
+        }
     }
+}
 
-    is_done() -> bool {
-        return false
+// Jetman's own death: fires the explosion once (die_tick edge from
+// -1), waits DEATH_TICKS, then respawns him (or ends the session once
+// lives run out) -- alien.lox's Alien.step() takes `g` as its
+// "explosions" argument (see spawn_explosion() above) purely so it can
+// call this on a kill; it never reads any other Game field.
+func step_death(g) {
+    if (!g.jetman.is_dead()) {
+        return
+    }
+    if (g.die_tick == -1) {
+        g.spawn_explosion(g.jetman.x, g.jetman.y)
+        g.lives = g.lives - 1
+        g.die_tick = 0
+        return
+    }
+    g.die_tick = g.die_tick + 1
+    if (g.die_tick < DEATH_TICKS) {
+        return
+    }
+    g.die_tick = -1
+    if (g.lives > 0) {
+        g.jetman.spawn(g.static_data)
     }
 }

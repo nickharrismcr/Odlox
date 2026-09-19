@@ -1,0 +1,57 @@
+from gfx import *
+import item as item_module
+import alien as alien_module
+
+// @file spawner.lox
+// @brief The ROM's NewActor ($6971): advances a timer and gates
+// module/fuel-pod, collectible, and alien spawns. Module/fuel-pod and
+// collectible gate conditions live in item.lox (spawn_module/
+// spawn_fuel_pod/spawn_collectible); this file just calls them on the
+// ROM's own cadence -- new_fuel_pod every (255-timer)%16==0 tick,
+// new_collectible every timer%128==0 tick -- and owns alien spawning
+// itself, since alien.lox has no equivalent gate function of its own
+// (level 1 has only meteors, spawned here directly).
+
+const ALIEN_SPAWN_TICKS = 96  // no ROM equivalent cadence for meteors specifically; tuned for this port
+const METEOR_SPEED = 0.5
+
+class Spawner {
+    __init__() {
+        this.timer = 0
+    }
+
+    tick(g) {
+        this.timer = (this.timer + 1) % 256
+
+        if (!g.rocket_item.is_active()) {
+            var spawned_module = item_module.spawn_module(g.rocket_item, g.jetman, g.rocket, g.static_data)
+            if (!spawned_module and (255 - this.timer) % 16 == 0) {
+                item_module.spawn_fuel_pod(g.rocket_item, g.jetman, g.rocket, g.static_data)
+            }
+        }
+
+        if (!g.collectible_item.is_active() and this.timer % 128 == 0) {
+            item_module.spawn_collectible(g.collectible_item, g.jetman, g.static_data)
+        }
+
+        if (this.timer % ALIEN_SPAWN_TICKS == 0) {
+            spawn_alien_if_free(g)
+        }
+    }
+}
+
+// A free alien slot gets a meteor entering from a random top edge
+// column, drifting down-and-across at a small random velocity.
+func spawn_alien_if_free(g) {
+    foreach (var a in g.aliens) {
+        if (!a.is_active()) {
+            var x = float(int(rand() * 240.0))
+            var vx = 0.3 + rand() * 0.4
+            if (rand() < 0.5) {
+                vx = -vx
+            }
+            alien_module.spawn_meteor(a, x, 40.0, vx, METEOR_SPEED)
+            return
+        }
+    }
+}

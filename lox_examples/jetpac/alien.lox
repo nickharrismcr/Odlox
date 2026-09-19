@@ -1,0 +1,124 @@
+from gfx import *
+from game_sprite import Sprite
+
+// @file alien.lox
+// @brief A fixed pool of 6 alien slots, allocated once and reused.
+// state_meteor is the only update function in this scope (level 1);
+// the seam for the other 7 alien types is ALIEN_STATE_BY_LEVEL below,
+// paired with alien_sprites_by_level once a second level exists.
+// Derived from MeteorUpdate ($6D9C): move, bounce off screen edges
+// (this port's own simplification -- meteors don't bounce off the
+// screen in the ROM, they're removed at the top like other aliens, but
+// levels/alien-removal-on-despawn are out of scope here), then laser/
+// platform/Jetman collision in that order.
+
+const METEOR_FRAMES = ["meteor_0", "meteor_1"]
+const METEOR_ANIM_TICKS = 6
+const METEOR_SCORE = 25  // $6DD7
+const ALIEN_COUNT = 6
+
+const COLLECT_DX = 12.0  // ALIEN_HIT_DX ($0C, $6E00) -- shared with item.lox's proximity test
+const COLLECT_DY = 21.0  // ALIEN_HIT_DY ($15, $6E14)
+
+class Alien < Sprite {
+    __init__() {
+        super.__init__()
+        this.frames = len(METEOR_FRAMES)
+        this.animation_speed = METEOR_ANIM_TICKS
+        this.image_list = METEOR_FRAMES
+        this.colour = encode_rgba(255, 255, 255)
+        this.paper = encode_rgba(0, 0, 0)
+        this.active = false
+        this.vx = 0.0
+        this.vy = 0.0
+        this.update_func = state_idle
+    }
+
+    is_active() -> bool {
+        return this.active
+    }
+
+    step(jetman, platforms, lasers, score, explosions) {
+        var f = this.update_func
+        f(this, jetman, platforms, lasers, score, explosions)
+    }
+}
+
+func spawn_meteor(alien, x, y, vx, vy) -> bool {
+    if (alien.active) {
+        return false
+    }
+    alien.x = x
+    alien.y = y
+    alien.vx = vx
+    alien.vy = vy
+    alien.active = true
+    alien.last_x = nil
+    alien.last_y = nil
+    alien.frame = 0
+    alien.tick = 0
+    alien.update_func = state_meteor
+    return true
+}
+
+func kill_meteor(alien, explosions, award_points, score) {
+    alien.active = false
+    alien.update_func = state_idle
+    if (award_points) {
+        score.add(METEOR_SCORE)
+    }
+    explosions.spawn_explosion(alien.x, alien.y)
+}
+
+func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
+    alien.advance_frame()
+    alien.x = alien.x + alien.vx
+    alien.y = alien.y + alien.vy
+
+    if (alien.x < 0.0 or alien.x > 240.0) {
+        alien.vx = -alien.vx
+    }
+    if (alien.y < 32.0 or alien.y > 192.0) {
+        alien.vy = -alien.vy
+    }
+
+    if (lasers.check_hit(alien.x, alien.y)) {
+        kill_meteor(alien, explosions, true, score)
+        return
+    }
+
+    var result = platforms.collide(alien.x, alien.y, alien.y, 16)
+    if (result["landed"] or result["blocked_x"]) {
+        kill_meteor(alien, explosions, false, score)
+        return
+    }
+
+    if (jetman.is_dead()) {
+        return
+    }
+    var dx = alien.x - jetman.x
+    if (dx < 0.0) {
+        dx = -dx
+    }
+    var dy = alien.y - jetman.y
+    if (dy < 0.0) {
+        dy = -dy
+    }
+    if (dx < COLLECT_DX and dy < COLLECT_DY) {
+        // Mutual kill: the skool's own alien-side handler
+        // (AlienCollisionAnimSfx $6456) always destroys the alien with
+        // no points on a bare-contact kill; standard arcade convention
+        // (and the point of touching Jetman to an alien at all) is that
+        // it costs him too, so this port kills both.
+        kill_meteor(alien, explosions, false, score)
+        jetman.kill()
+    }
+}
+
+func state_idle(alien, jetman, platforms, lasers, score, explosions) {
+}
+
+// Seam for the other 7 alien types: pairs with a per-level
+// alien_sprites_by_level table once a second level exists. Declared
+// after state_meteor since top-level initializers run in source order.
+const ALIEN_STATE_BY_LEVEL = [state_meteor, nil, nil, nil, nil, nil, nil, nil]

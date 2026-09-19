@@ -1,0 +1,154 @@
+from gfx import *
+
+// @file laser.lox
+// @brief LaserPool: 4 preallocated beam slots, matching
+// laser_beam_params' 4 records. Simplified from LaserBeamFire ($6E1B)/
+// LaserBeamDraw ($6F86)/LaserBeamAnimate ($6FC5)'s per-pixel pulse-fade
+// animation into a single moving line segment per beam -- the ROM's
+// own version tracks a fading multi-pixel trail; this port only needs
+// "a beam is here, moving this way, this long" for collision and
+// display.
+
+const MAX_BEAMS = 4
+const BEAM_SPEED = 8.0   // px/tick
+const BEAM_LENGTH = 24
+const BEAM_THICKNESS = 2
+const BEAM_Y_OFFSET = 13.0  // LaserBeamDraw: aligned to the middle of Jetman's sprite
+
+const BEAM_COLOURS = [
+    encode_rgba(255, 255, 0),
+    encode_rgba(255, 0, 0),
+    encode_rgba(255, 0, 0),
+    encode_rgba(0, 255, 255)
+]
+
+const SCREEN_W = 256
+const SCREEN_H = 192
+
+// Display.plot()/set_attr() don't bounds-check (unlike blit_sprite,
+// which clips its own loop) -- a beam's tail can still be off-screen
+// for a tick or two after its leading edge (tracked by update()) has
+// already wrapped past the edge, so every plot here needs its own guard.
+func plot_clamped(disp, x, y, v) {
+    if (x >= 0 and x < SCREEN_W and y >= 0 and y < SCREEN_H) {
+        disp.plot(x, y, v)
+    }
+}
+
+func set_attr_clamped(disp, x, y, ink, paper) {
+    var cx = int(x / 8)
+    var cy = int(y / 8)
+    if (cx >= 0 and cx < SCREEN_W / 8 and cy >= 0 and cy < SCREEN_H / 8) {
+        disp.set_attr(cx, cy, ink, paper)
+    }
+}
+
+func new_beam() {
+    return {
+        "active": false,
+        "x": 0.0,
+        "y": 0.0,
+        "dir": 1,
+        "colour": encode_rgba(255, 255, 0),
+        "last_x": nil,
+        "last_y": nil
+    }
+}
+
+class LaserPool {
+    __init__() {
+        this.beams = []
+        for (var i = 0; i < MAX_BEAMS; i = i + 1) {
+            this.beams.append(new_beam())
+        }
+    }
+
+    // Fires from Jetman's gun (LaserNewIfFreeSlot: only if a slot is
+    // free -- no queueing).
+    fire(jetman) {
+        for (var i = 0; i < MAX_BEAMS; i = i + 1) {
+            var b = this.beams[i]
+            if (!b["active"]) {
+                b["active"] = true
+                b["x"] = jetman.x
+                b["y"] = jetman.y - BEAM_Y_OFFSET
+                b["dir"] = 1
+                if (jetman.facing_left) {
+                    b["dir"] = -1
+                }
+                b["colour"] = BEAM_COLOURS[i]
+                b["last_x"] = nil
+                return
+            }
+        }
+    }
+
+    clear(disp) {
+        foreach (var b in this.beams) {
+            if (b["last_x"] != nil) {
+                for (var i = 0; i < BEAM_LENGTH; i = i + 1) {
+                    for (var t = 0; t < BEAM_THICKNESS; t = t + 1) {
+                        plot_clamped(disp, b["last_x"] + i, b["last_y"] + t, 0.0)
+                    }
+                }
+            }
+        }
+    }
+
+    // Moves every active beam, deactivating any that left the screen.
+    update() {
+        foreach (var b in this.beams) {
+            if (!b["active"]) {
+                continue
+            }
+            b["x"] = b["x"] + BEAM_SPEED * float(b["dir"])
+            if (b["x"] < -BEAM_LENGTH or b["x"] > 256.0 + BEAM_LENGTH) {
+                b["active"] = false
+            }
+        }
+    }
+
+    draw(disp) {
+        foreach (var b in this.beams) {
+            if (!b["active"]) {
+                continue
+            }
+            var x0 = int(b["x"])
+            if (b["dir"] < 0) {
+                x0 = x0 - BEAM_LENGTH
+            }
+            var y0 = int(b["y"])
+            for (var i = 0; i < BEAM_LENGTH; i = i + 1) {
+                for (var t = 0; t < BEAM_THICKNESS; t = t + 1) {
+                    plot_clamped(disp, x0 + i, y0 + t, 1.0)
+                }
+            }
+            set_attr_clamped(disp, x0, y0, b["colour"], encode_rgba(0, 0, 0))
+            b["last_x"] = x0
+            b["last_y"] = y0
+        }
+    }
+
+    // Consumes and returns true for the first active beam within
+    // BEAM_LENGTH/8px of (x, y) -- used for alien hit testing.
+    check_hit(x, y) -> bool {
+        foreach (var b in this.beams) {
+            if (!b["active"]) {
+                continue
+            }
+            var dx = b["x"] - x
+            if (dx < 0.0) {
+                dx = -dx
+            }
+            var dy = b["y"] - y
+            if (dy < 0.0) {
+                dy = -dy
+            }
+            if (dx < BEAM_LENGTH and dy < 8.0) {
+                b["active"] = false
+                return true
+            }
+        }
+        return false
+    }
+}

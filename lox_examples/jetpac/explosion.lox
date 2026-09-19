@@ -1,0 +1,55 @@
+from gfx import *
+from game_sprite import Sprite
+
+// @file explosion.lox
+// @brief The 3-frame big/medium/small explosion cycle, used for both
+// alien kills and Jetman's death (AnimateExplosion $683E).
+
+const EXPLOSION_FRAMES = ["explosion_big", "explosion_medium", "explosion_small"]
+const EXPLOSION_TICKS_PER_FRAME = 4
+
+class Explosion < Sprite {
+    __init__() {
+        super.__init__()
+        this.frames = 1
+        this.image_list = EXPLOSION_FRAMES
+        this.colour = encode_rgba(255, 255, 255)
+        this.paper = encode_rgba(0, 0, 0)
+        this.active = false
+        this.step_index = 0
+    }
+
+    spawn(x, y) {
+        this.x = x
+        this.y = y
+        this.step_index = 0
+        this.frame = 0
+        this.tick = 0
+        this.active = true
+        this.last_x = nil
+        this.last_y = nil
+    }
+
+    is_active() -> bool {
+        return this.active
+    }
+
+    // Steps the 3-frame cycle, deactivating once it completes -- not
+    // advance_frame()'s own wrap-around (which would loop forever).
+    step() {
+        if (!this.active) {
+            return
+        }
+        this.tick = this.tick + 1
+        if (this.tick < EXPLOSION_TICKS_PER_FRAME) {
+            return
+        }
+        this.tick = 0
+        this.step_index = this.step_index + 1
+        if (this.step_index >= len(EXPLOSION_FRAMES)) {
+            this.active = false
+            return
+        }
+        this.frame = this.step_index
+    }
+}
