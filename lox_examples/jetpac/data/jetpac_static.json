@@ -1,45 +1,76 @@
 {
   "default_rocket": {
-    "fuel": 0,
     "move": 9,
+    "fuel": 0,
+    "height": 28,
     "x": 168,
     "modules": 1,
-    "attr": 2,
-    "height": 28,
-    "y": 183
+    "y": 183,
+    "attr": 2
   },
+  "platforms": [
+    {
+      "y": 96,
+      "name": "middle",
+      "width": 27,
+      "attr": 4,
+      "x": 128
+    },
+    {
+      "attr": 6,
+      "name": "ground",
+      "x": 120,
+      "y": 184,
+      "width": 136
+    },
+    {
+      "name": "left",
+      "width": 35,
+      "y": 72,
+      "x": 48,
+      "attr": 4
+    },
+    {
+      "attr": 4,
+      "name": "right",
+      "x": 208,
+      "y": 48,
+      "width": 35
+    }
+  ],
   "collectible_sprites": {
-    "34": "radiation",
+    "32": "gold_bar",
     "36": "chemical_weapon",
-    "40": "diamond",
     "38": "plutonium",
-    "32": "gold_bar"
+    "40": "diamond",
+    "34": "radiation"
   },
-  "default_top_module": {
-    "x": 48,
-    "type": 4,
+  "default_jetman": {
+    "height": 36,
+    "motion": 1,
+    "x": 128,
+    "y": 183,
+    "vx": 0,
     "attr": 71,
     "state": 0,
-    "height": 24,
-    "sprite": 16,
-    "y": 71
+    "vy": 0
   },
-  "default_fuel_pod": {
+  "default_item": {
     "y": 32,
-    "attr": 67,
-    "state": 1,
+    "x": 0,
+    "state": 0,
+    "attr": 0,
+    "sprite": 0,
     "height": 24,
-    "type": 4,
-    "sprite": 24,
-    "x": 0
+    "type": 14
   },
   "default_middle_module": {
-    "height": 24,
-    "state": 1,
-    "type": 4,
-    "x": 128,
     "sprite": 8,
+    "height": 24,
+    "type": 4,
     "y": 95,
+    "x": 128,
+    "state": 1,
     "attr": 71
   },
   "item_drop_columns": [
@@ -60,53 +91,22 @@
     88,
     96
   ],
-  "default_jetman": {
-    "motion": 1,
-    "height": 36,
-    "state": 0,
-    "vy": 0,
-    "y": 183,
-    "x": 128,
-    "attr": 71,
-    "vx": 0
-  },
-  "default_item": {
-    "state": 0,
+  "default_fuel_pod": {
+    "sprite": 24,
     "height": 24,
-    "type": 14,
-    "attr": 0,
-    "y": 32,
+    "attr": 67,
+    "state": 1,
+    "type": 4,
     "x": 0,
-    "sprite": 0
+    "y": 32
   },
-  "platforms": [
-    {
-      "x": 128,
-      "width": 27,
-      "name": "middle",
-      "attr": 4,
-      "y": 96
-    },
-    {
-      "x": 120,
-      "name": "ground",
-      "y": 184,
-      "attr": 6,
-      "width": 136
-    },
-    {
-      "attr": 4,
-      "width": 35,
-      "y": 72,
-      "x": 48,
-      "name": "left"
-    },
-    {
-      "attr": 4,
-      "width": 35,
-      "x": 208,
-      "name": "right",
-      "y": 48
-    }
-  ]
+  "default_top_module": {
+    "state": 0,
+    "attr": 71,
+    "sprite": 16,
+    "y": 71,
+    "x": 48,
+    "type": 4,
+    "height": 24
+  }
 }

@@ -1,6 +1,5 @@
 [
   {
-    "width": 8,
     "data": [
       0,
       0,
@@ -12,10 +11,10 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": " "
   },
   {
-    "width": 8,
     "data": [
       0,
       16,
@@ -26,11 +25,11 @@
       16,
       0
     ],
+    "width": 8,
     "data_type": "byte",
     "name": "!"
   },
   {
-    "width": 8,
     "data": [
       0,
       36,
@@ -41,11 +40,11 @@
       0,
       0
     ],
+    "name": "\"",
     "data_type": "byte",
-    "name": "\""
+    "width": 8
   },
   {
-    "width": 8,
     "data": [
       0,
       36,
@@ -57,9 +56,12 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": "#"
   },
   {
+    "width": 8,
+    "name": "$",
     "data": [
       0,
       8,
@@ -70,12 +72,9 @@
       62,
       8
     ],
-    "data_type": "byte",
-    "width": 8,
-    "name": "$"
+    "data_type": "byte"
   },
   {
-    "width": 8,
     "data": [
       0,
       98,
@@ -86,11 +85,11 @@
       70,
       0
     ],
-    "data_type": "byte",
-    "name": "%"
+    "width": 8,
+    "name": "%",
+    "data_type": "byte"
   },
   {
-    "width": 8,
     "data": [
       0,
       16,
@@ -102,10 +101,13 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": "&"
   },
   {
     "width": 8,
+    "name": "'",
+    "data_type": "byte",
     "data": [
       0,
       8,
@@ -115,12 +117,11 @@
       0,
       0,
       0
-    ],
-    "data_type": "byte",
-    "name": "'"
+    ]
   },
   {
-    "width": 8,
+    "data_type": "byte",
+    "name": "(",
     "data": [
       0,
       4,
@@ -131,26 +132,24 @@
       4,
       0
     ],
-    "data_type": "byte",
-    "name": "("
-  },
-  {
-    "data": [
-      0,
-      32,
-      16,
-      16,
-      16,
-      16,
-      32,
-      0
-    ],
-    "data_type": "byte",
-    "name": ")",
     "width": 8
   },
   {
-    "width": 8,
+    "data_type": "byte",
+    "name": ")",
+    "data": [
+      0,
+      32,
+      16,
+      16,
+      16,
+      16,
+      32,
+      0
+    ],
+    "width": 8
+  },
+  {
     "data": [
       0,
       0,
@@ -161,6 +160,7 @@
       20,
       0
     ],
+    "width": 8,
     "data_type": "byte",
     "name": "*"
   },
@@ -175,11 +175,13 @@
       8,
       0
     ],
-    "data_type": "byte",
     "name": "+",
+    "data_type": "byte",
     "width": 8
   },
   {
+    "data_type": "byte",
+    "name": ",",
     "data": [
       0,
       0,
@@ -190,12 +192,9 @@
       8,
       16
     ],
-    "data_type": "byte",
-    "name": ",",
     "width": 8
   },
   {
-    "width": 8,
     "data": [
       0,
       0,
@@ -207,10 +206,10 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": "-"
   },
   {
-    "width": 8,
     "data": [
       0,
       0,
@@ -222,6 +221,7 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": "."
   },
   {
@@ -235,11 +235,13 @@
       32,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "/",
-    "width": 8
+    "data_type": "byte"
   },
   {
+    "width": 8,
+    "name": "0",
     "data": [
       0,
       60,
@@ -250,9 +252,7 @@
       60,
       0
     ],
-    "data_type": "byte",
-    "width": 8,
-    "name": "0"
+    "data_type": "byte"
   },
   {
     "data": [
@@ -265,9 +265,9 @@
       62,
       0
     ],
+    "width": 8,
     "data_type": "byte",
-    "name": "1",
-    "width": 8
+    "name": "1"
   },
   {
     "data": [
@@ -280,13 +280,11 @@
       126,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "2",
-    "width": 8
+    "data_type": "byte"
   },
   {
-    "width": 8,
-    "name": "3",
     "data": [
       0,
       60,
@@ -297,7 +295,9 @@
       60,
       0
     ],
-    "data_type": "byte"
+    "data_type": "byte",
+    "width": 8,
+    "name": "3"
   },
   {
     "data": [
@@ -310,9 +310,9 @@
       8,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "4",
-    "width": 8
+    "data_type": "byte"
   },
   {
     "data": [
@@ -325,9 +325,9 @@
       60,
       0
     ],
-    "data_type": "byte",
     "width": 8,
-    "name": "5"
+    "name": "5",
+    "data_type": "byte"
   },
   {
     "data": [
@@ -341,11 +341,13 @@
       0
     ],
     "data_type": "byte",
-    "name": "6",
-    "width": 8
+    "width": 8,
+    "name": "6"
   },
   {
     "width": 8,
+    "name": "7",
+    "data_type": "byte",
     "data": [
       0,
       126,
@@ -355,9 +357,7 @@
       16,
       16,
       0
-    ],
-    "data_type": "byte",
-    "name": "7"
+    ]
   },
   {
     "data": [
@@ -370,12 +370,13 @@
       60,
       0
     ],
-    "data_type": "byte",
     "name": "8",
+    "data_type": "byte",
     "width": 8
   },
   {
-    "width": 8,
+    "data_type": "byte",
+    "name": "9",
     "data": [
       0,
       60,
@@ -386,8 +387,7 @@
       60,
       0
     ],
-    "data_type": "byte",
-    "name": "9"
+    "width": 8
   },
   {
     "data": [
@@ -400,11 +400,12 @@
       16,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": ":",
-    "width": 8
+    "data_type": "byte"
   },
   {
+    "data_type": "byte",
     "width": 8,
     "data": [
       0,
@@ -416,7 +417,6 @@
       16,
       32
     ],
-    "data_type": "byte",
     "name": ";"
   },
   {
@@ -431,11 +431,12 @@
       0
     ],
     "data_type": "byte",
-    "name": "<",
-    "width": 8
+    "width": 8,
+    "name": "<"
   },
   {
     "width": 8,
+    "name": "=",
     "data": [
       0,
       0,
@@ -446,12 +447,12 @@
       0,
       0
     ],
-    "data_type": "byte",
-    "name": "="
+    "data_type": "byte"
   },
   {
     "width": 8,
     "name": ">",
+    "data_type": "byte",
     "data": [
       0,
       0,
@@ -461,10 +462,10 @@
       8,
       16,
       0
-    ],
-    "data_type": "byte"
+    ]
   },
   {
+    "data_type": "byte",
     "width": 8,
     "data": [
       0,
@@ -476,10 +477,11 @@
       8,
       0
     ],
-    "data_type": "byte",
     "name": "?"
   },
   {
+    "width": 8,
+    "name": "@",
     "data": [
       0,
       60,
@@ -490,27 +492,26 @@
       60,
       0
     ],
-    "data_type": "byte",
-    "name": "@",
-    "width": 8
-  },
-  {
-    "width": 8,
-    "name": "A",
-    "data": [
-      0,
-      60,
-      66,
-      66,
-      126,
-      66,
-      66,
-      0
-    ],
     "data_type": "byte"
   },
   {
+    "data": [
+      0,
+      60,
+      66,
+      66,
+      126,
+      66,
+      66,
+      0
+    ],
     "width": 8,
+    "data_type": "byte",
+    "name": "A"
+  },
+  {
+    "data_type": "byte",
+    "name": "B",
     "data": [
       0,
       124,
@@ -521,53 +522,52 @@
       124,
       0
     ],
-    "data_type": "byte",
-    "name": "B"
-  },
-  {
-    "data_type": "byte",
-    "name": "C",
-    "width": 8,
-    "data": [
-      0,
-      60,
-      66,
-      64,
-      64,
-      66,
-      60,
-      0
-    ]
-  },
-  {
-    "data": [
-      0,
-      120,
-      68,
-      66,
-      66,
-      68,
-      120,
-      0
-    ],
-    "data_type": "byte",
-    "name": "D",
     "width": 8
   },
   {
     "data_type": "byte",
+    "width": 8,
+    "data": [
+      0,
+      60,
+      66,
+      64,
+      64,
+      66,
+      60,
+      0
+    ],
+    "name": "C"
+  },
+  {
+    "data_type": "byte",
+    "width": 8,
+    "data": [
+      0,
+      120,
+      68,
+      66,
+      66,
+      68,
+      120,
+      0
+    ],
+    "name": "D"
+  },
+  {
+    "data": [
+      0,
+      126,
+      64,
+      124,
+      64,
+      64,
+      126,
+      0
+    ],
+    "width": 8,
     "name": "E",
-    "width": 8,
-    "data": [
-      0,
-      126,
-      64,
-      124,
-      64,
-      64,
-      126,
-      0
-    ]
+    "data_type": "byte"
   },
   {
     "data": [
@@ -580,11 +580,12 @@
       64,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "F",
-    "width": 8
+    "data_type": "byte"
   },
   {
+    "data_type": "byte",
     "width": 8,
     "data": [
       0,
@@ -596,10 +597,10 @@
       60,
       0
     ],
-    "data_type": "byte",
     "name": "G"
   },
   {
+    "data_type": "byte",
     "width": 8,
     "data": [
       0,
@@ -611,11 +612,9 @@
       66,
       0
     ],
-    "data_type": "byte",
     "name": "H"
   },
   {
-    "width": 8,
     "data": [
       0,
       62,
@@ -626,8 +625,9 @@
       62,
       0
     ],
+    "name": "I",
     "data_type": "byte",
-    "name": "I"
+    "width": 8
   },
   {
     "data": [
@@ -641,10 +641,12 @@
       0
     ],
     "data_type": "byte",
-    "name": "J",
-    "width": 8
+    "width": 8,
+    "name": "J"
   },
   {
+    "width": 8,
+    "name": "K",
     "data": [
       0,
       68,
@@ -655,11 +657,11 @@
       66,
       0
     ],
-    "data_type": "byte",
-    "name": "K",
-    "width": 8
+    "data_type": "byte"
   },
   {
+    "width": 8,
+    "name": "L",
     "data": [
       0,
       64,
@@ -670,14 +672,9 @@
       126,
       0
     ],
-    "data_type": "byte",
-    "name": "L",
-    "width": 8
+    "data_type": "byte"
   },
   {
-    "data_type": "byte",
-    "name": "M",
-    "width": 8,
     "data": [
       0,
       66,
@@ -687,7 +684,10 @@
       66,
       66,
       0
-    ]
+    ],
+    "name": "M",
+    "data_type": "byte",
+    "width": 8
   },
   {
     "data": [
@@ -700,14 +700,11 @@
       66,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "N",
-    "width": 8
+    "data_type": "byte"
   },
   {
-    "data_type": "byte",
-    "name": "O",
-    "width": 8,
     "data": [
       0,
       60,
@@ -717,10 +714,12 @@
       66,
       60,
       0
-    ]
+    ],
+    "width": 8,
+    "name": "O",
+    "data_type": "byte"
   },
   {
-    "width": 8,
     "data": [
       0,
       124,
@@ -732,10 +731,10 @@
       0
     ],
     "data_type": "byte",
+    "width": 8,
     "name": "P"
   },
   {
-    "width": 8,
     "data": [
       0,
       60,
@@ -746,13 +745,11 @@
       60,
       0
     ],
+    "width": 8,
     "data_type": "byte",
     "name": "Q"
   },
   {
-    "data_type": "byte",
-    "name": "R",
-    "width": 8,
     "data": [
       0,
       124,
@@ -762,9 +759,14 @@
       68,
       66,
       0
-    ]
+    ],
+    "name": "R",
+    "data_type": "byte",
+    "width": 8
   },
   {
+    "data_type": "byte",
+    "name": "S",
     "data": [
       0,
       60,
@@ -775,13 +777,12 @@
       60,
       0
     ],
-    "data_type": "byte",
-    "name": "S",
     "width": 8
   },
   {
     "width": 8,
     "name": "T",
+    "data_type": "byte",
     "data": [
       0,
       254,
@@ -791,13 +792,9 @@
       16,
       16,
       0
-    ],
-    "data_type": "byte"
+    ]
   },
   {
-    "data_type": "byte",
-    "name": "U",
-    "width": 8,
     "data": [
       0,
       66,
@@ -807,12 +804,14 @@
       66,
       60,
       0
-    ]
+    ],
+    "width": 8,
+    "name": "U",
+    "data_type": "byte"
   },
   {
     "data_type": "byte",
     "name": "V",
-    "width": 8,
     "data": [
       0,
       66,
@@ -822,9 +821,13 @@
       36,
       24,
       0
-    ]
+    ],
+    "width": 8
   },
   {
+    "width": 8,
+    "name": "W",
+    "data_type": "byte",
     "data": [
       0,
       66,
@@ -834,10 +837,7 @@
       90,
       36,
       0
-    ],
-    "data_type": "byte",
-    "name": "W",
-    "width": 8
+    ]
   },
   {
     "data": [
@@ -850,14 +850,13 @@
       66,
       0
     ],
+    "width": 8,
     "data_type": "byte",
-    "name": "X",
-    "width": 8
+    "name": "X"
   },
   {
     "data_type": "byte",
     "name": "Y",
-    "width": 8,
     "data": [
       0,
       130,
@@ -867,7 +866,8 @@
       16,
       16,
       0
-    ]
+    ],
+    "width": 8
   },
   {
     "data": [
@@ -880,9 +880,9 @@
       126,
       0
     ],
-    "data_type": "byte",
+    "width": 8,
     "name": "Z",
-    "width": 8
+    "data_type": "byte"
   },
   {
     "data": [
@@ -895,8 +895,8 @@
       66,
       60
     ],
+    "width": 8,
     "data_type": "byte",
-    "name": "[",
-    "width": 8
+    "name": "["
   }
 ]

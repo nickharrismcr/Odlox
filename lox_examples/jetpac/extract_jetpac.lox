@@ -14,25 +14,47 @@ import skool as skool_module
 const FONT_FIRST_CHAR = 32
 const FONT_CHAR_COUNT = 60
 
+// "Actor" sprites (the 3-byte/1-byte-header kinds below) are drawn by
+// MaskSprite ($7705), which starts at the actor's own Y position and
+// steps UP the screen one row per byte-row consumed (via
+// ScreenPosOnePixelAbove/$72b6, "dec h") -- so row 0 in address order
+// is the sprite's BOTTOM row, not its top. This is the opposite of
+// DrawCharPixels ($7126, "inc h"), which steps down and is what the
+// font and platform/life-icon tiles use (see emit_font_sprites/
+// emit_tile_sprite below) -- those stay in address order unchanged.
+// Reorders row-major byte data (bytes_per_row bytes per row, `height`
+// rows) so address-order row 0 (bottom on screen) ends up last.
+func reverse_rows(data, bytes_per_row, height) {
+    var out = []
+    for (var row = height - 1; row >= 0; row = row - 1) {
+        for (var bx = 0; bx < bytes_per_row; bx = bx + 1) {
+            out.append(data[row * bytes_per_row + bx])
+        }
+    }
+    return out
+}
+
 // Reads a 3-byte-header sprite ([x offset (unused here), width in
-// tiles, height in pixels], then width*height packed MSB-first bytes)
-// at label, appending a jetpac_sprites.json entry named `name`.
+// tiles, height in pixels], then width*height packed MSB-first bytes,
+// bottom row first -- see reverse_rows) at label, appending a
+// jetpac_sprites.json entry named `name`.
 func emit_byte_sprite(sk, label, name, sprites) {
     var header = sk.bytes_at_label(label, 3)
     var tiles = header[1]
     var height = header[2]
     var base = sk.addr_of(label) + 3
     var data = sk.bytes(base, tiles * height)
-    sprites.append({"name": name, "data_type": "byte", "width": tiles * 8, "data": data})
+    sprites.append({"name": name, "data_type": "byte", "width": tiles * 8, "data": reverse_rows(data, tiles, height)})
 }
 
-// Reads a 1-byte-header alien sprite ([height], always 16px/2 bytes wide).
+// Reads a 1-byte-header alien sprite ([height], always 16px/2 bytes
+// wide, bottom row first -- see reverse_rows).
 func emit_alien_sprite(sk, label, name, sprites) {
     var header = sk.bytes_at_label(label, 1)
     var height = header[0]
     var base = sk.addr_of(label) + 1
     var data = sk.bytes(base, 2 * height)
-    sprites.append({"name": name, "data_type": "byte", "width": 16, "data": data})
+    sprites.append({"name": name, "data_type": "byte", "width": 16, "data": reverse_rows(data, 2, height)})
 }
 
 // Reads a headerless 8x8 single-tile sprite (platform/life-icon tiles).
