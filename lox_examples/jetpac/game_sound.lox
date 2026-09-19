@@ -1,0 +1,104 @@
+import sound
+import sound_mgr
+
+//
+// @file game_sound.lox
+// @brief Wraps a sound_mgr.SoundManager with one named method per game
+// sound cue, sourced from assets/*.wav (see extract_sfx.lox/
+// tools/render_sfx.py). thrust(y) buckets y into one of
+// THRUST_BUCKETS pitch samples (matching extract_sfx.lox's own
+// bucketing) and plays it with play_if_not, so holding thrust
+// re-triggers only once the previous clip finishes -- this port's own
+// ~200ms-per-retrigger stand-in for the ROM's actual ~15ms-per-tick
+// beeper toggle (SfxThrusters, called once per game tick while
+// thrusting). The two explosion cues share an exclusivity group so an
+// alien kill can't talk over Jetman's own death.
+//
+
+const THRUST_BUCKETS = 8
+const EXPLOSION_GROUP = 1
+
+const SOUND_PATHS = {
+    "rocket_build": "assets/rocket_build.wav",
+    "pickup_fuel": "assets/pickup_fuel.wav",
+    "pickup_item": "assets/pickup_item.wav",
+    "laser_fire": "assets/laser_fire.wav"
+}
+
+class Sound {
+    __init__(mute: bool) {
+        sound_mgr.SoundManager.no_sound = mute
+        this.mgr = sound_mgr.SoundManager()
+        foreach (var name in SOUND_PATHS.keys()) {
+            this.mgr.load(name, SOUND_PATHS[name])
+        }
+        this.mgr.load("death_enemy", "assets/death_enemy.wav", EXPLOSION_GROUP)
+        this.mgr.load("death_player", "assets/death_player.wav", EXPLOSION_GROUP)
+        for (var i = 0; i < THRUST_BUCKETS; i = i + 1) {
+            this.mgr.load(format("thrust_%d", i), format("assets/thrust_%d.wav", i))
+        }
+    }
+
+    // SfxThrusters: pitch = ((y>>4)&0x7F)|0x40 -- bucketed by the same
+    // linear mapping extract_sfx.lox's thrust_pitch() used to generate
+    // the 8 samples, so this just inverts that bucketing back from y.
+    thrust(y) {
+        var bucket = int(y * THRUST_BUCKETS / 192)
+        if (bucket < 0) {
+            bucket = 0
+        }
+        if (bucket >= THRUST_BUCKETS) {
+            bucket = THRUST_BUCKETS - 1
+        }
+        this.mgr.play_if_not(format("thrust_%d", bucket))
+    }
+
+    // Call once Jetman is no longer thrusting -- play_if_not never
+    // stops a clip on its own.
+    stop_thrust() {
+        for (var i = 0; i < THRUST_BUCKETS; i = i + 1) {
+            this.mgr.stop(format("thrust_%d", i))
+        }
+    }
+
+    // Module/fuel pod pickup (CollectRocketItem, $6530) and
+    // module/fuel dock (ShipBuild, played on both $6594 and $67c6) share
+    // the ROM's own two cues: pickup on touch, build on delivery.
+    pickup_fuel() {
+        this.mgr.play("pickup_fuel")
+    }
+
+    rocket_build() {
+        this.mgr.play("rocket_build")
+    }
+
+    // Collectible pickup, and also played when Jetman (re)appears on
+    // screen (SfxPickupItem's own doc comment, $67D2).
+    pickup_item() {
+        this.mgr.play("pickup_item")
+    }
+
+    laser() {
+        this.mgr.play("laser_fire")
+    }
+
+    explode_alien() {
+        this.mgr.play("death_enemy")
+    }
+
+    explode_player() {
+        this.mgr.play("death_player")
+    }
+
+    // Polls every registered Music stream -- none are loaded yet (no
+    // looping tune in this scope), kept for parity with manic_miner's
+    // own Sound.update() contract so main.lox's call site never needs
+    // to know whether one exists.
+    update() {
+        this.mgr.update()
+    }
+
+    close() {
+        sound.close()
+    }
+}

@@ -1,0 +1,104 @@
+import os
+import json
+import sys
+import skool as skool_module
+
+// @file extract_sfx.lox
+// @brief Offline: reads explosion_sfx_defaults ($6810) from
+// jetpac.skool and writes data/sfx.json, a cue table of {name, kind,
+// pitch, cycles, src}. Usage (from this directory):
+// ../../bin/odlox.exe extract_sfx.lox jetpac.skool
+//
+// Everything except explosion_sfx_defaults is an immediate inside a c$
+// code block, which skool.lox deliberately doesn't disassemble (see
+// its own header comment) -- those live as the CUES table below, each
+// entry naming its own skool label/address, the same habit
+// manic_miner/game_sound.lox's TUNE_TABLE uses for its own hand-copied
+// ROM data.
+//
+// Timing model, from PlaySquareWav2 ($67DB): the pitch byte is a
+// half-period counted in djnz iterations (13 T-states at 3.5MHz), and
+// the duration byte is a cycle count -- half_period_s = pitch*13/3.5e6,
+// clip_len_s = cycles*2*half_period_s. tools/render_sfx.py (stdlib
+// only: os.write can't produce binary WAV data, see that file's own
+// header) turns this table into assets/*.wav.
+//
+// kind "tone": a fixed square wave at pitch, held cycles cycles
+// (SfxThrusters/SfxRocketBuild/SfxPickupFuel/SfxPickupItem -- all call
+// PlaySquareWav2 directly with a constant [pitch, duration] pair).
+// kind "sweep_up": pitch climbs from pitch to 55 ($37), one cycle per
+// step (SfxLaserFire: c=8..55, "cp $38" stops one below $38).
+// kind "explosion": 4 repeats (SfxJetmanDeath/SfxEnemyDeath both
+// decrement a 4-tick duration from explosion_sfx_defaults), 20ms apart,
+// each a sweep from pitch down to 1, one cycle per step
+// (SfxPlayExplosion) -- a simplification of SfxEnemyDeath's own
+// per-repeat pitch (duration_remaining+24, so 28/27/26/25) down to one
+// representative starting pitch, since {name,kind,pitch,cycles,src}
+// has no field for a per-repeat value.
+
+const CUES = [
+    {"name": "rocket_build", "kind": "tone", "pitch": 32, "cycles": 80, "src": "SfxRocketBuild $67C6"},
+    {"name": "pickup_fuel", "kind": "tone", "pitch": 80, "cycles": 40, "src": "SfxPickupFuel $67CC"},
+    {"name": "pickup_item", "kind": "tone", "pitch": 48, "cycles": 64, "src": "SfxPickupItem $67D2"},
+    {"name": "laser_fire", "kind": "sweep_up", "pitch": 8, "cycles": 56, "src": "SfxLaserFire $67E7"}
+]
+
+// SfxThrusters: pitch = ((y >> 4) & 0x7F) | 0x40, y = the actor's own
+// Y position (0-192ish) -- bucketed into 8 here since the runtime only
+// needs a handful of distinct pitches, not one sample per pixel row.
+// duration is a fixed 16 ($10) regardless of y.
+const THRUST_DURATION = 16
+const THRUST_BUCKETS = 8
+
+func thrust_pitch(bucket) {
+    var y = int(bucket * 192 / THRUST_BUCKETS)
+    var shifted = int(y / 16) % 128  // rrca x4 then and $7F
+    return shifted + 64              // or $40
+}
+
+func build_thrust_cues() {
+    var cues = []
+    for (var i = 0; i < THRUST_BUCKETS; i = i + 1) {
+        cues.append({"name": format("thrust_%d", i), "kind": "tone", "pitch": thrust_pitch(i), "cycles": THRUST_DURATION, "src": "SfxThrusters $67B6"})
+    }
+    return cues
+}
+
+func ensure_dir(path) {
+    if (!os.exists(path)) {
+        os.mkdir(path)
+    }
+}
+
+var argv = sys.args()
+if (len(argv) < 2) {
+    print("usage: extract_sfx.lox <path/to/jetpac.skool>")
+} else {
+    var sk = skool_module.Skool(argv[1])
+
+    // explosion_sfx_defaults' 4 bytes: [SFX1 freq, SFX1 duration, SFX2
+    // freq, SFX2 duration]. Only the duration bytes are actually read
+    // by SfxJetmanDeath/SfxEnemyDeath (both hardcode/derive their own
+    // pitch, ignoring the loaded frequency -- see this file's header).
+    // SFX1 (index 1) is "most aliens" (death_enemy); SFX2 (index 3) is
+    // "player, sphere alien, crossed ship" (death_player).
+    var defaults = sk.bytes_at_label("explosion_sfx_defaults", 4)
+    var enemy_duration = defaults[1]
+    var player_duration = defaults[3]
+
+    var cues = []
+    foreach (var c in build_thrust_cues()) {
+        cues.append(c)
+    }
+    foreach (var c in CUES) {
+        cues.append(c)
+    }
+    cues.append({"name": "death_enemy", "kind": "explosion", "pitch": 28, "cycles": enemy_duration, "src": "SfxEnemyDeath $681D + explosion_sfx_defaults $6810"})
+    cues.append({"name": "death_player", "kind": "explosion", "pitch": 16, "cycles": player_duration, "src": "SfxJetmanDeath $6814 + explosion_sfx_defaults $6810"})
+
+    ensure_dir("data")
+    var f = os.open("data/sfx.json", "w")
+    os.write(f, json.encode(cues, 2))
+    os.close(f)
+    print(format("wrote %d cues to data/sfx.json", len(cues)))
+}

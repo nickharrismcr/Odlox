@@ -1,0 +1,100 @@
+[
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "cycles": 16,
+    "name": "thrust_0",
+    "pitch": 64
+  },
+  {
+    "kind": "tone",
+    "name": "thrust_1",
+    "cycles": 16,
+    "pitch": 65,
+    "src": "SfxThrusters $67B6"
+  },
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 67,
+    "cycles": 16,
+    "name": "thrust_2"
+  },
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 68,
+    "cycles": 16,
+    "name": "thrust_3"
+  },
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 70,
+    "name": "thrust_4",
+    "cycles": 16
+  },
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 71,
+    "name": "thrust_5",
+    "cycles": 16
+  },
+  {
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 73,
+    "name": "thrust_6",
+    "cycles": 16
+  },
+  {
+    "name": "thrust_7",
+    "cycles": 16,
+    "src": "SfxThrusters $67B6",
+    "kind": "tone",
+    "pitch": 74
+  },
+  {
+    "src": "SfxRocketBuild $67C6",
+    "kind": "tone",
+    "pitch": 32,
+    "cycles": 80,
+    "name": "rocket_build"
+  },
+  {
+    "cycles": 40,
+    "pitch": 80,
+    "src": "SfxPickupFuel $67CC",
+    "kind": "tone",
+    "name": "pickup_fuel"
+  },
+  {
+    "src": "SfxPickupItem $67D2",
+    "kind": "tone",
+    "pitch": 48,
+    "name": "pickup_item",
+    "cycles": 64
+  },
+  {
+    "src": "SfxLaserFire $67E7",
+    "kind": "sweep_up",
+    "cycles": 56,
+    "name": "laser_fire",
+    "pitch": 8
+  },
+  {
+    "src": "SfxEnemyDeath $681D + explosion_sfx_defaults $6810",
+    "kind": "explosion",
+    "cycles": 4,
+    "name": "death_enemy",
+    "pitch": 28
+  },
+  {
+    "name": "death_player",
+    "pitch": 16,
+    "src": "SfxJetmanDeath $6814 + explosion_sfx_defaults $6810",
+    "kind": "explosion",
+    "cycles": 4
+  }
+]

@@ -2,6 +2,7 @@ from gfx import *
 import display
 import colour
 import game
+import game_sound
 import sys
 
 //
@@ -16,15 +17,18 @@ import sys
 // everything too fast -- 25 is a tuned starting point, not a
 // transcribed rate (see docs/plans/jetpac-port.md Part 4).
 const TARGET_FPS = 25
+const MUTE_SOUND = false
 const SCALE = 3
 
 var win = window(display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
 win.init()
 win.set_target_fps(TARGET_FPS)
 
+var snd = game_sound.Sound(MUTE_SOUND)
+
 // Display.__init__ builds render textures, so it must be constructed
 // after win.init()'s GL context exists -- Game.__init__ does this.
-var g = game.Game(nil)
+var g = game.Game(snd)
 
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_ESCAPE)) {
@@ -42,4 +46,5 @@ while (!win.should_close()) {
     g.disp.draw(win, 0, 0, display.SCREEN_W * SCALE, display.SCREEN_H * SCALE)
     win.end()
 }
+snd.close()
 win.close()

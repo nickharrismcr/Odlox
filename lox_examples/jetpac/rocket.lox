@@ -31,8 +31,9 @@ func rocket_colours(fuel) {
 }
 
 class Rocket {
-    __init__(static_data) {
+    __init__(static_data, sound) {
         var d = static_data["default_rocket"]
+        this.sound = sound
         this.x = float(d["x"])
         this.y = float(d["y"])
         this.modules = d["modules"]
@@ -48,7 +49,10 @@ class Rocket {
         this.erase_paper = nil
     }
 
+    // SfxRocketBuild: "activated when ship module is dropped, or fuel
+    // cell touches the rocket base" -- both delivery events share it.
     add_fuel() {
+        this.sound.rocket_build()
         this.fuel = this.fuel + 1
         if (this.fuel >= FUEL_PODS_NEEDED) {
             enter_taking_off(this)
@@ -56,6 +60,7 @@ class Rocket {
     }
 
     add_module() {
+        this.sound.rocket_build()
         if (this.modules < MAX_MODULES) {
             this.modules = this.modules + 1
         }

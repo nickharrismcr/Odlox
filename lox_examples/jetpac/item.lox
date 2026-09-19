@@ -41,8 +41,9 @@ func near_jetman(item, jetman) -> bool {
 }
 
 class Item < Sprite {
-    __init__() {
+    __init__(sound) {
         super.__init__()
+        this.sound = sound
         this.frames = 1
         this.kind = "fuel"   // "fuel" | "module" | "collectible"
         this.colour = encode_rgba(255, 255, 255)
@@ -155,10 +156,12 @@ func state_falling(item, jetman, rocket, platforms, score) {
     }
 
     if (item.kind == "collectible") {
+        item.sound.pickup_item()
         score.add(SCORE_COLLECTIBLE)
         item.active = false
         item.update_func = state_idle
     } else {
+        item.sound.pickup_fuel()
         score.add(SCORE_ROCKET_ITEM)
         item.update_func = state_carried
     }

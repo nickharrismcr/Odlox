@@ -59,8 +59,9 @@ func accel_or_flip(vel, want_this_dir, max_vel) {
 }
 
 class Jetman < Sprite {
-    __init__() {
+    __init__(sound) {
         super.__init__()
+        this.sound = sound
         this.frames = 1
         this.colour = encode_rgba(255, 255, 255)
         this.paper = encode_rgba(0, 0, 0)
@@ -87,6 +88,7 @@ class Jetman < Sprite {
         this.dead = false
         this.last_x = nil
         this.last_y = nil
+        this.sound.pickup_item()  // SfxPickupItem: also played when Jetman appears on-screen
         enter_fly(this)
     }
 
@@ -105,6 +107,7 @@ class Jetman < Sprite {
     // kills Jetman calls this rather than reaching into enter_dying
     // directly.
     kill() {
+        this.sound.explode_player()
         enter_dying(this)
     }
 
@@ -140,6 +143,7 @@ func enter_fly(j) {
 func enter_walk(j) {
     j.update_func = state_walk
     j.vel_x = 0
+    j.sound.stop_thrust()
 }
 
 func enter_dying(j) {
@@ -182,6 +186,12 @@ func fly_horizontal(j, input) {
 // platform landing is a separate check in state_fly, since it can
 // happen anywhere in between.
 func fly_vertical(j, input) {
+    if (input.thrust) {
+        j.sound.thrust(j.y)
+    } else {
+        j.sound.stop_thrust()
+    }
+
     var want_up = input.thrust
     var currently_up = !j.moving_down
     var r = accel_or_flip(j.vel_y, want_up == currently_up, MAX_VEL_Y)

@@ -16,8 +16,10 @@ import json
 // @file game.lox
 // @brief Owns one Jetpac play session: platforms/Jetman/Rocket/items/
 // aliens/lasers/explosions, ticked each frame via a clear/move/draw
-// phase order (see tick()). HUD/audio land in later build steps (see
-// docs/plans/jetpac-port.md Part 5). Core loop complete, silent.
+// phase order (see tick()). sound (a game_sound.Sound -- not nil:
+// Jetman.spawn() below fires a cue immediately) is threaded through
+// every actor constructor that fires one -- see
+// docs/plans/jetpac-port.md Part 5.
 //
 // Item spawning: the skool has exactly one rocket-module/fuel-pod slot
 // and one collectible slot live at a time (they share $5D38/$5D40), so
@@ -60,20 +62,20 @@ class Game {
         this.platforms = platform_module.Platforms(this.static_data)
         this.platforms.draw(this.disp, this.lib)
 
-        this.rocket = rocket_module.Rocket(this.static_data)
+        this.rocket = rocket_module.Rocket(this.static_data, this.sound)
 
-        this.jetman = jetman_module.Jetman()
+        this.jetman = jetman_module.Jetman(this.sound)
         this.jetman.spawn(this.static_data)
 
         this.controller = jetman_controller.Controller()
         this.score = Score()
 
-        this.rocket_item = item_module.Item()
-        this.collectible_item = item_module.Item()
+        this.rocket_item = item_module.Item(this.sound)
+        this.collectible_item = item_module.Item(this.sound)
 
         this.aliens = []
         for (var i = 0; i < ALIEN_COUNT; i = i + 1) {
-            this.aliens.append(alien_module.Alien())
+            this.aliens.append(alien_module.Alien(this.sound))
         }
 
         this.explosions = []
@@ -111,6 +113,7 @@ class Game {
     }
 
     tick(win) {
+        this.sound.update()
         this.controller.update(win)
 
         this.jetman.clear(this.disp)
@@ -129,6 +132,7 @@ class Game {
             this.jetman.step(this.controller, this.platforms)
             if (this.controller.fire) {
                 this.lasers.fire(this.jetman)
+                this.sound.laser()
             }
         }
         this.rocket.step()
