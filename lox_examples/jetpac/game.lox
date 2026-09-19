@@ -10,6 +10,7 @@ import alien as alien_module
 import laser as laser_module
 import explosion as explosion_module
 import spawner as spawner_module
+import hud
 import json
 
 // @file game.lox
@@ -51,6 +52,9 @@ class Game {
         this.lib = assets.SpriteAssets()
         this.lib.load("assets/jetpac_sprites.json")
 
+        this.font = assets.SpriteAssets()
+        this.font.load("assets/font_sprites.json")
+
         this.static_data = json.load("data/jetpac_static.json")
 
         this.platforms = platform_module.Platforms(this.static_data)
@@ -82,6 +86,8 @@ class Game {
 
         this.lives = LIVES_START
         this.die_tick = -1  // -1: not dying
+
+        hud.draw_static(this)
     }
 
     // Finds an inactive explosion slot and starts it at (x, y) --
@@ -159,6 +165,7 @@ class Game {
         if (!this.jetman.is_dead()) {
             this.jetman.draw(this.disp, this.lib)
         }
+        hud.draw(this)
     }
 }
 

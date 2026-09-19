@@ -1,0 +1,54 @@
+from gfx import *
+import font
+
+// @file hud.lox
+// @brief Score and lives row, drawn along the top strip (rows 0-7) --
+// unlike manic_miner's cavern-plus-HUD-rows layout, Jetpac's own
+// platforms already use the whole 192px screen height, so there's no
+// spare strip below play; the top edge is clear up to the highest
+// platform ("right", y=48) and is where the original's own status bar
+// sits too (DrawStatusBarLabels, $7661).
+
+const SCORE_Y = 0
+const SCORE_INK = encode_rgba(255, 255, 255)
+const SCORE_PAPER = encode_rgba(0, 0, 0)
+
+const LIVES_Y = 0
+const LIVES_INK = encode_rgba(0, 255, 255)
+const LIVES_X = 224   // right-aligned: up to 4 icons, 8px apart, ending at the screen edge
+const LIVES_STRIDE = 8
+const LIVES_MAX_ICONS = 4
+
+var lives_blank = float_array(LIVES_MAX_ICONS * LIVES_STRIDE, 8)
+
+// Call once whenever the whole display has just been cleared (game
+// start, respawn) -- paints the score/lives row's own attribute cells
+// so they don't inherit whatever was behind them.
+func draw_static(g) {
+    for (var cx = 0; cx < 32; cx = cx + 1) {
+        g.disp.set_attr(cx, 0, SCORE_INK, SCORE_PAPER)
+    }
+}
+
+// Redraws the score text -- call every tick; font.draw_text only
+// touches the 8x8 cells the text itself occupies, so redrawing over
+// the unchanged score row every tick is cheap and always correct.
+func draw_score(g) {
+    var text = format("SCORE %06d", g.score.total)
+    font.draw_text(g.disp, g.font, text, 0, SCORE_Y, SCORE_INK, SCORE_PAPER)
+}
+
+// Draws one life_icon per remaining life, right-aligned. Blanks the
+// whole icon strip first -- losing a life must erase the icon that's
+// no longer drawn, not just leave it on screen.
+func draw_lives(g) {
+    g.disp.blit_sprite(lives_blank, LIVES_X, LIVES_Y, SCORE_INK, SCORE_PAPER)
+    for (var i = 0; i < g.lives; i = i + 1) {
+        g.disp.blit_sprite(g.lib.get("life_icon"), LIVES_X + i * LIVES_STRIDE, LIVES_Y, LIVES_INK, SCORE_PAPER)
+    }
+}
+
+func draw(g) {
+    draw_score(g)
+    draw_lives(g)
+}
