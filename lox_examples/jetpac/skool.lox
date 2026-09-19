@@ -1,0 +1,229 @@
+import os
+import re
+
+// @file skool.lox
+// @brief Parses a SkoolKit .skool disassembly text file into a flat
+// 65536-entry memory image plus label<->address tables, so extractors
+// can read raw bytes/words by label without any Z80 disassembly of
+// their own. Game-independent -- move to modules/ if a second
+// disassembly is ever ported.
+//
+// Every data line carries its own $ADDR, so no running-address
+// accumulator is needed, and a line is data iff its directive token is
+// one of defb/defw/defm/defs -- the leading block-type letter (b/c/w/t/
+// s/g/u) never needs tracking, sticky or otherwise. c$ code blocks are
+// skipped entirely by the same test: their mnemonics never match.
+
+const MEM_SIZE = 65536
+const UNSET = -1
+
+const HEX_DIGITS = {
+    "0": 0, "1": 1, "2": 2, "3": 3, "4": 4,
+    "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+    "a": 10, "b": 11, "c": 12, "d": 13, "e": 14, "f": 15
+}
+
+// Parses a "$hh"/"$hhhh"/bare-hex lowercase token -- this dialect's
+// int() has no base argument.
+func parse_hex(token) {
+    var start = 0
+    if (len(token) > 0 and token[0] == "$") {
+        start = 1
+    }
+    var v = 0
+    for (var i = start; i < len(token); i = i + 1) {
+        v = v * 16 + HEX_DIGITS[token[i]]
+    }
+    return v
+}
+
+// ASCII_CODE["A"] == 65 etc, for defm "text" decoding -- built once
+// since this dialect has no ord(). Mirrors extract_font.lox's own
+// FONT_FIRST_CHAR/FONT_CHAR_COUNT range, in reverse.
+var ASCII_CODE = {}
+for (var ascii_i = 0; ascii_i < 96; ascii_i = ascii_i + 1) {
+    var ascii_code = 32 + ascii_i
+    ASCII_CODE[format("%c", ascii_code)] = ascii_code
+}
+
+// Precompiled once at import time -- parsing runs these against every
+// one of jetpac.skool's ~6000 lines, so compiling per-call (what the
+// module-level re.* functions do) would recompile the same pattern
+// thousands of times over.
+var ADDR_LINE_PAT = re.compile(".\*?\$([0-9a-f]+)\s+(.*)")
+var LABEL_DIRECTIVE_PAT = re.compile("@label=(.+)")
+var DIRECTIVE_PAT = re.compile("(defb|defw|defm|defs)\s+(.*)")
+var HEX_TOKEN_PAT = re.compile("\$[0-9a-f]+")
+var QUOTED_TEXT_PAT = re.compile('"([^"]*)"')
+
+// Strips a trailing "; comment" (skool data lines carry these, and a
+// comment can itself contain "$xx"-shaped text -- e.g. "; Frequency is
+// $0C or $0D" -- which would otherwise be mistaken for extra byte data).
+func strip_comment(s) {
+    var parts = re.split(";", s, 1)
+    return parts[0]
+}
+
+func store_defb(sk, addr, content) {
+    var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
+    for (var i = 0; i < len(tokens); i = i + 1) {
+        sk.mem[addr + i] = parse_hex(tokens[i])
+    }
+}
+
+// Little-endian: low byte first.
+func store_defw(sk, addr, content) {
+    var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
+    for (var i = 0; i < len(tokens); i = i + 1) {
+        var w = parse_hex(tokens[i])
+        sk.mem[addr + i * 2] = w % 256
+        sk.mem[addr + i * 2 + 1] = int(w / 256)
+    }
+}
+
+func store_defs(sk, addr, content) {
+    var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
+    var count = parse_hex(tokens[0])
+    for (var i = 0; i < count; i = i + 1) {
+        sk.mem[addr + i] = 0
+    }
+}
+
+// defm never carries a trailing comment in jetpac.skool, but extracting
+// the quoted span directly (rather than stripping on ";") is correct
+// either way, since anything after the closing quote is simply ignored.
+func store_defm(sk, addr, content) {
+    var m = QUOTED_TEXT_PAT.match(content)
+    if (m == nil) {
+        return
+    }
+    var text = m.group(1)
+    for (var i = 0; i < len(text); i = i + 1) {
+        sk.mem[addr + i] = ASCII_CODE.get(text[i], 0)
+    }
+}
+
+// Applies every pending @label= to addr (more than one can share an
+// address, e.g. sprite_lookup_tables/jetman_sprite_table both naming
+// $76c5) and clears the list. addr_to_label keeps the first label seen
+// for a given address, so a table walk can name entries by their
+// original symbolic name.
+func apply_pending_labels(sk, addr, pending_labels) {
+    foreach (var name in pending_labels) {
+        sk.labels[name] = addr
+        var key = str(addr)
+        if (sk.addr_to_label.get(key, nil) == nil) {
+            sk.addr_to_label[key] = name
+        }
+    }
+    pending_labels.clear()
+}
+
+func parse_line(sk, line, pending_labels) {
+    if (len(line) == 0) {
+        return
+    }
+    var first = line[0]
+    if (first == ";") {
+        return
+    }
+    if (first == "@") {
+        var lm = LABEL_DIRECTIVE_PAT.match(line)
+        if (lm != nil) {
+            pending_labels.append(lm.group(1))
+        }
+        return
+    }
+
+    var am = ADDR_LINE_PAT.match(line)
+    if (am == nil) {
+        return
+    }
+    var addr = parse_hex(am.group(1))
+    var rest = am.group(2)
+    apply_pending_labels(sk, addr, pending_labels)
+
+    var dm = DIRECTIVE_PAT.match(rest)
+    if (dm == nil) {
+        return  // a c$ code line, or something else not carrying data
+    }
+    var directive = dm.group(1)
+    var content = dm.group(2)
+    if (directive == "defb") {
+        store_defb(sk, addr, content)
+    } else if (directive == "defw") {
+        store_defw(sk, addr, content)
+    } else if (directive == "defs") {
+        store_defs(sk, addr, content)
+    } else if (directive == "defm") {
+        store_defm(sk, addr, content)
+    }
+}
+
+func parse_file(sk, path) {
+    var f = os.open(path, "r")
+    var pending_labels = []
+    try {
+        while (true) {
+            var line = os.readln(f)
+            parse_line(sk, line, pending_labels)
+        }
+    } except EOFError as e {
+    }
+    os.close(f)
+}
+
+class Skool {
+    // Parses path once. mem is a 65536-entry list prefilled with UNSET
+    // (-1): a read of an address the disassembly never defined raises
+    // instead of yielding a plausible zero, which is the failure mode
+    // that would otherwise produce a silently blank sprite.
+    __init__(path) {
+        this.mem = []
+        for (var i = 0; i < MEM_SIZE; i = i + 1) {
+            this.mem.append(UNSET)
+        }
+        this.labels = {}         // label -> addr
+        this.addr_to_label = {}  // str(addr) -> label, first label wins
+        parse_file(this, path)
+    }
+
+    byte(addr) {
+        var v = this.mem[addr]
+        if (v == UNSET) {
+            raise Exception(format("Skool.byte: address %d was never disassembled", addr))
+        }
+        return v
+    }
+
+    bytes(addr, count) {
+        var out = []
+        for (var i = 0; i < count; i = i + 1) {
+            out.append(this.byte(addr + i))
+        }
+        return out
+    }
+
+    word(addr) {
+        return this.byte(addr) + this.byte(addr + 1) * 256
+    }
+
+    addr_of(label) {
+        var a = this.labels.get(label, nil)
+        if (a == nil) {
+            raise Exception(format("Skool.addr_of: no such label '%s'", label))
+        }
+        return a
+    }
+
+    bytes_at_label(label, count) {
+        return this.bytes(this.addr_of(label), count)
+    }
+
+    // The first label recorded at addr, or nil if none was ever
+    // assigned there -- used to name sprite-table entries by their
+    // original symbolic name rather than a hardcoded address.
+    label_at(addr) {
+        return this.addr_to_label.get(str(addr), nil)
+    }
+}

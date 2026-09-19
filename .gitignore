@@ -22,3 +22,7 @@ dist/
 # copyrighted firmware, kept local only. extract_font.lox reads one to
 # produce the (committed) font_sprites.json.
 *.rom
+# A disassembly of a copyrighted commercial game (e.g.
+# lox_examples/jetpac/jetpac.skool), kept local only. extract_jetpac.lox
+# reads one to produce the (committed) sprite/static-data JSON.
+*.skool
