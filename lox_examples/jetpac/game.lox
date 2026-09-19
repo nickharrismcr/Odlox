@@ -4,15 +4,36 @@ import assets
 import platform as platform_module
 import jetman as jetman_module
 import jetman_controller
+import rocket as rocket_module
+import item as item_module
 import json
 
 // @file game.lox
-// @brief Owns one Jetpac play session: platforms/Jetman/controller,
-// ticked each frame via a clear/move/draw phase order (see
-// state_running). The rocket is still a fixed 3-tile stub blit --
-// rocket.lox (a later build step) replaces it with a real Rocket class
-// that tracks modules/fuel. Items/aliens/lasers/HUD/audio land in
-// later build steps too (see docs/plans/jetpac-port.md Part 5).
+// @brief Owns one Jetpac play session: platforms/Jetman/Rocket/items,
+// ticked each frame via a clear/move/draw phase order (see tick()).
+// Aliens/lasers/HUD/audio land in later build steps (see
+// docs/plans/jetpac-port.md Part 5).
+//
+// Item spawning: the skool has exactly one rocket-module/fuel-pod slot
+// and one collectible slot live at a time (they share $5D38/$5D40), so
+// there are exactly two Item instances here. spawner.lox (a later
+// build step) will own the timer that gates spawn_module/
+// spawn_fuel_pod/spawn_collectible -- SPAWN_TICKS is this step's own
+// stand-in.
+
+const SPAWN_TICKS = 40
+
+// Scoring isn't displayed until hud.lox lands; kept minimal here so
+// item.lox has somewhere to report points.
+class Score {
+    __init__() {
+        this.total = 0
+    }
+
+    add(points) {
+        this.total = this.total + points
+    }
+}
 
 class Game {
     __init__(sound) {
@@ -28,27 +49,47 @@ class Game {
         this.platforms = platform_module.Platforms(this.static_data)
         this.platforms.draw(this.disp, this.lib)
 
-        var white = encode_rgba(255, 255, 255)
-        var black = encode_rgba(0, 0, 0)
-
-        // Rocket tiles are 16x16; r["y"] is the pad/ground row (matches
-        // ROCKET_PAD_Y), so bottom/middle/top stack upward from there.
-        var r = this.static_data["default_rocket"]
-        this.disp.blit_sprite(this.lib.get("rocket_u1_bottom"), r["x"], r["y"] - 16, white, black)
-        this.disp.blit_sprite(this.lib.get("rocket_u1_middle"), r["x"], r["y"] - 32, white, black)
-        this.disp.blit_sprite(this.lib.get("rocket_u1_top"), r["x"], r["y"] - 48, white, black)
+        this.rocket = rocket_module.Rocket(this.static_data)
 
         this.jetman = jetman_module.Jetman()
         this.jetman.spawn(this.static_data)
 
         this.controller = jetman_controller.Controller()
+        this.score = Score()
+
+        this.rocket_item = item_module.Item()
+        this.collectible_item = item_module.Item()
+        this.spawn_tick = 0
     }
 
     tick(win) {
         this.controller.update(win)
 
         this.jetman.clear(this.disp)
+        this.rocket.clear(this.disp)
+        this.rocket_item.clear(this.disp)
+        this.collectible_item.clear(this.disp)
+
         this.jetman.step(this.controller, this.platforms)
+        this.rocket.step()
+        this.rocket_item.step(this.jetman, this.rocket, this.platforms, this.score)
+        this.collectible_item.step(this.jetman, this.rocket, this.platforms, this.score)
+        this.spawn_tick = this.spawn_tick + 1
+        if (this.spawn_tick >= SPAWN_TICKS) {
+            this.spawn_tick = 0
+            if (!item_module.spawn_module(this.rocket_item, this.jetman, this.rocket, this.static_data)) {
+                item_module.spawn_fuel_pod(this.rocket_item, this.jetman, this.rocket, this.static_data)
+            }
+            item_module.spawn_collectible(this.collectible_item, this.jetman, this.static_data)
+        }
+
+        this.rocket.draw(this.disp, this.lib)
+        if (this.rocket_item.is_active()) {
+            this.rocket_item.draw(this.disp, this.lib)
+        }
+        if (this.collectible_item.is_active()) {
+            this.collectible_item.draw(this.disp, this.lib)
+        }
         this.jetman.draw(this.disp, this.lib)
     }
 

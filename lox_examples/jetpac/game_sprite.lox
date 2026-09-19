@@ -56,7 +56,12 @@ class Sprite {
         var name = this.image_list[this.frame]
         var img = lib.get(name)
 
-        if (this.blank == nil) {
+        // Resized whenever the drawn image's own size changes, not just
+        // allocated once -- entities that reuse one Sprite/Item across
+        // different sprite names of different sizes (Item's shared
+        // module/fuel/collectible slots; explosion.lox's 3-frame cycle,
+        // later) would otherwise erase with a stale, wrongly-sized blank.
+        if (this.blank == nil or this.blank.width() != img.width() or this.blank.height() != img.height()) {
             this.blank = float_array(img.width(), img.height())
         }
 

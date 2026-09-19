@@ -1,0 +1,162 @@
+from gfx import *
+import spectrum_attr
+
+// @file rocket.lox
+// @brief The Rocket: modules (1..3), fuel (0..6), takeoff/landing, and
+// colour banding by fuel collected. States state_on_pad/
+// state_taking_off/state_landing, mirroring the skool's own move
+// values $09/$0A/$0B (RocketUpdate/RocketTakeoff/RocketLanding).
+// Level cycling (out of scope, see docs/plans/jetpac-port.md) is
+// replaced with a simple pad<->launch loop so the core build/launch
+// cycle stays playable/testable indefinitely.
+
+const ROCKET_PAD_Y = 183          // $B7, RocketLanding's landed check
+const ROCKET_LAUNCH_TOP_Y = 40    // $28, RocketTakeoff's top-of-screen check
+const FUEL_PODS_NEEDED = 6        // RocketUpdate's takeoff gate
+const RISE_STEP = 1               // RocketTakeoff/RocketLanding: 1px/tick (dec/inc)
+const ROCKET_TILE = 16
+const MAX_MODULES = 3
+const STACK_HEIGHT = MAX_MODULES * ROCKET_TILE  // module stack, top to y
+const FLAME_HEIGHT = 16                          // flame sprites extend below y, during takeoff/landing
+const ERASE_HEIGHT = STACK_HEIGHT + FLAME_HEIGHT // clear()'s blank buffer covers both
+
+const MODULE_SPRITES = ["rocket_u1_bottom", "rocket_u1_middle", "rocket_u1_top"]
+const FLAME_SPRITES = ["rocket_flames_0", "rocket_flames_1"]
+const FLAME_ANIM_TICKS = 4
+
+func rocket_colours(fuel) {
+    var frac = float(fuel) / float(FUEL_PODS_NEEDED)
+    var magenta_rows = int(frac * MAX_MODULES)
+    return magenta_rows
+}
+
+class Rocket {
+    __init__(static_data) {
+        var d = static_data["default_rocket"]
+        this.x = float(d["x"])
+        this.y = float(d["y"])
+        this.modules = d["modules"]
+        this.fuel = d["fuel"]
+        this.update_func = state_on_pad
+        this.flame_tick = 0
+        this.flame_frame = 0
+
+        this.last_x = nil
+        this.last_y = nil
+        this.blank = float_array(ROCKET_TILE, ERASE_HEIGHT)
+        this.erase_ink = nil
+        this.erase_paper = nil
+    }
+
+    add_fuel() {
+        this.fuel = this.fuel + 1
+        if (this.fuel >= FUEL_PODS_NEEDED) {
+            enter_taking_off(this)
+        }
+    }
+
+    add_module() {
+        if (this.modules < MAX_MODULES) {
+            this.modules = this.modules + 1
+        }
+    }
+
+    is_taking_off() -> bool {
+        return this.update_func == state_taking_off
+    }
+
+    step() {
+        var f = this.update_func
+        f(this)
+    }
+
+    // Erases from the topmost possible module tile (y - STACK_HEIGHT)
+    // down through the flame's own extent (y + FLAME_HEIGHT) -- a
+    // fixed region regardless of the current module count, so a
+    // newly-docked module never leaves a stale un-erased gap above it.
+    clear(disp) {
+        if (this.last_x != nil) {
+            disp.blit_sprite(this.blank, this.last_x, this.last_y - STACK_HEIGHT, this.erase_ink, this.erase_paper)
+        }
+    }
+
+    // Draws the module stack from the pad up (bottom always present,
+    // middle/top as modules is collected), then the thruster flame
+    // while taking off/landing. Colour bands the bottom rocket_colours
+    // (see above) tiles magenta (collected fuel), the rest white.
+    draw(disp, lib) {
+        var white = encode_rgba(255, 255, 255)
+        var magenta = encode_rgba(255, 0, 255)
+        var black = encode_rgba(0, 0, 0)
+        var magenta_rows = rocket_colours(this.fuel)
+
+        var cx = int(this.x / 8)
+        var cy = int(this.y / 8)
+        this.erase_ink = disp.get_ink(cx, cy)
+        this.erase_paper = disp.get_paper(cx, cy)
+
+        var tile_y = int(this.y) - ROCKET_TILE
+        for (var i = 0; i < this.modules; i = i + 1) {
+            var ink = white
+            if (i < magenta_rows) {
+                ink = magenta
+            }
+            disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, ink, black)
+            tile_y = tile_y - ROCKET_TILE
+        }
+
+        if (this.update_func == state_taking_off or this.update_func == state_landing) {
+            disp.blit_sprite(lib.get(FLAME_SPRITES[this.flame_frame]), int(this.x), int(this.y), encode_rgba(255, 0, 0), black)
+        }
+
+        this.last_x = int(this.x)
+        this.last_y = int(this.y)
+    }
+}
+
+func enter_on_pad(r) {
+    r.update_func = state_on_pad
+}
+
+func enter_taking_off(r) {
+    r.update_func = state_taking_off
+}
+
+func enter_landing(r) {
+    r.update_func = state_landing
+    r.y = float(ROCKET_LAUNCH_TOP_Y)
+}
+
+// On the pad: nothing moves until add_fuel() reaches FUEL_PODS_NEEDED
+// (which itself enters state_taking_off).
+func state_on_pad(r) {
+}
+
+func animate_flame(r) {
+    r.flame_tick = r.flame_tick + 1
+    if (r.flame_tick >= FLAME_ANIM_TICKS) {
+        r.flame_tick = 0
+        r.flame_frame = (r.flame_frame + 1) % len(FLAME_SPRITES)
+    }
+}
+
+func state_taking_off(r) {
+    r.y = r.y - RISE_STEP
+    animate_flame(r)
+    if (r.y <= ROCKET_LAUNCH_TOP_Y) {
+        // Level cycling is out of scope -- loop back down for another
+        // build/launch cycle instead of advancing a level.
+        r.modules = 1
+        r.fuel = 0
+        enter_landing(r)
+    }
+}
+
+func state_landing(r) {
+    r.y = r.y + RISE_STEP
+    animate_flame(r)
+    if (r.y >= ROCKET_PAD_Y) {
+        r.y = float(ROCKET_PAD_Y)
+        enter_on_pad(r)
+    }
+}
