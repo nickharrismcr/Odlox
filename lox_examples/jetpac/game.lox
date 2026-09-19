@@ -27,11 +27,16 @@ class Game {
         var white = encode_rgba(255, 255, 255)
         var black = encode_rgba(0, 0, 0)
 
+        // Rocket tiles are 16x16; r["y"] is the pad/ground row (matches
+        // ROCKET_PAD_Y), so bottom/middle/top stack upward from there.
         var r = this.static_data["default_rocket"]
         this.disp.blit_sprite(this.lib.get("rocket_u1_bottom"), r["x"], r["y"] - 16, white, black)
+        this.disp.blit_sprite(this.lib.get("rocket_u1_middle"), r["x"], r["y"] - 32, white, black)
+        this.disp.blit_sprite(this.lib.get("rocket_u1_top"), r["x"], r["y"] - 48, white, black)
 
+        // Standing pose (not flying), feet at the ground row.
         var j = this.static_data["default_jetman"]
-        this.disp.blit_sprite(this.lib.get("jetman_fly_right_shift0"), j["x"], j["y"] - 24, white, black)
+        this.disp.blit_sprite(this.lib.get("jetman_walk_right_shift0"), j["x"], j["y"] - 24, white, black)
     }
 
     tick(win) {
