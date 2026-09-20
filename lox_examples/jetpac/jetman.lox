@@ -221,8 +221,20 @@ func fly_horizontal(j, input) {
 // smooth rather than an instant velocity reset. Bounces softly off the
 // screen's top/bottom (JetmanStateSetDownSlow/JetmanStateSetUp) --
 // platform landing is a separate check in state_fly, since it can
-// happen anywhere in between.
+// happen anywhere in between. Holding hover overrides all of that: Y
+// velocity is forced to zero and no dy is applied this tick, so Jetman
+// holds his current altitude exactly (mirrors JetmanVelSetYMin, $7438
+// -- the ROM's own "undocumented hover key" reached via a keyboard-scan
+// timing quirk rather than a real bound key, but the effect -- Y
+// velocity zeroed for the tick -- is the same one this port binds
+// deliberately).
 func fly_vertical(j, input) {
+    if (input.hover) {
+        j.sound.stop_thrust()
+        j.vel_y = 0
+        return
+    }
+
     if (input.thrust) {
         j.sound.thrust(j.y)
     } else {

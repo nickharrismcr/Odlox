@@ -1,21 +1,95 @@
+import json
+
 // @file jetman_controller.lox
 // @brief Single place all keyboard polling happens during play --
 // update(win) is called once per frame from game.lox; everything else
 // reads the resulting flags rather than calling win.key_down/key_pressed
-// itself.
+// itself. Key bindings come from data/keybinds.json (action -> key
+// name), not from a hardcoded win.KEY_* per action, so rebinding is a
+// config edit rather than a code change.
+
+const KEYBINDS_PATH = "data/keybinds.json"
+
+// Maps a keybinds.json key name to the matching win.KEY_* constant.
+// Covers every letter plus the handful of non-letter keys a Jetpac
+// binding is likely to want; extend this if a future binding needs a
+// key outside that set. Falls back to KEY_NULL (never down) for an
+// unrecognised name rather than erroring, so a typo in the config
+// disables that one action instead of crashing the game.
+func key_const(win, name) {
+    if (name == "A") { return win.KEY_A }
+    if (name == "B") { return win.KEY_B }
+    if (name == "C") { return win.KEY_C }
+    if (name == "D") { return win.KEY_D }
+    if (name == "E") { return win.KEY_E }
+    if (name == "F") { return win.KEY_F }
+    if (name == "G") { return win.KEY_G }
+    if (name == "H") { return win.KEY_H }
+    if (name == "I") { return win.KEY_I }
+    if (name == "J") { return win.KEY_J }
+    if (name == "K") { return win.KEY_K }
+    if (name == "L") { return win.KEY_L }
+    if (name == "M") { return win.KEY_M }
+    if (name == "N") { return win.KEY_N }
+    if (name == "O") { return win.KEY_O }
+    if (name == "P") { return win.KEY_P }
+    if (name == "Q") { return win.KEY_Q }
+    if (name == "R") { return win.KEY_R }
+    if (name == "S") { return win.KEY_S }
+    if (name == "T") { return win.KEY_T }
+    if (name == "U") { return win.KEY_U }
+    if (name == "V") { return win.KEY_V }
+    if (name == "W") { return win.KEY_W }
+    if (name == "X") { return win.KEY_X }
+    if (name == "Y") { return win.KEY_Y }
+    if (name == "Z") { return win.KEY_Z }
+    if (name == "SPACE") { return win.KEY_SPACE }
+    if (name == "ENTER") { return win.KEY_ENTER }
+    if (name == "UP") { return win.KEY_UP }
+    if (name == "DOWN") { return win.KEY_DOWN }
+    if (name == "LEFT") { return win.KEY_LEFT }
+    if (name == "RIGHT") { return win.KEY_RIGHT }
+    return win.KEY_NULL
+}
 
 class Controller {
     __init__() {
-        this.left = false     // held: thrust/walk left
-        this.right = false    // held: thrust/walk right
+        this.left = false     // held: walk/thrust left
+        this.right = false    // held: walk/thrust right
         this.thrust = false   // held: thrust upward
+        this.hover = false    // held: cancel vertical velocity, hold altitude
         this.fire = false     // edge-triggered: fire the laser
+
+        // Resolved from keybinds.json on the first update(win) call --
+        // deferred rather than done in __init__ because Controller is
+        // constructed before Game has a window to resolve win.KEY_*
+        // constants against.
+        this.keys_loaded = false
+        this.left_key = nil
+        this.right_key = nil
+        this.thrust_key = nil
+        this.hover_key = nil
+        this.fire_key = nil
+    }
+
+    load_keys(win) {
+        var cfg = json.load(KEYBINDS_PATH)
+        this.left_key = key_const(win, cfg["left"])
+        this.right_key = key_const(win, cfg["right"])
+        this.thrust_key = key_const(win, cfg["thrust"])
+        this.hover_key = key_const(win, cfg["hover"])
+        this.fire_key = key_const(win, cfg["fire"])
+        this.keys_loaded = true
     }
 
     update(win) {
-        this.left = win.key_down(win.KEY_LEFT)
-        this.right = win.key_down(win.KEY_RIGHT)
-        this.thrust = win.key_down(win.KEY_UP) or win.key_down(win.KEY_SPACE)
-        this.fire = win.key_pressed(win.KEY_ENTER)
+        if (!this.keys_loaded) {
+            this.load_keys(win)
+        }
+        this.left = win.key_down(this.left_key)
+        this.right = win.key_down(this.right_key)
+        this.thrust = win.key_down(this.thrust_key)
+        this.hover = win.key_down(this.hover_key)
+        this.fire = win.key_pressed(this.fire_key)
     }
 }
