@@ -1,19 +1,47 @@
 from gfx import *
 from game_sprite import Sprite
+import spectrum_attr
 
 // @file explosion.lox
-// @brief The 3-frame big/medium/small explosion cycle, used for both
-// alien kills and Jetman's death (AnimateExplosion $683E).
+// @brief The 3-frame small/medium/large explosion cycle, used for
+// alien kills, Jetman's death, and Jetman's platform-liftoff puff
+// (AnimateExplosion $687A).
 
-const EXPLOSION_FRAMES = ["explosion_big", "explosion_medium", "explosion_small"]
+// explosion_sprite_table ($68D8): small, medium, large -- a growing
+// sequence, not shrinking.
+const EXPLOSION_FRAMES = ["explosion_small", "explosion_medium", "explosion_big"]
 const EXPLOSION_TICKS_PER_FRAME = 4
+
+// AnimateExplosion re-picks a fresh random colour on every single tick
+// while a frame is actively drawn ($68aa-$68b1: `(random & 7) | $42`),
+// not once per explosion or once per frame -- a fast flicker, not a
+// fixed tint. $42 = ink 2 (red), bright, black paper; ORing in a random
+// 3-bit value only ever sets bit0/bit1 on top of the already-set bit1,
+// so the ink cycles through exactly {red, magenta, yellow, white} (all
+// bright) and never anything else.
+const COLOUR_ATTRS = [66, 67, 70, 71]
+
+func explosion_colours() {
+    var out = []
+    foreach (var attr in COLOUR_ATTRS) {
+        var d = spectrum_attr.decode_attribute(attr)
+        out.append(spectrum_attr.colour_to_rgba(d["ink"], d["bright"]))
+    }
+    return out
+}
+
+var EXPLOSION_COLOURS = explosion_colours()
+
+func random_explosion_colour() {
+    return EXPLOSION_COLOURS[int(rand() * len(EXPLOSION_COLOURS))]
+}
 
 class Explosion < Sprite {
     __init__() {
         super.__init__()
         this.frames = 1
         this.image_list = EXPLOSION_FRAMES
-        this.colour = encode_rgba(255, 255, 255)
+        this.colour = EXPLOSION_COLOURS[0]
         this.paper = encode_rgba(0, 0, 0)
         this.active = false
         this.step_index = 0
@@ -25,6 +53,7 @@ class Explosion < Sprite {
         this.step_index = 0
         this.frame = 0
         this.tick = 0
+        this.colour = random_explosion_colour()
         this.active = true
         this.last_x = nil
         this.last_y = nil
@@ -36,10 +65,15 @@ class Explosion < Sprite {
 
     // Steps the 3-frame cycle, deactivating once it completes -- not
     // advance_frame()'s own wrap-around (which would loop forever).
+    // Recolours every tick regardless of whether the frame itself
+    // advances this tick, matching AnimateExplosion's own per-tick (not
+    // per-frame) recolour.
     step() {
         if (!this.active) {
             return
         }
+        this.colour = random_explosion_colour()
+
         this.tick = this.tick + 1
         if (this.tick < EXPLOSION_TICKS_PER_FRAME) {
             return
