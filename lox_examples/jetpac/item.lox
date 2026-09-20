@@ -172,11 +172,23 @@ func spawn_collectible(item, jetman, static_data) -> bool {
     return true
 }
 
+// The top module is one of the two pre-seeded module Items (see
+// init_module()'s own header) -- distinguished from the middle one (and
+// from a later fuel pod reusing the same slot) by its sprite name.
+func is_top_module(item) -> bool {
+    return item.kind == "module" and item.image_list[0] == "rocket_u1_top"
+}
+
 // Falling: drops FALL_STEP/tick unless a platform is directly
 // underfoot (matches ItemCheckCollect/PickupRocketItem's shared
 // "bit-2 set -> don't fall" platform test); collected on Jetman
 // proximity -- a collectible scores and despawns immediately, a
-// module/fuel pod starts following Jetman (CollectRocketItem).
+// module/fuel pod starts following Jetman (CollectRocketItem). The top
+// module specifically won't pick up until rocket.modules >= 2 (the
+// middle one already delivered) -- Rocket.add_module() only tracks a
+// count, not which piece was actually carried, so nothing else stops
+// the top module from completing the whole 3-segment stack on its own
+// if collected first.
 func state_falling(item, jetman, rocket, platforms, score) {
     var result = platforms.collide(item.x, item.y, item.y + FALL_STEP, 1)
     if (result["landed"]) {
@@ -190,6 +202,10 @@ func state_falling(item, jetman, rocket, platforms, score) {
     }
 
     if (!near_jetman(item, jetman)) {
+        return
+    }
+
+    if (is_top_module(item) and rocket.modules < 2) {
         return
     }
 
