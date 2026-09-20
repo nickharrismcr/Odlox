@@ -48,11 +48,21 @@ different execution model — see "Per-tick phase ordering" in the plan).
   anything that ends Jetman's life (alien contact today; falling too far/air-out would call it too,
   neither is in scope).
 - `jetman_controller.lox` — `Controller`: polls input once per frame into `left`/`right`/`thrust`/
-  `fire` flags (`fire` edge-triggered, matching `defender/player/controller.lox`'s own convention
-  for a discrete "one shot per press" action). The only keyboard poll during play.
+  `hover`/`fire` flags (`fire` edge-triggered, matching `defender/player/controller.lox`'s own
+  convention for a discrete "one shot per press" action; the rest level-triggered). The only
+  keyboard poll during play. Which physical key maps to which action comes from
+  `data/keybinds.json` (action name -> key name, e.g. `"left": "Q"`), resolved into actual
+  `win.KEY_*` constants lazily on the first `update(win)` call via `key_const()`'s name table
+  (Controller is built before Game has a window to resolve constants against). `hover` isn't a
+  movement key in the ROM sense -- holding it zeroes Jetman's vertical velocity for the tick
+  (`fly_vertical()` in `jetman.lox`), mirroring `JetmanVelSetYMin` ($7438), which the skool notes is
+  itself only ever reached as an "undocumented hover key" side effect of keyboard-row-scan timing on
+  real hardware ($7400) -- this port binds that same effect deliberately.
 - `rocket.lox` — `Rocket`: `state_on_pad`/`state_taking_off`/`state_landing`, mirroring the skool's
   own move values $09/$0A/$0B. Owns `modules` (1..3), `fuel` (0..6), the flame animation, and
-  `colour_bands()` (magenta for collected fuel, white above). Reaching `FUEL_PODS_NEEDED` (6)
+  `cell_colour()` (`UpdateRocketColour`, $66FC: banding only once `modules==3`, in 8px attribute
+  cells -- bottom `fuel` cells magenta, rest white; a full tank flashes the whole stack instead).
+  Reaching `FUEL_PODS_NEEDED` (6)
   auto-triggers takeoff; reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than
   advancing a level (level cycling is out of scope), so the pad/build/launch cycle repeats
   indefinitely instead of stopping after one.
@@ -94,8 +104,14 @@ different execution model — see "Per-tick phase ordering" in the plan).
   dies on either. `plot_clamped`/`set_attr_clamped` bounds-check every `Display.plot`/`set_attr`
   call — unlike `blit_sprite`, those don't clip themselves, and a beam's tail can be off-screen for
   a tick after its leading edge (tracked separately) has already wrapped past the edge.
-- `explosion.lox` — `Explosion`: the shared 3-frame big/medium/small cycle, used for both alien
-  kills and Jetman's own death. A small pool (`game.lox`'s `EXPLOSION_COUNT`), not one per owner.
+- `explosion.lox` — `Explosion`: the shared 3-frame small/medium/large *growing* cycle
+  (`explosion_sprite_table`, $68D8), used for alien kills, Jetman's own death, and Jetman's
+  platform-liftoff puff (`jetman.lox`'s `launched_this_tick`, set on `state_walk()`'s WALK->FLY
+  transition — mirrors `jetmanLeavePlatform`, $757F, which runs the *same* shared animation object
+  used for kills, not a landing effect). Colour re-picks randomly from {red, magenta, yellow, white}
+  (all bright) on every tick a frame is active, not once per explosion — matches `AnimateExplosion`
+  ($687A)'s own per-tick `(random & 7) | $42`. A small pool (`game.lox`'s `EXPLOSION_COUNT`,
+  `Game.spawn_explosion()`), not one shared object like the ROM's.
 - `spawner.lox` — `Spawner`: the ROM's `NewActor` ($6971). Advances a timer and calls
   `item.lox`'s own `spawn_fuel_pod`/`spawn_collectible` on the ROM's timing (`(255-timer)%16==0` /
   `timer%128==0`) — **not** a module spawn; there isn't one (see `item.lox`'s own entry above).
