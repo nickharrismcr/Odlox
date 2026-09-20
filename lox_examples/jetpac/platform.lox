@@ -18,19 +18,16 @@ const TILE = 8
 // comment for the same kind of deviation).
 const LAND_TOLERANCE = 3
 
-func abs_value(v) {
-    if (v < 0) {
-        return -v
-    }
-    return v
-}
-
 // DrawPlatforms draws a left tile at x - (width & ~3) + 16, then
 // (width>>2)-4 middle tiles, then a right tile -- precomputed once here
-// so draw() doesn't redo the arithmetic every call. Collision (below)
-// uses the raw x/width fields directly, matching PlatformCollision's
-// own test (abs(actorX - platformX) < width) -- not left_x/span_px,
-// which is why both are kept.
+// so draw() doesn't redo the arithmetic every call. collide() below
+// uses this same left_x/span_px, not PlatformCollision's own raw
+// abs(actorX - platformX) < width test: the ROM's own collision zone
+// is centred on platformX and doesn't actually line up with
+// DrawPlatforms' own tile span (e.g. "middle": platformX=128, width=27
+// gives a visual span of [120, 152) but a collision zone of (101, 155)
+// -- 19px wider on the left than the art, 4px on the right). Matching
+// the drawn tiles instead makes collision agree with what's on screen.
 func platform_span(rec) {
     var width = rec["width"]
     var left_x = rec["x"] - int(width / 4) * 4 + 16
@@ -102,7 +99,7 @@ class Platforms {
             if (rec["attr"] == 0) {
                 continue
             }
-            if (abs_value(x - rec["x"]) >= rec["width"]) {
+            if (x < rec["left_x"] or x >= rec["left_x"] + rec["span_px"]) {
                 continue
             }
             var dy = new_y - rec["y"]

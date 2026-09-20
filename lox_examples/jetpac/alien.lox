@@ -45,7 +45,7 @@ class Alien < Sprite {
     }
 }
 
-func spawn_meteor(alien, x, y, vx, vy) -> bool {
+func spawn_meteor(alien, x, y, vx, vy, colour) -> bool {
     if (alien.active) {
         return false
     }
@@ -53,6 +53,7 @@ func spawn_meteor(alien, x, y, vx, vy) -> bool {
     alien.y = y
     alien.vx = vx
     alien.vy = vy
+    alien.colour = colour
     alien.active = true
     alien.last_x = nil
     alien.last_y = nil
@@ -76,6 +77,7 @@ func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
     alien.advance_frame()
     alien.x = alien.x + alien.vx
     alien.y = alien.y + alien.vy
+    alien.reverse = alien.vx < 0.0  // travelling right to left -- mirror the sprite
 
     if (alien.x < 0.0 or alien.x > 240.0) {
         alien.vx = -alien.vx

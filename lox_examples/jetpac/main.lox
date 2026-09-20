@@ -13,10 +13,10 @@ import sys
 //
 
 // Original runs one MainLoop pass per 50Hz interrupt but executes only
-// one jump-table entry per pass, so a straight 50fps port moves
-// everything too fast -- 25 is a tuned starting point, not a
-// transcribed rate (see docs/plans/jetpac-port.md Part 4).
-const TARGET_FPS = 25
+// one jump-table entry per pass, so this port's own per-actor-per-tick
+// update doesn't need to match 50Hz to feel right -- tuned by play,
+// not transcribed (see docs/plans/jetpac-port.md Part 4).
+const TARGET_FPS = 50
 const MUTE_SOUND = false
 const SCALE = 3
 

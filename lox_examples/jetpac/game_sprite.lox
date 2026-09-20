@@ -16,6 +16,7 @@ class Sprite {
         this.image_list = []         // sprite names, indexed by frame
         this.colour = nil
         this.paper = nil
+        this.reverse = false  // mirror left-right (e.g. a meteor travelling right to left)
 
         this.x = 0.0
         this.y = 0.0
@@ -42,16 +43,25 @@ class Sprite {
 
     // Erases wherever this sprite last drew itself (a no-op on the
     // first call, since last_x is nil) before any sprite draws this
-    // tick, so a fresh draw isn't wiped by a later clear.
+    // tick, so a fresh draw isn't wiped by a later clear. last_x/last_y
+    // already record the actual top-left blit_sprite() position (see
+    // draw()), not this.x/this.y directly.
     clear(disp) {
         if (this.last_x != nil) {
             disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
         }
     }
 
-    // Looks up image_list[frame] in lib and blits it onto disp at the
-    // current position, in this sprite's colour/paper. clear() must
-    // already have run this tick -- draw() itself doesn't erase.
+    // Looks up image_list[frame] in lib and blits it onto disp, in this
+    // sprite's colour/paper, with this.x/this.y as the BOTTOM-left
+    // corner -- every "Actor" sprite's Y in this ROM (Jetman, items,
+    // aliens, explosions) is a feet/bottom anchor, not top-left
+    // (MaskSprite $7705 starts at the actor's own Y and draws upward
+    // via ScreenPosOnePixelAbove -- see skool.lox's header and
+    // extract_jetpac.lox's reverse_rows() for the sibling bug this
+    // shares a root cause with: the row data itself is also
+    // bottom-first). clear() must already have run this tick -- draw()
+    // itself doesn't erase.
     draw(disp, lib) {
         var name = this.image_list[this.frame]
         var img = lib.get(name)
@@ -66,13 +76,13 @@ class Sprite {
         }
 
         var ix = int(this.x)
-        var iy = int(this.y)
+        var iy = int(this.y) - img.height()
         var cx = int(ix / 8)
         var cy = int(iy / 8)
         this.erase_ink = disp.get_ink(cx, cy)
         this.erase_paper = disp.get_paper(cx, cy)
 
-        disp.blit_sprite(img, ix, iy, this.colour, this.paper)
+        disp.blit_sprite(img, ix, iy, this.colour, this.paper, this.reverse)
 
         this.last_x = ix
         this.last_y = iy

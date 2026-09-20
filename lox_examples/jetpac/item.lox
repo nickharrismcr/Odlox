@@ -1,5 +1,6 @@
 from gfx import *
 from game_sprite import Sprite
+import spectrum_attr
 
 // @file item.lox
 // @brief One class for rocket modules, fuel pods and collectibles,
@@ -27,6 +28,28 @@ const SCORE_ROCKET_ITEM = 100  // CollectRocketItem: $0100
 const SCORE_COLLECTIBLE = 250  // ItemCheckCollect: $0250
 
 const COLLECTIBLE_NAMES = ["gold_bar", "radiation", "chemical_weapon", "plutonium", "diamond"]
+
+// Raw Spectrum attribute bytes, read directly off their own drop
+// routines: ItemDropGoldBar ($64A0, "$46"/gold), ItemDropPlutonium
+// ($64BC, "$44"/green), ItemDropChemical ($64C2, "$45"/cyan -- its own
+// comment names "radiation and plutonium" as the flashing items, but
+// plutonium already has its dedicated green routine, so chemical_weapon
+// is the other one this cyan slot covers). "diamond" is
+// ItemDropRandomColour's own slot ($64D7): a fresh random attribute in
+// $41-$47 every spawn, not a fixed one.
+const COLLECTIBLE_COLOUR_ATTR = {
+    "gold_bar": 70,
+    "plutonium": 68,
+    "radiation": 69,
+    "chemical_weapon": 69
+}
+const RANDOM_COLOUR_MIN = 65  // $41
+const RANDOM_COLOUR_MAX = 71  // $47
+
+func attr_colour(attr) {
+    var d = spectrum_attr.decode_attribute(attr)
+    return spectrum_attr.colour_to_rgba(d["ink"], d["bright"])
+}
 
 func near_jetman(item, jetman) -> bool {
     var dx = item.x - jetman.x
@@ -86,6 +109,7 @@ func spawn_module(item, jetman, rocket, static_data) -> bool {
     item.kind = "module"
     item.image_list = [sprite]
     item.frame = 0
+    item.colour = attr_colour(d["attr"])
     item.x = float(d["x"])
     item.y = float(d["y"])
     item.active = true
@@ -108,6 +132,7 @@ func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
     item.kind = "fuel"
     item.image_list = ["fuel_pod"]
     item.frame = 0
+    item.colour = attr_colour(d["attr"])
     item.x = float(d["x"])
     item.y = float(d["y"])
     item.active = true
@@ -131,6 +156,11 @@ func spawn_collectible(item, jetman, static_data) -> bool {
     item.kind = "collectible"
     item.image_list = [name]
     item.frame = 0
+    if (name == "diamond") {
+        item.colour = attr_colour(RANDOM_COLOUR_MIN + int(rand() * (RANDOM_COLOUR_MAX - RANDOM_COLOUR_MIN + 1)))
+    } else {
+        item.colour = attr_colour(COLLECTIBLE_COLOUR_ATTR[name])
+    }
     item.x = float(columns[int(rand() * len(columns))])
     item.y = float(d["y"])
     item.active = true
@@ -147,7 +177,13 @@ func spawn_collectible(item, jetman, static_data) -> bool {
 // module/fuel pod starts following Jetman (CollectRocketItem).
 func state_falling(item, jetman, rocket, platforms, score) {
     var result = platforms.collide(item.x, item.y, item.y + FALL_STEP, 1)
-    if (!result["blocked_x"] and !result["landed"]) {
+    if (result["landed"]) {
+        // Snap to the platform's own surface -- without this, the item
+        // rests wherever FALL_STEP's 2px increments happened to land it
+        // (anywhere up to LAND_TOLERANCE off), which reads as resting
+        // partway inside the platform.
+        item.y = result["snap_y"]
+    } else if (!result["blocked_x"]) {
         item.y = item.y + FALL_STEP
     }
 

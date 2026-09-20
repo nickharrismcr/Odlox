@@ -1,6 +1,7 @@
 from gfx import *
 import item as item_module
 import alien as alien_module
+import spectrum_attr
 
 // @file spawner.lox
 // @brief The ROM's NewActor ($6971): advances a timer and gates
@@ -13,7 +14,20 @@ import alien as alien_module
 // (level 1 has only meteors, spawned here directly).
 
 const ALIEN_SPAWN_TICKS = 96  // no ROM equivalent cadence for meteors specifically; tuned for this port
-const METEOR_SPEED = 0.5
+const METEOR_Y_SPEED = 0.25   // tuned: half the original 0.5
+const METEOR_X_SPEED_MIN = 0.6  // tuned: double the original 0.3-0.7 range
+const METEOR_X_SPEED_MAX = 1.4
+
+// NewActor's own alien colour: "$02..$05 from the slot index" -- plain
+// small ink-index bytes, same convention gfx_params_platforms' own attr
+// field uses (paper black, not bright), not a full bright attribute.
+const ALIEN_COLOUR_BASE = 2
+const ALIEN_COLOUR_COUNT = 4
+
+func alien_colour(slot) {
+    var d = spectrum_attr.decode_attribute(ALIEN_COLOUR_BASE + slot % ALIEN_COLOUR_COUNT)
+    return spectrum_attr.colour_to_rgba(d["ink"], d["bright"])
+}
 
 class Spawner {
     __init__() {
@@ -41,16 +55,18 @@ class Spawner {
 }
 
 // A free alien slot gets a meteor entering from a random top edge
-// column, drifting down-and-across at a small random velocity.
+// column, drifting down-and-across at a small random velocity, coloured
+// by its own pool slot index.
 func spawn_alien_if_free(g) {
-    foreach (var a in g.aliens) {
+    for (var i = 0; i < len(g.aliens); i = i + 1) {
+        var a = g.aliens[i]
         if (!a.is_active()) {
             var x = float(int(rand() * 240.0))
-            var vx = 0.3 + rand() * 0.4
+            var vx = METEOR_X_SPEED_MIN + rand() * (METEOR_X_SPEED_MAX - METEOR_X_SPEED_MIN)
             if (rand() < 0.5) {
                 vx = -vx
             }
-            alien_module.spawn_meteor(a, x, 40.0, vx, METEOR_SPEED)
+            alien_module.spawn_meteor(a, x, 40.0, vx, METEOR_Y_SPEED, alien_colour(i))
             return
         }
     }
