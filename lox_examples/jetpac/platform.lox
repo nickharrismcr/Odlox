@@ -119,4 +119,24 @@ class Platforms {
         }
         return result
     }
+
+    // Point test against a platform's own tile row -- used by
+    // laser.lox: LaserBeamAnimate stops extending a beam pulse once it
+    // reads a non-empty screen byte at its new position, which for a
+    // beam flying at a fixed Y is effectively "did it fly into a
+    // platform's own row".
+    blocks_point(x, y) -> bool {
+        foreach (var rec in this.records) {
+            if (rec["attr"] == 0) {
+                continue
+            }
+            if (x < rec["left_x"] or x >= rec["left_x"] + rec["span_px"]) {
+                continue
+            }
+            if (y >= rec["y"] and y < rec["y"] + TILE) {
+                return true
+            }
+        }
+        return false
+    }
 }

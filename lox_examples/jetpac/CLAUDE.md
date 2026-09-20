@@ -79,10 +79,19 @@ different execution model — see "Per-tick phase ordering" in the plan).
   own alien-side handler only ever destroys the alien with no points, but the point of touching an
   alien at all is that it costs Jetman too, so this port kills both (see `alien.lox`'s own comment
   for the ROM line this diverges from).
-- `laser.lox` — `LaserPool`: 4 preallocated beam slots. Simplified from the ROM's per-pixel
-  fading-pulse animation (`LaserBeamAnimate`, genuinely intricate self-modifying Z80) into one
-  moving line segment per beam. `check_hit(x, y)` is the alien-side collision test, consuming the
-  beam on a hit. `plot_clamped`/`set_attr_clamped` bounds-check every `Display.plot`/`set_attr`
+- `laser.lox` — `LaserPool`: 4 preallocated beam slots (`laser_beam_params`' own 4 records:
+  `[used, Y, pulse1_X, pulse2_X, pulse3_X, pulse4_X, length, colour]`). Each beam is genuinely 4
+  pulses, not one block — all start together at the gun and are drawn as separate short dashes, the
+  front (`pulses[0]`) fixed-stepping ahead of the 3 trailing pulses (`PULSE_SPEEDS`, strictly
+  decreasing) for the real segmented, stretching look. Colour is a fresh **random** pick from
+  `laser_beam_colours` ($6FB2, decoded once into `BEAM_COLOURS`) every time a beam fires, not a
+  round-robin cycle — `LaserBeamAnimate`'s own disassembly comment ("copious amounts of register
+  swapping... these annotations need checking") means the exact per-pulse timing isn't ROM-exact,
+  just faithful in shape; see the file's own header before tightening it further. `check_hit(x, y)`
+  tests the **front** pulse specifically (matching `LaserBeamFire`'s own use of pulse1, not the
+  trailing ones) and is the alien-side collision test, consuming the beam on a hit;
+  `platforms.blocks_point()` is the platform-side one, checked every tick in `update()` — a beam
+  dies on either. `plot_clamped`/`set_attr_clamped` bounds-check every `Display.plot`/`set_attr`
   call — unlike `blit_sprite`, those don't clip themselves, and a beam's tail can be off-screen for
   a tick after its leading edge (tracked separately) has already wrapped past the edge.
 - `explosion.lox` — `Explosion`: the shared 3-frame big/medium/small cycle, used for both alien
@@ -142,7 +151,8 @@ different execution model — see "Per-tick phase ordering" in the plan).
   same tick (see `platform.lox`'s own comment on `collide()` before changing the landing test).
   **`draw()` is called every tick**, first in the draw phase (`game.lox`'s `tick()`), not once at
   level init — `Display.blit_sprite` always force-overwrites, so any sprite that crossed a platform
-  since the last redraw would otherwise leave it permanently damaged.
+  since the last redraw would otherwise leave it permanently damaged. `blocks_point(x, y)` is a
+  simple point-in-tile-row test, used by `laser.lox` to kill a beam that's flown into a platform.
 
 **Offline tools** (not run as part of the game):
 - `skool.lox` — `Skool`: parses `jetpac.skool` into a flat 65536-entry memory image

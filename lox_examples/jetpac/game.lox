@@ -150,7 +150,7 @@ class Game {
         foreach (var a in this.aliens) {
             a.step(this.jetman, this.platforms, this.lasers, this.score, this)
         }
-        this.lasers.update()
+        this.lasers.update(this.platforms)
         foreach (var e in this.explosions) {
             e.step()
         }
