@@ -112,12 +112,9 @@ class Jetman < Sprite {
         enter_dying(this)
     }
 
-    // Overrides Sprite.draw(): Jetman doesn't animate (see
-    // docs/plans/jetpac-port.md Part 2 -- ActorGetSpriteAddress indexes
-    // jetman_sprite_table by x&$06, a pixel-shift copy for the ROM's
-    // byte-aligned blitter, not a frame counter; Display.blit_sprite
-    // plots at an arbitrary x, so only the shift0 sprite is needed), so
-    // the "frame" is really a pose/facing lookup, picked fresh each tick.
+    // Overrides Sprite.draw(): the "frame" is really a pose/facing/
+    // walk-cycle lookup, picked fresh each tick -- see
+    // current_sprite_name().
     draw(disp, lib) {
         this.image_list = [current_sprite_name(this)]
         this.frame = 0
@@ -125,16 +122,33 @@ class Jetman < Sprite {
     }
 }
 
+// ActorGetSpriteAddress indexes jetman_sprite_table by x&$06 -- a
+// pixel-shift copy for the ROM's own byte-aligned blitter, which
+// Display.blit_sprite (plots at an arbitrary x) doesn't need. But the
+// 4 shift sprites aren't just re-positioned copies of each other: for
+// the walking pose specifically, they show genuinely different leg
+// positions (compare jetman_walk_right_shift0's legs together against
+// shift2's staggered stride) -- the same x&$06 lookup the ROM uses for
+// byte alignment doubles as Jetman's walk-cycle animation, since x
+// advances by WALK_STEP each tick and naturally cycles through all 4
+// shifts. The flying pose's own 4 shifts are clean re-shifted copies
+// with no comparable leg movement (a jetpack thrust pose doesn't
+// "walk"), so flying still only ever uses shift0.
 func current_sprite_name(j) {
-    var motion = "fly"
     if (j.update_func == state_walk) {
-        motion = "walk"
+        var shift = int(j.x) % 8
+        shift = int(shift / 2) * 2
+        var dir = "right"
+        if (j.facing_left) {
+            dir = "left"
+        }
+        return format("jetman_walk_%s_shift%d", dir, shift)
     }
     var dir = "right"
     if (j.facing_left) {
         dir = "left"
     }
-    return format("jetman_%s_%s_shift0", motion, dir)
+    return format("jetman_fly_%s_shift0", dir)
 }
 
 func enter_fly(j) {
