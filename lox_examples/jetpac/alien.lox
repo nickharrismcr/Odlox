@@ -6,19 +6,27 @@ from game_sprite import Sprite
 // state_meteor is the only update function in this scope (level 1);
 // the seam for the other 7 alien types is ALIEN_STATE_BY_LEVEL below,
 // paired with alien_sprites_by_level once a second level exists.
-// Derived from MeteorUpdate ($6D9C): move, bounce off screen edges
-// (this port's own simplification -- meteors don't bounce off the
-// screen in the ROM, they're removed at the top like other aliens, but
-// levels/alien-removal-on-despawn are out of scope here), then laser/
-// platform/Jetman collision in that order.
+// Derived from MeteorUpdate ($6D9C): move (X wraps at the screen edges,
+// same as Jetman's own wrap_x -- a meteor leaving one side re-enters
+// the other at the same height, rather than bouncing back), then
+// laser/platform/Jetman collision in that order.
 
 const METEOR_FRAMES = ["meteor_0", "meteor_1"]
 const METEOR_ANIM_TICKS = 6
 const METEOR_SCORE = 25  // $6DD7
 const ALIEN_COUNT = 6
+const SCREEN_W = 256.0
 
 const COLLECT_DX = 12.0  // ALIEN_HIT_DX ($0C, $6E00) -- shared with item.lox's proximity test
 const COLLECT_DY = 21.0  // ALIEN_HIT_DY ($15, $6E14)
+
+func wrap_x(x) {
+    var w = x % SCREEN_W
+    if (w < 0.0) {
+        w = w + SCREEN_W
+    }
+    return w
+}
 
 class Alien < Sprite {
     __init__(sound) {
@@ -75,13 +83,10 @@ func kill_meteor(alien, explosions, award_points, score) {
 
 func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
     alien.advance_frame()
-    alien.x = alien.x + alien.vx
+    alien.x = wrap_x(alien.x + alien.vx)
     alien.y = alien.y + alien.vy
     alien.reverse = alien.vx < 0.0  // travelling right to left -- mirror the sprite
 
-    if (alien.x < 0.0 or alien.x > 240.0) {
-        alien.vx = -alien.vx
-    }
     if (alien.y < 32.0 or alien.y > 192.0) {
         alien.vy = -alien.vy
     }
