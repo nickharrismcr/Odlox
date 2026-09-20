@@ -114,35 +114,53 @@ class Jetman < Sprite {
 
     // Overrides Sprite.draw(): the "frame" is really a pose/facing/
     // walk-cycle lookup, picked fresh each tick -- see
-    // current_sprite_name().
+    // current_sprite_name(). While walking, the chosen shift sprite has
+    // that many pixels of positioning already baked into its own
+    // artwork (see walk_shift()'s own comment), so the blit itself
+    // happens `shift` pixels further left than this.x -- drawing at
+    // this.x directly would double up the offset, since it's already
+    // present in the sprite.
     draw(disp, lib) {
         this.image_list = [current_sprite_name(this)]
         this.frame = 0
+        var true_x = this.x
+        if (this.update_func == state_walk) {
+            this.x = true_x - float(walk_shift(this))
+        }
         super.draw(disp, lib)
+        this.x = true_x
     }
 }
 
 // ActorGetSpriteAddress indexes jetman_sprite_table by x&$06 -- a
-// pixel-shift copy for the ROM's own byte-aligned blitter, which
-// Display.blit_sprite (plots at an arbitrary x) doesn't need. But the
-// 4 shift sprites aren't just re-positioned copies of each other: for
-// the walking pose specifically, they show genuinely different leg
-// positions (compare jetman_walk_right_shift0's legs together against
-// shift2's staggered stride) -- the same x&$06 lookup the ROM uses for
-// byte alignment doubles as Jetman's walk-cycle animation, since x
-// advances by WALK_STEP each tick and naturally cycles through all 4
-// shifts. The flying pose's own 4 shifts are clean re-shifted copies
-// with no comparable leg movement (a jetpack thrust pose doesn't
-// "walk"), so flying still only ever uses shift0.
+// pixel-shift copy for the ROM's own byte-aligned blitter: the ROM
+// blits at a byte-aligned screen address and relies on the sprite's
+// own pre-shifted artwork for the remaining 0/2/4/6px of true position
+// (bit0 of x isn't represented at all -- 2px granularity). This port
+// blits at an arbitrary x instead of a byte-aligned one (see draw()'s
+// own -shift compensation above), but still needs the shift to *pick*
+// the sprite: the 4 shift sprites aren't just re-positioned copies of
+// each other -- for the walking pose specifically, they show genuinely
+// different leg positions (compare jetman_walk_right_shift0's legs
+// together against shift2's staggered stride) -- so the same x&$06
+// lookup the ROM uses for byte alignment doubles as Jetman's walk-cycle
+// animation, since x advances by WALK_STEP each tick and naturally
+// cycles through all 4 shifts. The flying pose's own 4 shifts are clean
+// re-shifted copies with no comparable leg movement (a jetpack thrust
+// pose doesn't "walk"), so flying still only ever uses shift0 and never
+// needs the draw()-side compensation.
+func walk_shift(j) {
+    var shift = int(j.x) % 8
+    return int(shift / 2) * 2
+}
+
 func current_sprite_name(j) {
     if (j.update_func == state_walk) {
-        var shift = int(j.x) % 8
-        shift = int(shift / 2) * 2
         var dir = "right"
         if (j.facing_left) {
             dir = "left"
         }
-        return format("jetman_walk_%s_shift%d", dir, shift)
+        return format("jetman_walk_%s_shift%d", dir, walk_shift(j))
     }
     var dir = "right"
     if (j.facing_left) {
