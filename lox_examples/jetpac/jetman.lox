@@ -72,6 +72,7 @@ class Jetman < Sprite {
         this.vel_y = 0
         this.dead = false
         this.update_func = state_fly
+        this.launched_this_tick = false
     }
 
     // (Re)spawns from data/jetpac_static.json's default_jetman record --
@@ -94,8 +95,11 @@ class Jetman < Sprite {
     }
 
     // Dispatches through update_func -- named step() to avoid colliding
-    // with Sprite's own per-frame bookkeeping.
+    // with Sprite's own per-frame bookkeeping. launched_this_tick is
+    // reset here (not by state_walk itself) so it's a clean one-tick
+    // pulse regardless of which state runs this call.
     step(input, platforms) {
+        this.launched_this_tick = false
         var f = this.update_func
         f(this, input, platforms)
     }
@@ -294,6 +298,12 @@ func state_walk(j, input, platforms) {
         enter_fly(j)
         j.y = j.y - 2.0
         j.moving_down = false
+        // jetmanLeavePlatform ($757F) sets up jetman_thruster_anim_state
+        // ($5D48) here and lets the shared AnimateExplosion routine
+        // ($687A) run it through the same big/medium/small sprite cycle
+        // used for kills -- Game.spawn_explosion() is this port's
+        // equivalent of that shared explosion object/pool.
+        j.launched_this_tick = true
     }
 }
 

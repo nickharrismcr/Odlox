@@ -143,6 +143,9 @@ class Game {
                 this.lasers.fire(this.jetman)
                 this.sound.laser()
             }
+            if (this.jetman.launched_this_tick) {
+                this.spawn_explosion(this.jetman.x, this.jetman.y)
+            }
         }
         this.rocket.step()
         this.rocket_item.step(this.jetman, this.rocket, this.platforms, this.score)
