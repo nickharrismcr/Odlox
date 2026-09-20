@@ -17,6 +17,7 @@ class Sprite {
         this.colour = nil
         this.paper = nil
         this.reverse = false  // mirror left-right (e.g. a meteor travelling right to left)
+        this.or_blit = false  // true: don't punch through platform art under this sprite's own transparent pixels (e.g. Jetman/an item standing on a platform)
 
         this.x = 0.0
         this.y = 0.0
@@ -82,7 +83,7 @@ class Sprite {
         this.erase_ink = disp.get_ink(cx, cy)
         this.erase_paper = disp.get_paper(cx, cy)
 
-        disp.blit_sprite(img, ix, iy, this.colour, this.paper, this.reverse)
+        disp.blit_sprite(img, ix, iy, this.colour, this.paper, this.reverse, this.or_blit)
 
         this.last_x = ix
         this.last_y = iy

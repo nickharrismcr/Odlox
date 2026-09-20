@@ -149,8 +149,15 @@ class Display {
     // Blits a monochrome sprite (float_array of 0.0/1.0 bits) with its
     // top-left at (x, y), then colours every attribute cell its bounding
     // box overlaps with ink/paper -- the whole cell, not just the sprite's
-    // own pixels (real Spectrum attribute clash). reverse mirrors it left-right.
-    blit_sprite(sprite, x, y, ink, paper, reverse: bool = false) {
+    // own pixels (real Spectrum attribute clash). reverse mirrors it
+    // left-right. or_blit leaves an existing set pixel alone wherever the
+    // sprite's own bit is 0 (instead of force-clearing it) -- for a
+    // sprite meant to rest on top of static art without punching holes
+    // through it (e.g. the rocket standing on a platform, whose own
+    // sprites have real transparent gaps between struts/legs); most
+    // callers (including this same sprite's own clear()) want the
+    // default force-write instead, so background gets properly erased.
+    blit_sprite(sprite, x, y, ink, paper, reverse: bool = false, or_blit: bool = false) {
         var sw = sprite.width()
         var sh = sprite.height()
         for (var sy = 0; sy < sh; sy = sy + 1) {
@@ -163,7 +170,11 @@ class Display {
                 if (reverse) {
                     src_x = sw - 1 - sx
                 }
-                this.plot(px, py, sprite.get(src_x, sy))
+                var bit = sprite.get(src_x, sy)
+                if (or_blit and bit == 0.0) {
+                    continue
+                }
+                this.plot(px, py, bit)
             }
         }
 

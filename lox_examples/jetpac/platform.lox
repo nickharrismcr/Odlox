@@ -60,9 +60,12 @@ class Platforms {
         }
     }
 
-    // Call once at level init -- platforms never move, and nothing
-    // erases them except a sprite passing over (the save-under restore
-    // that sprite's own clear() already handles).
+    // Call every tick, before any other entity draws -- platforms never
+    // move, but Display.blit_sprite force-overwrites (no alpha), so any
+    // sprite that overlapped one since the last redraw needs it painted
+    // back underneath before this tick's own sprites draw on top (see
+    // game.lox's tick(), and Display.blit_sprite's own or_blit param
+    // for entities that intentionally rest on a platform).
     draw(disp, lib) {
         foreach (var rec in this.records) {
             if (rec["attr"] == 0) {

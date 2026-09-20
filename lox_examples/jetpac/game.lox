@@ -60,7 +60,6 @@ class Game {
         this.static_data = json.load("data/jetpac_static.json")
 
         this.platforms = platform_module.Platforms(this.static_data)
-        this.platforms.draw(this.disp, this.lib)
 
         this.rocket = rocket_module.Rocket(this.static_data, this.sound)
 
@@ -147,6 +146,13 @@ class Game {
         }
         this.spawner.tick(this)
         step_death(this)
+
+        // Redrawn every tick, first -- any sprite that overlapped a
+        // platform since the last redraw (Display.blit_sprite force-
+        // overwrites, no alpha) gets covered back over here before this
+        // tick's own sprites draw on top (with or_blit, for the ones
+        // that intentionally rest on a platform).
+        this.platforms.draw(this.disp, this.lib)
 
         this.rocket.draw(this.disp, this.lib)
         if (this.rocket_item.is_active()) {

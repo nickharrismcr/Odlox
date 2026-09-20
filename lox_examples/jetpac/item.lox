@@ -71,6 +71,7 @@ class Item < Sprite {
         this.kind = "fuel"   // "fuel" | "module" | "collectible"
         this.colour = encode_rgba(255, 255, 255)
         this.paper = encode_rgba(0, 0, 0)
+        this.or_blit = true  // don't punch through a platform's own art once landed/docked on it
         this.active = false
         this.update_func = state_idle
     }

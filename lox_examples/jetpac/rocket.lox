@@ -106,12 +106,18 @@ class Rocket {
             if (i < magenta_rows) {
                 ink = magenta
             }
-            disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, ink, black)
+            // or_blit: the bottom tile's own transparent gaps (between
+            // the landing struts) shouldn't punch through the pad
+            // platform underneath -- see docs/plans/jetpac-port.md's
+            // history for the bug this fixes. Requires platforms to
+            // already be freshly redrawn earlier in this same tick's
+            // draw phase (see game.lox's tick()).
+            disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, ink, black, false, true)
             tile_y = tile_y - ROCKET_TILE
         }
 
         if (this.update_func == state_taking_off or this.update_func == state_landing) {
-            disp.blit_sprite(lib.get(FLAME_SPRITES[this.flame_frame]), int(this.x), int(this.y), encode_rgba(255, 0, 0), black)
+            disp.blit_sprite(lib.get(FLAME_SPRITES[this.flame_frame]), int(this.x), int(this.y), encode_rgba(255, 0, 0), black, false, true)
         }
 
         this.last_x = int(this.x)

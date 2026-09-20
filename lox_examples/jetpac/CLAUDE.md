@@ -103,9 +103,19 @@ different execution model — see "Per-tick phase ordering" in the plan).
   `LaserPool` has no per-beam constructor call site to hand a reference to.
 
 **Shared Spectrum-format decoding / sprite base** (no game-state dependencies):
-- `display.lox` / `spectrum_attr.lox` / `font.lox` — copied verbatim from `manic_miner`. See that
-  directory's own `CLAUDE.md` for the GPU-composited display design (`docs/plans/shader-attribute-
-  compositing.md`); nothing here diverges from it.
+- `display.lox` — started as a verbatim copy of `manic_miner`'s (see that directory's own
+  `CLAUDE.md` for the GPU-composited display design, `docs/plans/shader-attribute-compositing.md`).
+  **One divergence since**: `blit_sprite()` gained an `or_blit: bool = false` parameter -- when
+  true, a sprite's own transparent (0-bit) pixels leave the destination alone instead of
+  force-clearing it to black. Jetpac's own rocket/item sprites have real transparent gaps within
+  their bounding box (e.g. `rocket_u1_bottom`'s legs), which punched black holes through whatever
+  platform art was underneath every time they were drawn -- manic_miner's willy.lox sidesteps the
+  same problem with its own bespoke `draw_footprint`/OR-blit logic; `or_blit` is this codebase's
+  equivalent, generalized onto `Display` itself since more than one entity kind needed it here
+  (see `game_sprite.lox`'s own `or_blit` field, set by `Jetman`/`Item`, and `rocket.lox`'s direct
+  calls). Default stays `false` -- most callers, including every sprite's own `clear()`, still want
+  the original force-write so erasing actually erases. `spectrum_attr.lox` / `font.lox` are
+  unmodified verbatim copies.
 - `game_sprite.lox` — `Sprite`: manic_miner's own base, adapted per the plan — dropped the
   bounce-between-fixed-bounds "moving" logic (no Jetpac entity moves that way; owning classes set
   `x`/`y` themselves), kept the erase-then-draw save-under machinery and frame cycling. `draw()`
@@ -114,13 +124,19 @@ different execution model — see "Per-tick phase ordering" in the plan).
   broke with the original once-only allocation (see `item.lox`'s own history for the bug this fixed).
 - `platform.lox` — `Platforms`: `draw(disp, lib)` (mirrors `DrawPlatforms` $7638: a left tile at
   `x - (width & ~3) + 16`, `(width>>2)-4` middle tiles, then a right tile) and `collide(x, old_y,
-  new_y, height)` (mirrors `PlatformCollision` $75FC: horizontal test is `abs(actorX - platformX) <
-  raw width`, not the visual tile span — the ROM's own collision zone is deliberately not
-  pixel-exact; vertical test uses the **actor's own height**, not the platform's, as a reach zone
-  below the platform's `y`). `landed`/`head_bump` are only honoured while actually travelling that
-  direction — `PlatformCollision`'s real ~2px landing window is smaller than `jetmanLeavePlatform`'s
-  own liftoff hop, so without that guard a takeoff immediately re-lands the same tick (see
-  `platform.lox`'s own comment on `collide()` before changing the landing test).
+  new_y, height)` (position-based, like `PlatformCollision` $75FC, but **not** that routine's own
+  raw `abs(actorX - platformX) < width` test — the ROM's own collision zone doesn't actually agree
+  with `DrawPlatforms`' tile span for the same `x`/`width`, which read as a real bug once played
+  (collisions registering well outside the visible platform); `collide()`'s horizontal test uses
+  the same `left_x`/`span_px` `draw()` computes instead, so collision always matches what's on
+  screen. Vertical test still uses the **actor's own height**, not the platform's, as a reach zone
+  below the platform's `y`, per the ROM). `landed`/`head_bump` are only honoured while actually
+  travelling that direction — `PlatformCollision`'s real ~2px landing window is smaller than
+  `jetmanLeavePlatform`'s own liftoff hop, so without that guard a takeoff immediately re-lands the
+  same tick (see `platform.lox`'s own comment on `collide()` before changing the landing test).
+  **`draw()` is called every tick**, first in the draw phase (`game.lox`'s `tick()`), not once at
+  level init — `Display.blit_sprite` always force-overwrites, so any sprite that crossed a platform
+  since the last redraw would otherwise leave it permanently damaged.
 
 **Offline tools** (not run as part of the game):
 - `skool.lox` — `Skool`: parses `jetpac.skool` into a flat 65536-entry memory image
