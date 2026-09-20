@@ -89,22 +89,28 @@ class Item < Sprite {
 }
 
 // Spawns a falling rocket module (using its docked segment's own
-// sprite -- top for modules==1, middle for modules==2). The skool has
-// no per-tick module spawn routine (NewActor only ever calls
-// ItemNewFuelPod/ItemNewCollectible); modules appear to be a one-time
-// level-start delivery, which is out of scope for a single-level port
-// (see docs/plans/jetpac-port.md). Spawning one whenever the shared
-// item slot is free and rocket.modules < MAX_MODULES keeps "carry a
-// module to the rocket" playable without a level-transition trigger.
+// sprite -- middle for modules==1, top for modules==2, matching the
+// natural bottom-to-top build order: rocket.add_module() just
+// increments a counter with no memory of which tile was carried, and
+// draw() always renders bottom/middle/top by fixed slot index, so
+// delivering them out of order left a middle-shaped gap nothing ever
+// filled -- the base (always present) and a top-shaped piece were the
+// only two ever seen). The skool has no per-tick module spawn routine
+// (NewActor only ever calls ItemNewFuelPod/ItemNewCollectible);
+// modules appear to be a one-time level-start delivery, which is out
+// of scope for a single-level port (see docs/plans/jetpac-port.md).
+// Spawning one whenever the shared item slot is free and
+// rocket.modules < MAX_MODULES keeps "carry a module to the rocket"
+// playable without a level-transition trigger.
 func spawn_module(item, jetman, rocket, static_data) -> bool {
     if (jetman.is_dead() or item.active or rocket.modules >= 3) {
         return false
     }
-    var key = "default_top_module"
-    var sprite = "rocket_u1_top"
+    var key = "default_middle_module"
+    var sprite = "rocket_u1_middle"
     if (rocket.modules == 2) {
-        key = "default_middle_module"
-        sprite = "rocket_u1_middle"
+        key = "default_top_module"
+        sprite = "rocket_u1_top"
     }
     var d = static_data[key]
     item.kind = "module"
