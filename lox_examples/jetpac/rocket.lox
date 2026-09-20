@@ -24,10 +24,34 @@ const MODULE_SPRITES = ["rocket_u1_bottom", "rocket_u1_middle", "rocket_u1_top"]
 const FLAME_SPRITES = ["rocket_flames_0", "rocket_flames_1"]
 const FLAME_ANIM_TICKS = 4
 
-func rocket_colours(fuel) {
-    var frac = float(fuel) / float(FUEL_PODS_NEEDED)
-    var magenta_rows = int(frac * MAX_MODULES)
-    return magenta_rows
+const CELL = 8
+const CELLS_PER_TILE = ROCKET_TILE / CELL         // 2
+const TOTAL_CELLS = MAX_MODULES * CELLS_PER_TILE  // 6
+const FLASH_TICKS = 16  // UpdateRocketColour: timer bit 4 -> toggles every 16 game ticks
+
+// UpdateRocketColour ($66FC), confirmed against jetpac.skool $6741-$678B:
+// banding only kicks in once the rocket is fully built (modules ==
+// MAX_MODULES) -- `sla b` / `cp $06` on the modules count gates the
+// whole routine, so a partially-built stack (or one with zero fuel) is
+// always plain white regardless of fuel collected. A full tank (fuel >=
+// FUEL_PODS_NEEDED) doesn't band at all -- it flashes the *entire*
+// stack between magenta and white on the game timer ($675e-$675f: a
+// fresh colour computed from timer bit 4 each call). Otherwise ($6762-
+// $6777) the bottom `fuel` 8px cells -- not module tiles, which are 2
+// cells each -- are painted solid magenta counting up from the rocket's
+// own base, then the remaining `6-fuel` cells above them solid white.
+func cell_colour(rocket, cell_index, white, magenta, flash_on) {
+    if (rocket.modules < MAX_MODULES or rocket.fuel == 0) {
+        return white
+    }
+    if (rocket.fuel >= FUEL_PODS_NEEDED) {
+        if (flash_on) { return magenta }
+        return white
+    }
+    if (cell_index < rocket.fuel) {
+        return magenta
+    }
+    return white
 }
 
 class Rocket {
@@ -41,6 +65,7 @@ class Rocket {
         this.update_func = state_on_pad
         this.flame_tick = 0
         this.flame_frame = 0
+        this.colour_tick = 0
 
         this.last_x = nil
         this.last_y = nil
@@ -87,32 +112,48 @@ class Rocket {
 
     // Draws the module stack from the pad up (bottom always present,
     // middle/top as modules is collected), then the thruster flame
-    // while taking off/landing. Colour bands the bottom rocket_colours
-    // (see above) tiles magenta (collected fuel), the rest white.
+    // while taking off/landing. Colour banding (see cell_colour() above)
+    // is applied per 8px attribute cell after each tile's pixels are
+    // blitted, since a 16px module tile spans two attribute rows that
+    // the ROM colours independently.
     draw(disp, lib) {
         var white = encode_rgba(255, 255, 255)
         var magenta = encode_rgba(255, 0, 255)
         var black = encode_rgba(0, 0, 0)
-        var magenta_rows = rocket_colours(this.fuel)
+
+        this.colour_tick = this.colour_tick + 1
+        var flash_on = int(this.colour_tick / FLASH_TICKS) % 2 == 0
 
         var cx = int(this.x / 8)
         var cy = int(this.y / 8)
         this.erase_ink = disp.get_ink(cx, cy)
         this.erase_paper = disp.get_paper(cx, cy)
 
+        var col_x0 = int(this.x / CELL)
+        var col_x1 = int((this.x + float(ROCKET_TILE) - 1.0) / CELL)
+
         var tile_y = int(this.y) - ROCKET_TILE
         for (var i = 0; i < this.modules; i = i + 1) {
-            var ink = white
-            if (i < magenta_rows) {
-                ink = magenta
-            }
             // or_blit: the bottom tile's own transparent gaps (between
             // the landing struts) shouldn't punch through the pad
             // platform underneath -- see docs/plans/jetpac-port.md's
             // history for the bug this fixes. Requires platforms to
             // already be freshly redrawn earlier in this same tick's
-            // draw phase (see game.lox's tick()).
-            disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, ink, black, false, true)
+            // draw phase (see game.lox's tick()). Blitted plain white
+            // here; cell_colour() below repaints the real attribute
+            // colour per 8px band right after.
+            disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, white, black, false, true)
+
+            for (var half = 0; half < CELLS_PER_TILE; half = half + 1) {
+                var cell_index = i * CELLS_PER_TILE + half
+                var row_y = tile_y + (CELLS_PER_TILE - 1 - half) * CELL
+                var row_cy = int(row_y / CELL)
+                var ink = cell_colour(this, cell_index, white, magenta, flash_on)
+                for (var cxi = col_x0; cxi <= col_x1; cxi = cxi + 1) {
+                    disp.set_attr(cxi, row_cy, ink, black)
+                }
+            }
+
             tile_y = tile_y - ROCKET_TILE
         }
 
