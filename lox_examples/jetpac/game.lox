@@ -21,12 +21,15 @@ import json
 // every actor constructor that fires one -- see
 // docs/plans/jetpac-port.md Part 5.
 //
-// Item spawning: the skool has exactly one rocket-module/fuel-pod slot
-// and one collectible slot live at a time (they share $5D38/$5D40), so
-// there are exactly two Item instances here; spawner.lox owns the
-// timer that gates all spawning. The alien pool (6) and explosion pool
-// (4) are allocated once here and reused, per the root CLAUDE.md's
-// per-frame allocation discipline.
+// Item spawning: the skool has exactly two item RAM slots ($5D38,
+// $5D40), each doing double duty -- a rocket module at level start,
+// then (once that module is delivered) an ongoing fuel-pod/collectible
+// slot respectively -- so there are exactly two Item instances here,
+// both pre-seeded with a module below (see item.lox's init_module()).
+// spawner.lox owns the timer that gates fuel-pod/collectible/alien
+// spawning after that. The alien pool (6) and explosion pool (4) are
+// allocated once here and reused, per the root CLAUDE.md's per-frame
+// allocation discipline.
 
 const ALIEN_COUNT = 6
 const EXPLOSION_COUNT = 4
@@ -69,8 +72,15 @@ class Game {
         this.controller = jetman_controller.Controller()
         this.score = Score()
 
+        // Both rocket modules are pre-seeded active here, matching
+        // RocketReset's own one-time copy into $5D38/$5D40 -- see
+        // item.lox's init_module() header. rocket_item's slot doubles
+        // as the fuel-pod slot once its module is delivered;
+        // collectible_item's doubles as the collectible slot once its is.
         this.rocket_item = item_module.Item(this.sound)
+        item_module.init_module(this.rocket_item, "default_top_module", "rocket_u1_top", this.static_data)
         this.collectible_item = item_module.Item(this.sound)
+        item_module.init_module(this.collectible_item, "default_middle_module", "rocket_u1_middle", this.static_data)
 
         this.aliens = []
         for (var i = 0; i < ALIEN_COUNT; i = i + 1) {

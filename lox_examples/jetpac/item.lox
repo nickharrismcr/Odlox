@@ -7,11 +7,16 @@ import spectrum_attr
 // distinguished by kind. Derived from ItemPickup ($64E8)/
 // CollectRocketItem/CarryRocketItem/PickupRocketItem (modules/fuel) and
 // ItemCheckCollect ($6461) (collectibles). States state_falling,
-// state_carried, state_docking, state_idle; module-level
-// spawn_fuel_pod(g)/spawn_collectible(g) hold the spawn-gate
-// conditions (ItemNewFuelPod $65F9/ItemNewCollectible $65A8) -- called
-// directly from game.lox for now, until spawner.lox (a later build
-// step) owns the timer that drives them.
+// state_carried, state_docking, state_idle.
+//
+// Two Item instances exist (game.lox's rocket_item/collectible_item),
+// matching the skool's own $5D38/$5D40 RAM slots. Each starts out
+// holding one of the two rocket modules (init_module(), called once at
+// Game construction, not gated/spawned) and only later, once that
+// module is delivered, starts being reused for its slot's ongoing job:
+// module-level spawn_fuel_pod(g)/spawn_collectible(g) hold those
+// spawn-gate conditions (ItemNewFuelPod $65F9/ItemNewCollectible
+// $65A8), called from spawner.lox.
 
 const FUEL_DOCK_Y = 176    // $B0 -- PickupRocketItem's fuel-pod delivery check
 const MODULE_DOCK_Y = 183  // $B7 -- PickupRocketItem's module delivery check
@@ -88,30 +93,21 @@ class Item < Sprite {
     }
 }
 
-// Spawns a falling rocket module (using its docked segment's own
-// sprite -- middle for modules==1, top for modules==2, matching the
-// natural bottom-to-top build order: rocket.add_module() just
-// increments a counter with no memory of which tile was carried, and
-// draw() always renders bottom/middle/top by fixed slot index, so
-// delivering them out of order left a middle-shaped gap nothing ever
-// filled -- the base (always present) and a top-shaped piece were the
-// only two ever seen). The skool has no per-tick module spawn routine
-// (NewActor only ever calls ItemNewFuelPod/ItemNewCollectible);
-// modules appear to be a one-time level-start delivery, which is out
-// of scope for a single-level port (see docs/plans/jetpac-port.md).
-// Spawning one whenever the shared item slot is free and
-// rocket.modules < MAX_MODULES keeps "carry a module to the rocket"
-// playable without a level-transition trigger.
-func spawn_module(item, jetman, rocket, static_data) -> bool {
-    if (jetman.is_dead() or item.active or rocket.modules >= 3) {
-        return false
-    }
-    var key = "default_middle_module"
-    var sprite = "rocket_u1_middle"
-    if (rocket.modules == 2) {
-        key = "default_top_module"
-        sprite = "rocket_u1_top"
-    }
+// Activates item as a rocket module sitting at its own default
+// position -- unconditional, no gate, called exactly twice ever (once
+// per slot, at Game construction). RocketReset ($60A7) copies 24 bytes
+// -- the rocket record plus BOTH the top-module and middle-module
+// templates -- into $5D30 in one go: $5D38 (the "rocket module
+// object" ItemNewFuelPod/CollectRocketItem read) receives the TOP
+// module, and $5D40 (ItemNewCollectible's own "collectible object")
+// receives the MIDDLE module. Both are therefore active from frame
+// one -- not a per-tick spawn like fuel pods/collectibles -- and each
+// slot only becomes available for its *other* job (fuel pod /
+// collectible respectively) once its pre-seeded module is delivered,
+// since collecting it despawns the same Item instance that spawn_fuel_pod/
+// spawn_collectible later reuses. See game.lox's __init__ for the two
+// call sites (one per slot) and CLAUDE.md for the address cross-reference.
+func init_module(item, key, sprite, static_data) {
     var d = static_data[key]
     item.kind = "module"
     item.image_list = [sprite]
@@ -123,7 +119,6 @@ func spawn_module(item, jetman, rocket, static_data) -> bool {
     item.last_x = nil
     item.last_y = nil
     item.update_func = state_falling
-    return true
 }
 
 // Spawns a falling fuel pod at x/y from the static default record,

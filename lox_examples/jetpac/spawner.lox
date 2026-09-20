@@ -5,13 +5,18 @@ import spectrum_attr
 
 // @file spawner.lox
 // @brief The ROM's NewActor ($6971): advances a timer and gates
-// module/fuel-pod, collectible, and alien spawns. Module/fuel-pod and
-// collectible gate conditions live in item.lox (spawn_module/
-// spawn_fuel_pod/spawn_collectible); this file just calls them on the
-// ROM's own cadence -- new_fuel_pod every (255-timer)%16==0 tick,
-// new_collectible every timer%128==0 tick -- and owns alien spawning
-// itself, since alien.lox has no equivalent gate function of its own
-// (level 1 has only meteors, spawned here directly).
+// fuel-pod, collectible, and alien spawns (fuel-pod/collectible gate
+// conditions live in item.lox as spawn_fuel_pod/spawn_collectible;
+// this file just calls them on the ROM's own cadence -- new_fuel_pod
+// every (255-timer)%16==0 tick, new_collectible every timer%128==0
+// tick). Rocket modules are NOT spawned here -- both are pre-seeded
+// once at Game construction (item.lox's init_module(), see its own
+// header) and never spawn again; this file only starts trying
+// spawn_fuel_pod/spawn_collectible once each one's slot is free, which
+// naturally only happens after its pre-seeded module has been
+// delivered. Also owns alien spawning itself, since alien.lox has no
+// equivalent gate function of its own (level 1 has only meteors,
+// spawned here directly).
 
 const ALIEN_SPAWN_TICKS = 96  // no ROM equivalent cadence for meteors specifically; tuned for this port
 const METEOR_Y_SPEED = 0.25   // tuned: half the original 0.5
@@ -37,11 +42,8 @@ class Spawner {
     tick(g) {
         this.timer = (this.timer + 1) % 256
 
-        if (!g.rocket_item.is_active()) {
-            var spawned_module = item_module.spawn_module(g.rocket_item, g.jetman, g.rocket, g.static_data)
-            if (!spawned_module and (255 - this.timer) % 16 == 0) {
-                item_module.spawn_fuel_pod(g.rocket_item, g.jetman, g.rocket, g.static_data)
-            }
+        if (!g.rocket_item.is_active() and (255 - this.timer) % 16 == 0) {
+            item_module.spawn_fuel_pod(g.rocket_item, g.jetman, g.rocket, g.static_data)
         }
 
         if (!g.collectible_item.is_active() and this.timer % 128 == 0) {

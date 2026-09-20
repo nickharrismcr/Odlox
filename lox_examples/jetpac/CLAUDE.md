@@ -57,15 +57,20 @@ different execution model — see "Per-tick phase ordering" in the plan).
   advancing a level (level cycling is out of scope), so the pad/build/launch cycle repeats
   indefinitely instead of stopping after one.
 - `item.lox` — `Item`: one class for rocket modules, fuel pods and collectibles, distinguished by
-  `kind`. States `state_falling`/`state_carried`/`state_docking`/`state_idle`. Module-level
-  `spawn_module`/`spawn_fuel_pod`/`spawn_collectible` hold the spawn-gate conditions — called by
-  `spawner.lox`, not `Item` itself. **Exactly two `Item` instances exist** (`game.lox`'s
-  `rocket_item`/`collectible_item`): the skool has exactly one rocket-module/fuel-pod slot and one
-  collectible slot live at a time, sharing `kind` rather than needing separate module/fuel classes.
-  `spawn_module` has no ROM-timer equivalent — `NewActor` ($6971) only ever calls
-  `ItemNewFuelPod`/`ItemNewCollectible` — modules appear to be a one-time level-start delivery, out
-  of scope for a single-level port; it fires instead whenever the shared slot is free and
-  `rocket.modules < 3`.
+  `kind`. States `state_falling`/`state_carried`/`state_docking`/`state_idle`. **Exactly two `Item`
+  instances exist** (`game.lox`'s `rocket_item`/`collectible_item`), matching the skool's own
+  `$5D38`/`$5D40` RAM slots, each doing double duty: `RocketReset` ($60A7) copies 24 bytes — the
+  rocket record plus *both* the top-module and middle-module templates — into `$5D30` in one shot,
+  so `$5D38` (the address `ItemNewFuelPod`/`CollectRocketItem` call "rocket module object") starts
+  out holding the **top** module and `$5D40` (`ItemNewCollectible`'s own "collectible object")
+  starts out holding the **middle** module — confirmed against actual gameplay footage: all three
+  rocket pieces (base + both modules, on separate platforms) are visible from frame one, not
+  delivered one at a time. `init_module()` seeds both, once, at `Game` construction — not a spawn
+  gate, never called again. Each slot only becomes available for its *other* job (fuel pod /
+  collectible respectively, via `spawn_fuel_pod`/`spawn_collectible`, called by `spawner.lox`) once
+  its pre-seeded module has actually been delivered, since delivery despawns the same `Item`
+  instance those functions later reuse — don't add a third "spawn a module" path expecting it to
+  coexist with a fourth pickup kind; there are only ever two module deliveries, total, per game.
 - `alien.lox` — `Alien` + `state_meteor`: a fixed 6-slot pool, allocated once and reused (never
   reallocated — see the root `CLAUDE.md`'s per-frame allocation discipline). `state_meteor` is the
   only state in this scope; `ALIEN_STATE_BY_LEVEL` is the seam for the other 7 alien types, paired
@@ -83,9 +88,10 @@ different execution model — see "Per-tick phase ordering" in the plan).
 - `explosion.lox` — `Explosion`: the shared 3-frame big/medium/small cycle, used for both alien
   kills and Jetman's own death. A small pool (`game.lox`'s `EXPLOSION_COUNT`), not one per owner.
 - `spawner.lox` — `Spawner`: the ROM's `NewActor` ($6971). Advances a timer and calls
-  `item.lox`'s own `spawn_module`/`spawn_fuel_pod`/`spawn_collectible` on the ROM's timing
-  (`(255-timer)%16==0` / `timer%128==0`); meteor spawning has no ROM-equivalent cadence to match
-  (aliens aren't item-slot-gated), so its interval is this port's own tuning.
+  `item.lox`'s own `spawn_fuel_pod`/`spawn_collectible` on the ROM's timing (`(255-timer)%16==0` /
+  `timer%128==0`) — **not** a module spawn; there isn't one (see `item.lox`'s own entry above).
+  Meteor spawning has no ROM-equivalent cadence to match (aliens aren't item-slot-gated), so its
+  interval is this port's own tuning.
 - `hud.lox` — `draw_static`/`draw`: score and lives, along the top strip (rows 0-7) rather than a
   below-play row like manic_miner's — Jetpac's platforms already use the whole 192px screen height,
   so there's no spare strip below play. `draw_lives` blanks its icon strip before redrawing every
