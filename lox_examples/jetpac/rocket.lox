@@ -54,12 +54,37 @@ func cell_colour(rocket, cell_index, white, magenta, flash_on) {
     return white
 }
 
+// AlienCollision ($6DE9), which RocketUpdate ($66D0) reuses with
+// IX=Rocket for Jetman-touches-rocket proximity: X within 12px; Y is
+// asymmetric -- within 21px if Jetman is at-or-below the rocket's own
+// Y anchor, but only within (rocket.height - 14) if Jetman is ABOVE it
+// (height=28 by default -- a tighter 14px catch window from above,
+// since Jetman has to actually reach the rocket's own top rather than
+// just being "somewhere above it").
+const TOUCH_DX = 12.0
+const TOUCH_DY_BELOW = 21.0
+
+func near_jetman(rocket, jetman) -> bool {
+    var dx = jetman.x - rocket.x
+    if (dx < 0.0) { dx = -dx }
+    if (dx >= TOUCH_DX) {
+        return false
+    }
+    var dy = jetman.y - rocket.y
+    if (dy >= 0.0) {
+        return dy < TOUCH_DY_BELOW
+    }
+    dy = -dy
+    return dy < (rocket.height - 14.0)
+}
+
 class Rocket {
     __init__(static_data, sound) {
         var d = static_data["default_rocket"]
         this.sound = sound
         this.x = float(d["x"])
         this.y = float(d["y"])
+        this.height = float(d["height"])
         this.modules = d["modules"]
         this.fuel = d["fuel"]
         this.update_func = state_on_pad
@@ -76,12 +101,11 @@ class Rocket {
 
     // SfxRocketBuild: "activated when ship module is dropped, or fuel
     // cell touches the rocket base" -- both delivery events share it.
+    // Reaching FUEL_PODS_NEEDED does NOT launch by itself -- see
+    // state_on_pad()'s own comment.
     add_fuel() {
         this.sound.rocket_build()
         this.fuel = this.fuel + 1
-        if (this.fuel >= FUEL_PODS_NEEDED) {
-            enter_taking_off(this)
-        }
     }
 
     add_module() {
@@ -95,9 +119,13 @@ class Rocket {
         return this.update_func == state_taking_off
     }
 
-    step() {
+    // jetman/game are only actually needed by state_on_pad (the launch
+    // trigger, which touches both) and state_landing (respawning
+    // Jetman once the rocket's back on the pad) -- threaded through
+    // every state function uniformly since they share one dispatch.
+    step(jetman, game) {
         var f = this.update_func
-        f(this)
+        f(this, jetman, game)
     }
 
     // Erases from the topmost possible module tile (y - STACK_HEIGHT)
@@ -179,9 +207,20 @@ func enter_landing(r) {
     r.y = float(ROCKET_LAUNCH_TOP_Y)
 }
 
-// On the pad: nothing moves until add_fuel() reaches FUEL_PODS_NEEDED
-// (which itself enters state_taking_off).
-func state_on_pad(r) {
+// On the pad: RocketUpdate ($66D0) polls, every tick, for BOTH a full
+// tank AND Jetman actually touching the rocket (AlienCollision, see
+// near_jetman() above) before launching -- reaching FUEL_PODS_NEEDED
+// alone just starts the full-tank flash (cell_colour()), it doesn't
+// launch by itself. On a genuine touch, Jetman "is found and
+// destroyed" (boards, vanishes -- not a death, no explosion/life lost)
+// and the player is awarded a bonus life ($66f5: `inc (hl)` on the
+// lives counter) before takeoff begins.
+func state_on_pad(r, jetman, game) {
+    if (!jetman.is_dead() and r.fuel >= FUEL_PODS_NEEDED and near_jetman(r, jetman)) {
+        jetman.board()
+        game.lives = game.lives + 1
+        enter_taking_off(r)
+    }
 }
 
 func animate_flame(r) {
@@ -192,7 +231,7 @@ func animate_flame(r) {
     }
 }
 
-func state_taking_off(r) {
+func state_taking_off(r, jetman, game) {
     r.y = r.y - RISE_STEP
     animate_flame(r)
     if (r.y <= ROCKET_LAUNCH_TOP_Y) {
@@ -204,11 +243,16 @@ func state_taking_off(r) {
     }
 }
 
-func state_landing(r) {
+func state_landing(r, jetman, game) {
     r.y = r.y + RISE_STEP
     animate_flame(r)
     if (r.y >= ROCKET_PAD_Y) {
         r.y = float(ROCKET_PAD_Y)
         enter_on_pad(r)
+        // Jetman boarded (state_on_pad, above) rather than dying, so
+        // he respawns here instead of through Game's death/respawn
+        // timer -- no life lost, matching the bonus he was awarded on
+        // the way in.
+        jetman.spawn(game.static_data)
     }
 }

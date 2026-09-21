@@ -137,7 +137,7 @@ class Game {
             e.clear(this.disp)
         }
 
-        if (!this.jetman.is_dead()) {
+        if (!this.jetman.is_hidden()) {
             this.jetman.step(this.controller, this.platforms)
             if (this.controller.fire) {
                 this.lasers.fire(this.jetman)
@@ -147,7 +147,7 @@ class Game {
                 this.spawn_explosion(this.jetman.x, this.jetman.y)
             }
         }
-        this.rocket.step()
+        this.rocket.step(this.jetman, this)
         this.rocket_item.step(this.jetman, this.rocket, this.platforms, this.score)
         this.collectible_item.step(this.jetman, this.rocket, this.platforms, this.score)
         foreach (var a in this.aliens) {
@@ -185,7 +185,7 @@ class Game {
                 e.draw(this.disp, this.lib)
             }
         }
-        if (!this.jetman.is_dead()) {
+        if (!this.jetman.is_hidden()) {
             this.jetman.draw(this.disp, this.lib)
         }
         hud.draw(this)
