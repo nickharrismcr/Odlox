@@ -1,5 +1,6 @@
 from gfx import *
 import spectrum_attr
+import jetman as jetman_module
 
 // @file laser.lox
 // @brief LaserPool: 4 preallocated beam slots. Rebuilt a fourth time
@@ -46,18 +47,22 @@ const FRONT_RANGE_MAX = 188.0
 const COLLAPSE_STEP = 8.0          // $7059: same fixed ±8 move confirmed for a trailing pulse
 
 // Ensemble shape, distances measured backward from the leading tip
-// (front_x), in the direction opposite travel.
-const SOLID_LEN = 4.0
+// (front_x), in the direction opposite travel. Each of the 3 zones is
+// one character cell (CELL=8px) wide, four cells long -- CELL_LEN.
+const CELL = 8.0
+const CELL_LEN = 4.0 * CELL
+
+const SOLID_LEN = CELL_LEN
 
 const DASH_COUNT = 4
-const DASH_LEN = 2.0
 const DASH_GAP = 2.0
-const DASH_ZONE_LEN = float(DASH_COUNT) * DASH_LEN + float(DASH_COUNT - 1) * DASH_GAP
+const DASH_LEN = (CELL_LEN - float(DASH_COUNT - 1) * DASH_GAP) / float(DASH_COUNT)
+const DASH_ZONE_LEN = CELL_LEN
 
 const DOT_COUNT = 4
-const DOT_LEN = 1.0
-const DOT_GAP = 4.0
-const DOT_ZONE_LEN = float(DOT_COUNT) * DOT_LEN + float(DOT_COUNT - 1) * DOT_GAP
+const DOT_GAP = 8.0
+const DOT_LEN = (CELL_LEN - float(DOT_COUNT - 1) * DOT_GAP) / float(DOT_COUNT)
+const DOT_ZONE_LEN = CELL_LEN
 
 const ENSEMBLE_LEN = SOLID_LEN + DASH_ZONE_LEN + DOT_ZONE_LEN
 
@@ -146,18 +151,32 @@ class LaserPool {
     }
 
     // Fires from Jetman's gun (LaserNewIfFreeSlot: only if a slot is
-    // free -- no queueing).
-    fire(jetman) {
+    // free -- no queueing). Jetman never mirrors his own sprite (he
+    // uses separate left/right art, see jetman.lox's own
+    // current_sprite_name()) -- this.x is always his sprite's LEFT
+    // edge, regardless of facing. That's his gun position when facing
+    // left, but his BACK when facing right, so a beam fired while
+    // facing right needs to originate from the RIGHT edge (this.x +
+    // the current sprite's own width) or it starts from behind him --
+    // a real, playtested bug (confirmed against LaserBeamInit/
+    // LaserBeamShootRight, $6F70/$6FB6, whose own C register ends up
+    // well to the right of Jetman's base X when facing right, and only
+    // slightly left of it when facing left).
+    fire(jetman, lib) {
         for (var i = 0; i < MAX_BEAMS; i = i + 1) {
             var b = this.beams[i]
             if (!b["active"]) {
                 b["active"] = true
                 b["y"] = jetman.y - BEAM_Y_OFFSET
                 b["dir"] = 1
+                var gun_x = jetman.x
                 if (jetman.facing_left) {
                     b["dir"] = -1
+                } else {
+                    var name = jetman_module.current_sprite_name(jetman)
+                    gun_x = jetman.x + float(lib.get(name).width())
                 }
-                b["front_x"] = jetman.x
+                b["front_x"] = gun_x
                 b["front_frozen"] = false
                 b["traveled"] = 0.0
                 b["max_range"] = rand_range(FRONT_RANGE_MIN, FRONT_RANGE_MAX)

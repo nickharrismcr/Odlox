@@ -140,7 +140,7 @@ class Game {
         if (!this.jetman.is_hidden()) {
             this.jetman.step(this.controller, this.platforms)
             if (this.controller.fire) {
-                this.lasers.fire(this.jetman)
+                this.lasers.fire(this.jetman, this.lib)
                 this.sound.laser()
             }
             if (this.jetman.launched_this_tick) {
