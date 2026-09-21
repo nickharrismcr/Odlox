@@ -41,10 +41,16 @@ import jetman as jetman_module
 // whole ensemble (all one colour, per the user's own description).
 
 const MAX_BEAMS = 4
-const FRONT_STEP = 8.0             // $6fd8/$6fd9: fixed 8px/tick
+// $6fd8/$6fd9 confirms a fixed step every tick, but this port's own
+// per-actor-per-tick update runs every actor every engine tick, unlike
+// the ROM's single jump-table-entry-per-50Hz-interrupt scheduling (see
+// main.lox's own TARGET_FPS comment for the same kind of deviation) --
+// 8px/tick reads much faster here than it would on real hardware, so
+// this is tuned down for feel rather than transcribed.
+const FRONT_STEP = 4.0
 const FRONT_RANGE_MIN = 132.0      // $6f9e: (random&$38)|$84, decoded to a plain distance cap
 const FRONT_RANGE_MAX = 188.0
-const COLLAPSE_STEP = 8.0          // $7059: same fixed ±8 move confirmed for a trailing pulse
+const COLLAPSE_STEP = FRONT_STEP   // $7059: same fixed move confirmed for a trailing pulse
 
 // Ensemble shape, distances measured backward from the leading tip
 // (front_x), in the direction opposite travel. Each of the 3 zones is
@@ -251,6 +257,18 @@ class LaserPool {
                 }
                 if (near < b["back_offset"]) {
                     near = b["back_offset"]
+                }
+                // A mark only exists once the front has actually
+                // travelled far enough for it to have "grown into
+                // place" -- without this cap, firing painted the WHOLE
+                // 96px ensemble immediately, so the trailing dot zone
+                // showed up several cells behind Jetman's gun on the
+                // very first frame instead of growing out from it.
+                if (near >= b["traveled"]) {
+                    continue
+                }
+                if (far > b["traveled"]) {
+                    far = b["traveled"]
                 }
                 var x1 = b["front_x"] - float(b["dir"]) * near
                 var x2 = b["front_x"] - float(b["dir"]) * far
