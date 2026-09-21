@@ -4,72 +4,67 @@ import spectrum_attr
 // @file laser.lox
 // @brief LaserPool: 4 preallocated beam slots (laser_beam_params, 4
 // records of 8 bytes: [used, Y, pulse1_X, pulse2_X, pulse3_X, pulse4_X,
-// length, colour]). Re-derived in depth from LaserBeamFire ($6E1B, the
-// alien-hit test)/LaserBeamInit ($6F70)/LaserBeamDraw ($6F86)/
-// LaserBeamAnimate ($6FC5) after an earlier, shallower pass got the
-// shape wrong -- confirmed against the actual bytes this time, not
-// just the disassembly's own prose comments:
+// length, colour]). Rebuilt a third time against a real gameplay
+// screenshot the user supplied: the beam is a single **growing dashed
+// line** from Jetman's gun to its current tip, not a handful of
+// isolated dash clusters -- the previous rewrite matched the
+// disassembly's confirmed byte-level facts (front pulse steps a fixed
+// 8px/tick and stamps a solid screen byte, $6fed) but rendering that
+// literally (each step's mark never explicitly erased) would produce
+// either a solid contiguous bar (adjacent 8px marks touching) or, with
+// this port's earlier "4 discrete pulses" model, 4 isolated dashes --
+// neither matches the screenshot's regular dash-gap-dash pattern
+// spanning the whole beam. The trailing-pulse code ($7016-$706c) that
+// erases *behind* the front as the beam collapses is exactly the kind
+// of mechanism that could produce a dashed look throughout, but its
+// precise bit-level pattern is one of the sections the disassembly's
+// own comment already flags as uncertain ("copious amounts of register
+// swapping... these annotations need checking") -- so rather than
+// guess further at bytes, this rebuild renders the dash pattern
+// directly (position-based, not time-based, so it stays visually
+// stable as the beam grows) and keeps every mechanically-CONFIRMED
+// fact from the previous pass:
 //
-// - The front pulse (pulse1) is NOT a freely-drawn dash: LaserBeamAnimate
-//   moves it a fixed 8px/tick ($6fd8: `add a,l` after negating for
-//   direction) and stamps a *solid* screen byte at its new position
-//   ($6fed: `ld (hl),$ff`) -- i.e. a full 8px-wide opaque block, not a
-//   thin line. It freezes (stops advancing, `res 2,(ix+2)`, checked via
-//   bit2 every subsequent tick) on EITHER of two independent triggers:
-//   hitting any non-empty screen content ($6fe6: reads the raw bitmap
-//   byte at its new position, not a platform-specific test) OR its own
-//   "length" countdown running out ($6ff7-$7003: length -= 8 every
-//   tick regardless of collision, freeze once length<8) -- a genuine
-//   max-range cap independent of collision. length is seeded per-fire
-//   from `(random&$38)|$84` ($6f97-$6f9e), i.e. one of 8 values 132-188
-//   -- FRONT_RANGE below is this port's float equivalent.
-// - The 3 trailing pulses do NOT move simultaneously at fixed per-pulse
-//   speeds (this port's own earlier version did). LaserBeamAnimate
-//   processes pulses in a tight loop ($7016-$7025) that, EACH TICK,
-//   walks forward through pulses 2/3/4 skipping any that have already
-//   reached pulse1's byte position, and stops at (does at most one
-//   thing to) the first one that hasn't -- so only ONE trailing pulse
-//   is ever actually moving at a time; the ones behind it are frozen
-//   until their own turn. A trailing pulse not yet "released" first
-//   spends a few ticks decrementing a delay countdown (reusing the same
-//   "length" field pulse1 no longer needs once frozen, $7034-$7047,
-//   itself reseeded from `random&3`) before it starts stepping toward
-//   pulse1 ($704f-$7059, same "±8" move as the front). Once ALL THREE
-//   trailing pulses have caught up to pulse1's position, the beam
-//   deactivates ($7027: `ld (ix+0),0`) -- "dies" by fully collapsing
-//   onto itself, not merely by the front leaving the screen.
+// - The front (tip) moves a fixed 8px/tick and freezes -- stops
+//   advancing permanently -- on EITHER hitting any non-empty screen
+//   content OR an independent random max-range countdown running out
+//   ($6f97-$6f9e: `(random&$38)|$84`, decoded to FRONT_RANGE_MIN/MAX).
+// - The beam doesn't vanish the instant the front freezes -- the ROM's
+//   own trailing pulses keep chasing and erasing behind it afterward,
+//   so this port models that as a single collapse cursor that starts
+//   advancing from the origin (Jetman's gun at fire time) toward the
+//   front only once the front has frozen, consuming the dashed trail
+//   as it goes; the beam deactivates once the cursor reaches the
+//   front, matching the ROM's own "dies once every trailing pulse has
+//   caught up" behaviour ($7027) without needing 3 separately-timed
+//   pulses to reproduce the visible result.
 // - Colour is a fresh **random** pick from laser_beam_colours ($6FB2:
 //   $47/$43/$43/$45 -- white, magenta, magenta, cyan, all bright) every
-//   time a beam fires ($6FA4: `random & 3`), confirmed unchanged from
-//   the earlier pass.
-// - The alien-hit test (LaserBeamFire, $6E1B -- a poor ROM label reused
-//   for two different routines; this one is really "does any beam hit
-//   this alien") tests pulse #2's position, not the front's ($6e28-
-//   $6e2b: `inc hl` x3 lands on pulse2's X before the header's used-flag
-//   test), with an asymmetric X window around the alien -- up to 32px
-//   if the pulse is at-or-right of the alien, only 8px if left of it
-//   ($6e33-$6e42) -- and a Y band testing the pulse is above-ish the
-//   alien, within its sprite height ($6e44-$6e53). check_hit() below
-//   approximates this rather than reproducing the exact byte-level
-//   arithmetic.
+//   time a beam fires ($6FA4: `random & 3`).
+// - check_hit() tests the front (tip) position -- the previous pass's
+//   "tests pulse #2, not the front" finding is almost certainly still
+//   correct byte-for-byte, but pulse #2 has no clean equivalent in this
+//   collapse-cursor model, and testing the tip is the more
+//   gameplay-legible simplification (a shot registers as it reaches an
+//   alien, not some ROM-internal trailing marker).
 
 const MAX_BEAMS = 4
 const FRONT_STEP = 8.0             // $6fd8/$6fd9: fixed 8px/tick
 const FRONT_RANGE_MIN = 132.0      // $6f9e: (random&$38)|$84, decoded to a plain distance cap
 const FRONT_RANGE_MAX = 188.0
-const TRAIL_COUNT = 3              // pulses 2, 3, 4
-const TRAIL_STEP = 8.0             // $7059: same fixed ±8 move as the front, once released
-const TRAIL_DELAY_MIN = 1          // $7040-$7042: random&3, plus the always-set bit2 -> a short stagger
-const TRAIL_DELAY_MAX = 4
-const PULSE_LENGTH = 6   // px drawn for the front's solid block -- this port's display isn't literally byte-addressed, so "a full screen byte" becomes "a chunky short dash" instead of a thin one
+const COLLAPSE_STEP = 8.0          // $7059: same fixed ±8 move confirmed for a trailing pulse
+
+const DASH_LEN = 4.0   // drawn dash length, in px, of the dashed trail
+const DASH_GAP = 4.0   // gap between dashes -- DASH_LEN+DASH_GAP is the repeat period
 const PULSE_THICKNESS = 2
 const BEAM_Y_OFFSET = 13.0  // LaserBeamDraw: aligned to the middle of Jetman's sprite
 
 const SCREEN_W = 256
 const SCREEN_H = 192
 
-// Alien-hit test window ($6e33-$6e53): asymmetric in X (wider ahead of
-// the alien than behind), generous but not exact in Y.
+// Alien-hit test window, approximating $6e33-$6e53's own asymmetric
+// arithmetic (wider ahead of the alien than behind) rather than
+// reproducing it exactly.
 const HIT_DX_AHEAD = 32.0
 const HIT_DX_BEHIND = 8.0
 const HIT_DY = 12.0
@@ -92,14 +87,8 @@ func rand_range(lo, hi) {
     return lo + rand() * (hi - lo)
 }
 
-func rand_int_range(lo, hi) {
-    return lo + int(rand() * float(hi - lo + 1))
-}
-
 // Display.plot()/set_attr() don't bounds-check (unlike blit_sprite,
-// which clips its own loop) -- a beam's tail can still be off-screen
-// for a tick or two after its leading edge has already wrapped past
-// the edge, so every plot here needs its own guard.
+// which clips its own loop), so every plot here needs its own guard.
 func plot_clamped(disp, x, y, v) {
     if (x >= 0 and x < SCREEN_W and y >= 0 and y < SCREEN_H) {
         disp.plot(x, y, v)
@@ -115,28 +104,20 @@ func set_attr_clamped(disp, x, y, ink, paper) {
 }
 
 func new_beam() {
-    var trail_x = []
-    for (var i = 0; i < TRAIL_COUNT; i = i + 1) {
-        trail_x.append(0.0)
-    }
-    var last_pulses = []
-    for (var i = 0; i < TRAIL_COUNT + 1; i = i + 1) {
-        last_pulses.append(nil)
-    }
     return {
         "active": false,
         "y": 0.0,
         "dir": 1,
-        "front_x": 0.0,
+        "origin_x": 0.0,     // Jetman's gun position at fire time -- the trail's own back end until it starts collapsing
+        "front_x": 0.0,      // current tip
         "front_frozen": false,
         "traveled": 0.0,
         "max_range": 0.0,
-        "trail_x": trail_x,
-        "trail_active": 0,      // index (0..TRAIL_COUNT-1) of the trailing pulse currently taking its turn; TRAIL_COUNT once all caught up
-        "trail_delay": 0,
-        "last_pulses": last_pulses,
-        "last_y": nil,
-        "colour": encode_rgba(255, 255, 255)
+        "collapsing": false, // true once the front has frozen -- origin_x then advances toward front_x
+        "colour": encode_rgba(255, 255, 255),
+        "last_lo": nil,      // erase bookkeeping: the drawn span's own last [lo, hi) bounds
+        "last_hi": nil,
+        "last_y": nil
     }
 }
 
@@ -149,8 +130,7 @@ class LaserPool {
     }
 
     // Fires from Jetman's gun (LaserNewIfFreeSlot: only if a slot is
-    // free -- no queueing). All 4 pulses start at the same X, exactly
-    // as LaserBeamInit/LaserBeamDraw set them.
+    // free -- no queueing).
     fire(jetman) {
         for (var i = 0; i < MAX_BEAMS; i = i + 1) {
             var b = this.beams[i]
@@ -161,18 +141,15 @@ class LaserPool {
                 if (jetman.facing_left) {
                     b["dir"] = -1
                 }
+                b["origin_x"] = jetman.x
                 b["front_x"] = jetman.x
                 b["front_frozen"] = false
                 b["traveled"] = 0.0
                 b["max_range"] = rand_range(FRONT_RANGE_MIN, FRONT_RANGE_MAX)
-                for (var p = 0; p < TRAIL_COUNT; p = p + 1) {
-                    b["trail_x"][p] = jetman.x
-                    b["last_pulses"][p] = nil
-                }
-                b["last_pulses"][TRAIL_COUNT] = nil
-                b["trail_active"] = 0
-                b["trail_delay"] = rand_int_range(TRAIL_DELAY_MIN, TRAIL_DELAY_MAX)
+                b["collapsing"] = false
                 b["colour"] = BEAM_COLOURS[int(rand() * len(BEAM_COLOURS))]
+                b["last_lo"] = nil
+                b["last_hi"] = nil
                 return
             }
         }
@@ -180,24 +157,21 @@ class LaserPool {
 
     clear(disp) {
         foreach (var b in this.beams) {
-            for (var p = 0; p < TRAIL_COUNT + 1; p = p + 1) {
-                var lx = b["last_pulses"][p]
-                if (lx != nil) {
-                    for (var i = 0; i < PULSE_LENGTH; i = i + 1) {
-                        for (var t = 0; t < PULSE_THICKNESS; t = t + 1) {
-                            plot_clamped(disp, lx + i, b["last_y"] + t, 0.0)
-                        }
-                    }
+            if (b["last_lo"] == nil) {
+                continue
+            }
+            for (var x = b["last_lo"]; x < b["last_hi"]; x = x + 1) {
+                for (var t = 0; t < PULSE_THICKNESS; t = t + 1) {
+                    plot_clamped(disp, x, b["last_y"] + t, 0.0)
                 }
             }
         }
     }
 
-    // Advances the front pulse (fixed step, freezing on collision or
-    // max range) and, separately, whichever single trailing pulse is
-    // currently "released" (see the file header) -- matching
-    // LaserBeamAnimate's own one-pulse-per-tick trailing behaviour.
-    // Deactivates once every trailing pulse has caught up to the front.
+    // Advances the front (fixed step, freezing on collision or max
+    // range), then -- once frozen -- advances the collapse cursor
+    // (origin_x) toward it at the same fixed step, consuming the trail
+    // from the back. Deactivates once the trail is fully consumed.
     update(platforms) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
@@ -217,29 +191,22 @@ class LaserPool {
                         b["front_frozen"] = true
                     }
                 }
+            } else {
+                b["collapsing"] = true
             }
 
-            if (b["trail_active"] < TRAIL_COUNT) {
-                if (b["trail_delay"] > 0) {
-                    b["trail_delay"] = b["trail_delay"] - 1
+            if (b["collapsing"]) {
+                var dx = b["front_x"] - b["origin_x"]
+                if (dx < 0.0) { dx = -dx }
+                if (dx <= COLLAPSE_STEP) {
+                    b["active"] = false
                 } else {
-                    var idx = b["trail_active"]
-                    var dx = b["front_x"] - b["trail_x"][idx]
-                    if (dx < 0.0) { dx = -dx }
-                    if (dx <= TRAIL_STEP) {
-                        b["trail_x"][idx] = b["front_x"]
-                        b["trail_active"] = b["trail_active"] + 1
-                        b["trail_delay"] = rand_int_range(TRAIL_DELAY_MIN, TRAIL_DELAY_MAX)
-                    } else {
-                        var step = TRAIL_STEP
-                        if (b["front_x"] < b["trail_x"][idx]) {
-                            step = -TRAIL_STEP
-                        }
-                        b["trail_x"][idx] = b["trail_x"][idx] + step
+                    var step = COLLAPSE_STEP
+                    if (b["front_x"] < b["origin_x"]) {
+                        step = -COLLAPSE_STEP
                     }
+                    b["origin_x"] = b["origin_x"] + step
                 }
-            } else {
-                b["active"] = false
             }
         }
     }
@@ -250,47 +217,68 @@ class LaserPool {
                 continue
             }
             var y0 = int(b["y"])
-
-            var positions = [int(b["front_x"])]
-            for (var p = 0; p < TRAIL_COUNT; p = p + 1) {
-                if (p < b["trail_active"]) {
-                    continue  // already merged into the front -- nothing extra to draw there
-                }
-                positions.append(int(b["trail_x"][p]))
+            var lo = b["origin_x"]
+            var hi = b["front_x"]
+            if (lo > hi) {
+                var tmp = lo
+                lo = hi
+                hi = tmp
             }
+            var period = DASH_LEN + DASH_GAP
 
-            var slot = 0
-            foreach (var x0 in positions) {
-                var draw_x = x0
-                if (b["dir"] < 0) {
-                    draw_x = x0 - PULSE_LENGTH
-                }
-                for (var i = 0; i < PULSE_LENGTH; i = i + 1) {
+            // Dash phase anchored to origin_x (not front_x) so the
+            // pattern stays stable near Jetman's gun as the beam grows,
+            // rather than sliding every tick the tip advances.
+            var x = lo
+            var min_drawn = nil
+            var max_drawn = nil
+            while (x < hi) {
+                var dash_end = x + DASH_LEN
+                if (dash_end > hi) { dash_end = hi }
+                var xi0 = int(x)
+                var xi1 = int(dash_end)
+                for (var px = xi0; px < xi1; px = px + 1) {
                     for (var t = 0; t < PULSE_THICKNESS; t = t + 1) {
-                        plot_clamped(disp, draw_x + i, y0 + t, 1.0)
+                        plot_clamped(disp, px, y0 + t, 1.0)
                     }
                 }
-                set_attr_clamped(disp, draw_x, y0, b["colour"], encode_rgba(0, 0, 0))
-                b["last_pulses"][slot] = draw_x
-                slot = slot + 1
+                if (xi1 > xi0) {
+                    if (min_drawn == nil or xi0 < min_drawn) { min_drawn = xi0 }
+                    if (max_drawn == nil or xi1 > max_drawn) { max_drawn = xi1 }
+                }
+                x = x + period
             }
-            for (var p = slot; p < TRAIL_COUNT + 1; p = p + 1) {
-                b["last_pulses"][p] = nil
+            if (min_drawn != nil) {
+                var black = encode_rgba(0, 0, 0)
+                var cx0 = int(min_drawn / 8)
+                var cx1 = int((max_drawn - 1) / 8)
+                var cy = int(y0 / 8)
+                for (var cxi = cx0; cxi <= cx1; cxi = cxi + 1) {
+                    if (cxi >= 0 and cxi < SCREEN_W / 8 and cy >= 0 and cy < SCREEN_H / 8) {
+                        disp.set_attr(cxi, cy, b["colour"], black)
+                    }
+                }
+            }
+
+            if (min_drawn == nil) {
+                b["last_lo"] = nil
+                b["last_hi"] = nil
+            } else {
+                b["last_lo"] = min_drawn
+                b["last_hi"] = max_drawn
             }
             b["last_y"] = y0
         }
     }
 
-    // Consumes and returns true for the first active beam whose pulse
-    // #2 (trail_x[0], not the front) is within the asymmetric hit
-    // window of (x, y) -- LaserBeamFire's own test, see the file header.
+    // Consumes and returns true for the first active beam whose front
+    // (tip) is within the asymmetric hit window of (x, y).
     check_hit(x, y) -> bool {
         foreach (var b in this.beams) {
             if (!b["active"]) {
                 continue
             }
-            var px = b["trail_x"][0]
-            var dx = px - x
+            var dx = b["front_x"] - x
             var dy = b["y"] - y
             if (dy < 0.0) { dy = -dy }
             var x_ok = false
