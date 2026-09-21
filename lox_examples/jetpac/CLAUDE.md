@@ -127,10 +127,13 @@ different execution model — see "Per-tick phase ordering" in the plan).
   with longer gaps — all one colour, fixed in position relative to each other (`MARKS`, built once
   as distance-from-`front_x` pairs), translating together as one unit. This reconciles with, not
   against, the byte-level facts already confirmed from `LaserBeamAnimate`: the front moves a fixed
-  8px/tick and freezes — stops advancing, permanently — on EITHER hitting any non-empty screen
-  content (`platforms.blocks_point()`) OR an independent random max-range countdown
+  step/tick ($6fd8/$6fd9 confirm 8px/ROM-tick, but `FRONT_STEP` is tuned down to 4 for feel — this
+  port runs every actor every engine tick, unlike the ROM's one-jump-table-entry-per-50Hz-interrupt
+  scheduling, so a literal 8px/tick reads much faster here; same deviation as `main.lox`'s own
+  `TARGET_FPS` comment) and freezes — stops advancing, permanently — on EITHER hitting any non-empty
+  screen content (`platforms.blocks_point()`) OR an independent random max-range countdown
   (`FRONT_RANGE_MIN/MAX`, ROM: `(random&$38)|$84`); each trailing pulse, once released, moves
-  toward the front's *current* position at that same fixed 8px/tick — and two things moving at
+  toward the front's *current* position at that same fixed step — and two things moving at
   identical speed toward/with each other never close a gap that's already open, so a released
   trailing pulse settles into and *holds* a fixed offset behind the still-moving front (a rigid
   ensemble), only starting to actually close the gap once the front freezes and stops being a moving
@@ -150,7 +153,11 @@ different execution model — see "Per-tick phase ordering" in the plan).
   left, but his BACK when facing right. A beam used to start there regardless of facing, firing
   from behind him when he faced right; fixed by offsetting by the actual current sprite's own
   width (confirmed against `LaserBeamInit`/`LaserBeamShootRight`, $6F70/$6FB6, whose own C register
-  ends up well to the right of Jetman's base X when facing right).
+  ends up well to the right of Jetman's base X when facing right). Each `MARKS` entry in `draw()` is
+  also clamped to the beam's own `traveled` distance, not just `back_offset` — without this, the
+  full 96px ensemble (including the trailing dot zone) rendered instantly the moment a beam fired,
+  appearing several cells behind Jetman's gun on the very first frame instead of growing out from
+  it; the visible span now tracks `traveled` tick-by-tick until it reaches full length.
 - `explosion.lox` — `Explosion`: the shared 3-frame small/medium/large *growing* cycle
   (`explosion_sprite_table`, $68D8), used for alien kills, Jetman's own death, and Jetman's
   platform-liftoff puff (`jetman.lox`'s `launched_this_tick`, set on `state_walk()`'s WALK->FLY
