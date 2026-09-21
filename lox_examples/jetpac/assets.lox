@@ -54,6 +54,7 @@ func decode_byte_rows(data, width_px) {
 class SpriteAssets {
     __init__() {
         this.sprites = {}
+        this.x_offsets = {}
     }
 
     // Loads every sprite defined in the JSON file at `path`, adding each
@@ -73,11 +74,20 @@ class SpriteAssets {
                 raise Exception("Unknown sprite data_type '" & data_type & "' for '" & name & "'")
             }
             this.sprites[name] = arr
+            this.x_offsets[name] = entry.get("x_offset", 0)
         }
     }
 
     get(name) {
         return this.sprites[name]
+    }
+
+    // ActorUpdate ($7207)'s own per-sprite x_offset header byte -- 0 for
+    // almost everything, but non-zero for a few of Jetman's own left-
+    // facing shift variants (see extract_jetpac.lox's emit_byte_sprite).
+    // Added directly to an actor's true X to get its real draw position.
+    get_x_offset(name) -> int {
+        return this.x_offsets.get(name, 0)
     }
 
     has(name) -> bool {

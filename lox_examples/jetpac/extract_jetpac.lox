@@ -34,17 +34,32 @@ func reverse_rows(data, bytes_per_row, height) {
     return out
 }
 
-// Reads a 3-byte-header sprite ([x offset (unused here), width in
-// tiles, height in pixels], then width*height packed MSB-first bytes,
-// bottom row first -- see reverse_rows) at label, appending a
-// jetpac_sprites.json entry named `name`.
+// Reads a 3-byte-header sprite ([x offset, width in tiles, height in
+// pixels], then width*height packed MSB-first bytes, bottom row first
+// -- see reverse_rows) at label, appending a jetpac_sprites.json entry
+// named `name`.
+//
+// x_offset (header[0]) is added directly to the actor's true X
+// position before the blit, per ActorUpdate ($7207: `add a,l` -- #REGl
+// is the actor's raw X, #REGa the header byte). It's 0 for nearly
+// every sprite (including every jetman_fly_right/walk_right shift
+// variant, and the rocket/item/alien sprites checked while diagnosing
+// this), but non-zero (8) for the narrower 2-tile jetman_fly_left/
+// walk_left shift variants -- those need it to keep their facing edge
+// aligned as their own bounding box width changes between poses (2
+// tiles/16px vs 3 tiles/24px) frame to frame. Read as a signed byte
+// since nothing in the ROM's own `add a,l` treats it as unsigned.
 func emit_byte_sprite(sk, label, name, sprites) {
     var header = sk.bytes_at_label(label, 3)
+    var x_offset = header[0]
+    if (x_offset >= 128) {
+        x_offset = x_offset - 256
+    }
     var tiles = header[1]
     var height = header[2]
     var base = sk.addr_of(label) + 3
     var data = sk.bytes(base, tiles * height)
-    sprites.append({"name": name, "data_type": "byte", "width": tiles * 8, "data": reverse_rows(data, tiles, height)})
+    sprites.append({"name": name, "data_type": "byte", "width": tiles * 8, "x_offset": x_offset, "data": reverse_rows(data, tiles, height)})
 }
 
 // Reads a 1-byte-header alien sprite ([height], always 16px/2 bytes
@@ -69,19 +84,31 @@ func emit_tile_sprite(sk, label, name, sprites) {
 // Display.blit_sprite plots at an arbitrary x, so the runtime only
 // loads the shift0 sprite of each pose; all 16 are still emitted so the
 // choice is auditable from the JSON.
+//
+// The table's own entry order is NOT "1,2,3,4" for every pose: right-
+// facing poses list gfx_..._right1..4 in that order (label N = shiftN's
+// slot, N counting 1..4 for shift 0,2,4,6), but each LEFT-facing pose
+// lists its 4 entries **reversed** -- e.g. jetman_sprite_table's fly-
+// left block is "fly left 4, fly left 3, fly left 2, fly left 1" (and
+// walk-left likewise) -- so label 1 actually occupies the shift6 slot
+// and label 4 occupies the shift0 slot. Confirmed directly against the
+// table's own bytes at $76C5-$76E3 in jetpac.skool. shift_order below
+// encodes this per-pose-group: right-facing labels map straight across
+// (1,2,3,4 -> shift 0,2,4,6), left-facing labels map reversed (1,2,3,4
+// -> shift 6,4,2,0).
 const JETMAN_POSES = [
-    {"label_prefix": "gfx_jetman_fly_right", "name_prefix": "jetman_fly_right"},
-    {"label_prefix": "gfx_jetman_fly_left", "name_prefix": "jetman_fly_left"},
-    {"label_prefix": "gfx_jetman_walk_right", "name_prefix": "jetman_walk_right"},
-    {"label_prefix": "gfx_jetman_walk_left", "name_prefix": "jetman_walk_left"}
+    {"label_prefix": "gfx_jetman_fly_right", "name_prefix": "jetman_fly_right", "shift_order": ["0", "2", "4", "6"]},
+    {"label_prefix": "gfx_jetman_fly_left", "name_prefix": "jetman_fly_left", "shift_order": ["6", "4", "2", "0"]},
+    {"label_prefix": "gfx_jetman_walk_right", "name_prefix": "jetman_walk_right", "shift_order": ["0", "2", "4", "6"]},
+    {"label_prefix": "gfx_jetman_walk_left", "name_prefix": "jetman_walk_left", "shift_order": ["6", "4", "2", "0"]}
 ]
-const SHIFT_SUFFIXES = ["0", "2", "4", "6"]
 
 func emit_jetman_sprites(sk, sprites) {
     foreach (var pose in JETMAN_POSES) {
+        var shift_order = pose["shift_order"]
         for (var i = 0; i < 4; i = i + 1) {
             var label = format("%s%d", pose["label_prefix"], i + 1)
-            var name = format("%s_shift%s", pose["name_prefix"], SHIFT_SUFFIXES[i])
+            var name = format("%s_shift%s", pose["name_prefix"], shift_order[i])
             emit_byte_sprite(sk, label, name, sprites)
         }
     }

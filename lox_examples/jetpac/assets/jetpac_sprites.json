@@ -1,7 +1,5 @@
 [
   {
-    "data_type": "byte",
-    "name": "jetman_fly_right_shift0",
     "data": [
       7,
       128,
@@ -52,11 +50,12 @@
       16,
       0
     ],
-    "width": 16
+    "x_offset": 0,
+    "name": "jetman_fly_right_shift0",
+    "width": 16,
+    "data_type": "byte"
   },
   {
-    "width": 24,
-    "name": "jetman_fly_right_shift2",
     "data": [
       1,
       224,
@@ -131,11 +130,12 @@
       0,
       0
     ],
-    "data_type": "byte"
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "jetman_fly_right_shift2",
+    "width": 24
   },
   {
-    "data_type": "byte",
-    "name": "jetman_fly_right_shift4",
     "data": [
       0,
       120,
@@ -210,9 +210,14 @@
       0,
       0
     ],
-    "width": 24
+    "x_offset": 0,
+    "name": "jetman_fly_right_shift4",
+    "width": 24,
+    "data_type": "byte"
   },
   {
+    "width": 24,
+    "data_type": "byte",
     "data": [
       0,
       30,
@@ -287,14 +292,13 @@
       0,
       0
     ],
-    "data_type": "byte",
-    "width": 24,
+    "x_offset": 0,
     "name": "jetman_fly_right_shift6"
   },
   {
     "width": 16,
-    "name": "jetman_fly_left_shift0",
-    "data_type": "byte",
+    "name": "jetman_fly_left_shift6",
+    "x_offset": 8,
     "data": [
       1,
       224,
@@ -344,9 +348,12 @@
       4,
       0,
       8
-    ]
+    ],
+    "data_type": "byte"
   },
   {
+    "width": 16,
+    "data_type": "byte",
     "data": [
       7,
       128,
@@ -397,13 +404,13 @@
       0,
       80
     ],
-    "width": 16,
-    "name": "jetman_fly_left_shift2",
-    "data_type": "byte"
+    "x_offset": 8,
+    "name": "jetman_fly_left_shift4"
   },
   {
-    "data_type": "byte",
-    "name": "jetman_fly_left_shift4",
+    "width": 24,
+    "name": "jetman_fly_left_shift2",
+    "x_offset": 0,
     "data": [
       0,
       30,
@@ -478,9 +485,12 @@
       0,
       128
     ],
-    "width": 24
+    "data_type": "byte"
   },
   {
+    "width": 24,
+    "name": "jetman_fly_left_shift0",
+    "x_offset": 0,
     "data": [
       0,
       120,
@@ -555,9 +565,7 @@
       0,
       16
     ],
-    "name": "jetman_fly_left_shift6",
-    "data_type": "byte",
-    "width": 24
+    "data_type": "byte"
   },
   {
     "data": [
@@ -610,13 +618,12 @@
       0,
       0
     ],
-    "width": 16,
+    "x_offset": 0,
     "name": "jetman_walk_right_shift0",
+    "width": 16,
     "data_type": "byte"
   },
   {
-    "width": 16,
-    "name": "jetman_walk_right_shift2",
     "data": [
       1,
       224,
@@ -667,12 +674,12 @@
       0,
       0
     ],
+    "x_offset": 0,
+    "name": "jetman_walk_right_shift2",
+    "width": 16,
     "data_type": "byte"
   },
   {
-    "width": 24,
-    "name": "jetman_walk_right_shift4",
-    "data_type": "byte",
     "data": [
       0,
       120,
@@ -746,11 +753,16 @@
       0,
       0,
       0
-    ]
+    ],
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "jetman_walk_right_shift4",
+    "width": 24
   },
   {
     "data_type": "byte",
-    "width": 24,
+    "name": "jetman_walk_right_shift6",
+    "x_offset": 0,
     "data": [
       0,
       30,
@@ -825,7 +837,7 @@
       0,
       0
     ],
-    "name": "jetman_walk_right_shift6"
+    "width": 24
   },
   {
     "data": [
@@ -879,10 +891,14 @@
       0
     ],
     "width": 16,
-    "name": "jetman_walk_left_shift0",
-    "data_type": "byte"
+    "data_type": "byte",
+    "name": "jetman_walk_left_shift6",
+    "x_offset": 8
   },
   {
+    "data_type": "byte",
+    "name": "jetman_walk_left_shift4",
+    "width": 16,
     "data": [
       7,
       128,
@@ -933,9 +949,7 @@
       0,
       0
     ],
-    "width": 16,
-    "name": "jetman_walk_left_shift2",
-    "data_type": "byte"
+    "x_offset": 8
   },
   {
     "data": [
@@ -1012,14 +1026,12 @@
       0,
       0
     ],
-    "width": 24,
-    "name": "jetman_walk_left_shift4",
-    "data_type": "byte"
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "jetman_walk_left_shift2",
+    "width": 24
   },
   {
-    "width": 24,
-    "name": "jetman_walk_left_shift6",
-    "data_type": "byte",
     "data": [
       0,
       120,
@@ -1093,9 +1105,16 @@
       0,
       0,
       0
-    ]
+    ],
+    "width": 24,
+    "data_type": "byte",
+    "name": "jetman_walk_left_shift0",
+    "x_offset": 0
   },
   {
+    "width": 16,
+    "name": "rocket_u1_bottom",
+    "x_offset": 0,
     "data": [
       185,
       247,
@@ -1130,14 +1149,12 @@
       184,
       23
     ],
-    "width": 16,
-    "name": "rocket_u1_bottom",
     "data_type": "byte"
   },
   {
-    "width": 16,
-    "name": "rocket_u1_middle",
     "data_type": "byte",
+    "name": "rocket_u1_middle",
+    "width": 16,
     "data": [
       9,
       16,
@@ -1171,12 +1188,10 @@
       247,
       185,
       247
-    ]
+    ],
+    "x_offset": 0
   },
   {
-    "width": 16,
-    "name": "rocket_u1_top",
-    "data_type": "byte",
     "data": [
       1,
       128,
@@ -1210,7 +1225,11 @@
       80,
       9,
       80
-    ]
+    ],
+    "x_offset": 0,
+    "name": "rocket_u1_top",
+    "width": 16,
+    "data_type": "byte"
   },
   {
     "data": [
@@ -1249,9 +1268,13 @@
     ],
     "width": 16,
     "data_type": "byte",
-    "name": "rocket_u3_bottom"
+    "name": "rocket_u3_bottom",
+    "x_offset": 0
   },
   {
+    "width": 16,
+    "name": "rocket_u3_middle",
+    "x_offset": 0,
     "data": [
       127,
       254,
@@ -1286,14 +1309,9 @@
       217,
       155
     ],
-    "width": 16,
-    "name": "rocket_u3_middle",
     "data_type": "byte"
   },
   {
-    "width": 16,
-    "name": "rocket_u3_top",
-    "data_type": "byte",
     "data": [
       1,
       128,
@@ -1327,7 +1345,11 @@
       252,
       75,
       254
-    ]
+    ],
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "rocket_u3_top",
+    "width": 16
   },
   {
     "data": [
@@ -1366,9 +1388,11 @@
     ],
     "width": 16,
     "data_type": "byte",
-    "name": "rocket_u4_bottom"
+    "name": "rocket_u4_bottom",
+    "x_offset": 0
   },
   {
+    "x_offset": 0,
     "data": [
       25,
       136,
@@ -1403,8 +1427,8 @@
       187,
       221
     ],
-    "width": 16,
     "data_type": "byte",
+    "width": 16,
     "name": "rocket_u4_middle"
   },
   {
@@ -1444,11 +1468,12 @@
     ],
     "width": 16,
     "data_type": "byte",
-    "name": "rocket_u4_top"
+    "name": "rocket_u4_top",
+    "x_offset": 0
   },
   {
-    "data_type": "byte",
     "width": 16,
+    "data_type": "byte",
     "data": [
       13,
       118,
@@ -1483,9 +1508,13 @@
       128,
       79
     ],
+    "x_offset": 0,
     "name": "rocket_u5_bottom"
   },
   {
+    "data_type": "byte",
+    "name": "rocket_u5_middle",
+    "width": 16,
     "data": [
       11,
       90,
@@ -1520,13 +1549,12 @@
       11,
       118
     ],
-    "width": 16,
-    "name": "rocket_u5_middle",
-    "data_type": "byte"
+    "x_offset": 0
   },
   {
-    "width": 16,
+    "data_type": "byte",
     "name": "rocket_u5_top",
+    "x_offset": 0,
     "data": [
       0,
       56,
@@ -1561,11 +1589,9 @@
       11,
       250
     ],
-    "data_type": "byte"
+    "width": 16
   },
   {
-    "width": 16,
-    "name": "rocket_flames_0",
     "data": [
       47,
       252,
@@ -1598,12 +1624,12 @@
       0,
       64
     ],
+    "x_offset": 0,
+    "name": "rocket_flames_0",
+    "width": 16,
     "data_type": "byte"
   },
   {
-    "width": 16,
-    "name": "rocket_flames_1",
-    "data_type": "byte",
     "data": [
       191,
       122,
@@ -1635,10 +1661,15 @@
       0,
       0,
       128
-    ]
+    ],
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "rocket_flames_1",
+    "width": 16
   },
   {
     "data_type": "byte",
+    "name": "fuel_pod",
     "width": 16,
     "data": [
       24,
@@ -1664,9 +1695,12 @@
       24,
       24
     ],
-    "name": "fuel_pod"
+    "x_offset": 0
   },
   {
+    "data_type": "byte",
+    "name": "gold_bar",
+    "x_offset": 0,
     "data": [
       15,
       248,
@@ -1685,9 +1719,7 @@
       255,
       252
     ],
-    "data_type": "byte",
-    "width": 16,
-    "name": "gold_bar"
+    "width": 16
   },
   {
     "data": [
@@ -1714,14 +1746,12 @@
       15,
       248
     ],
+    "x_offset": 0,
     "data_type": "byte",
-    "width": 16,
-    "name": "radiation"
+    "name": "radiation",
+    "width": 16
   },
   {
-    "width": 16,
-    "name": "chemical_weapon",
-    "data_type": "byte",
     "data": [
       3,
       128,
@@ -1749,7 +1779,11 @@
       62,
       112,
       28
-    ]
+    ],
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "chemical_weapon",
+    "width": 16
   },
   {
     "data": [
@@ -1772,13 +1806,15 @@
       63,
       252
     ],
-    "width": 16,
+    "x_offset": 0,
     "data_type": "byte",
-    "name": "plutonium"
+    "name": "plutonium",
+    "width": 16
   },
   {
     "data_type": "byte",
     "name": "diamond",
+    "x_offset": 0,
     "data": [
       3,
       192,
@@ -1808,9 +1844,6 @@
     "width": 16
   },
   {
-    "width": 16,
-    "name": "meteor_0",
-    "data_type": "byte",
     "data": [
       8,
       16,
@@ -1834,7 +1867,10 @@
       236,
       2,
       248
-    ]
+    ],
+    "width": 16,
+    "data_type": "byte",
+    "name": "meteor_0"
   },
   {
     "data": [
@@ -1861,11 +1897,13 @@
       4,
       120
     ],
-    "width": 16,
     "data_type": "byte",
-    "name": "meteor_1"
+    "name": "meteor_1",
+    "width": 16
   },
   {
+    "width": 24,
+    "data_type": "byte",
     "data": [
       15,
       14,
@@ -1916,13 +1954,10 @@
       240,
       0
     ],
-    "width": 24,
-    "data_type": "byte",
+    "x_offset": 0,
     "name": "explosion_big"
   },
   {
-    "data_type": "byte",
-    "width": 24,
     "data": [
       0,
       0,
@@ -1973,11 +2008,15 @@
       0,
       0
     ],
-    "name": "explosion_medium"
+    "x_offset": 0,
+    "data_type": "byte",
+    "name": "explosion_medium",
+    "width": 24
   },
   {
-    "data_type": "byte",
     "width": 24,
+    "name": "explosion_small",
+    "x_offset": 0,
     "data": [
       0,
       0,
@@ -2028,7 +2067,7 @@
       0,
       0
     ],
-    "name": "explosion_small"
+    "data_type": "byte"
   },
   {
     "data": [
@@ -2041,13 +2080,11 @@
       113,
       33
     ],
-    "width": 8,
     "data_type": "byte",
-    "name": "platform_left"
+    "name": "platform_left",
+    "width": 8
   },
   {
-    "data_type": "byte",
-    "name": "platform_middle",
     "data": [
       189,
       255,
@@ -2058,9 +2095,13 @@
       173,
       4
     ],
-    "width": 8
+    "data_type": "byte",
+    "width": 8,
+    "name": "platform_middle"
   },
   {
+    "width": 8,
+    "data_type": "byte",
     "data": [
       76,
       254,
@@ -2071,14 +2112,12 @@
       156,
       8
     ],
-    "name": "platform_right",
-    "data_type": "byte",
-    "width": 8
+    "name": "platform_right"
   },
   {
-    "width": 8,
-    "name": "life_icon",
     "data_type": "byte",
+    "name": "life_icon",
+    "width": 8,
     "data": [
       24,
       36,
