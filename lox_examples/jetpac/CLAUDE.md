@@ -46,7 +46,14 @@ different execution model — see "Per-tick phase ordering" in the plan).
   `is_dead()` compares it to `state_dying`. Horizontal position wraps mod 256 (an 8-bit-byte side
   effect on real hardware, not a deliberate design choice). `kill()` is the one entry point for
   anything that ends Jetman's life (alien contact today; falling too far/air-out would call it too,
-  neither is in scope).
+  neither is in scope). `draw()`'s walk-cycle position compensation is TWO independent corrections,
+  not one (`walk_shift()`'s own comment, and see `assets.lox`'s `get_x_offset()`): `-walk_shift(this)`
+  cancels the sub-byte pixel offset baked into whichever shift sprite is chosen (this port blits at
+  an arbitrary x, so it has to undo the byte-alignment the ROM's own blitter relied on), and
+  `+lib.get_x_offset(name)` adds that sprite's own fixed per-variant ROM header offset (0 for every
+  right-facing shift sprite, +8 for the narrower left-facing ones). Dropping either one alone breaks
+  a direction — this was a real, playtested bug (walking left was jerky, right wasn't) fixed by
+  finding both corrections were needed together, not by picking one.
 - `jetman_controller.lox` — `Controller`: polls input once per frame into `left`/`right`/`thrust`/
   `hover`/`fire` flags (`fire` edge-triggered, matching `defender/player/controller.lox`'s own
   convention for a discrete "one shot per press" action; the rest level-triggered). The only
@@ -81,6 +88,10 @@ different execution model — see "Per-tick phase ordering" in the plan).
   its pre-seeded module has actually been delivered, since delivery despawns the same `Item`
   instance those functions later reuse — don't add a third "spawn a module" path expecting it to
   coexist with a fourth pickup kind; there are only ever two module deliveries, total, per game.
+  `spawn_fuel_pod()` picks a random column from `item_drop_columns`, same as `spawn_collectible()` —
+  confirmed `ItemNewFuelPod` ($65F9) calls the exact same `ItemCalcDropColumn` ($65DB) routine
+  `ItemNewCollectible` does; `default_fuel_pod`'s own `"x"` field is just the ROM's zeroed RAM
+  template value (0) before `ItemNewFuelPod` ever runs, not a real spawn position.
 - `alien.lox` — `Alien` + `state_meteor`: a fixed 6-slot pool, allocated once and reused (never
   reallocated — see the root `CLAUDE.md`'s per-frame allocation discipline). `state_meteor` is the
   only state in this scope; `ALIEN_STATE_BY_LEVEL` is the seam for the other 7 alien types, paired
@@ -90,18 +101,27 @@ different execution model — see "Per-tick phase ordering" in the plan).
   alien at all is that it costs Jetman too, so this port kills both (see `alien.lox`'s own comment
   for the ROM line this diverges from).
 - `laser.lox` — `LaserPool`: 4 preallocated beam slots (`laser_beam_params`' own 4 records:
-  `[used, Y, pulse1_X, pulse2_X, pulse3_X, pulse4_X, length, colour]`). Each beam is genuinely 4
-  pulses, not one block — all start together at the gun and are drawn as separate short dashes, the
-  front (`pulses[0]`) fixed-stepping ahead of the 3 trailing pulses (`PULSE_SPEEDS`, strictly
-  decreasing) for the real segmented, stretching look. Colour is a fresh **random** pick from
-  `laser_beam_colours` ($6FB2, decoded once into `BEAM_COLOURS`) every time a beam fires, not a
-  round-robin cycle — `LaserBeamAnimate`'s own disassembly comment ("copious amounts of register
-  swapping... these annotations need checking") means the exact per-pulse timing isn't ROM-exact,
-  just faithful in shape; see the file's own header before tightening it further. `check_hit(x, y)`
-  tests the **front** pulse specifically (matching `LaserBeamFire`'s own use of pulse1, not the
-  trailing ones) and is the alien-side collision test, consuming the beam on a hit;
-  `platforms.blocks_point()` is the platform-side one, checked every tick in `update()` — a beam
-  dies on either. `plot_clamped`/`set_attr_clamped` bounds-check every `Display.plot`/`set_attr`
+  `[used, Y, pulse1_X, pulse2_X, pulse3_X, pulse4_X, length, colour]`), re-derived in depth a second
+  time after an earlier pass got the *shape* wrong despite matching the disassembly's own prose (see
+  the file's own header for the full byte-level trace). The front pulse moves a fixed 8px/tick and
+  freezes — stops advancing, permanently — on EITHER hitting any non-empty screen content (not just
+  a platform: the ROM reads the raw bitmap byte, `platforms.blocks_point()` is this port's
+  narrower stand-in) OR an independent random max-range countdown (`FRONT_RANGE_MIN/MAX`, ROM:
+  `(random&$38)|$84`) running out — two separate stopping conditions, not one. The 3 trailing pulses
+  do **not** move simultaneously: only ONE is ever actually moving at a time (`trail_active` tracks
+  which), each spending a short random delay frozen before it starts stepping toward the front's
+  *current* position (fixed ±8/tick, same as the front), and the NEXT trailing pulse only starts its
+  own delay once the current one has fully merged with the front. The beam deactivates once all 3
+  have merged — dies by fully collapsing onto itself, not merely by the front leaving the screen or
+  hitting something (freezing the front doesn't kill the beam by itself; the tail still has to catch
+  up). Colour is a fresh **random** pick from `laser_beam_colours` ($6FB2, decoded once into
+  `BEAM_COLOURS`) every time a beam fires, not a round-robin cycle. `check_hit(x, y)` tests **pulse
+  #2** (`trail_x[0]`), not the front — confirmed from `LaserBeamFire`'s own byte offsets ($6E28-
+  $6E2B) — with an asymmetric X window (`HIT_DX_AHEAD`/`HIT_DX_BEHIND`, 32px one side of the alien,
+  8px the other) approximating $6E33-$6E53's own arithmetic rather than reproducing it exactly; it's
+  the alien-side collision test, consuming the beam on a hit. `platforms.blocks_point()` is the
+  platform-side one for the *front* pulse specifically, checked every tick in `update()`.
+  `plot_clamped`/`set_attr_clamped` bounds-check every `Display.plot`/`set_attr`
   call — unlike `blit_sprite`, those don't clip themselves, and a beam's tail can be off-screen for
   a tick after its leading edge (tracked separately) has already wrapped past the edge.
 - `explosion.lox` — `Explosion`: the shared 3-frame small/medium/large *growing* cycle
@@ -184,7 +204,14 @@ different execution model — see "Per-tick phase ordering" in the plan).
   sprite-table offsets) — every value read from the skool by label, none typed in by hand. Rerun
   after any sprite/static-data change and diff the JSON (`git diff --exit-code`); a diff limited to
   key *order* (not values) is the known `dict.keys()` iteration-order non-determinism, not a
-  regression — check values, not raw text, if that comes up again.
+  regression — check values, not raw text, if that comes up again. `emit_byte_sprite()` also captures
+  each Actor sprite's own header[0] byte as `"x_offset"` (see `assets.lox`'s `get_x_offset()`) —
+  0 for nearly everything but real for Jetman's own left-facing walk/fly shift variants. `JETMAN_POSES`'
+  own `shift_order` matters: `jetman_sprite_table` ($76C5) lists each **left**-facing pose's 4 shift
+  entries in *reverse* order (label 1 = the shift6 slot, label 4 = shift0) while right-facing poses
+  list theirs straight across (label 1 = shift0) — confirmed directly against the table's own bytes,
+  not assumed from label naming. Get this backwards and every left-facing walk/fly sprite silently
+  points at the wrong shift's pixel data.
 - `extract_sfx.lox` — `odlox.exe extract_sfx.lox jetpac.skool`. Writes `data/sfx.json`: a cue table
   of `{name, kind, pitch, cycles, src}`. Only `explosion_sfx_defaults` ($6810) is read from the
   skool (a real `defb` table); every other cue's pitch/duration is an immediate inside a `c$` code
@@ -201,7 +228,9 @@ different execution model — see "Per-tick phase ordering" in the plan).
 - `dump_sprites.lox` — copied verbatim from `manic_miner`. `odlox.exe dump_sprites.lox
   assets/jetpac_sprites.json` prints every sprite as `#`/`.` ASCII art — the fastest way to catch a
   decode direction/order bug (see the `skool.lox` entry above) before it reaches a screenshot.
-- `assets.lox` — copied verbatim from `manic_miner`.
+- `assets.lox` — diverged from `manic_miner`'s copy: `SpriteAssets` also tracks each sprite's
+  `x_offset` (from its JSON entry, default 0) alongside its pixel data, via `get_x_offset(name)` --
+  see `jetman.lox`'s `draw()` for the one consumer.
 
 **Data**:
 - `assets/jetpac_sprites.json` / `assets/font_sprites.json` — generated by `extract_jetpac.lox`, not
