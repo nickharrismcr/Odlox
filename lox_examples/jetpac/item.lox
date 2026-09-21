@@ -121,21 +121,27 @@ func init_module(item, key, sprite, static_data) {
     item.update_func = state_falling
 }
 
-// Spawns a falling fuel pod at x/y from the static default record,
-// gated exactly as ItemNewFuelPod: Jetman must be alive, no fuel pod
-// already active, fewer than FUEL_PODS_NEEDED collected, and
-// game_timer's low nibble at zero (the caller's own timer -- see
-// spawner.lox once it exists).
+// Spawns a falling fuel pod at a random drop column, gated exactly as
+// ItemNewFuelPod ($65F9): Jetman must be alive, no fuel pod already
+// active, fewer than FUEL_PODS_NEEDED collected, and game_timer's low
+// nibble at zero (the caller's own timer -- see spawner.lox once it
+// exists). ItemNewFuelPod calls the exact same ItemCalcDropColumn
+// ($65DB) random-column routine ItemNewCollectible uses below --
+// default_fuel_pod's own "x" field is just the ROM's zeroed RAM
+// template value (0, the screen's left edge) before ItemNewFuelPod
+// ever runs, not a real spawn position; using it directly (as this
+// port used to) pinned every fuel pod to the left edge of the screen.
 func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
     if (jetman.is_dead() or item.active or rocket.fuel >= FUEL_PODS_NEEDED) {
         return false
     }
     var d = static_data["default_fuel_pod"]
+    var columns = static_data["item_drop_columns"]
     item.kind = "fuel"
     item.image_list = ["fuel_pod"]
     item.frame = 0
     item.colour = attr_colour(d["attr"])
-    item.x = float(d["x"])
+    item.x = float(columns[int(rand() * len(columns))])
     item.y = float(d["y"])
     item.active = true
     item.last_x = nil
