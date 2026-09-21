@@ -2,51 +2,42 @@ from gfx import *
 import spectrum_attr
 
 // @file laser.lox
-// @brief LaserPool: 4 preallocated beam slots (laser_beam_params, 4
-// records of 8 bytes: [used, Y, pulse1_X, pulse2_X, pulse3_X, pulse4_X,
-// length, colour]). Rebuilt a third time against a real gameplay
-// screenshot the user supplied: the beam is a single **growing dashed
-// line** from Jetman's gun to its current tip, not a handful of
-// isolated dash clusters -- the previous rewrite matched the
-// disassembly's confirmed byte-level facts (front pulse steps a fixed
-// 8px/tick and stamps a solid screen byte, $6fed) but rendering that
-// literally (each step's mark never explicitly erased) would produce
-// either a solid contiguous bar (adjacent 8px marks touching) or, with
-// this port's earlier "4 discrete pulses" model, 4 isolated dashes --
-// neither matches the screenshot's regular dash-gap-dash pattern
-// spanning the whole beam. The trailing-pulse code ($7016-$706c) that
-// erases *behind* the front as the beam collapses is exactly the kind
-// of mechanism that could produce a dashed look throughout, but its
-// precise bit-level pattern is one of the sections the disassembly's
-// own comment already flags as uncertain ("copious amounts of register
-// swapping... these annotations need checking") -- so rather than
-// guess further at bytes, this rebuild renders the dash pattern
-// directly (position-based, not time-based, so it stays visually
-// stable as the beam grows) and keeps every mechanically-CONFIRMED
-// fact from the previous pass:
+// @brief LaserPool: 4 preallocated beam slots. Rebuilt a fourth time
+// against the user's own precise description of real gameplay (after
+// a screenshot-matched dashed-line attempt still didn't look right):
+// the shot is a **rigid 3-zone ensemble** -- a solid leading tip, then
+// a zone of 4 short dashes with short gaps, then a trailing zone of 4
+// very short dashes ("dots") with longer gaps -- all one colour, all
+// fixed in position relative to each other, translating together as
+// one unit away from Jetman:
 //
-// - The front (tip) moves a fixed 8px/tick and freezes -- stops
-//   advancing permanently -- on EITHER hitting any non-empty screen
-//   content OR an independent random max-range countdown running out
-//   ($6f97-$6f9e: `(random&$38)|$84`, decoded to FRONT_RANGE_MIN/MAX).
-// - The beam doesn't vanish the instant the front freezes -- the ROM's
-//   own trailing pulses keep chasing and erasing behind it afterward,
-//   so this port models that as a single collapse cursor that starts
-//   advancing from the origin (Jetman's gun at fire time) toward the
-//   front only once the front has frozen, consuming the dashed trail
-//   as it goes; the beam deactivates once the cursor reaches the
-//   front, matching the ROM's own "dies once every trailing pulse has
-//   caught up" behaviour ($7027) without needing 3 separately-timed
-//   pulses to reproduce the visible result.
-// - Colour is a fresh **random** pick from laser_beam_colours ($6FB2:
-//   $47/$43/$43/$45 -- white, magenta, magenta, cyan, all bright) every
-//   time a beam fires ($6FA4: `random & 3`).
-// - check_hit() tests the front (tip) position -- the previous pass's
-//   "tests pulse #2, not the front" finding is almost certainly still
-//   correct byte-for-byte, but pulse #2 has no clean equivalent in this
-//   collapse-cursor model, and testing the tip is the more
-//   gameplay-legible simplification (a shot registers as it reaches an
-//   alien, not some ROM-internal trailing marker).
+//     . . . .  - - - -  ----   ->
+//   (trailing)         (leading, direction of travel)
+//
+// This reconciles with (doesn't contradict) the byte-level facts
+// confirmed from LaserBeamAnimate ($6FC5) in earlier passes: the front
+// pulse moves a fixed 8px/tick, and each trailing pulse, once released
+// from its own start delay, moves toward the front's *current*
+// position at that same fixed 8px/tick. Two pulses moving at identical
+// speed toward/with each other never close a gap that's already open
+// -- so once a trailing pulse is released, it settles into and holds a
+// FIXED offset behind the (still-moving) front, not a shrinking one.
+// That fixed-offset-while-flying behaviour is exactly a rigid
+// ensemble. Only once the front freezes (hits something, or its own
+// random max-range countdown runs out -- both still fixed facts, see
+// FRONT_RANGE_MIN/MAX below) does a trailing pulse's continued 8px/tick
+// approach actually start closing the now-static gap, collapsing the
+// ensemble from the back until it fully consumes into the frozen front
+// and the beam deactivates. An earlier pass modelled the trailing
+// pulses as independently-tracked X positions with their own release
+// delays; this pass renders the same shape and lifecycle directly as a
+// fixed zone pattern (ZONES below) trailing a single front_x, which is
+// simpler and matches the described visual exactly.
+//
+// Colour is a fresh **random** pick from laser_beam_colours ($6FB2:
+// $47/$43/$43/$45 -- white, magenta, magenta, cyan, all bright) every
+// time a beam fires ($6FA4: `random & 3`), applied uniformly across the
+// whole ensemble (all one colour, per the user's own description).
 
 const MAX_BEAMS = 4
 const FRONT_STEP = 8.0             // $6fd8/$6fd9: fixed 8px/tick
@@ -54,8 +45,22 @@ const FRONT_RANGE_MIN = 132.0      // $6f9e: (random&$38)|$84, decoded to a plai
 const FRONT_RANGE_MAX = 188.0
 const COLLAPSE_STEP = 8.0          // $7059: same fixed ±8 move confirmed for a trailing pulse
 
-const DASH_LEN = 4.0   // drawn dash length, in px, of the dashed trail
-const DASH_GAP = 4.0   // gap between dashes -- DASH_LEN+DASH_GAP is the repeat period
+// Ensemble shape, distances measured backward from the leading tip
+// (front_x), in the direction opposite travel.
+const SOLID_LEN = 4.0
+
+const DASH_COUNT = 4
+const DASH_LEN = 2.0
+const DASH_GAP = 2.0
+const DASH_ZONE_LEN = float(DASH_COUNT) * DASH_LEN + float(DASH_COUNT - 1) * DASH_GAP
+
+const DOT_COUNT = 4
+const DOT_LEN = 1.0
+const DOT_GAP = 4.0
+const DOT_ZONE_LEN = float(DOT_COUNT) * DOT_LEN + float(DOT_COUNT - 1) * DOT_GAP
+
+const ENSEMBLE_LEN = SOLID_LEN + DASH_ZONE_LEN + DOT_ZONE_LEN
+
 const PULSE_THICKNESS = 2
 const BEAM_Y_OFFSET = 13.0  // LaserBeamDraw: aligned to the middle of Jetman's sprite
 
@@ -83,6 +88,26 @@ func beam_colours() {
 
 var BEAM_COLOURS = beam_colours()
 
+// Every mark in the ensemble, as [near, far) distance-from-front pairs
+// (near < far), built once. Order doesn't matter for drawing.
+func build_marks() {
+    var marks = []
+    marks.append([0.0, SOLID_LEN])
+    var off = SOLID_LEN
+    for (var i = 0; i < DASH_COUNT; i = i + 1) {
+        marks.append([off, off + DASH_LEN])
+        off = off + DASH_LEN + DASH_GAP
+    }
+    off = SOLID_LEN + DASH_ZONE_LEN
+    for (var i = 0; i < DOT_COUNT; i = i + 1) {
+        marks.append([off, off + DOT_LEN])
+        off = off + DOT_LEN + DOT_GAP
+    }
+    return marks
+}
+
+var MARKS = build_marks()
+
 func rand_range(lo, hi) {
     return lo + rand() * (hi - lo)
 }
@@ -95,27 +120,18 @@ func plot_clamped(disp, x, y, v) {
     }
 }
 
-func set_attr_clamped(disp, x, y, ink, paper) {
-    var cx = int(x / 8)
-    var cy = int(y / 8)
-    if (cx >= 0 and cx < SCREEN_W / 8 and cy >= 0 and cy < SCREEN_H / 8) {
-        disp.set_attr(cx, cy, ink, paper)
-    }
-}
-
 func new_beam() {
     return {
         "active": false,
         "y": 0.0,
         "dir": 1,
-        "origin_x": 0.0,     // Jetman's gun position at fire time -- the trail's own back end until it starts collapsing
-        "front_x": 0.0,      // current tip
+        "front_x": 0.0,
         "front_frozen": false,
         "traveled": 0.0,
         "max_range": 0.0,
-        "collapsing": false, // true once the front has frozen -- origin_x then advances toward front_x
+        "back_offset": 0.0,   // 0 = full ensemble; grows toward ENSEMBLE_LEN as it collapses (only once frozen)
         "colour": encode_rgba(255, 255, 255),
-        "last_lo": nil,      // erase bookkeeping: the drawn span's own last [lo, hi) bounds
+        "last_lo": nil,       // erase bookkeeping: the drawn span's own last [lo, hi) bounds
         "last_hi": nil,
         "last_y": nil
     }
@@ -141,12 +157,11 @@ class LaserPool {
                 if (jetman.facing_left) {
                     b["dir"] = -1
                 }
-                b["origin_x"] = jetman.x
                 b["front_x"] = jetman.x
                 b["front_frozen"] = false
                 b["traveled"] = 0.0
                 b["max_range"] = rand_range(FRONT_RANGE_MIN, FRONT_RANGE_MAX)
-                b["collapsing"] = false
+                b["back_offset"] = 0.0
                 b["colour"] = BEAM_COLOURS[int(rand() * len(BEAM_COLOURS))]
                 b["last_lo"] = nil
                 b["last_hi"] = nil
@@ -169,9 +184,9 @@ class LaserPool {
     }
 
     // Advances the front (fixed step, freezing on collision or max
-    // range), then -- once frozen -- advances the collapse cursor
-    // (origin_x) toward it at the same fixed step, consuming the trail
-    // from the back. Deactivates once the trail is fully consumed.
+    // range). Once frozen, the ensemble's own back edge closes in on
+    // the front at the same fixed step, consuming it from the tail;
+    // the beam deactivates once fully consumed.
     update(platforms) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
@@ -192,20 +207,9 @@ class LaserPool {
                     }
                 }
             } else {
-                b["collapsing"] = true
-            }
-
-            if (b["collapsing"]) {
-                var dx = b["front_x"] - b["origin_x"]
-                if (dx < 0.0) { dx = -dx }
-                if (dx <= COLLAPSE_STEP) {
+                b["back_offset"] = b["back_offset"] + COLLAPSE_STEP
+                if (b["back_offset"] >= ENSEMBLE_LEN) {
                     b["active"] = false
-                } else {
-                    var step = COLLAPSE_STEP
-                    if (b["front_x"] < b["origin_x"]) {
-                        step = -COLLAPSE_STEP
-                    }
-                    b["origin_x"] = b["origin_x"] + step
                 }
             }
         }
@@ -217,37 +221,41 @@ class LaserPool {
                 continue
             }
             var y0 = int(b["y"])
-            var lo = b["origin_x"]
-            var hi = b["front_x"]
-            if (lo > hi) {
-                var tmp = lo
-                lo = hi
-                hi = tmp
-            }
-            var period = DASH_LEN + DASH_GAP
-
-            // Dash phase anchored to origin_x (not front_x) so the
-            // pattern stays stable near Jetman's gun as the beam grows,
-            // rather than sliding every tick the tip advances.
-            var x = lo
             var min_drawn = nil
             var max_drawn = nil
-            while (x < hi) {
-                var dash_end = x + DASH_LEN
-                if (dash_end > hi) { dash_end = hi }
-                var xi0 = int(x)
-                var xi1 = int(dash_end)
+
+            foreach (var m in MARKS) {
+                var near = m[0]
+                var far = m[1]
+                if (far <= b["back_offset"]) {
+                    continue  // fully consumed by the collapse
+                }
+                if (near < b["back_offset"]) {
+                    near = b["back_offset"]
+                }
+                var x1 = b["front_x"] - float(b["dir"]) * near
+                var x2 = b["front_x"] - float(b["dir"]) * far
+                var x_lo = x1
+                var x_hi = x2
+                if (x_lo > x_hi) {
+                    var tmp = x_lo
+                    x_lo = x_hi
+                    x_hi = tmp
+                }
+                var xi0 = int(x_lo)
+                var xi1 = int(x_hi)
+                if (xi1 <= xi0) {
+                    xi1 = xi0 + 1
+                }
                 for (var px = xi0; px < xi1; px = px + 1) {
                     for (var t = 0; t < PULSE_THICKNESS; t = t + 1) {
                         plot_clamped(disp, px, y0 + t, 1.0)
                     }
                 }
-                if (xi1 > xi0) {
-                    if (min_drawn == nil or xi0 < min_drawn) { min_drawn = xi0 }
-                    if (max_drawn == nil or xi1 > max_drawn) { max_drawn = xi1 }
-                }
-                x = x + period
+                if (min_drawn == nil or xi0 < min_drawn) { min_drawn = xi0 }
+                if (max_drawn == nil or xi1 > max_drawn) { max_drawn = xi1 }
             }
+
             if (min_drawn != nil) {
                 var black = encode_rgba(0, 0, 0)
                 var cx0 = int(min_drawn / 8)
@@ -260,13 +268,8 @@ class LaserPool {
                 }
             }
 
-            if (min_drawn == nil) {
-                b["last_lo"] = nil
-                b["last_hi"] = nil
-            } else {
-                b["last_lo"] = min_drawn
-                b["last_hi"] = max_drawn
-            }
+            b["last_lo"] = min_drawn
+            b["last_hi"] = max_drawn
             b["last_y"] = y0
         }
     }
