@@ -143,7 +143,14 @@ different execution model — see "Per-tick phase ordering" in the plan).
   which has no clean equivalent in this fixed-zone model) — a gameplay-legible simplification, with
   an asymmetric X window (`HIT_DX_AHEAD`/`HIT_DX_BEHIND`) approximating $6E33-$6E53's own
   arithmetic. `plot_clamped` bounds-checks every `Display.plot` call — unlike `blit_sprite`, it
-  doesn't clip itself.
+  doesn't clip itself. Each zone is exactly `CELL_LEN` (4 character cells, 32px), `ENSEMBLE_LEN`
+  96px total. `fire(jetman, lib)` takes `lib` specifically to look up the gun position correctly:
+  Jetman never mirrors his own sprite (separate left/right art, see `jetman.lox`'s
+  `current_sprite_name()`), so `jetman.x` is always his sprite's LEFT edge — his gun when facing
+  left, but his BACK when facing right. A beam used to start there regardless of facing, firing
+  from behind him when he faced right; fixed by offsetting by the actual current sprite's own
+  width (confirmed against `LaserBeamInit`/`LaserBeamShootRight`, $6F70/$6FB6, whose own C register
+  ends up well to the right of Jetman's base X when facing right).
 - `explosion.lox` — `Explosion`: the shared 3-frame small/medium/large *growing* cycle
   (`explosion_sprite_table`, $68D8), used for alien kills, Jetman's own death, and Jetman's
   platform-liftoff puff (`jetman.lox`'s `launched_this_tick`, set on `state_walk()`'s WALK->FLY
