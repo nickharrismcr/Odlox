@@ -1,5 +1,6 @@
 from gfx import *
 import spectrum_attr
+import item as item_module
 
 // @file rocket.lox
 // @brief The Rocket: modules (1..3), fuel (0..6), takeoff/landing, and
@@ -25,8 +26,6 @@ const FLAME_SPRITES = ["rocket_flames_0", "rocket_flames_1"]
 const FLAME_ANIM_TICKS = 4
 
 const CELL = 8
-const CELLS_PER_TILE = ROCKET_TILE / CELL         // 2
-const TOTAL_CELLS = MAX_MODULES * CELLS_PER_TILE  // 6
 const FLASH_TICKS = 16  // UpdateRocketColour: timer bit 4 -> toggles every 16 game ticks
 
 // UpdateRocketColour ($66FC), confirmed against jetpac.skool $6741-$678B:
@@ -37,10 +36,20 @@ const FLASH_TICKS = 16  // UpdateRocketColour: timer bit 4 -> toggles every 16 g
 // FUEL_PODS_NEEDED) doesn't band at all -- it flashes the *entire*
 // stack between magenta and white on the game timer ($675e-$675f: a
 // fresh colour computed from timer bit 4 each call). Otherwise ($6762-
-// $6777) the bottom `fuel` 8px cells -- not module tiles, which are 2
-// cells each -- are painted solid magenta counting up from the rocket's
-// own base, then the remaining `6-fuel` cells above them solid white.
-func cell_colour(rocket, cell_index, white, magenta, flash_on) {
+// $6777) the bottom `fuel*8` pixels are painted solid magenta counting
+// up from the rocket's own base, the rest above solid white.
+//
+// row_top_y is the top pixel of ONE attribute row (row_cy*CELL) -- the
+// row is coloured by testing its own *midpoint* against the magenta/
+// white pixel boundary rather than a discrete "cell index", because
+// ROCKET_PAD_Y (183) is not itself a multiple of 8: every module
+// tile's 16px sprite therefore straddles 3 attribute rows, not a clean
+// 2, and a per-tile-half discrete cell index left one of those three
+// rows uncorrected (still whatever plain white blit_sprite's own base
+// call left it at) -- the visible bug this replaced ("stripes" where a
+// row should have been part of a solid magenta band). Continuous
+// pixel-space math is correct regardless of alignment.
+func row_ink(rocket, row_top_y, white, magenta, flash_on) {
     if (rocket.modules < MAX_MODULES or rocket.fuel == 0) {
         return white
     }
@@ -48,7 +57,9 @@ func cell_colour(rocket, cell_index, white, magenta, flash_on) {
         if (flash_on) { return magenta }
         return white
     }
-    if (cell_index < rocket.fuel) {
+    var boundary_y = rocket.y - float(rocket.fuel) * float(CELL)
+    var row_mid = float(row_top_y) + float(CELL) / 2.0
+    if (row_mid >= boundary_y) {
         return magenta
     }
     return white
@@ -140,10 +151,14 @@ class Rocket {
 
     // Draws the module stack from the pad up (bottom always present,
     // middle/top as modules is collected), then the thruster flame
-    // while taking off/landing. Colour banding (see cell_colour() above)
-    // is applied per 8px attribute cell after each tile's pixels are
-    // blitted, since a 16px module tile spans two attribute rows that
-    // the ROM colours independently.
+    // while taking off/landing. Sprite pixels for every tile are
+    // blitted FIRST (in one pass), then colour banding (row_ink()
+    // above) is applied in a SEPARATE pass across every attribute row
+    // the whole stack spans -- not interleaved per tile, because
+    // adjacent tiles' own attribute footprints overlap by one row
+    // (ROCKET_PAD_Y isn't 8-aligned, see row_ink()'s own comment), so
+    // a later tile's plain-white blit_sprite call would otherwise stomp
+    // an earlier tile's already-correct override at the shared row.
     draw(disp, lib) {
         var white = encode_rgba(255, 255, 255)
         var magenta = encode_rgba(255, 0, 255)
@@ -160,29 +175,28 @@ class Rocket {
         var col_x0 = int(this.x / CELL)
         var col_x1 = int((this.x + float(ROCKET_TILE) - 1.0) / CELL)
 
+        // or_blit: the bottom tile's own transparent gaps (between the
+        // landing struts) shouldn't punch through the pad platform
+        // underneath -- see docs/plans/jetpac-port.md's history for the
+        // bug this fixes. Requires platforms to already be freshly
+        // redrawn earlier in this same tick's draw phase (see
+        // game.lox's tick()). Blitted plain white here; the colouring
+        // pass below repaints the real attribute colour right after.
         var tile_y = int(this.y) - ROCKET_TILE
         for (var i = 0; i < this.modules; i = i + 1) {
-            // or_blit: the bottom tile's own transparent gaps (between
-            // the landing struts) shouldn't punch through the pad
-            // platform underneath -- see docs/plans/jetpac-port.md's
-            // history for the bug this fixes. Requires platforms to
-            // already be freshly redrawn earlier in this same tick's
-            // draw phase (see game.lox's tick()). Blitted plain white
-            // here; cell_colour() below repaints the real attribute
-            // colour per 8px band right after.
             disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, white, black, false, true)
+            tile_y = tile_y - ROCKET_TILE
+        }
 
-            for (var half = 0; half < CELLS_PER_TILE; half = half + 1) {
-                var cell_index = i * CELLS_PER_TILE + half
-                var row_y = tile_y + (CELLS_PER_TILE - 1 - half) * CELL
-                var row_cy = int(row_y / CELL)
-                var ink = cell_colour(this, cell_index, white, magenta, flash_on)
+        if (this.modules > 0) {
+            var cy_bottom = int((int(this.y) - 1) / CELL)
+            var cy_top = int((int(this.y) - this.modules * ROCKET_TILE) / CELL)
+            for (var row_cy = cy_top; row_cy <= cy_bottom; row_cy = row_cy + 1) {
+                var ink = row_ink(this, row_cy * CELL, white, magenta, flash_on)
                 for (var cxi = col_x0; cxi <= col_x1; cxi = cxi + 1) {
                     disp.set_attr(cxi, row_cy, ink, black)
                 }
             }
-
-            tile_y = tile_y - ROCKET_TILE
         }
 
         if (this.update_func == state_taking_off or this.update_func == state_landing) {
@@ -210,7 +224,7 @@ func enter_landing(r) {
 // On the pad: RocketUpdate ($66D0) polls, every tick, for BOTH a full
 // tank AND Jetman actually touching the rocket (AlienCollision, see
 // near_jetman() above) before launching -- reaching FUEL_PODS_NEEDED
-// alone just starts the full-tank flash (cell_colour()), it doesn't
+// alone just starts the full-tank flash (row_ink()), it doesn't
 // launch by itself. On a genuine touch, Jetman "is found and
 // destroyed" (boards, vanishes -- not a death, no explosion/life lost)
 // and the player is awarded a bonus life ($66f5: `inc (hl)` on the
@@ -236,9 +250,18 @@ func state_taking_off(r, jetman, game) {
     animate_flame(r)
     if (r.y <= ROCKET_LAUNCH_TOP_Y) {
         // Level cycling is out of scope -- loop back down for another
-        // build/launch cycle instead of advancing a level.
+        // build/launch cycle instead of advancing a level. The real
+        // ROM's own equivalent moment (LevelNew, $6083, reached the
+        // instant the old rocket reaches the top) calls RocketReset
+        // ($60A7) here, which re-seeds BOTH module Item slots, not just
+        // the rocket's own modules/fuel counters -- without this, this
+        // port's rocket_item/collectible_item stay permanently consumed
+        // after their first delivery, and every later cycle comes back
+        // down with only the base tile and no way to ever rebuild it.
         r.modules = 1
         r.fuel = 0
+        item_module.init_module(game.rocket_item, "default_top_module", "rocket_u1_top", game.static_data)
+        item_module.init_module(game.collectible_item, "default_middle_module", "rocket_u1_middle", game.static_data)
         enter_landing(r)
     }
 }
