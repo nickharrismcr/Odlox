@@ -53,7 +53,10 @@ different execution model — see "Per-tick phase ordering" in the plan).
   `+lib.get_x_offset(name)` adds that sprite's own fixed per-variant ROM header offset (0 for every
   right-facing shift sprite, +8 for the narrower left-facing ones). Dropping either one alone breaks
   a direction — this was a real, playtested bug (walking left was jerky, right wasn't) fixed by
-  finding both corrections were needed together, not by picking one.
+  finding both corrections were needed together, not by picking one. `is_dead()`/`state_dying` gate
+  Game's own death/respawn timer specifically; `is_hidden()` (also true during `state_boarding`,
+  entered via `board()`) is the broader check `game.lox` uses for draw/input gating — see
+  `rocket.lox`'s own `state_on_pad()` for the one caller of `board()`.
 - `jetman_controller.lox` — `Controller`: polls input once per frame into `left`/`right`/`thrust`/
   `hover`/`fire` flags (`fire` edge-triggered, matching `defender/player/controller.lox`'s own
   convention for a discrete "one shot per press" action; the rest level-triggered). The only
@@ -69,10 +72,16 @@ different execution model — see "Per-tick phase ordering" in the plan).
   own move values $09/$0A/$0B. Owns `modules` (1..3), `fuel` (0..6), the flame animation, and
   `cell_colour()` (`UpdateRocketColour`, $66FC: banding only once `modules==3`, in 8px attribute
   cells -- bottom `fuel` cells magenta, rest white; a full tank flashes the whole stack instead).
-  Reaching `FUEL_PODS_NEEDED` (6)
-  auto-triggers takeoff; reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than
-  advancing a level (level cycling is out of scope), so the pad/build/launch cycle repeats
-  indefinitely instead of stopping after one.
+  Reaching `FUEL_PODS_NEEDED` (6) does **not** launch by itself -- `state_on_pad(r, jetman, game)`
+  polls every tick for fuel>=6 AND Jetman actually touching the rocket (`near_jetman()`, a port of
+  `AlienCollision` $6DE9 with the rocket's own `height` field in its asymmetric Y test), matching
+  `RocketUpdate`'s ($66D0) own per-tick check. On a genuine touch, `jetman.board()` hides him (he's
+  boarding, not dying -- see `jetman.lox`'s `is_hidden()`) and `game.lives` gets a bonus life
+  ($66f5), *then* `enter_taking_off()` fires. `state_landing()` respawns Jetman once the rocket is
+  back on the pad (no life lost -- that's the bonus he was given on the way in, not a death).
+  Reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than advancing a level (level
+  cycling is out of scope), so the pad/build/launch cycle repeats indefinitely instead of stopping
+  after one.
 - `item.lox` — `Item`: one class for rocket modules, fuel pods and collectibles, distinguished by
   `kind`. States `state_falling`/`state_carried`/`state_docking`/`state_idle`. **Exactly two `Item`
   instances exist** (`game.lox`'s `rocket_item`/`collectible_item`), matching the skool's own
