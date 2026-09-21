@@ -3,37 +3,31 @@ import spectrum_attr
 import jetman as jetman_module
 
 // @file laser.lox
-// @brief LaserPool: 4 preallocated beam slots. Rebuilt a fourth time
-// against the user's own precise description of real gameplay (after
-// a screenshot-matched dashed-line attempt still didn't look right):
-// the shot is a **rigid 3-zone ensemble** -- a solid leading tip, then
-// a zone of 4 short dashes with short gaps, then a trailing zone of 4
-// very short dashes ("dots") with longer gaps -- all one colour, all
-// fixed in position relative to each other, translating together as
-// one unit away from Jetman:
+// @brief LaserPool: 4 preallocated beam slots. A beam is a **rigid
+// 3-zone ensemble** -- a solid leading tip, then a zone of 4 short
+// dashes with short gaps, then a trailing zone of 4 very short dashes
+// ("dots") with longer gaps -- all one colour, fixed in position
+// relative to each other, translating together as one fixed-size unit
+// away from Jetman:
 //
 //     . . . .  - - - -  ----   ->
 //   (trailing)         (leading, direction of travel)
 //
-// This reconciles with (doesn't contradict) the byte-level facts
-// confirmed from LaserBeamAnimate ($6FC5) in earlier passes: the front
-// pulse moves a fixed 8px/tick, and each trailing pulse, once released
-// from its own start delay, moves toward the front's *current*
-// position at that same fixed 8px/tick. Two pulses moving at identical
-// speed toward/with each other never close a gap that's already open
-// -- so once a trailing pulse is released, it settles into and holds a
-// FIXED offset behind the (still-moving) front, not a shrinking one.
-// That fixed-offset-while-flying behaviour is exactly a rigid
-// ensemble. Only once the front freezes (hits something, or its own
-// random max-range countdown runs out -- both still fixed facts, see
-// FRONT_RANGE_MIN/MAX below) does a trailing pulse's continued 8px/tick
-// approach actually start closing the now-static gap, collapsing the
-// ensemble from the back until it fully consumes into the frozen front
-// and the beam deactivates. An earlier pass modelled the trailing
-// pulses as independently-tracked X positions with their own release
-// delays; this pass renders the same shape and lifecycle directly as a
-// fixed zone pattern (ZONES below) trailing a single front_x, which is
-// simpler and matches the described visual exactly.
+// Per the user's own description of how this should look: the bolt is
+// a single fixed-size object that's initially partly hidden and
+// reveals more of itself as it travels, fully visible only once it's
+// moved its own full length (ENSEMBLE_LEN) from the gun -- draw()'s
+// per-mark `traveled` clamp implements exactly that reveal. An earlier
+// version also shrank the ensemble back from the tail once the front
+// stopped (collision or its own random max-range countdown), meant as
+// a port of LaserBeamAnimate's ($6FC5) trailing-pulse catch-up -- but
+// visually that read as the whole shot "extending then retracting",
+// which isn't how it should look, so that shrink is gone: the beam
+// just disappears the instant its front stops advancing, no lingering
+// retraction. (The front's own movement facts are still real ROM
+// mechanics, not invented: fixed step per tick, freezes on collision
+// or the random max-range countdown -- see FRONT_STEP/FRONT_RANGE_MIN/
+// MAX below.)
 //
 // Colour is a fresh **random** pick from laser_beam_colours ($6FB2:
 // $47/$43/$43/$45 -- white, magenta, magenta, cyan, all bright) every
@@ -50,7 +44,6 @@ const MAX_BEAMS = 4
 const FRONT_STEP = 4.0
 const FRONT_RANGE_MIN = 132.0      // $6f9e: (random&$38)|$84, decoded to a plain distance cap
 const FRONT_RANGE_MAX = 188.0
-const COLLAPSE_STEP = FRONT_STEP   // $7059: same fixed move confirmed for a trailing pulse
 
 // Ensemble shape, distances measured backward from the leading tip
 // (front_x), in the direction opposite travel. Each of the 3 zones is
@@ -137,10 +130,8 @@ func new_beam() {
         "y": 0.0,
         "dir": 1,
         "front_x": 0.0,
-        "front_frozen": false,
         "traveled": 0.0,
         "max_range": 0.0,
-        "back_offset": 0.0,   // 0 = full ensemble; grows toward ENSEMBLE_LEN as it collapses (only once frozen)
         "colour": encode_rgba(255, 255, 255),
         "last_lo": nil,       // erase bookkeeping: the drawn span's own last [lo, hi) bounds
         "last_hi": nil,
@@ -183,10 +174,8 @@ class LaserPool {
                     gun_x = jetman.x + float(lib.get(name).width())
                 }
                 b["front_x"] = gun_x
-                b["front_frozen"] = false
                 b["traveled"] = 0.0
                 b["max_range"] = rand_range(FRONT_RANGE_MIN, FRONT_RANGE_MAX)
-                b["back_offset"] = 0.0
                 b["colour"] = BEAM_COLOURS[int(rand() * len(BEAM_COLOURS))]
                 b["last_lo"] = nil
                 b["last_hi"] = nil
@@ -208,34 +197,28 @@ class LaserPool {
         }
     }
 
-    // Advances the front (fixed step, freezing on collision or max
-    // range). Once frozen, the ensemble's own back edge closes in on
-    // the front at the same fixed step, consuming it from the tail;
-    // the beam deactivates once fully consumed.
+    // Advances the front a fixed step, deactivating the beam outright
+    // (no lingering retraction, see the file header) the instant it
+    // hits something, leaves the screen, or its own random max-range
+    // countdown runs out.
     update(platforms) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
                 continue
             }
-
-            if (!b["front_frozen"]) {
-                var next_x = b["front_x"] + FRONT_STEP * float(b["dir"])
-                if (next_x < 0.0 or next_x > float(SCREEN_W)) {
-                    b["front_frozen"] = true
-                } else if (platforms.blocks_point(int(next_x), int(b["y"]))) {
-                    b["front_frozen"] = true
-                } else {
-                    b["front_x"] = next_x
-                    b["traveled"] = b["traveled"] + FRONT_STEP
-                    if (b["traveled"] >= b["max_range"]) {
-                        b["front_frozen"] = true
-                    }
-                }
-            } else {
-                b["back_offset"] = b["back_offset"] + COLLAPSE_STEP
-                if (b["back_offset"] >= ENSEMBLE_LEN) {
-                    b["active"] = false
-                }
+            var next_x = b["front_x"] + FRONT_STEP * float(b["dir"])
+            if (next_x < 0.0 or next_x > float(SCREEN_W)) {
+                b["active"] = false
+                continue
+            }
+            if (platforms.blocks_point(int(next_x), int(b["y"]))) {
+                b["active"] = false
+                continue
+            }
+            b["front_x"] = next_x
+            b["traveled"] = b["traveled"] + FRONT_STEP
+            if (b["traveled"] >= b["max_range"]) {
+                b["active"] = false
             }
         }
     }
@@ -252,18 +235,12 @@ class LaserPool {
             foreach (var m in MARKS) {
                 var near = m[0]
                 var far = m[1]
-                if (far <= b["back_offset"]) {
-                    continue  // fully consumed by the collapse
-                }
-                if (near < b["back_offset"]) {
-                    near = b["back_offset"]
-                }
-                // A mark only exists once the front has actually
-                // travelled far enough for it to have "grown into
-                // place" -- without this cap, firing painted the WHOLE
-                // 96px ensemble immediately, so the trailing dot zone
-                // showed up several cells behind Jetman's gun on the
-                // very first frame instead of growing out from it.
+                // A mark only becomes visible once the front has
+                // actually travelled far enough to have revealed it --
+                // without this cap, firing painted the WHOLE 96px
+                // ensemble immediately, so the trailing dot zone showed
+                // up several cells behind Jetman's gun on the very
+                // first frame instead of growing out from it.
                 if (near >= b["traveled"]) {
                     continue
                 }
