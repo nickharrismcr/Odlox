@@ -120,44 +120,36 @@ different execution model — see "Per-tick phase ordering" in the plan).
   own alien-side handler only ever destroys the alien with no points, but the point of touching an
   alien at all is that it costs Jetman too, so this port kills both (see `alien.lox`'s own comment
   for the ROM line this diverges from).
-- `laser.lox` — `LaserPool`: 4 preallocated beam slots. Rebuilt a fourth time against the user's own
-  precise description of real gameplay (a screenshot-matched growing dashed line still didn't look
-  right): the shot is a **rigid 3-zone ensemble** — solid leading tip (`SOLID_LEN`), then a zone of
-  `DASH_COUNT` short dashes with short gaps, then a trailing zone of `DOT_COUNT` very short dashes
-  with longer gaps — all one colour, fixed in position relative to each other (`MARKS`, built once
-  as distance-from-`front_x` pairs), translating together as one unit. This reconciles with, not
-  against, the byte-level facts already confirmed from `LaserBeamAnimate`: the front moves a fixed
-  step/tick ($6fd8/$6fd9 confirm 8px/ROM-tick, but `FRONT_STEP` is tuned down to 4 for feel — this
-  port runs every actor every engine tick, unlike the ROM's one-jump-table-entry-per-50Hz-interrupt
-  scheduling, so a literal 8px/tick reads much faster here; same deviation as `main.lox`'s own
-  `TARGET_FPS` comment) and freezes — stops advancing, permanently — on EITHER hitting any non-empty
-  screen content (`platforms.blocks_point()`) OR an independent random max-range countdown
-  (`FRONT_RANGE_MIN/MAX`, ROM: `(random&$38)|$84`); each trailing pulse, once released, moves
-  toward the front's *current* position at that same fixed step — and two things moving at
-  identical speed toward/with each other never close a gap that's already open, so a released
-  trailing pulse settles into and *holds* a fixed offset behind the still-moving front (a rigid
-  ensemble), only starting to actually close the gap once the front freezes and stops being a moving
-  target. `update()` models that collapse as a single `back_offset` that starts advancing (same
-  fixed step) once frozen, consuming `MARKS` from the tail until the whole ensemble's fully gone and
-  the beam deactivates — simpler than independently-tracked trailing pulse positions, same shape and
-  lifecycle. Colour is a fresh **random** pick from `laser_beam_colours` ($6FB2, decoded once into
-  `BEAM_COLOURS`) every fire, applied uniformly across the whole ensemble. `check_hit(x, y)` tests
-  the front (tip), not "pulse #2" (an earlier pass's finding for the ROM's own hit-test target,
-  which has no clean equivalent in this fixed-zone model) — a gameplay-legible simplification, with
-  an asymmetric X window (`HIT_DX_AHEAD`/`HIT_DX_BEHIND`) approximating $6E33-$6E53's own
-  arithmetic. `plot_clamped` bounds-checks every `Display.plot` call — unlike `blit_sprite`, it
-  doesn't clip itself. Each zone is exactly `CELL_LEN` (4 character cells, 32px), `ENSEMBLE_LEN`
-  96px total. `fire(jetman, lib)` takes `lib` specifically to look up the gun position correctly:
-  Jetman never mirrors his own sprite (separate left/right art, see `jetman.lox`'s
-  `current_sprite_name()`), so `jetman.x` is always his sprite's LEFT edge — his gun when facing
-  left, but his BACK when facing right. A beam used to start there regardless of facing, firing
-  from behind him when he faced right; fixed by offsetting by the actual current sprite's own
-  width (confirmed against `LaserBeamInit`/`LaserBeamShootRight`, $6F70/$6FB6, whose own C register
-  ends up well to the right of Jetman's base X when facing right). Each `MARKS` entry in `draw()` is
-  also clamped to the beam's own `traveled` distance, not just `back_offset` — without this, the
-  full 96px ensemble (including the trailing dot zone) rendered instantly the moment a beam fired,
-  appearing several cells behind Jetman's gun on the very first frame instead of growing out from
-  it; the visible span now tracks `traveled` tick-by-tick until it reaches full length.
+- `laser.lox` — `LaserPool`: 4 preallocated beam slots. A beam is a **rigid 3-zone ensemble** —
+  solid leading tip (`SOLID_LEN`), then a zone of `DASH_COUNT` short dashes with short gaps, then a
+  trailing zone of `DOT_COUNT` very short dashes with longer gaps — all one colour, fixed in
+  position relative to each other (`MARKS`, built once as distance-from-`front_x` pairs), each zone
+  exactly `CELL_LEN` (4 character cells, 32px), `ENSEMBLE_LEN` 96px total. It's a **fixed-size
+  object that reveals itself as it travels**, per the user's own description: `draw()` clamps every
+  `MARKS` entry to the beam's own `traveled` distance, so the ensemble visibly grows from nothing up
+  to full length over its first 96px of flight rather than rendering instantly, and — also per the
+  user's own correction — it never shrinks back once shown: `update()` just deactivates a beam
+  outright (no lingering state) the instant its front hits something, leaves the screen, or its own
+  random max-range countdown runs out; an earlier version modelled the ROM's trailing-pulse
+  catch-up ($6FC5) as a gradual tail-first collapse once the front stopped, but that read as the
+  whole shot "extending then retracting", not how it should look. What's still real, confirmed ROM
+  fact: the front moves a fixed step/tick ($6fd8/$6fd9 confirm 8px/ROM-tick, but `FRONT_STEP` is
+  tuned down to 4 for feel — this port runs every actor every engine tick, unlike the ROM's
+  one-jump-table-entry-per-50Hz-interrupt scheduling, so a literal 8px/tick reads much faster here;
+  same deviation as `main.lox`'s own `TARGET_FPS` comment) and its own random max-range countdown
+  (`FRONT_RANGE_MIN/MAX`, ROM: `(random&$38)|$84`). Colour is a fresh **random** pick from
+  `laser_beam_colours` ($6FB2, decoded once into `BEAM_COLOURS`) every fire, applied uniformly
+  across the whole ensemble. `check_hit(x, y)` tests the front (tip), not "pulse #2" (an earlier
+  pass's finding for the ROM's own hit-test target, which has no clean equivalent in this
+  fixed-zone model) — a gameplay-legible simplification, with an asymmetric X window
+  (`HIT_DX_AHEAD`/`HIT_DX_BEHIND`) approximating $6E33-$6E53's own arithmetic. `plot_clamped`
+  bounds-checks every `Display.plot` call — unlike `blit_sprite`, it doesn't clip itself.
+  `fire(jetman, lib)` takes `lib` specifically to look up the gun position correctly: Jetman never
+  mirrors his own sprite (separate left/right art, see `jetman.lox`'s `current_sprite_name()`), so
+  `jetman.x` is always his sprite's LEFT edge — his gun when facing left, but his BACK when facing
+  right; fixed by offsetting by the actual current sprite's own width when facing right (confirmed
+  against `LaserBeamInit`/`LaserBeamShootRight`, $6F70/$6FB6, whose own C register ends up well to
+  the right of Jetman's base X in that case).
 - `explosion.lox` — `Explosion`: the shared 3-frame small/medium/large *growing* cycle
   (`explosion_sprite_table`, $68D8), used for alien kills, Jetman's own death, and Jetman's
   platform-liftoff puff (`jetman.lox`'s `launched_this_tick`, set on `state_walk()`'s WALK->FLY
