@@ -70,8 +70,15 @@ different execution model — see "Per-tick phase ordering" in the plan).
   real hardware ($7400) -- this port binds that same effect deliberately.
 - `rocket.lox` — `Rocket`: `state_on_pad`/`state_taking_off`/`state_landing`, mirroring the skool's
   own move values $09/$0A/$0B. Owns `modules` (1..3), `fuel` (0..6), the flame animation, and
-  `cell_colour()` (`UpdateRocketColour`, $66FC: banding only once `modules==3`, in 8px attribute
-  cells -- bottom `fuel` cells magenta, rest white; a full tank flashes the whole stack instead).
+  `row_ink()` (`UpdateRocketColour`, $66FC: banding only once `modules==3`; bottom `fuel*8` pixels
+  magenta, rest white; a full tank flashes the whole stack instead). Colours by continuous pixel-
+  space math (a row's own midpoint vs. the fuel boundary Y), not a discrete per-tile "cell index" —
+  `ROCKET_PAD_Y` (183) isn't a multiple of 8, so a 16px module tile's sprite actually straddles 3
+  attribute rows, not a clean 2, and a discrete cell index left one of those uncorrected (a real,
+  playtested bug: visible white gaps/"stripes" breaking up what should be a solid band). `draw()`
+  blits every tile's *pixels* in one pass, then colours every attribute row the whole stack spans in
+  a **separate** pass after — interleaving them let a later tile's own plain-white blit_sprite call
+  stomp an earlier tile's already-correct override at their shared/overlapping row.
   Reaching `FUEL_PODS_NEEDED` (6) does **not** launch by itself -- `state_on_pad(r, jetman, game)`
   polls every tick for fuel>=6 AND Jetman actually touching the rocket (`near_jetman()`, a port of
   `AlienCollision` $6DE9 with the rocket's own `height` field in its asymmetric Y test), matching
@@ -81,7 +88,11 @@ different execution model — see "Per-tick phase ordering" in the plan).
   back on the pad (no life lost -- that's the bonus he was given on the way in, not a death).
   Reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than advancing a level (level
   cycling is out of scope), so the pad/build/launch cycle repeats indefinitely instead of stopping
-  after one.
+  after one — but `state_taking_off()` still calls `item.init_module()` on both `game.rocket_item`/
+  `collectible_item` when it does, mirroring `LevelNew`'s ($6083) own call to `RocketReset` at that
+  same moment: without this, both module Item slots stay permanently consumed after their first
+  delivery and the rocket comes back down every later cycle with only its base tile, no way to ever
+  rebuild it (another real, playtested bug).
 - `item.lox` — `Item`: one class for rocket modules, fuel pods and collectibles, distinguished by
   `kind`. States `state_falling`/`state_carried`/`state_docking`/`state_idle`. **Exactly two `Item`
   instances exist** (`game.lox`'s `rocket_item`/`collectible_item`), matching the skool's own
