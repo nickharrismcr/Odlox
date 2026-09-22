@@ -50,7 +50,11 @@ class Spawner {
             item_module.spawn_collectible(g.collectible_item, g.jetman, g.static_data)
         }
 
-        if (this.timer % ALIEN_SPAWN_TICKS == 0) {
+        // NewActor's own gate ($69BE-$69C7): alien spawns require
+        // Jetman's direction to be FLY or WALK, same as the fuel-pod/
+        // collectible gates above -- while he's hidden (boarding a
+        // launching rocket), nothing new spawns at all.
+        if (!g.jetman.is_hidden() and this.timer % ALIEN_SPAWN_TICKS == 0) {
             spawn_alien_if_free(g)
         }
     }

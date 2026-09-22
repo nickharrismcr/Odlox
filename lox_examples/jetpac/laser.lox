@@ -65,7 +65,7 @@ const DOT_ZONE_LEN = CELL_LEN
 
 const ENSEMBLE_LEN = SOLID_LEN + DASH_ZONE_LEN + DOT_ZONE_LEN
 
-const PULSE_THICKNESS = 2
+const PULSE_THICKNESS = 1
 const BEAM_Y_OFFSET = 13.0  // LaserBeamDraw: aligned to the middle of Jetman's sprite
 
 const SCREEN_W = 256

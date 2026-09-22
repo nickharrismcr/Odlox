@@ -81,6 +81,14 @@ func kill_meteor(alien, explosions, award_points, score) {
     explosions.spawn_explosion(alien.x, alien.y)
 }
 
+// Plain deactivation, no score/sound/explosion -- RocketModulesReset
+// ($6624), called the instant Jetman boards a launching rocket, just
+// zeroes every alien slot's first byte directly; not a kill.
+func hide(alien) {
+    alien.active = false
+    alien.update_func = state_idle
+}
+
 func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
     alien.advance_frame()
     alien.x = wrap_x(alien.x + alien.vx)
