@@ -170,10 +170,16 @@ different execution model — see "Per-tick phase ordering" in the plan).
 - `game_sound.lox` — `Sound`: wraps `modules/sound_mgr.SoundManager` with one named method per cue
   (`thrust(y)`, `rocket_build()`, `pickup_fuel()`, `pickup_item()`, `laser()`, `explode_alien()`,
   `explode_player()`), a `mute` constructor flag, `update()`, `close()`. `thrust(y)` buckets Y into
-  one of 8 pitch samples and uses `SoundManager.play_if_not`, so holding thrust doesn't restart the
+  one of 8 pitch samples and uses `SoundManager.play_if_not`, so holding it doesn't restart the
   clip every tick (the port's own ~200ms-per-retrigger stand-in for the ROM's actual ~15ms-per-tick
   beeper toggle — document this deviation again if the bucket count or retrigger behavior changes).
-  The two death cues share an exclusivity group so an alien kill can't talk over Jetman's own.
+  **`thrust()`/`stop_thrust()` belong to `rocket.lox`'s `state_taking_off`/`state_landing`** (its
+  real ROM home, $6690/$66B4's own per-tick `SfxThrusters` call, $67B6) — despite the name, it's
+  never played for Jetman's own jetpack (`JetmanFlyThrust`/`JetmanFalling`, $739E/$7412, call no
+  sound routine at all); an earlier version of this port had it wired into `jetman.lox`'s
+  `fly_vertical()` instead, producing a continuous tone on every held thrust that was never part of
+  the original game — a real, playtested bug, now fixed. The two death cues share an exclusivity
+  group so an alien kill can't talk over Jetman's own.
   **`sound` is threaded through actor constructors**, not passed per-call: `Jetman`/`Item`/`Rocket`/
   `Alien` all take it and store `this.sound`, matching `willy.lox`'s own `this.sound` in
   manic_miner. `LaserPool` doesn't — `game.lox`'s own fire call site plays `laser()` directly, since
