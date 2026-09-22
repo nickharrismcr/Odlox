@@ -12,9 +12,10 @@ summarized here.
 A Lox reimplementation of Ultimate Play the Game's 1983 ZX Spectrum game Jetpac: the same
 256x192 1-bit bitmap + 32x24 ink/paper attribute display as `manic_miner` (`display.lox`), driving
 Jetman's fly/walk movement, a rocket built from modules and fuel pods carried up from the ground,
-meteors, a laser, and score/lives. **Level 1 only** — one alien type (meteor), no level cycling, no
-2-player, no menu/loading screen. See "Out of scope" in the plan for the full list of seams left
-for later.
+a laser, and score/lives. All 8 ROM alien types cycle in by level (`alien.lox`'s `ALIEN_TYPES`,
+keyed by `rocket.level % 8`) — but the screen itself doesn't change: same platforms, same
+background, every level, just a fresh pad→launch→pad cycle with the next alien type. No 2-player,
+no menu/loading screen. See "Out of scope" in the plan for the full list of seams left for later.
 
 Run it with:
 
@@ -124,19 +125,37 @@ different execution model — see "Per-tick phase ordering" in the plan).
   confirmed `ItemNewFuelPod` ($65F9) calls the exact same `ItemCalcDropColumn` ($65DB) routine
   `ItemNewCollectible` does; `default_fuel_pod`'s own `"x"` field is just the ROM's zeroed RAM
   template value (0) before `ItemNewFuelPod` ever runs, not a real spawn position.
-- `alien.lox` — `Alien` + `state_meteor`: a fixed 6-slot pool, allocated once and reused (never
-  reallocated — see the root `CLAUDE.md`'s per-frame allocation discipline). `state_meteor` is the
-  only state in this scope; `ALIEN_STATE_BY_LEVEL` is the seam for the other 7 alien types, paired
-  with a level-specific sprite table once a second level exists. Kill order: laser hit, then
-  platform collision, then Jetman proximity. Bare Jetman contact is a **mutual** kill — the skool's
-  own alien-side handler only ever destroys the alien with no points, but the point of touching an
-  alien at all is that it costs Jetman too, so this port kills both (see `alien.lox`'s own comment
-  for the ROM line this diverges from). `hide()` is a *plain* deactivation (no score/sound/
-  explosion) — `rocket.lox`'s `state_on_pad()` calls it on every alien the instant Jetman boards a
-  launching rocket, mirroring `RocketModulesReset`'s ($6624) own raw clear of every alien slot,
-  though the ROM only actually runs that at the *top* of the ascent (going into the descent), not at
-  boarding — since Jetman is hidden/uninteractable for the whole round trip regardless, this port
-  clears existing aliens a bit earlier so the screen stays quiet the entire time, not just partway.
+- `alien.lox` — `Alien` + 6 `state_*` functions covering all 8 ROM alien types: a fixed 6-slot pool,
+  allocated once and reused (never reallocated — see the root `CLAUDE.md`'s per-frame allocation
+  discipline). `ALIEN_TYPES` (`item_level_object_types` $6A2D) maps `level % 8` to a
+  {sprite(s), animation speed, `state_*` function}: Meteor → Squidgy Alien → Sphere Alien → Jet
+  Fighter → UFO → Crossed Space Ship → Space Craft → Frog Alien, then repeats. Space Craft (level 6)
+  and Frog Alien (level 7) have their own sprites (`alien_sprite_table` $690E) but reuse Meteor's and
+  UFO's own `state_*` function respectively — confirmed both movement-code reuses directly against
+  the ROM's jump-table entries, not assumed from the type names. `spawner.lox` calls `spawn_alien(...,
+  game.rocket.level)`, which picks the entry and resets that type's own extra fields (see each
+  `state_*` function's own header comment for what it tracks and which ROM routine it's from).
+  Kill order matches the ROM for every type: laser hit, then (for Meteor/Space Craft/Jet Fighter
+  only — see below) platform collision, then Jetman proximity. Bare Jetman contact is a **mutual**
+  kill for every type — the skool's own alien-side handler only ever destroys the alien with no
+  points, but the point of touching an alien at all is that it costs Jetman too, so this port kills
+  both (`contact_kill()`). Three movement shapes, confirmed against three different jump-table
+  entries each: **single-path** (Meteor/Space Craft, Jet Fighter while diving) dies outright on
+  platform contact; **bounce/patrol** (Squidgy, Sphere, Crossed Ship) reverses direction on platform
+  contact instead of dying — no platform-kill at all; **chaser** (UFO, Frog Alien) accelerates toward
+  Jetman on each axis independently (a plain float ramp standing in for the ROM's 4-bit
+  fixed-point speed nibble — see `UFO_ACCEL`/`UFO_MAX_SPEED`'s own comment for the derivation), also
+  no platform-kill. Jet Fighter is the one type with two death paths: `jetfighter_self_destruct()`
+  (lifetime countdown expiry, a laser hit, crossing the top-of-screen bound, or *any* platform
+  contact — dormant or diving alike, both share the ROM's own movement tail) scores normally but
+  skips the explosion entirely (no sprite, and its "explosion" sound is `SfxThrusters` reused, per
+  the ROM's own comment on $6450) — only a direct Jetman hit goes through the normal
+  `contact_kill()`. `hide()` is a *plain* deactivation (no score/sound/explosion) — `rocket.lox`'s
+  `state_on_pad()` calls it on every alien the instant Jetman boards a launching rocket, mirroring
+  `RocketModulesReset`'s ($6624) own raw clear of every alien slot, though the ROM only actually runs
+  that at the *top* of the ascent (going into the descent), not at boarding — since Jetman is
+  hidden/uninteractable for the whole round trip regardless, this port clears existing aliens a bit
+  earlier so the screen stays quiet the entire time, not just partway.
 - `laser.lox` — `LaserPool`: 4 preallocated beam slots. A beam is a **rigid 3-zone ensemble** —
   solid leading tip (`SOLID_LEN`), then a zone of `DASH_COUNT` short dashes with short gaps, then a
   trailing zone of `DOT_COUNT` very short dashes with longer gaps — all one colour, fixed in
@@ -178,11 +197,14 @@ different execution model — see "Per-tick phase ordering" in the plan).
 - `spawner.lox` — `Spawner`: the ROM's `NewActor` ($6971). Advances a timer and calls
   `item.lox`'s own `spawn_fuel_pod`/`spawn_collectible` on the ROM's timing (`(255-timer)%16==0` /
   `timer%128==0`) — **not** a module spawn; there isn't one (see `item.lox`'s own entry above).
-  Meteor spawning has no ROM-equivalent cadence to match (aliens aren't item-slot-gated), so its
-  interval is this port's own tuning. Confirmed `NewActor`'s own gate ($69BE-$69C7) applies equally
-  to alien spawns as to fuel-pod/collectible ones — all three require Jetman's direction to be FLY
-  or WALK — so `spawn_alien_if_free()` is also gated on `!g.jetman.is_hidden()`, matching the other
-  two (a real, playtested bug: aliens kept spawning while Jetman was boarding a launching rocket).
+  Alien spawning has no ROM-equivalent cadence to match (aliens aren't item-slot-gated), so its
+  interval is this port's own tuning; the *type* spawned, though, is ROM-accurate —
+  `spawn_alien_if_free()` passes `g.rocket.level` straight into `alien.lox`'s `spawn_alien()`, which
+  picks that level's entry from `ALIEN_TYPES`. Confirmed `NewActor`'s own gate ($69BE-$69C7) applies
+  equally to alien spawns as to fuel-pod/collectible ones — all three require Jetman's direction to
+  be FLY or WALK — so `spawn_alien_if_free()` is also gated on `!g.jetman.is_hidden()`, matching the
+  other two (a real, playtested bug: aliens kept spawning while Jetman was boarding a launching
+  rocket).
 - `hud.lox` — `draw_static`/`draw`: score and lives, along the top strip (rows 0-7) rather than a
   below-play row like manic_miner's — Jetpac's platforms already use the whole 192px screen height,
   so there's no spare strip below play. `draw_lives` blanks its icon strip before redrawing every
@@ -251,7 +273,10 @@ different execution model — see "Per-tick phase ordering" in the plan).
   bit the first pass here (screenshots showed Jetman/rocket/items upside down while the font and
   platform tiles, which use a different ROM draw routine, looked fine).
 - `extract_jetpac.lox` — `odlox.exe extract_jetpac.lox jetpac.skool`. Writes
-  `assets/jetpac_sprites.json` (45 sprites), `assets/font_sprites.json` (60 glyphs, ASCII 32-91),
+  `assets/jetpac_sprites.json` (54 sprites — the 8 alien types' own sprites among them:
+  `alien_sprite_table` $690E has 2 frame pointers per level-slot, but only Meteor and Squidgy/Sphere
+  Alien genuinely animate 2 frames each; the rest point both entries at the same sprite, so
+  `emit_alien_sprites()` only emits one for those), `assets/font_sprites.json` (60 glyphs, ASCII 32-91),
   `data/jetpac_static.json` (platforms, item drop columns, default actor states, collectible
   sprite-table offsets) — every value read from the skool by label, none typed in by hand. Rerun
   after any sprite/static-data change and diff the JSON (`git diff --exit-code`); a diff limited to
