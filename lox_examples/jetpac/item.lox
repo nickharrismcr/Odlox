@@ -131,8 +131,13 @@ func init_module(item, key, sprite, static_data) {
 // template value (0, the screen's left edge) before ItemNewFuelPod
 // ever runs, not a real spawn position; using it directly (as this
 // port used to) pinned every fuel pod to the left edge of the screen.
+// is_hidden(), not is_dead(): ItemNewFuelPod's own gate is Jetman's
+// direction being FLY or WALK, which is equally false while he's
+// boarding the rocket ($66ef resets it to 0 on a touch, same as death)
+// -- checking is_dead() alone let fuel start dropping while Jetman was
+// still hidden mid-flight, before he'd actually respawned.
 func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
-    if (jetman.is_dead() or item.active or rocket.fuel >= FUEL_PODS_NEEDED) {
+    if (jetman.is_hidden() or item.active or rocket.fuel >= FUEL_PODS_NEEDED) {
         return false
     }
     var d = static_data["default_fuel_pod"]
@@ -155,7 +160,7 @@ func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
 // level-1-only port) at a random drop column from
 // data/jetpac_static.json's item_drop_columns.
 func spawn_collectible(item, jetman, static_data) -> bool {
-    if (jetman.is_dead() or item.active) {
+    if (jetman.is_hidden() or item.active) {
         return false
     }
     var d = static_data["default_item"]

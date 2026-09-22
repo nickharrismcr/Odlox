@@ -7,9 +7,12 @@ import item as item_module
 // colour banding by fuel collected. States state_on_pad/
 // state_taking_off/state_landing, mirroring the skool's own move
 // values $09/$0A/$0B (RocketUpdate/RocketTakeoff/RocketLanding).
-// Level cycling (out of scope, see docs/plans/jetpac-port.md) is
-// replaced with a simple pad<->launch loop so the core build/launch
-// cycle stays playable/testable indefinitely.
+// Full level cycling (new alien sets, a fresh screen) is still out of
+// scope, see docs/plans/jetpac-port.md, so this port loops the same
+// screen's pad<->launch cycle indefinitely rather than truly advancing
+// -- but the rocket's own per-cycle reset (this.level, see
+// state_taking_off()) does mirror the real RocketTakeoff/LevelNew
+// cadence: modules only resets to 1 every 4th launch, not every one.
 
 const ROCKET_PAD_Y = 183          // $B7, RocketLanding's landed check
 const ROCKET_LAUNCH_TOP_Y = 40    // $28, RocketTakeoff's top-of-screen check
@@ -26,6 +29,8 @@ const FLAME_SPRITES = ["rocket_flames_0", "rocket_flames_1"]
 const FLAME_ANIM_TICKS = 4
 
 const CELL = 8
+const SCREEN_W = 256
+const SCREEN_H = 192
 const FLASH_TICKS = 16  // UpdateRocketColour: timer bit 4 -> toggles every 16 game ticks
 
 // UpdateRocketColour ($66FC), confirmed against jetpac.skool $6741-$678B:
@@ -102,6 +107,7 @@ class Rocket {
         this.flame_tick = 0
         this.flame_frame = 0
         this.colour_tick = 0
+        this.level = 0  // LevelNew's own $5DF0 -- see state_taking_off()'s own comment
 
         this.last_x = nil
         this.last_y = nil
@@ -192,8 +198,20 @@ class Rocket {
             var cy_bottom = int((int(this.y) - 1) / CELL)
             var cy_top = int((int(this.y) - this.modules * ROCKET_TILE) / CELL)
             for (var row_cy = cy_top; row_cy <= cy_bottom; row_cy = row_cy + 1) {
+                // A fully-built (3-module) stack legitimately reaches
+                // above row 0 near the top of a real launch (unlike
+                // blit_sprite above, set_attr doesn't clip itself) --
+                // this went unnoticed until level-cycling kept modules
+                // at 3 all the way to the top instead of resetting to 1
+                // the instant the rocket reached it.
+                if (row_cy < 0 or row_cy >= SCREEN_H / CELL) {
+                    continue
+                }
                 var ink = row_ink(this, row_cy * CELL, white, magenta, flash_on)
                 for (var cxi = col_x0; cxi <= col_x1; cxi = cxi + 1) {
+                    if (cxi < 0 or cxi >= SCREEN_W / CELL) {
+                        continue
+                    }
                     disp.set_attr(cxi, row_cy, ink, black)
                 }
             }
@@ -255,19 +273,29 @@ func state_taking_off(r, jetman, game) {
     r.sound.thrust(r.y)
     animate_flame(r)
     if (r.y <= ROCKET_LAUNCH_TOP_Y) {
-        // Level cycling is out of scope -- loop back down for another
-        // build/launch cycle instead of advancing a level. The real
-        // ROM's own equivalent moment (LevelNew, $6083, reached the
-        // instant the old rocket reaches the top) calls RocketReset
-        // ($60A7) here, which re-seeds BOTH module Item slots, not just
-        // the rocket's own modules/fuel counters -- without this, this
-        // port's rocket_item/collectible_item stay permanently consumed
-        // after their first delivery, and every later cycle comes back
-        // down with only the base tile and no way to ever rebuild it.
-        r.modules = 1
+        // Level cycling itself is still out of scope (no alien-set
+        // changes, no true "new level" screen) -- this port loops back
+        // down for another build/launch cycle instead. But RocketTakeoff
+        // ($6690)'s own reached-top branch confirms fuel resets to 0
+        // EVERY time, while modules is only ever touched by RocketReset
+        // ($60A7), which LevelNew ($6083) calls ONLY when the new level
+        // number is a multiple of 4 ("A new Rocket is generated every 4
+        // levels, otherwise it's a normal fuel collecting level") --
+        // RocketModulesReset ($6624, called unconditionally here) only
+        // clears item/alien/animation slots, never the rocket's own
+        // modules field. So 3 launches out of 4 come back down still
+        // fully built (all 3 modules), needing only a refuel; only
+        // every 4th actually rebuilds from the base. r.level mirrors
+        // $5DF0, incrementing here exactly as RocketTakeoff's own
+        // "inc (hl)" does, checked post-increment exactly as LevelNew
+        // checks it.
         r.fuel = 0
-        item_module.init_module(game.rocket_item, "default_top_module", "rocket_u1_top", game.static_data)
-        item_module.init_module(game.collectible_item, "default_middle_module", "rocket_u1_middle", game.static_data)
+        r.level = r.level + 1
+        if (r.level % 4 == 0) {
+            r.modules = 1
+            item_module.init_module(game.rocket_item, "default_top_module", "rocket_u1_top", game.static_data)
+            item_module.init_module(game.collectible_item, "default_middle_module", "rocket_u1_middle", game.static_data)
+        }
         enter_landing(r)
     }
 }
