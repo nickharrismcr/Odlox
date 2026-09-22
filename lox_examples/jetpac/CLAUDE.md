@@ -86,13 +86,21 @@ different execution model — see "Per-tick phase ordering" in the plan).
   boarding, not dying -- see `jetman.lox`'s `is_hidden()`) and `game.lives` gets a bonus life
   ($66f5), *then* `enter_taking_off()` fires. `state_landing()` respawns Jetman once the rocket is
   back on the pad (no life lost -- that's the bonus he was given on the way in, not a death).
-  Reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than advancing a level (level
-  cycling is out of scope), so the pad/build/launch cycle repeats indefinitely instead of stopping
-  after one — but `state_taking_off()` still calls `item.init_module()` on both `game.rocket_item`/
-  `collectible_item` when it does, mirroring `LevelNew`'s ($6083) own call to `RocketReset` at that
-  same moment: without this, both module Item slots stay permanently consumed after their first
-  delivery and the rocket comes back down every later cycle with only its base tile, no way to ever
-  rebuild it (another real, playtested bug).
+  Reaching `ROCKET_LAUNCH_TOP_Y` loops back to `state_landing` rather than truly advancing a level
+  (full level cycling — new alien sets, a fresh screen — is out of scope), so the pad/build/launch
+  cycle repeats indefinitely on the same screen instead of stopping after one. `this.level` DOES
+  mirror the ROM's own per-cycle reset cadence though: `state_taking_off()` increments it (matching
+  `RocketTakeoff`'s own `inc (hl)` on $5DF0) and only resets `modules` to 1 (re-seeding both module
+  `Item` slots via `item.init_module()`) when `level%4==0` — `RocketTakeoff`'s reached-top branch
+  ($66A3-$66B1) only ever resets fuel unconditionally; modules only resets via `RocketReset`
+  ($60A7), which `LevelNew` ($6083) calls *only* on a level number that's a multiple of 4 ("A new
+  Rocket is generated every 4 levels, otherwise it's a normal fuel collecting level") —
+  `RocketModulesReset` ($6624, called every cycle) only clears item/alien/animation slots, never the
+  rocket's own state. A previous version reset modules to 1 on every single cycle instead of every
+  4th (a real, playtested bug) — which also happened to mask a separate bounds-check bug in the
+  colouring loop above (`row_cy`/`cxi` were never clamped to the screen's attribute grid; a fully-
+  built 3-module stack legitimately extends above row 0 near the top of a real launch, only reached
+  once modules stopped force-resetting to 1 on every cycle) — now fixed alongside it.
 - `item.lox` — `Item`: one class for rocket modules, fuel pods and collectibles, distinguished by
   `kind`. States `state_falling`/`state_carried`/`state_docking`/`state_idle`. **Exactly two `Item`
   instances exist** (`game.lox`'s `rocket_item`/`collectible_item`), matching the skool's own
@@ -102,12 +110,16 @@ different execution model — see "Per-tick phase ordering" in the plan).
   out holding the **top** module and `$5D40` (`ItemNewCollectible`'s own "collectible object")
   starts out holding the **middle** module — confirmed against actual gameplay footage: all three
   rocket pieces (base + both modules, on separate platforms) are visible from frame one, not
-  delivered one at a time. `init_module()` seeds both, once, at `Game` construction — not a spawn
-  gate, never called again. Each slot only becomes available for its *other* job (fuel pod /
+  delivered one at a time. `init_module()` seeds both at `Game` construction, then again from
+  `rocket.lox`'s `state_taking_off()` every 4th launch cycle (see that file's own `level` comment) —
+  not a spawn gate in either case. Each slot only becomes available for its *other* job (fuel pod /
   collectible respectively, via `spawn_fuel_pod`/`spawn_collectible`, called by `spawner.lox`) once
   its pre-seeded module has actually been delivered, since delivery despawns the same `Item`
   instance those functions later reuse — don't add a third "spawn a module" path expecting it to
-  coexist with a fourth pickup kind; there are only ever two module deliveries, total, per game.
+  coexist with a fourth pickup kind; there are only ever two module deliveries per build cycle.
+  `spawn_fuel_pod`/`spawn_collectible` gate on `jetman.is_hidden()`, not `is_dead()` — checking
+  death alone let fuel/collectibles start spawning while Jetman was still boarding a launched
+  rocket (hidden but not literally dead), before he'd actually respawned.
   `spawn_fuel_pod()` picks a random column from `item_drop_columns`, same as `spawn_collectible()` —
   confirmed `ItemNewFuelPod` ($65F9) calls the exact same `ItemCalcDropColumn` ($65DB) routine
   `ItemNewCollectible` does; `default_fuel_pod`'s own `"x"` field is just the ROM's zeroed RAM
