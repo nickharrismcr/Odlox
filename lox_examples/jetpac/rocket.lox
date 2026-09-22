@@ -8,12 +8,11 @@ import alien as alien_module
 // colour banding by fuel collected. States state_on_pad/
 // state_taking_off/state_landing, mirroring the skool's own move
 // values $09/$0A/$0B (RocketUpdate/RocketTakeoff/RocketLanding).
-// Full level cycling (new alien sets, a fresh screen) is still out of
-// scope, see docs/plans/jetpac-port.md, so this port loops the same
-// screen's pad<->launch cycle indefinitely rather than truly advancing
-// -- but the rocket's own per-cycle reset (this.level, see
-// state_taking_off()) does mirror the real RocketTakeoff/LevelNew
-// cadence: modules only resets to 1 every 4th launch, not every one.
+// Full level cycling (new alien sets, a fresh screen) is out of scope,
+// see docs/plans/jetpac-port.md -- this port loops the same screen's
+// pad<->launch cycle indefinitely -- but this.level mirrors
+// RocketTakeoff/LevelNew's own per-cycle reset cadence
+// (state_taking_off()): modules only resets every 4th launch.
 
 const ROCKET_PAD_Y = 183          // $B7, RocketLanding's landed check
 const ROCKET_LAUNCH_TOP_Y = 40    // $28, RocketTakeoff's top-of-screen check
@@ -34,27 +33,20 @@ const SCREEN_W = 256
 const SCREEN_H = 192
 const FLASH_TICKS = 16  // UpdateRocketColour: timer bit 4 -> toggles every 16 game ticks
 
-// UpdateRocketColour ($66FC), confirmed against jetpac.skool $6741-$678B:
-// banding only kicks in once the rocket is fully built (modules ==
-// MAX_MODULES) -- `sla b` / `cp $06` on the modules count gates the
-// whole routine, so a partially-built stack (or one with zero fuel) is
-// always plain white regardless of fuel collected. A full tank (fuel >=
-// FUEL_PODS_NEEDED) doesn't band at all -- it flashes the *entire*
-// stack between magenta and white on the game timer ($675e-$675f: a
-// fresh colour computed from timer bit 4 each call). Otherwise ($6762-
-// $6777) the bottom `fuel*8` pixels are painted solid magenta counting
-// up from the rocket's own base, the rest above solid white.
+// UpdateRocketColour ($66FC): banding only kicks in once the rocket is
+// fully built (modules == MAX_MODULES) -- a partially-built stack, or
+// one with zero fuel, is always plain white. A full tank (fuel >=
+// FUEL_PODS_NEEDED) doesn't band -- it flashes the *entire* stack
+// between magenta and white on the game timer. Otherwise the bottom
+// `fuel*8` pixels are solid magenta counting up from the rocket's own
+// base, the rest above solid white.
 //
-// row_top_y is the top pixel of ONE attribute row (row_cy*CELL) -- the
-// row is coloured by testing its own *midpoint* against the magenta/
-// white pixel boundary rather than a discrete "cell index", because
-// ROCKET_PAD_Y (183) is not itself a multiple of 8: every module
-// tile's 16px sprite therefore straddles 3 attribute rows, not a clean
-// 2, and a per-tile-half discrete cell index left one of those three
-// rows uncorrected (still whatever plain white blit_sprite's own base
-// call left it at) -- the visible bug this replaced ("stripes" where a
-// row should have been part of a solid magenta band). Continuous
-// pixel-space math is correct regardless of alignment.
+// row_top_y is the top pixel of ONE attribute row -- coloured by
+// testing its own *midpoint* against the magenta/white pixel boundary
+// rather than a discrete cell index, because ROCKET_PAD_Y (183) isn't a
+// multiple of 8: a 16px module tile's sprite straddles 3 attribute
+// rows, not a clean 2. Continuous pixel-space math is correct
+// regardless of alignment.
 func row_ink(rocket, row_top_y, white, magenta, flash_on) {
     if (rocket.modules < MAX_MODULES or rocket.fuel == 0) {
         return white
@@ -71,13 +63,11 @@ func row_ink(rocket, row_top_y, white, magenta, flash_on) {
     return white
 }
 
-// AlienCollision ($6DE9), which RocketUpdate ($66D0) reuses with
-// IX=Rocket for Jetman-touches-rocket proximity: X within 12px; Y is
-// asymmetric -- within 21px if Jetman is at-or-below the rocket's own
-// Y anchor, but only within (rocket.height - 14) if Jetman is ABOVE it
-// (height=28 by default -- a tighter 14px catch window from above,
-// since Jetman has to actually reach the rocket's own top rather than
-// just being "somewhere above it").
+// AlienCollision ($6DE9), reused by RocketUpdate ($66D0) with IX=Rocket
+// for Jetman-touches-rocket proximity: X within 12px; Y asymmetric --
+// within 21px at-or-below the rocket's own Y, only (height-14) above it
+// (a tighter catch window from above, since Jetman has to actually
+// reach the rocket's own top rather than just being above it).
 const TOUCH_DX = 12.0
 const TOUCH_DY_BELOW = 21.0
 
@@ -108,7 +98,7 @@ class Rocket {
         this.flame_tick = 0
         this.flame_frame = 0
         this.colour_tick = 0
-        this.level = 0  // LevelNew's own $5DF0 -- see state_taking_off()'s own comment
+        this.level = 0  // mirrors $5DF0 -- see state_taking_off()
 
         this.last_x = nil
         this.last_y = nil
@@ -119,8 +109,8 @@ class Rocket {
 
     // SfxRocketBuild: "activated when ship module is dropped, or fuel
     // cell touches the rocket base" -- both delivery events share it.
-    // Reaching FUEL_PODS_NEEDED does NOT launch by itself -- see
-    // state_on_pad()'s own comment.
+    // Reaching FUEL_PODS_NEEDED doesn't launch by itself, see
+    // state_on_pad().
     add_fuel() {
         this.sound.rocket_build()
         this.fuel = this.fuel + 1
@@ -137,10 +127,9 @@ class Rocket {
         return this.update_func == state_taking_off
     }
 
-    // jetman/game are only actually needed by state_on_pad (the launch
-    // trigger, which touches both) and state_landing (respawning
-    // Jetman once the rocket's back on the pad) -- threaded through
-    // every state function uniformly since they share one dispatch.
+    // jetman/game are only used by state_on_pad/state_landing, but
+    // threaded through every state uniformly since they share one
+    // dispatch.
     step(jetman, game) {
         var f = this.update_func
         f(this, jetman, game)
@@ -156,16 +145,13 @@ class Rocket {
         }
     }
 
-    // Draws the module stack from the pad up (bottom always present,
-    // middle/top as modules is collected), then the thruster flame
-    // while taking off/landing. Sprite pixels for every tile are
-    // blitted FIRST (in one pass), then colour banding (row_ink()
-    // above) is applied in a SEPARATE pass across every attribute row
-    // the whole stack spans -- not interleaved per tile, because
-    // adjacent tiles' own attribute footprints overlap by one row
-    // (ROCKET_PAD_Y isn't 8-aligned, see row_ink()'s own comment), so
-    // a later tile's plain-white blit_sprite call would otherwise stomp
-    // an earlier tile's already-correct override at the shared row.
+    // Draws the module stack bottom-up, then the thruster flame while
+    // taking off/landing. Sprite pixels for every tile are blitted
+    // first, then colour banding (row_ink()) is applied in a separate
+    // pass across every attribute row the stack spans -- not
+    // interleaved per tile, since adjacent tiles' attribute footprints
+    // overlap by one row (ROCKET_PAD_Y isn't 8-aligned) and a later
+    // tile's own blit would stomp an earlier tile's correct override.
     draw(disp, lib) {
         var white = encode_rgba(255, 255, 255)
         var magenta = encode_rgba(255, 0, 255)
@@ -184,11 +170,8 @@ class Rocket {
 
         // or_blit: the bottom tile's own transparent gaps (between the
         // landing struts) shouldn't punch through the pad platform
-        // underneath -- see docs/plans/jetpac-port.md's history for the
-        // bug this fixes. Requires platforms to already be freshly
-        // redrawn earlier in this same tick's draw phase (see
-        // game.lox's tick()). Blitted plain white here; the colouring
-        // pass below repaints the real attribute colour right after.
+        // underneath. Blitted plain white here; the colouring pass
+        // below repaints the real colour right after.
         var tile_y = int(this.y) - ROCKET_TILE
         for (var i = 0; i < this.modules; i = i + 1) {
             disp.blit_sprite(lib.get(MODULE_SPRITES[i]), int(this.x), tile_y, white, black, false, true)
@@ -199,12 +182,9 @@ class Rocket {
             var cy_bottom = int((int(this.y) - 1) / CELL)
             var cy_top = int((int(this.y) - this.modules * ROCKET_TILE) / CELL)
             for (var row_cy = cy_top; row_cy <= cy_bottom; row_cy = row_cy + 1) {
-                // A fully-built (3-module) stack legitimately reaches
-                // above row 0 near the top of a real launch (unlike
-                // blit_sprite above, set_attr doesn't clip itself) --
-                // this went unnoticed until level-cycling kept modules
-                // at 3 all the way to the top instead of resetting to 1
-                // the instant the rocket reached it.
+                // set_attr doesn't clip itself (unlike blit_sprite
+                // above) -- a fully-built stack legitimately reaches
+                // above row 0 near the top of a launch.
                 if (row_cy < 0 or row_cy >= SCREEN_H / CELL) {
                     continue
                 }
@@ -240,24 +220,16 @@ func enter_landing(r) {
     r.y = float(ROCKET_LAUNCH_TOP_Y)
 }
 
-// On the pad: RocketUpdate ($66D0) polls, every tick, for BOTH a full
-// tank AND Jetman actually touching the rocket (AlienCollision, see
-// near_jetman() above) before launching -- reaching FUEL_PODS_NEEDED
-// alone just starts the full-tank flash (row_ink()), it doesn't
-// launch by itself. On a genuine touch, Jetman "is found and
-// destroyed" (boards, vanishes -- not a death, no explosion/life lost)
-// and the player is awarded a bonus life ($66f5: `inc (hl)` on the
-// lives counter) before takeoff begins. Aliens are also cleared here:
-// the ROM's own RocketModulesReset ($6624) only runs later, once the
-// rocket actually reaches the top of its ascent, so strictly aliens
-// stay active during the ascent itself and are only cleared going into
-// the descent -- but since Jetman is hidden and uninteractable for the
-// whole round trip either way, and NewActor's own gate ($69BE-$69C7,
-// alien/fuel/collectible spawns all require Jetman's direction to be
-// FLY or WALK) already blocks anything NEW from appearing the entire
-// time, clearing existing aliens here too keeps the screen consistently
-// quiet for the full boarding-to-respawn window rather than only for
-// part of it.
+// RocketUpdate ($66D0): polls every tick for a full tank AND Jetman
+// actually touching the rocket (near_jetman()) before launching --
+// reaching FUEL_PODS_NEEDED alone only starts the full-tank flash. On a
+// genuine touch, Jetman boards (vanishes, not a death) and gets a bonus
+// life ($66F5) before takeoff begins. Aliens are cleared here too:
+// RocketModulesReset ($6624) only runs once the rocket reaches the top,
+// but Jetman is hidden the whole round trip regardless and NewActor's
+// own gate blocks anything new from spawning meanwhile, so clearing
+// existing aliens at boarding keeps the screen quiet for the whole
+// window rather than only part of it.
 func state_on_pad(r, jetman, game) {
     if (!jetman.is_dead() and r.fuel >= FUEL_PODS_NEEDED and near_jetman(r, jetman)) {
         jetman.board()
@@ -277,32 +249,19 @@ func animate_flame(r) {
     }
 }
 
-// RocketTakeoff/RocketLanding ($6690/$66B4) both call SfxThrusters
-// ($67B6) every tick while rising/falling -- this port's own thrust()
-// cue (pitched by Y, retriggering once the previous clip finishes) was
-// wrongly wired to Jetman's own jetpack instead (see jetman.lox's own
-// fly_vertical() comment for that fix); this is its real ROM home.
+// RocketTakeoff/RocketLanding ($6690/$66B4) call SfxThrusters ($67B6)
+// every tick while rising/falling -- not Jetman's own jetpack (see
+// jetman.lox).
 func state_taking_off(r, jetman, game) {
     r.y = r.y - RISE_STEP
     r.sound.thrust(r.y)
     animate_flame(r)
     if (r.y <= ROCKET_LAUNCH_TOP_Y) {
-        // Level cycling itself is still out of scope (no alien-set
-        // changes, no true "new level" screen) -- this port loops back
-        // down for another build/launch cycle instead. But RocketTakeoff
-        // ($6690)'s own reached-top branch confirms fuel resets to 0
-        // EVERY time, while modules is only ever touched by RocketReset
-        // ($60A7), which LevelNew ($6083) calls ONLY when the new level
-        // number is a multiple of 4 ("A new Rocket is generated every 4
-        // levels, otherwise it's a normal fuel collecting level") --
-        // RocketModulesReset ($6624, called unconditionally here) only
-        // clears item/alien/animation slots, never the rocket's own
-        // modules field. So 3 launches out of 4 come back down still
-        // fully built (all 3 modules), needing only a refuel; only
-        // every 4th actually rebuilds from the base. r.level mirrors
-        // $5DF0, incrementing here exactly as RocketTakeoff's own
-        // "inc (hl)" does, checked post-increment exactly as LevelNew
-        // checks it.
+        // Fuel resets every time; modules only resets via RocketReset
+        // ($60A7), which LevelNew ($6083) calls only when the new level
+        // number is a multiple of 4 -- 3 launches out of 4 come back
+        // still fully built, needing only a refuel. r.level mirrors
+        // $5DF0's own increment/mod-4 check.
         r.fuel = 0
         r.level = r.level + 1
         if (r.level % 4 == 0) {
@@ -322,10 +281,9 @@ func state_landing(r, jetman, game) {
         r.y = float(ROCKET_PAD_Y)
         r.sound.stop_thrust()
         enter_on_pad(r)
-        // Jetman boarded (state_on_pad, above) rather than dying, so
-        // he respawns here instead of through Game's death/respawn
-        // timer -- no life lost, matching the bonus he was awarded on
-        // the way in.
+        // Jetman boarded rather than dying, so he respawns here
+        // instead of through Game's death/respawn timer -- no life
+        // lost.
         jetman.spawn(game.static_data)
     }
 }

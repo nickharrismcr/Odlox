@@ -136,34 +136,21 @@ class Jetman < Sprite {
     // directly.
     kill() {
         this.sound.explode_player()
-        enter_dying(this)
+        //enter_dying(this)
     }
 
     // Overrides Sprite.draw(): the "frame" is really a pose/facing/
     // walk-cycle lookup, picked fresh each tick -- see
-    // current_sprite_name(). Two *separate* corrections combine to get
-    // the real draw X, both confirmed from ActorUpdate ($7207)/Coord2Scr
-    // ($72D0): (1) `- walk_shift(this)` cancels the sub-byte pixel
-    // offset already baked into the chosen shift sprite's own artwork
-    // (Coord2Scr truncates X to a byte boundary -- `rrca x3; and $1F`,
-    // i.e. floor(x/8)*8 -- discarding exactly the low bits walk_shift()
-    // computes, since this port blits at an arbitrary x and so doesn't
-    // need a byte-aligned address the way the ROM's own blitter does);
-    // (2) `+ lib.get_x_offset(name)` adds the chosen sprite's own fixed
-    // per-variant header offset (ActorUpdate's "add a,l"), which is 0
-    // for every right-facing shift variant but +8 for the narrower
-    // 2-tile left-facing ones (see assets.lox's get_x_offset() comment).
-    // x_offset is always a whole multiple of 8 in the ROM's own data,
-    // so it doesn't interact with walk_shift()'s truncation -- the two
-    // corrections are independent and additive. Dropping either one
-    // alone breaks something: no x_offset term looked right for RIGHT
-    // (whose own offsets are always 0) but left a several-pixel jump on
-    // LEFT every time the shift slot changed; dropping walk_shift()
-    // instead (this port's own first attempt at fixing that) made
-    // *both* directions jerky, since walk_shift()'s correction was
-    // never actually about facing, just about this port's own
-    // arbitrary-x blitter needing to undo the ROM art's baked-in
-    // byte-alignment shift.
+    // current_sprite_name(). Two corrections combine to get the real
+    // draw X while walking, both confirmed from ActorUpdate ($7207)/
+    // Coord2Scr ($72D0): `- walk_shift(this)` cancels the sub-byte pixel
+    // offset baked into the chosen shift sprite's own artwork
+    // (Coord2Scr truncates X to a byte boundary, which this port's
+    // arbitrary-x blitter otherwise has no reason to match); `+
+    // lib.get_x_offset(name)` adds that sprite's own fixed per-variant
+    // header offset (0 for right-facing, +8 for the narrower
+    // left-facing ones -- see assets.lox's get_x_offset()). Both are
+    // needed together; dropping either one breaks a direction.
     draw(disp, lib) {
         var name = current_sprite_name(this)
         this.image_list = [name]
@@ -177,18 +164,14 @@ class Jetman < Sprite {
     }
 }
 
-// ActorGetSpriteAddress indexes jetman_sprite_table by x&$06 to *pick*
-// which of the 4 pre-shifted sprites to use -- not, as this port
-// originally assumed, to compute a draw-position compensation (see
-// draw()'s own comment for that correction). The 4 shift sprites for
-// the walking pose specifically aren't just byte-alignment copies of
-// each other -- they show genuinely different leg positions (compare
-// jetman_walk_right_shift0's legs against shift2's staggered stride) --
-// so this same x&$06 lookup doubles as Jetman's walk-cycle animation
-// index, since x advances by WALK_STEP each tick and naturally cycles
-// through all 4 shifts. The flying pose's own 4 shifts are clean
-// re-shifted copies with no comparable leg movement (a jetpack thrust
-// pose doesn't "walk"), so flying still only ever uses shift0.
+// ActorGetSpriteAddress indexes jetman_sprite_table by x&$06 to pick
+// which of the 4 pre-shifted sprites to use. The 4 shift sprites for
+// the walking pose aren't just byte-alignment copies of each other --
+// they show genuinely different leg positions, so this same x&$06
+// lookup doubles as Jetman's walk-cycle animation index, cycling
+// naturally as x advances by WALK_STEP each tick. The flying pose's own
+// 4 shifts are clean re-shifted copies with no leg movement, so flying
+// only ever uses shift0.
 func walk_shift(j) {
     var shift = int(j.x) % 8
     return int(shift / 2) * 2
@@ -252,23 +235,16 @@ func fly_horizontal(j, input) {
 
 // Vertical flight: accelerates upward while thrust is held, otherwise
 // gravity accelerates downward at the same rate; releasing thrust while
-// rising brakes first (accel_or_flip), so the transition to falling is
-// smooth rather than an instant velocity reset. Bounces softly off the
-// screen's top/bottom (JetmanStateSetDownSlow/JetmanStateSetUp) --
+// rising brakes first, so falling starts smoothly rather than an
+// instant velocity reset. Bounces softly off the screen's top/bottom;
 // platform landing is a separate check in state_fly, since it can
-// happen anywhere in between. Holding hover overrides all of that: Y
-// velocity is forced to zero and no dy is applied this tick, so Jetman
-// holds his current altitude exactly (mirrors JetmanVelSetYMin, $7438
-// -- the ROM's own "undocumented hover key" reached via a keyboard-scan
-// timing quirk rather than a real bound key, but the effect -- Y
-// velocity zeroed for the tick -- is the same one this port binds
-// deliberately). No SFX here: JetmanFlyThrust/JetmanFalling ($739E/
-// $7412) never call any sound routine -- SfxThrusters ($67B6, despite
-// its name) is only ever used for the Rocket's own flame during
-// takeoff/landing and an alien death cue, never for Jetman's personal
-// thrust. An earlier version of this port played a continuous pitched
-// tone here on every held thrust, which was never part of the original
-// game.
+// happen anywhere in between. Holding hover zeroes Y velocity and skips
+// movement this tick, holding Jetman's altitude exactly (mirrors
+// JetmanVelSetYMin, $7438 -- the ROM's own "undocumented hover key",
+// reached via a keyboard-scan timing quirk rather than a bound key, but
+// bound deliberately here). No SFX here: SfxThrusters ($67B6, despite
+// its name) is only ever used for the Rocket's own flame, never
+// Jetman's personal thrust.
 func fly_vertical(j, input) {
     if (input.hover) {
         j.vel_y = 0
@@ -345,10 +321,9 @@ func state_walk(j, input, platforms) {
         j.y = j.y - 2.0
         j.moving_down = false
         // jetmanLeavePlatform ($757F) sets up jetman_thruster_anim_state
-        // ($5D48) here and lets the shared AnimateExplosion routine
-        // ($687A) run it through the same big/medium/small sprite cycle
-        // used for kills -- Game.spawn_explosion() is this port's
-        // equivalent of that shared explosion object/pool.
+        // ($5D48) here, animated through the same shared explosion
+        // sprite cycle used for kills -- Game.spawn_explosion() is this
+        // port's equivalent.
         j.launched_this_tick = true
     }
 }

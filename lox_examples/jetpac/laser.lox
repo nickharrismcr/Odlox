@@ -13,34 +13,23 @@ import jetman as jetman_module
 //     . . . .  - - - -  ----   ->
 //   (trailing)         (leading, direction of travel)
 //
-// Per the user's own description of how this should look: the bolt is
-// a single fixed-size object that's initially partly hidden and
-// reveals more of itself as it travels, fully visible only once it's
-// moved its own full length (ENSEMBLE_LEN) from the gun -- draw()'s
-// per-mark `traveled` clamp implements exactly that reveal. An earlier
-// version also shrank the ensemble back from the tail once the front
-// stopped (collision or its own random max-range countdown), meant as
-// a port of LaserBeamAnimate's ($6FC5) trailing-pulse catch-up -- but
-// visually that read as the whole shot "extending then retracting",
-// which isn't how it should look, so that shrink is gone: the beam
-// just disappears the instant its front stops advancing, no lingering
-// retraction. (The front's own movement facts are still real ROM
-// mechanics, not invented: fixed step per tick, freezes on collision
-// or the random max-range countdown -- see FRONT_STEP/FRONT_RANGE_MIN/
-// MAX below.)
+// The bolt is initially partly hidden and reveals more of itself as it
+// travels, fully visible only once it's moved its own full length
+// (ENSEMBLE_LEN) from the gun -- draw()'s per-mark `traveled` clamp.
+// It disappears outright, with no retraction, the instant its front
+// stops advancing (collision or its own random max-range countdown --
+// both real ROM mechanics, see FRONT_STEP/FRONT_RANGE_MIN/MAX below).
 //
 // Colour is a fresh **random** pick from laser_beam_colours ($6FB2:
 // $47/$43/$43/$45 -- white, magenta, magenta, cyan, all bright) every
 // time a beam fires ($6FA4: `random & 3`), applied uniformly across the
-// whole ensemble (all one colour, per the user's own description).
+// whole ensemble.
 
 const MAX_BEAMS = 4
-// $6fd8/$6fd9 confirms a fixed step every tick, but this port's own
-// per-actor-per-tick update runs every actor every engine tick, unlike
-// the ROM's single jump-table-entry-per-50Hz-interrupt scheduling (see
-// main.lox's own TARGET_FPS comment for the same kind of deviation) --
-// 8px/tick reads much faster here than it would on real hardware, so
-// this is tuned down for feel rather than transcribed.
+// $6fd8/$6fd9 confirms a fixed step every tick, but this port runs
+// every actor every engine tick, unlike the ROM's single jump-table-
+// entry-per-50Hz-interrupt scheduling (see main.lox's own TARGET_FPS
+// comment) -- 8px/tick reads much faster here, so this is tuned down.
 const FRONT_STEP = 4.0
 const FRONT_RANGE_MIN = 132.0      // $6f9e: (random&$38)|$84, decoded to a plain distance cap
 const FRONT_RANGE_MAX = 188.0
@@ -148,17 +137,13 @@ class LaserPool {
     }
 
     // Fires from Jetman's gun (LaserNewIfFreeSlot: only if a slot is
-    // free -- no queueing). Jetman never mirrors his own sprite (he
-    // uses separate left/right art, see jetman.lox's own
-    // current_sprite_name()) -- this.x is always his sprite's LEFT
-    // edge, regardless of facing. That's his gun position when facing
-    // left, but his BACK when facing right, so a beam fired while
-    // facing right needs to originate from the RIGHT edge (this.x +
-    // the current sprite's own width) or it starts from behind him --
-    // a real, playtested bug (confirmed against LaserBeamInit/
-    // LaserBeamShootRight, $6F70/$6FB6, whose own C register ends up
-    // well to the right of Jetman's base X when facing right, and only
-    // slightly left of it when facing left).
+    // free -- no queueing). Jetman never mirrors his own sprite (see
+    // jetman.lox's current_sprite_name()) -- this.x is always his
+    // sprite's LEFT edge, his gun position when facing left but his
+    // BACK when facing right, so a beam fired facing right originates
+    // from the right edge (this.x + the current sprite's own width)
+    // instead (confirmed against LaserBeamInit/LaserBeamShootRight,
+    // $6F70/$6FB6).
     fire(jetman, lib) {
         for (var i = 0; i < MAX_BEAMS; i = i + 1) {
             var b = this.beams[i]
@@ -198,9 +183,8 @@ class LaserPool {
     }
 
     // Advances the front a fixed step, deactivating the beam outright
-    // (no lingering retraction, see the file header) the instant it
-    // hits something, leaves the screen, or its own random max-range
-    // countdown runs out.
+    // the instant it hits something, leaves the screen, or its own
+    // random max-range countdown runs out.
     update(platforms) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
@@ -236,11 +220,7 @@ class LaserPool {
                 var near = m[0]
                 var far = m[1]
                 // A mark only becomes visible once the front has
-                // actually travelled far enough to have revealed it --
-                // without this cap, firing painted the WHOLE 96px
-                // ensemble immediately, so the trailing dot zone showed
-                // up several cells behind Jetman's gun on the very
-                // first frame instead of growing out from it.
+                // travelled far enough to have revealed it.
                 if (near >= b["traveled"]) {
                     continue
                 }

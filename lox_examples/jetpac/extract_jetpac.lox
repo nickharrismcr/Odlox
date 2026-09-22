@@ -39,16 +39,13 @@ func reverse_rows(data, bytes_per_row, height) {
 // -- see reverse_rows) at label, appending a jetpac_sprites.json entry
 // named `name`.
 //
-// x_offset (header[0]) is added directly to the actor's true X
-// position before the blit, per ActorUpdate ($7207: `add a,l` -- #REGl
-// is the actor's raw X, #REGa the header byte). It's 0 for nearly
-// every sprite (including every jetman_fly_right/walk_right shift
-// variant, and the rocket/item/alien sprites checked while diagnosing
-// this), but non-zero (8) for the narrower 2-tile jetman_fly_left/
-// walk_left shift variants -- those need it to keep their facing edge
-// aligned as their own bounding box width changes between poses (2
-// tiles/16px vs 3 tiles/24px) frame to frame. Read as a signed byte
-// since nothing in the ROM's own `add a,l` treats it as unsigned.
+// x_offset (header[0]) is added directly to the actor's true X position
+// before the blit, per ActorUpdate ($7207: `add a,l`). It's 0 for
+// nearly every sprite but non-zero (8) for the narrower 2-tile
+// jetman_fly_left/walk_left shift variants, keeping their facing edge
+// aligned as their own bounding box width changes between poses. Read
+// as a signed byte since the ROM's own `add a,l` doesn't treat it as
+// unsigned.
 func emit_byte_sprite(sk, label, name, sprites) {
     var header = sk.bytes_at_label(label, 3)
     var x_offset = header[0]
@@ -80,22 +77,18 @@ func emit_tile_sprite(sk, label, name, sprites) {
 
 // jetman_sprite_table ($76C5) packs 16 entries: 4 poses of 4 pre-shifted
 // copies each (0/2/4/6 pixels, for the ROM's byte-aligned blitter --
-// ActorGetSpriteAddress indexes by x&$06, not a frame counter).
-// Display.blit_sprite plots at an arbitrary x, so the runtime only
-// loads the shift0 sprite of each pose; all 16 are still emitted so the
-// choice is auditable from the JSON.
+// ActorGetSpriteAddress indexes by x&$06, not a frame counter). All 16
+// are emitted so the choice is auditable from the JSON, even though the
+// runtime only ever loads one shift per pose at a time.
 //
-// The table's own entry order is NOT "1,2,3,4" for every pose: right-
-// facing poses list gfx_..._right1..4 in that order (label N = shiftN's
-// slot, N counting 1..4 for shift 0,2,4,6), but each LEFT-facing pose
-// lists its 4 entries **reversed** -- e.g. jetman_sprite_table's fly-
-// left block is "fly left 4, fly left 3, fly left 2, fly left 1" (and
-// walk-left likewise) -- so label 1 actually occupies the shift6 slot
-// and label 4 occupies the shift0 slot. Confirmed directly against the
-// table's own bytes at $76C5-$76E3 in jetpac.skool. shift_order below
-// encodes this per-pose-group: right-facing labels map straight across
-// (1,2,3,4 -> shift 0,2,4,6), left-facing labels map reversed (1,2,3,4
-// -> shift 6,4,2,0).
+// The table's own entry order is NOT "1,2,3,4" for every pose:
+// right-facing poses list gfx_..._right1..4 in that order (label N =
+// shiftN's slot, N counting 1..4 for shift 0,2,4,6), but each
+// LEFT-facing pose lists its 4 entries **reversed** -- confirmed
+// directly against the table's own bytes at $76C5-$76E3 -- so label 1
+// occupies the shift6 slot and label 4 occupies shift0. shift_order
+// below encodes this: right-facing maps straight across (1,2,3,4 ->
+// shift 0,2,4,6), left-facing maps reversed (1,2,3,4 -> shift 6,4,2,0).
 const JETMAN_POSES = [
     {"label_prefix": "gfx_jetman_fly_right", "name_prefix": "jetman_fly_right", "shift_order": ["0", "2", "4", "6"]},
     {"label_prefix": "gfx_jetman_fly_left", "name_prefix": "jetman_fly_left", "shift_order": ["6", "4", "2", "0"]},

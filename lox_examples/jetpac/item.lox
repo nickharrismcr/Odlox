@@ -94,19 +94,16 @@ class Item < Sprite {
 }
 
 // Activates item as a rocket module sitting at its own default
-// position -- unconditional, no gate, called exactly twice ever (once
-// per slot, at Game construction). RocketReset ($60A7) copies 24 bytes
-// -- the rocket record plus BOTH the top-module and middle-module
-// templates -- into $5D30 in one go: $5D38 (the "rocket module
-// object" ItemNewFuelPod/CollectRocketItem read) receives the TOP
-// module, and $5D40 (ItemNewCollectible's own "collectible object")
-// receives the MIDDLE module. Both are therefore active from frame
-// one -- not a per-tick spawn like fuel pods/collectibles -- and each
+// position -- unconditional, no gate. RocketReset ($60A7) copies 24
+// bytes -- the rocket record plus BOTH the top-module and middle-module
+// templates -- into $5D30 in one go: $5D38 (the "rocket module object"
+// ItemNewFuelPod/CollectRocketItem read) receives the TOP module, and
+// $5D40 (ItemNewCollectible's own "collectible object") receives the
+// MIDDLE module. Called once per slot at Game construction, and again
+// from rocket.lox's own state_taking_off() every 4th launch cycle. Each
 // slot only becomes available for its *other* job (fuel pod /
-// collectible respectively) once its pre-seeded module is delivered,
-// since collecting it despawns the same Item instance that spawn_fuel_pod/
-// spawn_collectible later reuses. See game.lox's __init__ for the two
-// call sites (one per slot) and CLAUDE.md for the address cross-reference.
+// collectible respectively) once its module is delivered, since
+// delivery despawns the same Item instance those functions reuse.
 func init_module(item, key, sprite, static_data) {
     var d = static_data[key]
     item.kind = "module"
@@ -122,20 +119,14 @@ func init_module(item, key, sprite, static_data) {
 }
 
 // Spawns a falling fuel pod at a random drop column, gated exactly as
-// ItemNewFuelPod ($65F9): Jetman must be alive, no fuel pod already
-// active, fewer than FUEL_PODS_NEEDED collected, and game_timer's low
-// nibble at zero (the caller's own timer -- see spawner.lox once it
-// exists). ItemNewFuelPod calls the exact same ItemCalcDropColumn
+// ItemNewFuelPod ($65F9): Jetman visible (is_hidden() covers boarding
+// as well as death -- his direction is FLY/WALK for neither), no fuel
+// pod already active, fewer than FUEL_PODS_NEEDED collected, and
+// game_timer's low nibble at zero (the caller's own timer -- see
+// spawner.lox). ItemNewFuelPod calls the same ItemCalcDropColumn
 // ($65DB) random-column routine ItemNewCollectible uses below --
 // default_fuel_pod's own "x" field is just the ROM's zeroed RAM
-// template value (0, the screen's left edge) before ItemNewFuelPod
-// ever runs, not a real spawn position; using it directly (as this
-// port used to) pinned every fuel pod to the left edge of the screen.
-// is_hidden(), not is_dead(): ItemNewFuelPod's own gate is Jetman's
-// direction being FLY or WALK, which is equally false while he's
-// boarding the rocket ($66ef resets it to 0 on a touch, same as death)
-// -- checking is_dead() alone let fuel start dropping while Jetman was
-// still hidden mid-flight, before he'd actually respawned.
+// template value before ItemNewFuelPod ever runs, not a real position.
 func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
     if (jetman.is_hidden() or item.active or rocket.fuel >= FUEL_PODS_NEEDED) {
         return false

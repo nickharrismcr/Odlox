@@ -57,12 +57,10 @@ class Sprite {
     // sprite's colour/paper, with this.x/this.y as the BOTTOM-left
     // corner -- every "Actor" sprite's Y in this ROM (Jetman, items,
     // aliens, explosions) is a feet/bottom anchor, not top-left
-    // (MaskSprite $7705 starts at the actor's own Y and draws upward
-    // via ScreenPosOnePixelAbove -- see skool.lox's header and
-    // extract_jetpac.lox's reverse_rows() for the sibling bug this
-    // shares a root cause with: the row data itself is also
-    // bottom-first). clear() must already have run this tick -- draw()
-    // itself doesn't erase.
+    // (MaskSprite $7705 starts at the actor's own Y and draws upward via
+    // ScreenPosOnePixelAbove; the row data itself is also bottom-first,
+    // see skool.lox's header and extract_jetpac.lox's reverse_rows()).
+    // clear() must already have run this tick -- draw() doesn't erase.
     draw(disp, lib) {
         var name = this.image_list[this.frame]
         var img = lib.get(name)
