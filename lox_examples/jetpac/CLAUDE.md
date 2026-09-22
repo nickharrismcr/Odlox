@@ -131,7 +131,12 @@ different execution model — see "Per-tick phase ordering" in the plan).
   platform collision, then Jetman proximity. Bare Jetman contact is a **mutual** kill — the skool's
   own alien-side handler only ever destroys the alien with no points, but the point of touching an
   alien at all is that it costs Jetman too, so this port kills both (see `alien.lox`'s own comment
-  for the ROM line this diverges from).
+  for the ROM line this diverges from). `hide()` is a *plain* deactivation (no score/sound/
+  explosion) — `rocket.lox`'s `state_on_pad()` calls it on every alien the instant Jetman boards a
+  launching rocket, mirroring `RocketModulesReset`'s ($6624) own raw clear of every alien slot,
+  though the ROM only actually runs that at the *top* of the ascent (going into the descent), not at
+  boarding — since Jetman is hidden/uninteractable for the whole round trip regardless, this port
+  clears existing aliens a bit earlier so the screen stays quiet the entire time, not just partway.
 - `laser.lox` — `LaserPool`: 4 preallocated beam slots. A beam is a **rigid 3-zone ensemble** —
   solid leading tip (`SOLID_LEN`), then a zone of `DASH_COUNT` short dashes with short gaps, then a
   trailing zone of `DOT_COUNT` very short dashes with longer gaps — all one colour, fixed in
@@ -174,7 +179,10 @@ different execution model — see "Per-tick phase ordering" in the plan).
   `item.lox`'s own `spawn_fuel_pod`/`spawn_collectible` on the ROM's timing (`(255-timer)%16==0` /
   `timer%128==0`) — **not** a module spawn; there isn't one (see `item.lox`'s own entry above).
   Meteor spawning has no ROM-equivalent cadence to match (aliens aren't item-slot-gated), so its
-  interval is this port's own tuning.
+  interval is this port's own tuning. Confirmed `NewActor`'s own gate ($69BE-$69C7) applies equally
+  to alien spawns as to fuel-pod/collectible ones — all three require Jetman's direction to be FLY
+  or WALK — so `spawn_alien_if_free()` is also gated on `!g.jetman.is_hidden()`, matching the other
+  two (a real, playtested bug: aliens kept spawning while Jetman was boarding a launching rocket).
 - `hud.lox` — `draw_static`/`draw`: score and lives, along the top strip (rows 0-7) rather than a
   below-play row like manic_miner's — Jetpac's platforms already use the whole 192px screen height,
   so there's no spare strip below play. `draw_lives` blanks its icon strip before redrawing every
