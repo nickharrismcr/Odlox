@@ -7,12 +7,21 @@ import sound_mgr
 // sound cue, sourced from assets/*.wav (see extract_sfx.lox/
 // tools/render_sfx.py). thrust(y) buckets y into one of
 // THRUST_BUCKETS pitch samples (matching extract_sfx.lox's own
-// bucketing) and plays it with play_if_not, so holding thrust
-// re-triggers only once the previous clip finishes -- this port's own
+// bucketing) and plays it with play_if_not, so holding it re-triggers
+// only once the previous clip finishes -- this port's own
 // ~200ms-per-retrigger stand-in for the ROM's actual ~15ms-per-tick
-// beeper toggle (SfxThrusters, called once per game tick while
-// thrusting). The two explosion cues share an exclusivity group so an
-// alien kill can't talk over Jetman's own death.
+// beeper toggle (SfxThrusters, $67B6). Despite the name, that cue is
+// never played for Jetman's own personal jetpack thrust -- neither
+// JetmanFlyThrust nor JetmanFalling ($739E/$7412) call any sound
+// routine at all. Its only real call sites are RocketTakeoff/
+// RocketLanding ($6690/$66B4), once per tick while the rocket itself
+// rises or falls on its own flame (rocket.lox's own state_taking_off/
+// state_landing), and one alien-death cue. An earlier version of this
+// port wired thrust()/stop_thrust() into Jetman's own flight code
+// instead, producing a continuous pitched tone whenever thrust was
+// held that was never part of the original game. The two explosion
+// cues share an exclusivity group so an alien kill can't talk over
+// Jetman's own death.
 //
 
 const THRUST_BUCKETS = 8

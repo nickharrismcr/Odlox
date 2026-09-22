@@ -216,7 +216,6 @@ func enter_fly(j) {
 func enter_walk(j) {
     j.update_func = state_walk
     j.vel_x = 0
-    j.sound.stop_thrust()
 }
 
 func enter_dying(j) {
@@ -263,18 +262,17 @@ func fly_horizontal(j, input) {
 // -- the ROM's own "undocumented hover key" reached via a keyboard-scan
 // timing quirk rather than a real bound key, but the effect -- Y
 // velocity zeroed for the tick -- is the same one this port binds
-// deliberately).
+// deliberately). No SFX here: JetmanFlyThrust/JetmanFalling ($739E/
+// $7412) never call any sound routine -- SfxThrusters ($67B6, despite
+// its name) is only ever used for the Rocket's own flame during
+// takeoff/landing and an alien death cue, never for Jetman's personal
+// thrust. An earlier version of this port played a continuous pitched
+// tone here on every held thrust, which was never part of the original
+// game.
 func fly_vertical(j, input) {
     if (input.hover) {
-        j.sound.stop_thrust()
         j.vel_y = 0
         return
-    }
-
-    if (input.thrust) {
-        j.sound.thrust(j.y)
-    } else {
-        j.sound.stop_thrust()
     }
 
     var want_up = input.thrust

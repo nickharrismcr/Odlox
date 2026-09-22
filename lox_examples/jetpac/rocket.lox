@@ -245,8 +245,14 @@ func animate_flame(r) {
     }
 }
 
+// RocketTakeoff/RocketLanding ($6690/$66B4) both call SfxThrusters
+// ($67B6) every tick while rising/falling -- this port's own thrust()
+// cue (pitched by Y, retriggering once the previous clip finishes) was
+// wrongly wired to Jetman's own jetpack instead (see jetman.lox's own
+// fly_vertical() comment for that fix); this is its real ROM home.
 func state_taking_off(r, jetman, game) {
     r.y = r.y - RISE_STEP
+    r.sound.thrust(r.y)
     animate_flame(r)
     if (r.y <= ROCKET_LAUNCH_TOP_Y) {
         // Level cycling is out of scope -- loop back down for another
@@ -268,9 +274,11 @@ func state_taking_off(r, jetman, game) {
 
 func state_landing(r, jetman, game) {
     r.y = r.y + RISE_STEP
+    r.sound.thrust(r.y)
     animate_flame(r)
     if (r.y >= ROCKET_PAD_Y) {
         r.y = float(ROCKET_PAD_Y)
+        r.sound.stop_thrust()
         enter_on_pad(r)
         // Jetman boarded (state_on_pad, above) rather than dying, so
         // he respawns here instead of through Game's death/respawn
