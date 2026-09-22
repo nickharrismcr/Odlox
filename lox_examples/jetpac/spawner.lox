@@ -63,9 +63,11 @@ class Spawner {
 const METEOR_SPAWN_Y_MIN = 32.0   // matches alien.lox's own vertical bounce range
 const METEOR_SPAWN_Y_MAX = 192.0
 
-// A free alien slot gets a meteor entering from the left edge
-// (travelling right) or the right edge (travelling left), at a random
-// height, coloured by its own pool slot index.
+// A free alien slot gets the current level's alien type
+// (item_level_object_types $6A2D, level % 8 -- see alien.lox's
+// ALIEN_TYPES), entering from the left edge (travelling right) or the
+// right edge (travelling left) at a random height, coloured by its own
+// pool slot index.
 func spawn_alien_if_free(g) {
     for (var i = 0; i < len(g.aliens); i = i + 1) {
         var a = g.aliens[i]
@@ -77,7 +79,7 @@ func spawn_alien_if_free(g) {
                 vx = -vx
             }
             var y = METEOR_SPAWN_Y_MIN + rand() * (METEOR_SPAWN_Y_MAX - METEOR_SPAWN_Y_MIN)
-            alien_module.spawn_meteor(a, x, y, vx, METEOR_Y_SPEED, alien_colour(i))
+            alien_module.spawn_alien(a, x, y, vx, METEOR_Y_SPEED, alien_colour(i), g.rocket.level)
             return
         }
     }

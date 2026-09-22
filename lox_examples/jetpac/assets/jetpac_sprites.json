@@ -1,5 +1,7 @@
 [
   {
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       7,
       128,
@@ -50,12 +52,12 @@
       16,
       0
     ],
-    "x_offset": 0,
     "name": "jetman_fly_right_shift0",
-    "width": 16,
-    "data_type": "byte"
+    "width": 16
   },
   {
+    "data_type": "byte",
+    "width": 24,
     "data": [
       1,
       224,
@@ -130,10 +132,8 @@
       0,
       0
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "jetman_fly_right_shift2",
-    "width": 24
+    "x_offset": 0
   },
   {
     "data": [
@@ -210,14 +210,15 @@
       0,
       0
     ],
-    "x_offset": 0,
     "name": "jetman_fly_right_shift4",
     "width": 24,
+    "x_offset": 0,
     "data_type": "byte"
   },
   {
-    "width": 24,
+    "x_offset": 0,
     "data_type": "byte",
+    "width": 24,
     "data": [
       0,
       30,
@@ -292,13 +293,9 @@
       0,
       0
     ],
-    "x_offset": 0,
     "name": "jetman_fly_right_shift6"
   },
   {
-    "width": 16,
-    "name": "jetman_fly_left_shift6",
-    "x_offset": 8,
     "data": [
       1,
       224,
@@ -349,11 +346,12 @@
       0,
       8
     ],
-    "data_type": "byte"
+    "name": "jetman_fly_left_shift6",
+    "x_offset": 8,
+    "data_type": "byte",
+    "width": 16
   },
   {
-    "width": 16,
-    "data_type": "byte",
     "data": [
       7,
       128,
@@ -404,13 +402,12 @@
       0,
       80
     ],
+    "name": "jetman_fly_left_shift4",
+    "width": 16,
     "x_offset": 8,
-    "name": "jetman_fly_left_shift4"
+    "data_type": "byte"
   },
   {
-    "width": 24,
-    "name": "jetman_fly_left_shift2",
-    "x_offset": 0,
     "data": [
       0,
       30,
@@ -485,12 +482,14 @@
       0,
       128
     ],
+    "name": "jetman_fly_left_shift2",
+    "width": 24,
+    "x_offset": 0,
     "data_type": "byte"
   },
   {
+    "data_type": "byte",
     "width": 24,
-    "name": "jetman_fly_left_shift0",
-    "x_offset": 0,
     "data": [
       0,
       120,
@@ -565,9 +564,12 @@
       0,
       16
     ],
-    "data_type": "byte"
+    "name": "jetman_fly_left_shift0",
+    "x_offset": 0
   },
   {
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       7,
       128,
@@ -618,10 +620,8 @@
       0,
       0
     ],
-    "x_offset": 0,
     "name": "jetman_walk_right_shift0",
-    "width": 16,
-    "data_type": "byte"
+    "width": 16
   },
   {
     "data": [
@@ -674,12 +674,14 @@
       0,
       0
     ],
-    "x_offset": 0,
     "name": "jetman_walk_right_shift2",
     "width": 16,
+    "x_offset": 0,
     "data_type": "byte"
   },
   {
+    "data_type": "byte",
+    "width": 24,
     "data": [
       0,
       120,
@@ -754,15 +756,12 @@
       0,
       0
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "jetman_walk_right_shift4",
-    "width": 24
+    "x_offset": 0
   },
   {
-    "data_type": "byte",
-    "name": "jetman_walk_right_shift6",
     "x_offset": 0,
+    "data_type": "byte",
     "data": [
       0,
       30,
@@ -837,9 +836,12 @@
       0,
       0
     ],
+    "name": "jetman_walk_right_shift6",
     "width": 24
   },
   {
+    "x_offset": 8,
+    "data_type": "byte",
     "data": [
       1,
       224,
@@ -890,15 +892,12 @@
       0,
       0
     ],
-    "width": 16,
-    "data_type": "byte",
     "name": "jetman_walk_left_shift6",
-    "x_offset": 8
+    "width": 16
   },
   {
+    "x_offset": 8,
     "data_type": "byte",
-    "name": "jetman_walk_left_shift4",
-    "width": 16,
     "data": [
       7,
       128,
@@ -949,9 +948,12 @@
       0,
       0
     ],
-    "x_offset": 8
+    "name": "jetman_walk_left_shift4",
+    "width": 16
   },
   {
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       0,
       30,
@@ -1026,12 +1028,14 @@
       0,
       0
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "jetman_walk_left_shift2",
     "width": 24
   },
   {
+    "name": "jetman_walk_left_shift0",
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 24,
     "data": [
       0,
       120,
@@ -1105,16 +1109,9 @@
       0,
       0,
       0
-    ],
-    "width": 24,
-    "data_type": "byte",
-    "name": "jetman_walk_left_shift0",
-    "x_offset": 0
+    ]
   },
   {
-    "width": 16,
-    "name": "rocket_u1_bottom",
-    "x_offset": 0,
     "data": [
       185,
       247,
@@ -1149,11 +1146,14 @@
       184,
       23
     ],
-    "data_type": "byte"
+    "name": "rocket_u1_bottom",
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 16
   },
   {
+    "x_offset": 0,
     "data_type": "byte",
-    "name": "rocket_u1_middle",
     "width": 16,
     "data": [
       9,
@@ -1189,9 +1189,11 @@
       185,
       247
     ],
-    "x_offset": 0
+    "name": "rocket_u1_middle"
   },
   {
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       1,
       128,
@@ -1226,12 +1228,14 @@
       9,
       80
     ],
-    "x_offset": 0,
     "name": "rocket_u1_top",
-    "width": 16,
-    "data_type": "byte"
+    "width": 16
   },
   {
+    "name": "rocket_u3_bottom",
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 16,
     "data": [
       217,
       152,
@@ -1265,16 +1269,11 @@
       79,
       158,
       79
-    ],
-    "width": 16,
-    "data_type": "byte",
-    "name": "rocket_u3_bottom",
-    "x_offset": 0
+    ]
   },
   {
+    "data_type": "byte",
     "width": 16,
-    "name": "rocket_u3_middle",
-    "x_offset": 0,
     "data": [
       127,
       254,
@@ -1309,9 +1308,12 @@
       217,
       155
     ],
-    "data_type": "byte"
+    "name": "rocket_u3_middle",
+    "x_offset": 0
   },
   {
+    "data_type": "byte",
+    "width": 16,
     "data": [
       1,
       128,
@@ -1346,12 +1348,14 @@
       75,
       254
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "rocket_u3_top",
-    "width": 16
+    "x_offset": 0
   },
   {
+    "name": "rocket_u4_bottom",
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 16,
     "data": [
       187,
       221,
@@ -1385,14 +1389,9 @@
       241,
       128,
       1
-    ],
-    "width": 16,
-    "data_type": "byte",
-    "name": "rocket_u4_bottom",
-    "x_offset": 0
+    ]
   },
   {
-    "x_offset": 0,
     "data": [
       25,
       136,
@@ -1427,11 +1426,15 @@
       187,
       221
     ],
+    "name": "rocket_u4_middle",
+    "x_offset": 0,
     "data_type": "byte",
-    "width": 16,
-    "name": "rocket_u4_middle"
+    "width": 16
   },
   {
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 16,
     "data": [
       1,
       128,
@@ -1466,13 +1469,10 @@
       21,
       136
     ],
-    "width": 16,
-    "data_type": "byte",
-    "name": "rocket_u4_top",
-    "x_offset": 0
+    "name": "rocket_u4_top"
   },
   {
-    "width": 16,
+    "x_offset": 0,
     "data_type": "byte",
     "data": [
       13,
@@ -1508,12 +1508,13 @@
       128,
       79
     ],
-    "x_offset": 0,
-    "name": "rocket_u5_bottom"
+    "name": "rocket_u5_bottom",
+    "width": 16
   },
   {
-    "data_type": "byte",
     "name": "rocket_u5_middle",
+    "x_offset": 0,
+    "data_type": "byte",
     "width": 16,
     "data": [
       11,
@@ -1548,13 +1549,11 @@
       124,
       11,
       118
-    ],
-    "x_offset": 0
+    ]
   },
   {
-    "data_type": "byte",
-    "name": "rocket_u5_top",
     "x_offset": 0,
+    "data_type": "byte",
     "data": [
       0,
       56,
@@ -1589,9 +1588,13 @@
       11,
       250
     ],
+    "name": "rocket_u5_top",
     "width": 16
   },
   {
+    "width": 16,
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       47,
       252,
@@ -1624,10 +1627,7 @@
       0,
       64
     ],
-    "x_offset": 0,
-    "name": "rocket_flames_0",
-    "width": 16,
-    "data_type": "byte"
+    "name": "rocket_flames_0"
   },
   {
     "data": [
@@ -1662,15 +1662,14 @@
       0,
       128
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "rocket_flames_1",
-    "width": 16
+    "width": 16,
+    "x_offset": 0,
+    "data_type": "byte"
   },
   {
+    "x_offset": 0,
     "data_type": "byte",
-    "name": "fuel_pod",
-    "width": 16,
     "data": [
       24,
       24,
@@ -1695,12 +1694,14 @@
       24,
       24
     ],
-    "x_offset": 0
+    "name": "fuel_pod",
+    "width": 16
   },
   {
-    "data_type": "byte",
     "name": "gold_bar",
     "x_offset": 0,
+    "data_type": "byte",
+    "width": 16,
     "data": [
       15,
       248,
@@ -1718,8 +1719,7 @@
       14,
       255,
       252
-    ],
-    "width": 16
+    ]
   },
   {
     "data": [
@@ -1746,10 +1746,10 @@
       15,
       248
     ],
-    "x_offset": 0,
-    "data_type": "byte",
     "name": "radiation",
-    "width": 16
+    "width": 16,
+    "x_offset": 0,
+    "data_type": "byte"
   },
   {
     "data": [
@@ -1780,12 +1780,15 @@
       112,
       28
     ],
+    "name": "chemical_weapon",
     "x_offset": 0,
     "data_type": "byte",
-    "name": "chemical_weapon",
     "width": 16
   },
   {
+    "width": 16,
+    "x_offset": 0,
+    "data_type": "byte",
     "data": [
       15,
       240,
@@ -1806,15 +1809,9 @@
       63,
       252
     ],
-    "x_offset": 0,
-    "data_type": "byte",
-    "name": "plutonium",
-    "width": 16
+    "name": "plutonium"
   },
   {
-    "data_type": "byte",
-    "name": "diamond",
-    "x_offset": 0,
     "data": [
       3,
       192,
@@ -1841,9 +1838,15 @@
       1,
       128
     ],
-    "width": 16
+    "name": "diamond",
+    "width": 16,
+    "x_offset": 0,
+    "data_type": "byte"
   },
   {
+    "name": "meteor_0",
+    "data_type": "byte",
+    "width": 16,
     "data": [
       8,
       16,
@@ -1867,12 +1870,11 @@
       236,
       2,
       248
-    ],
-    "width": 16,
-    "data_type": "byte",
-    "name": "meteor_0"
+    ]
   },
   {
+    "data_type": "byte",
+    "width": 16,
     "data": [
       0,
       144,
@@ -1897,12 +1899,306 @@
       4,
       120
     ],
+    "name": "meteor_1"
+  },
+  {
     "data_type": "byte",
-    "name": "meteor_1",
+    "width": 16,
+    "data": [
+      10,
+      68,
+      22,
+      232,
+      15,
+      244,
+      79,
+      253,
+      63,
+      254,
+      121,
+      159,
+      246,
+      110,
+      54,
+      108,
+      249,
+      159,
+      63,
+      254,
+      95,
+      255,
+      107,
+      234,
+      26,
+      148,
+      18,
+      64
+    ],
+    "name": "squidgy_0"
+  },
+  {
+    "data": [
+      18,
+      64,
+      26,
+      148,
+      107,
+      234,
+      95,
+      255,
+      63,
+      254,
+      249,
+      159,
+      54,
+      108,
+      246,
+      110,
+      121,
+      159,
+      63,
+      254,
+      77,
+      253,
+      15,
+      244,
+      22,
+      232,
+      10,
+      68
+    ],
+    "name": "squidgy_1",
+    "width": 16,
+    "data_type": "byte"
+  },
+  {
+    "data_type": "byte",
+    "width": 16,
+    "data": [
+      7,
+      224,
+      31,
+      248,
+      63,
+      252,
+      121,
+      254,
+      113,
+      254,
+      227,
+      255,
+      231,
+      255,
+      231,
+      255,
+      255,
+      255,
+      255,
+      255,
+      255,
+      255,
+      127,
+      254,
+      127,
+      254,
+      63,
+      252,
+      31,
+      248,
+      7,
+      224
+    ],
+    "name": "sphere_0"
+  },
+  {
+    "width": 16,
+    "data_type": "byte",
+    "data": [
+      7,
+      224,
+      31,
+      248,
+      57,
+      252,
+      113,
+      254,
+      99,
+      254,
+      231,
+      255,
+      231,
+      255,
+      255,
+      255,
+      255,
+      255,
+      127,
+      254,
+      127,
+      254,
+      63,
+      252,
+      31,
+      248,
+      7,
+      224
+    ],
+    "name": "sphere_1"
+  },
+  {
+    "data": [
+      120,
+      0,
+      30,
+      0,
+      207,
+      240,
+      255,
+      236,
+      251,
+      223,
+      199,
+      128,
+      31,
+      240
+    ],
+    "name": "jet_fighter",
+    "data_type": "byte",
     "width": 16
   },
   {
+    "name": "ufo",
+    "data_type": "byte",
+    "width": 16,
+    "data": [
+      1,
+      128,
+      7,
+      224,
+      13,
+      176,
+      63,
+      252,
+      127,
+      254,
+      217,
+      155,
+      127,
+      254,
+      63,
+      252
+    ]
+  },
+  {
+    "data": [
+      3,
+      128,
+      4,
+      192,
+      5,
+      192,
+      7,
+      192,
+      4,
+      64,
+      123,
+      188,
+      148,
+      82,
+      181,
+      86,
+      244,
+      94,
+      123,
+      188,
+      4,
+      64,
+      7,
+      192,
+      4,
+      64,
+      5,
+      192,
+      3,
+      128
+    ],
+    "name": "cross_ship",
+    "data_type": "byte",
+    "width": 16
+  },
+  {
+    "width": 16,
+    "data": [
+      16,
+      0,
+      30,
+      0,
+      63,
+      192,
+      97,
+      248,
+      192,
+      63,
+      255,
+      255,
+      202,
+      192,
+      202,
+      192,
+      255,
+      255,
+      192,
+      63,
+      97,
+      248,
+      63,
+      192,
+      30,
+      0,
+      16,
+      0
+    ],
+    "name": "space_craft",
+    "data_type": "byte"
+  },
+  {
+    "name": "frog_alien",
+    "data_type": "byte",
+    "width": 16,
+    "data": [
+      6,
+      96,
+      15,
+      240,
+      25,
+      152,
+      25,
+      152,
+      47,
+      244,
+      70,
+      110,
+      72,
+      158,
+      223,
+      255,
+      223,
+      255,
+      255,
+      255,
+      127,
+      254,
+      63,
+      252,
+      19,
+      200,
+      12,
+      48
+    ]
+  },
+  {
     "width": 24,
+    "x_offset": 0,
     "data_type": "byte",
     "data": [
       15,
@@ -1954,10 +2250,12 @@
       240,
       0
     ],
-    "x_offset": 0,
     "name": "explosion_big"
   },
   {
+    "x_offset": 0,
+    "data_type": "byte",
+    "width": 24,
     "data": [
       0,
       0,
@@ -2008,15 +2306,12 @@
       0,
       0
     ],
-    "x_offset": 0,
-    "data_type": "byte",
-    "name": "explosion_medium",
-    "width": 24
+    "name": "explosion_medium"
   },
   {
     "width": 24,
-    "name": "explosion_small",
     "x_offset": 0,
+    "data_type": "byte",
     "data": [
       0,
       0,
@@ -2067,9 +2362,10 @@
       0,
       0
     ],
-    "data_type": "byte"
+    "name": "explosion_small"
   },
   {
+    "data_type": "byte",
     "data": [
       47,
       127,
@@ -2080,11 +2376,12 @@
       113,
       33
     ],
-    "data_type": "byte",
     "name": "platform_left",
     "width": 8
   },
   {
+    "width": 8,
+    "data_type": "byte",
     "data": [
       189,
       255,
@@ -2095,12 +2392,9 @@
       173,
       4
     ],
-    "data_type": "byte",
-    "width": 8,
     "name": "platform_middle"
   },
   {
-    "width": 8,
     "data_type": "byte",
     "data": [
       76,
@@ -2112,12 +2406,12 @@
       156,
       8
     ],
-    "name": "platform_right"
+    "name": "platform_right",
+    "width": 8
   },
   {
-    "data_type": "byte",
-    "name": "life_icon",
     "width": 8,
+    "data_type": "byte",
     "data": [
       24,
       36,
@@ -2127,6 +2421,7 @@
       60,
       60,
       102
-    ]
+    ],
+    "name": "life_icon"
   }
 ]

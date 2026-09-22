@@ -140,11 +140,25 @@ func emit_item_sprites(sk, sprites) {
     }
 }
 
-// Level 1 scope: meteor only (alien_sprite_table's other 7 pairs are
-// the seam for later levels, left untouched here).
+// alien_sprite_table ($690E): 8 level-slots (cycling every 8 levels,
+// AlienBufferInit $68F2 selects one via (level<<2)&$1C), 2 frame
+// pointers each -- Squidgy/Sphere genuinely animate 2 frames, the rest
+// (Jet Fighter/UFO/Crossed Ship/Space Craft/Frog Alien) reuse the same
+// single sprite for both table entries, so only one is emitted for
+// those. Level 6/7 slots (Space Craft/Frog Alien) get their own sprite
+// here despite reusing an earlier slot's movement code (see alien.lox).
 func emit_alien_sprites(sk, sprites) {
     emit_alien_sprite(sk, "gfx_meteor1", "meteor_0", sprites)
     emit_alien_sprite(sk, "gfx_meteor2", "meteor_1", sprites)
+    emit_alien_sprite(sk, "gfx_squidgy_alien1", "squidgy_0", sprites)
+    emit_alien_sprite(sk, "gfx_squidgy_alien2", "squidgy_1", sprites)
+    emit_alien_sprite(sk, "gfx_sphere_alien1", "sphere_0", sprites)
+    emit_alien_sprite(sk, "gfx_sphere_alien2", "sphere_1", sprites)
+    emit_alien_sprite(sk, "gfx_jet_fighter", "jet_fighter", sprites)
+    emit_alien_sprite(sk, "gfx_ufo", "ufo", sprites)
+    emit_alien_sprite(sk, "gfx_cross_ship", "cross_ship", sprites)
+    emit_alien_sprite(sk, "gfx_space_craft", "space_craft", sprites)
+    emit_alien_sprite(sk, "gfx_frog_alien", "frog_alien", sprites)
 }
 
 func emit_explosion_sprites(sk, sprites) {
