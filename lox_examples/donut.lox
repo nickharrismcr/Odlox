@@ -1,0 +1,75 @@
+// Port of Andy Sloane's donut.c (https://www.a1k0n.net/2011/07/20/donut-math.html):
+// a spinning ASCII torus rendered to an 80x22 terminal with a z-buffer and
+// luminance-indexed characters. Runs until interrupted with Ctrl-C.
+import sys
+
+const WIDTH = 80
+const HEIGHT = 22
+const SHADES = ".,-~:;=!*#$@"
+
+// String literals have no backslash escapes: ESC comes from format's %c verb,
+// and a newline from a literal that spans a line.
+const ESC = format("%c", 27)
+const NL = "
+"
+
+// Output buffer is HEIGHT rows of WIDTH chars plus a trailing newline column;
+// both buffers are allocated once and overwritten in place every frame.
+const STRIDE = WIDTH + 1
+const CELLS = STRIDE * HEIGHT
+var screen = []
+var zbuf = []
+foreach (k in range(CELLS)) {
+    screen.append((k % STRIDE == WIDTH) ? NL : " ")
+    zbuf.append(0.0)
+}
+
+func render_frame(A, B) {
+    const e = _sin(A)
+    const g = _cos(A)
+    const m = _cos(B)
+    const n = _sin(B)
+
+    foreach (y in range(HEIGHT)) {
+        var row = y * STRIDE
+        foreach (x in range(WIDTH)) {
+            screen[row + x] = " "
+            zbuf[row + x] = 0.0
+        }
+    }
+
+    // j: angle around the tube cross-section; i: angle around the torus axis.
+    for (var j = 0.0; j < 6.28; j += 0.07) {
+        var d = _cos(j)
+        var f = _sin(j)
+        var h = d + 2
+        for (var i = 0.0; i < 6.28; i += 0.02) {
+            var c = _sin(i)
+            var l = _cos(i)
+            var D = 1 / (c * h * e + f * g + 5)
+            var t = c * h * g - f * e
+            var x = int(40 + 30 * D * (l * h * m - t * n))
+            var y = int(12 + 15 * D * (l * h * n + t * m))
+            var N = int(8 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n))
+            if (y > 0 and y < HEIGHT and x > 0 and x < WIDTH) {
+                var o = x + STRIDE * y
+                if (D > zbuf[o]) {
+                    zbuf[o] = D
+                    screen[o] = SHADES[N > 0 ? N : 0]
+                }
+            }
+        }
+    }
+}
+
+var A = 0.0
+var B = 0.0
+print ESC & "[2J"
+while (true) {
+    render_frame(A, B)
+    print ESC & "[H" & "".join(screen)
+    // donut.c advances A/B by 0.00004/0.00002 once per output char (1761/frame).
+    A += 0.07044
+    B += 0.03522
+    sys.sleep(0.03)
+}
