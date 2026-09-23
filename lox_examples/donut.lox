@@ -1,28 +1,54 @@
 // Port of Andy Sloane's donut.c (https://www.a1k0n.net/2011/07/20/donut-math.html):
-// a spinning ASCII torus rendered to an 80x22 terminal with a z-buffer and
-// luminance-indexed characters. Runs until interrupted with Ctrl-C.
-import sys
+// a spinning ASCII torus rendered with a z-buffer and luminance-indexed
+// characters, drawn glyph-by-glyph into a raylib window instead of stdout.
+// Close the window to stop.
+from gfx import *
 
-const WIDTH = 80
-const HEIGHT = 22
+const COLS = 80
+const ROWS = 22
 const SHADES = ".,-~:;=!*#$@"
+const MAX_SHADE = len(SHADES) - 1
 
-// String literals have no backslash escapes: ESC comes from format's %c verb,
-// and a newline from a literal that spans a line.
-const ESC = format("%c", 27)
-const NL = "
-"
+var win = window(COLS * 10, ROWS * 20)
+win.init()
+win.toggle_fullscreen()
 
-// Output buffer is HEIGHT rows of WIDTH chars plus a trailing newline column;
-// both buffers are allocated once and overwritten in place every frame.
-const STRIDE = WIDTH + 1
-const CELLS = STRIDE * HEIGHT
-var screen = []
-var zbuf = []
-foreach (k in range(CELLS)) {
-    screen.append((k % STRIDE == WIDTH) ? NL : " ")
-    zbuf.append(0.0)
+// Cell size derived from the actual monitor resolution so the grid fills the
+// fullscreen window; leftover space from the integer division centers it.
+const SCREEN_W = win.get_screen_width()
+const SCREEN_H = win.get_screen_height()
+const CELL_W = SCREEN_W / COLS
+const CELL_H = SCREEN_H / ROWS
+const FONT_SIZE = CELL_H
+const OFFSET_X = (SCREEN_W - CELL_W * COLS) / 2
+const OFFSET_Y = (SCREEN_H - CELL_H * ROWS) / 2
+
+// zbuf/shade are float_arrays (flat, unboxed f64 buffers) rather than plain
+// lists -- cheaper per-cell get/set, and clear() resets the whole buffer in
+// one native call instead of a Lox-level loop. A cell is untouched by the
+// torus surface iff its zbuf entry stays 0.0.
+var zbuf = float_array(COLS, ROWS)
+var shade = float_array(COLS, ROWS)
+
+// j/i sample the same fixed angles every frame -- only A/B change -- so their
+// sin/cos are precomputed once here instead of recomputed ~28,000 times/frame.
+var cos_j = []
+var sin_j = []
+var h_j = []
+for (var j = 0.0; j < 6.28; j += 0.07) {
+    cos_j.append(_cos(j))
+    sin_j.append(_sin(j))
+    h_j.append(_cos(j) + 2)
 }
+const J_COUNT = len(cos_j)
+
+var sin_i = []
+var cos_i = []
+for (var i = 0.0; i < 6.28; i += 0.02) {
+    sin_i.append(_sin(i))
+    cos_i.append(_cos(i))
+}
+const I_COUNT = len(sin_i)
 
 func render_frame(A, B) {
     const e = _sin(A)
@@ -30,46 +56,55 @@ func render_frame(A, B) {
     const m = _cos(B)
     const n = _sin(B)
 
-    foreach (y in range(HEIGHT)) {
-        var row = y * STRIDE
-        foreach (x in range(WIDTH)) {
-            screen[row + x] = " "
-            zbuf[row + x] = 0.0
-        }
-    }
+    zbuf.clear(0.0)
 
     // j: angle around the tube cross-section; i: angle around the torus axis.
-    for (var j = 0.0; j < 6.28; j += 0.07) {
-        var d = _cos(j)
-        var f = _sin(j)
-        var h = d + 2
-        for (var i = 0.0; i < 6.28; i += 0.02) {
-            var c = _sin(i)
-            var l = _cos(i)
+    foreach (jx in range(J_COUNT)) {
+        var d = cos_j[jx]
+        var f = sin_j[jx]
+        var h = h_j[jx]
+        foreach (ix in range(I_COUNT)) {
+            var c = sin_i[ix]
+            var l = cos_i[ix]
             var D = 1 / (c * h * e + f * g + 5)
             var t = c * h * g - f * e
             var x = int(40 + 30 * D * (l * h * m - t * n))
             var y = int(12 + 15 * D * (l * h * n + t * m))
             var N = int(8 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n))
-            if (y > 0 and y < HEIGHT and x > 0 and x < WIDTH) {
-                var o = x + STRIDE * y
-                if (D > zbuf[o]) {
-                    zbuf[o] = D
-                    screen[o] = SHADES[N > 0 ? N : 0]
+            if (y > 0 and y < ROWS and x > 0 and x < COLS) {
+                if (D > zbuf.get(x, y)) {
+                    zbuf.set(x, y, D)
+                    var n_clamped = N
+                    if (n_clamped < 0) { n_clamped = 0 }
+                    if (n_clamped > MAX_SHADE) { n_clamped = MAX_SHADE }
+                    shade.set(x, y, n_clamped)
                 }
             }
         }
     }
 }
 
+func draw_frame() {
+    win.begin()
+    win.clear(vec4(0, 0, 0, 255))
+    foreach (row in range(ROWS)) {
+        foreach (col in range(COLS)) {
+            if (zbuf.get(col, row) > 0.0) {
+                var ch = SHADES[int(shade.get(col, row))]
+                win.text(ch, OFFSET_X + col * CELL_W, OFFSET_Y + row * CELL_H, FONT_SIZE, vec4(255, 255, 255, 255))
+            }
+        }
+    }
+    win.end()
+}
+
 var A = 0.0
 var B = 0.0
-print ESC & "[2J"
-while (true) {
+while (!win.should_close()) {
     render_frame(A, B)
-    print ESC & "[H" & "".join(screen)
+    draw_frame()
     // donut.c advances A/B by 0.00004/0.00002 once per output char (1761/frame).
     A += 0.07044
     B += 0.03522
-    sys.sleep(0.03)
 }
+win.close()
