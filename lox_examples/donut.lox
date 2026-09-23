@@ -13,12 +13,13 @@ var win = window(COLS * 10, ROWS * 20)
 win.init()
 win.toggle_fullscreen()
 
-// Cell size derived from the actual monitor resolution so the grid fills the
-// fullscreen window; leftover space from the integer division centers it.
+// Cell size derived from the actual monitor resolution, halved so the torus
+// renders at half size; OFFSET_X/Y center the resulting smaller grid within
+// the fullscreen window.
 const SCREEN_W = win.get_screen_width()
 const SCREEN_H = win.get_screen_height()
-const CELL_W = SCREEN_W / COLS
-const CELL_H = SCREEN_H / ROWS
+const CELL_W = SCREEN_W / COLS / 2
+const CELL_H = SCREEN_H / ROWS / 2
 const FONT_SIZE = CELL_H
 const OFFSET_X = (SCREEN_W - CELL_W * COLS) / 2
 const OFFSET_Y = (SCREEN_H - CELL_H * ROWS) / 2
