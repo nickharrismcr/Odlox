@@ -1,0 +1,269 @@
+// ASCII city flythrough: donut.lox's luminance-ramp shading applied to a
+// Doom/Comanche-style column raycaster over procedurally generated blocks.
+// Each column casts a ray through the cell grid front to back; every cell draws
+// its front wall and its top (roof, or street when empty), and a per-column
+// "filled up to" row stands in for a z-buffer. Esc closes the window.
+from gfx import *
+
+const COLS = 128   // 1280 / 128 and 720 / 45 divide exactly into 10x16 cells
+const ROWS = 45
+const SHADES = ".,-~:;=!*#$@"
+const MAX_SHADE = len(SHADES) - 1
+const BLANK = -1
+
+const FOV_HALF_TAN = 0.7
+const MAX_DIST = 60.0
+const BLOCK = 7   // street pitch: 2 street cells + 5 building cells
+const STREET = 2
+
+// Light direction (normalised) and the resulting Lambert terms per face.
+const LIGHT_LEN = _sqrt(0.55 * 0.55 + 0.35 * 0.35 + 0.76 * 0.76)
+const LX = -0.55 / LIGHT_LEN
+const LY = -0.35 / LIGHT_LEN
+const LZ = 0.76 / LIGHT_LEN
+const AMBIENT = 0.12
+const LAMBERT_UP = AMBIENT + (1 - AMBIENT) * LZ
+
+var win = window(1280, 720)
+win.init()
+win.set_target_fps(60)
+
+const SCREEN_W = win.get_screen_width()
+const SCREEN_H = win.get_screen_height()
+const CELL_W = SCREEN_W / COLS
+const CELL_H = SCREEN_H / ROWS
+const FONT_SIZE = CELL_H
+const PROJ_X = COLS * 0.5 / FOV_HALF_TAN
+const PROJ_Y = PROJ_X * CELL_W / CELL_H   // keeps blocks square despite tall cells
+const FG = vec4(190, 225, 205, 255)
+const BG = vec4(8, 10, 14, 255)
+
+// Shade index per cell (BLANK = nothing drawn), and one-char strings per index
+// so drawing doesn't build a new string per cell.
+var shade = float_array(COLS, ROWS)
+var shade_ch = []
+foreach (i in range(len(SHADES))) {
+    shade_ch.append(SHADES[i])
+}
+
+func floor_i(v) {
+    var i = int(v)
+    if (v < i) { i -= 1 }
+    return i
+}
+
+func frac(v) {
+    return v - floor_i(v)
+}
+
+func mod_floor(a, b) {
+    var r = a % b
+    if (r < 0) { r += b }
+    return r
+}
+
+// Shader-style sin hash: no bitwise ops needed.
+func hash01(x, y, seed) {
+    var s = _sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453
+    return s - floor_i(s)
+}
+
+func is_street(m) {
+    return mod_floor(m, BLOCK) < STREET
+}
+
+func cell_height(mx, my) {
+    if (is_street(mx) or is_street(my)) { return 0 }
+    var bx = floor_i(mx / float(BLOCK))
+    var by = floor_i(my / float(BLOCK))
+    var r = hash01(mx, my, 1)
+    var style = int(hash01(bx, by, 2) * 6)
+    if (style == 0) {               // park, with the odd kiosk
+        if (r < 0.1) { return 0.4 }
+        return 0
+    }
+    if (style <= 2) { return 0.5 + floor_i(r * 4) * 0.5 }        // low-rise
+    if (style <= 4) { return 2 + floor_i(r * 8) * 0.5 }          // mid-rise
+    return 4 + floor_i(r * r * 20) * 0.5                          // downtown
+}
+
+func fog(t) {
+    var f = 1 - t / MAX_DIST
+    if (f < 0) { return 0 }
+    if (f > 1) { return 1 }
+    return f * f
+}
+
+func to_shade(lum) {
+    if (lum <= 0.03) { return BLANK }
+    var i = int(lum * MAX_SHADE + 0.5)
+    if (i > MAX_SHADE) { return MAX_SHADE }
+    return i
+}
+
+func ground_lum(wx, wy) {
+    var mx = floor_i(wx)
+    var my = floor_i(wy)
+    var sx = is_street(mx)
+    var sy = is_street(my)
+    // Dashed centre line down the middle of each two-cell-wide street.
+    if (sx and mod_floor(mx, BLOCK) == 1 and frac(wx) < 0.08 and frac(wy * 0.5) < 0.5) { return 0.9 * LAMBERT_UP }
+    if (sy and mod_floor(my, BLOCK) == 1 and frac(wy) < 0.08 and frac(wx * 0.5) < 0.5) { return 0.9 * LAMBERT_UP }
+    if (!sx and !sy) { return 0.4 * LAMBERT_UP }
+    return 0.28 * LAMBERT_UP
+}
+
+// ndl: the wall normal dotted with the light. Windows are drawn only once they
+// span at least a character, otherwise they alias into noise.
+func wall_lum(ndl, u, z, t, mx, my) {
+    var lum = AMBIENT
+    if (ndl > 0) { lum += (1 - AMBIENT) * ndl }
+    if (t < PROJ_Y * 0.3 and z > 0.15) {
+        var fu = frac(u * 3)
+        var fz = frac(z * 2)
+        if (fu > 0.25 and fu < 0.75 and fz > 0.3 and fz < 0.75) {
+            if (hash01(floor_i(u * 3) + mx * 7 + my * 13, floor_i(z * 2), 3) < 0.2) {
+                return 0.95   // lit window, unaffected by the light direction
+            }
+            return lum * 0.35
+        }
+    }
+    return lum
+}
+
+func render_frame(pos_x, pos_y, cam_z, yaw, pitch) {
+    const pitch_rows = pitch * ROWS
+    const hz = ROWS * 0.5 + pitch_rows
+    const dir_x = _cos(yaw)
+    const dir_y = _sin(yaw)
+    const plane_x = -dir_y * FOV_HALF_TAN
+    const plane_y = dir_x * FOV_HALF_TAN
+
+    foreach (x in range(COLS)) {
+        var col_x = 2 * (x + 0.5) / COLS - 1
+        var rd_x = dir_x + plane_x * col_x
+        var rd_y = dir_y + plane_y * col_x
+        var filled = ROWS
+
+        // DDA setup (Wolfenstein-style).
+        var mx = floor_i(pos_x)
+        var my = floor_i(pos_y)
+        var ddx = 1000000000.0
+        var ddy = 1000000000.0
+        if (rd_x != 0) { ddx = 1 / rd_x }
+        if (ddx < 0) { ddx = -ddx }
+        if (rd_y != 0) { ddy = 1 / rd_y }
+        if (ddy < 0) { ddy = -ddy }
+        var step_x = 1
+        var sdx = (mx + 1 - pos_x) * ddx
+        if (rd_x < 0) {
+            step_x = -1
+            sdx = (pos_x - mx) * ddx
+        }
+        var step_y = 1
+        var sdy = (my + 1 - pos_y) * ddy
+        if (rd_y < 0) {
+            step_y = -1
+            sdy = (pos_y - my) * ddy
+        }
+        // Lambert terms for the two wall orientations this ray can hit.
+        var ndl_x = -step_x * LX
+        var ndl_y = -step_y * LY
+
+        var t_enter = 0.01
+        var side = -1   // face the current cell was entered through: 0 = x, 1 = y
+        while (filled > 0 and t_enter < MAX_DIST) {
+            var t_exit = sdx
+            if (sdy < t_exit) { t_exit = sdy }
+            var ch = cell_height(mx, my)
+            var f_enter = fog(t_enter)
+
+            var y_top_in = hz - (ch - cam_z) * PROJ_Y / t_enter
+            var y_top_out = hz - (ch - cam_z) * PROJ_Y / t_exit
+            var top = y_top_in
+            if (y_top_out < top) { top = y_top_out }
+            var first = floor_i(top + 0.5)
+            if (first < 0) { first = 0 }
+
+            for (var row = filled - 1; row >= first; row -= 1) {
+                var ry = row + 0.5
+                var lum = 0
+                if (ch > 0 and ry >= y_top_in and side >= 0) {
+                    // Front face at t_enter.
+                    var z = cam_z + (hz - ry) * t_enter / PROJ_Y
+                    if (side == 0) {
+                        lum = wall_lum(ndl_x, pos_y + t_enter * rd_y, z, t_enter, mx, my) * f_enter
+                    } else {
+                        lum = wall_lum(ndl_y, pos_x + t_enter * rd_x, z, t_enter, mx, my) * f_enter
+                    }
+                } else if (ry - hz > 0.01) {
+                    // Top surface of the cell: roof, or ground when ch == 0.
+                    var t = (cam_z - ch) * PROJ_Y / (ry - hz)
+                    var wx = pos_x + rd_x * t
+                    var wy = pos_y + rd_y * t
+                    if (ch > 0) {
+                        var fx = frac(wx)
+                        var fy = frac(wy)
+                        var edge = 0.8
+                        if (fx < 0.06 or fx > 0.94 or fy < 0.06 or fy > 0.94) { edge = 1.0 }
+                        lum = edge * LAMBERT_UP * fog(t)
+                    } else {
+                        lum = ground_lum(wx, wy) * fog(t)
+                    }
+                }
+                shade.set(x, row, to_shade(lum))
+            }
+            if (first < filled) { filled = first }
+
+            if (sdx < sdy) {
+                t_enter = sdx
+                sdx += ddx
+                mx += step_x
+                side = 0
+            } else {
+                t_enter = sdy
+                sdy += ddy
+                my += step_y
+                side = 1
+            }
+        }
+
+        // Sky: sparse stars fixed to the view direction ('.' and '*' from the ramp).
+        var sx = floor_i((yaw + _atan2(col_x * FOV_HALF_TAN, 1.0)) * PROJ_X)
+        for (var row = 0; row < filled; row += 1) {
+            var s = hash01(sx, row - int(pitch_rows), 4)
+            var idx = BLANK
+            if (s < 0.0015) {
+                idx = 8
+            } else if (s < 0.012) {
+                idx = 0
+            }
+            shade.set(x, row, idx)
+        }
+    }
+}
+
+func draw_frame() {
+    win.begin()
+    win.clear(BG)
+    foreach (row in range(ROWS)) {
+        foreach (col in range(COLS)) {
+            var idx = int(shade.get(col, row))
+            if (idx >= 0) {
+                win.text(shade_ch[idx], col * CELL_W, row * CELL_H, FONT_SIZE, FG)
+            }
+        }
+    }
+    win.end()
+}
+
+// Autopilot: cruise down the avenue at y = 1 (centre of a street), weaving
+// between canyon level and above the rooftops, looking around as it goes.
+while (!win.should_close()) {
+    var t = win.get_time()
+    var cam_z = 4.2 - 3.6 * _cos(t * 0.13)
+    var yaw = 0.45 * _sin(t * 0.21) + 0.2 * _sin(t * 0.07)
+    render_frame(t * 3.0, 1.0, cam_z, yaw, -(cam_z - 1.5) * 0.04)
+    draw_frame()
+}
+win.close()
