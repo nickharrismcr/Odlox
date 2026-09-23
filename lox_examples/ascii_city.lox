@@ -5,8 +5,8 @@
 // "filled up to" row stands in for a z-buffer. Esc closes the window.
 from gfx import *
 
-const COLS = 128
-const ROWS = 45
+const COLS = 288
+const ROWS = 102
 const SHADES = ".,-~:;=!*#$@"
 const MAX_SHADE = len(SHADES) - 1
 const BLANK = -1
