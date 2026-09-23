@@ -5,7 +5,7 @@
 // "filled up to" row stands in for a z-buffer. Esc closes the window.
 from gfx import *
 
-const COLS = 128   // 1280 / 128 and 720 / 45 divide exactly into 10x16 cells
+const COLS = 128
 const ROWS = 45
 const SHADES = ".,-~:;=!*#$@"
 const MAX_SHADE = len(SHADES) - 1
@@ -26,24 +26,48 @@ const LAMBERT_UP = AMBIENT + (1 - AMBIENT) * LZ
 
 var win = window(1280, 720)
 win.init()
+win.toggle_fullscreen()
 win.set_target_fps(60)
 
+// Fixed grid scaled to the monitor; float division so the grid fills the
+// screen instead of truncating to whole-pixel cells.
 const SCREEN_W = win.get_screen_width()
 const SCREEN_H = win.get_screen_height()
-const CELL_W = SCREEN_W / COLS
-const CELL_H = SCREEN_H / ROWS
-const FONT_SIZE = CELL_H
+const CELL_W = SCREEN_W / float(COLS)
+const CELL_H = SCREEN_H / float(ROWS)
+const FONT_SIZE = int(CELL_H)
 const PROJ_X = COLS * 0.5 / FOV_HALF_TAN
 const PROJ_Y = PROJ_X * CELL_W / CELL_H   // keeps blocks square despite tall cells
-const FG = vec4(190, 225, 205, 255)
 const BG = vec4(8, 10, 14, 255)
 
-// Shade index per cell (BLANK = nothing drawn), and one-char strings per index
-// so drawing doesn't build a new string per cell.
+// Hue per surface: ground, lit window, star, then the building palette.
+const HUE_GROUND = 0
+const HUE_WINDOW = 1
+const HUE_STAR = 2
+const HUE_BUILDING = 3
+const HUES = [
+    [190, 225, 205], [255, 210, 110], [230, 235, 255],
+    [230, 120, 90], [225, 190, 120], [100, 200, 200], [120, 160, 240],
+    [190, 140, 230], [150, 210, 120], [235, 130, 170]
+]
+const BUILDING_HUES = len(HUES) - HUE_BUILDING
+const LEVELS = len(SHADES)
+
+// Shade index (BLANK = nothing drawn) and hue per cell; one-char strings per
+// shade and one colour per (hue, shade), so drawing allocates nothing.
 var shade = float_array(COLS, ROWS)
+var hue = float_array(COLS, ROWS)
 var shade_ch = []
-foreach (i in range(len(SHADES))) {
+foreach (i in range(LEVELS)) {
     shade_ch.append(SHADES[i])
+}
+// Dimmer glyphs are drawn darker too, widening the ramp's brightness range.
+var colours = []
+foreach (h in range(len(HUES))) {
+    foreach (i in range(LEVELS)) {
+        var k = 0.55 + 0.45 * i / MAX_SHADE
+        colours.append(vec4(int(HUES[h][0] * k), int(HUES[h][1] * k), int(HUES[h][2] * k), 255))
+    }
 }
 
 func floor_i(v) {
@@ -113,8 +137,11 @@ func ground_lum(wx, wy) {
     return 0.28 * LAMBERT_UP
 }
 
-// ndl: the wall normal dotted with the light. Windows are drawn only once they
-// span at least a character, otherwise they alias into noise.
+// ndl: the wall normal dotted with the light. Returns LIT_WINDOW for a lit
+// window. Windows are drawn only once they span at least a character,
+// otherwise they alias into noise.
+const LIT_WINDOW = -1
+
 func wall_lum(ndl, u, z, t, mx, my) {
     var lum = AMBIENT
     if (ndl > 0) { lum += (1 - AMBIENT) * ndl }
@@ -123,7 +150,7 @@ func wall_lum(ndl, u, z, t, mx, my) {
         var fz = frac(z * 2)
         if (fu > 0.25 and fu < 0.75 and fz > 0.3 and fz < 0.75) {
             if (hash01(floor_i(u * 3) + mx * 7 + my * 13, floor_i(z * 2), 3) < 0.2) {
-                return 0.95   // lit window, unaffected by the light direction
+                return LIT_WINDOW
             }
             return lum * 0.35
         }
@@ -177,6 +204,13 @@ func render_frame(pos_x, pos_y, cam_z, yaw, pitch) {
             if (sdy < t_exit) { t_exit = sdy }
             var ch = cell_height(mx, my)
             var f_enter = fog(t_enter)
+            var cell_hue = HUE_GROUND
+            if (ch > 0) {
+                // One hue per city block, so adjacent cells don't stripe a wall.
+                var bx = floor_i(mx / float(BLOCK))
+                var by = floor_i(my / float(BLOCK))
+                cell_hue = HUE_BUILDING + int(hash01(bx, by, 5) * BUILDING_HUES)
+            }
 
             var y_top_in = hz - (ch - cam_z) * PROJ_Y / t_enter
             var y_top_out = hz - (ch - cam_z) * PROJ_Y / t_exit
@@ -188,14 +222,20 @@ func render_frame(pos_x, pos_y, cam_z, yaw, pitch) {
             for (var row = filled - 1; row >= first; row -= 1) {
                 var ry = row + 0.5
                 var lum = 0
+                var h = cell_hue
                 if (ch > 0 and ry >= y_top_in and side >= 0) {
                     // Front face at t_enter.
                     var z = cam_z + (hz - ry) * t_enter / PROJ_Y
                     if (side == 0) {
-                        lum = wall_lum(ndl_x, pos_y + t_enter * rd_y, z, t_enter, mx, my) * f_enter
+                        lum = wall_lum(ndl_x, pos_y + t_enter * rd_y, z, t_enter, mx, my)
                     } else {
-                        lum = wall_lum(ndl_y, pos_x + t_enter * rd_x, z, t_enter, mx, my) * f_enter
+                        lum = wall_lum(ndl_y, pos_x + t_enter * rd_x, z, t_enter, mx, my)
                     }
+                    if (lum == LIT_WINDOW) {
+                        lum = 0.95   // unaffected by the light direction
+                        h = HUE_WINDOW
+                    }
+                    lum *= f_enter
                 } else if (ry - hz > 0.01) {
                     // Top surface of the cell: roof, or ground when ch == 0.
                     var t = (cam_z - ch) * PROJ_Y / (ry - hz)
@@ -212,6 +252,7 @@ func render_frame(pos_x, pos_y, cam_z, yaw, pitch) {
                     }
                 }
                 shade.set(x, row, to_shade(lum))
+                hue.set(x, row, h)
             }
             if (first < filled) { filled = first }
 
@@ -239,6 +280,7 @@ func render_frame(pos_x, pos_y, cam_z, yaw, pitch) {
                 idx = 0
             }
             shade.set(x, row, idx)
+            hue.set(x, row, HUE_STAR)
         }
     }
 }
@@ -250,7 +292,8 @@ func draw_frame() {
         foreach (col in range(COLS)) {
             var idx = int(shade.get(col, row))
             if (idx >= 0) {
-                win.text(shade_ch[idx], col * CELL_W, row * CELL_H, FONT_SIZE, FG)
+                var c = colours[int(hue.get(col, row)) * LEVELS + idx]
+                win.text(shade_ch[idx], col * CELL_W, row * CELL_H, FONT_SIZE, c)
             }
         }
     }
