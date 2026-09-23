@@ -1,0 +1,576 @@
+// B-tree index over an in-memory "file" (a list of lines): each line of a text
+// file is indexed by a key of 1..MAX_KEY_PARTS parts (as in C-ISAM), each the
+// characters at [start, end), then printed in key order.
+//
+// Parts are space-padded to their width and concatenated, so parts compare in
+// order with none shifting when a line is too short. Keys may repeat. Index maps
+// key -> list of row numbers via a B-tree whose non-root nodes hold
+// MIN_KEYS..MAX_KEYS distinct keys; overfull nodes split around their median,
+// so all leaves stay at the same depth and the tree only grows at the root.
+//
+// Index.save(base) writes base.dat (the rows) and base.idx (the key parts and
+// every node); Index.open(base) loads the pair back without re-inserting.
+//
+// Run: bin/odlox.exe lox_examples/btree/btree.lox <file> [start end]...
+//      index <file>, save <file minus extension>.dat/.idx, print in key order;
+//      one start/end pair per key part (0-based, end exclusive; default 0 6 6 11)
+//      bin/odlox.exe lox_examples/btree/btree.lox --load <base>
+//      load only: open <base>.dat/<base>.idx and print it, no indexing
+
+import os
+import re
+import sys
+from logging import Logger
+
+const MIN_KEYS = 4
+const MAX_KEYS = 8
+const MAX_KEY_PARTS = 8
+const DEFAULT_KEY_PARTS = [(0, 6), (6, 11)]
+
+// Every tree action is logged at DEBUG; raise to Logger.INFO to silence it.
+// DEBUG gates each call, so messages aren't built when debug logging is off.
+var log = Logger("btree", Logger.INFO)
+const DEBUG = log.get_level() <= Logger.DEBUG
+
+// --- file I/O --------------------------------------------------------------
+
+// Lox literals have no escapes, hence %c.
+const NL = format("%c", 10)
+const BS = format("%c", 92)
+const TAB = format("%c", 9)
+const IDX_MAGIC = "BTREE-IDX 1"
+
+// os.write turns a backslash-n pair into a newline, so saved text stores every
+// backslash as backslash-b; read_text reverses it.
+func write_text(path, text) {
+    var fp = os.open(path, "w")
+    try {
+        os.write(fp, text.replace(BS, BS & "b"))
+    } finally {
+        os.close(fp)
+    }
+}
+
+func read_text(path) {
+    return os.read_all(path).replace(BS & "b", BS)
+}
+
+// Lines of text without newlines. re.split (native; the literal "\n" is the
+// regex for a newline) leaves an empty piece after a final newline, which is
+// dropped.
+func split_lines(text) {
+    var lines = re.split("\n", text)
+    if (lines[len(lines) - 1] == "") {
+        lines.remove(len(lines) - 1)
+    }
+    return lines
+}
+
+func read_lines(path) {
+    return split_lines(os.read_all(path))
+}
+
+// Lines that are neither blank nor start with a space or tab.
+func data_lines(lines) {
+    var kept = []
+    foreach (var line in lines) {
+        if (line != "" and line[0] != " " and line[0] != TAB) {
+            kept.append(line)
+        }
+    }
+    if (DEBUG) { log.debug("data_lines: kept ${len(kept)} of ${len(lines)}") }
+    return kept
+}
+
+// Space-separated ints -> list.
+func parse_ints(text) {
+    var ints = []
+    foreach (var field in re.split(" ", text)) {
+        if (field != "") {
+            ints.append(int(field))
+        }
+    }
+    return ints
+}
+
+// keys[i] is paired with rows[i], the list of rows (in insertion order) with
+// that key. Keys are distinct; an internal node has len(keys) + 1 children,
+// where children[i] holds keys < keys[i] and children[i + 1] keys > keys[i].
+class Node {
+    static next_id = 0
+
+    __init__(leaf) {
+        this.id = Node.next_id
+        Node.next_id = Node.next_id + 1
+        this.leaf = leaf
+        this.keys = []
+        this.rows = []
+        this.children = []
+    }
+
+    // Index of the first key >= key (len(keys) if all are smaller).
+    position(key) {
+        var i = 0
+        while (i < len(this.keys) and this.keys[i] < key) {
+            i = i + 1
+        }
+        return i
+    }
+
+    overfull() {
+        return len(this.keys) > MAX_KEYS
+    }
+
+    // Splits an overfull (MAX_KEYS + 1) node into this (left) and a new right
+    // sibling of MIN_KEYS keys each. Returns (median_key, median_rows, right)
+    // for the parent to absorb.
+    split() {
+        var mid = MIN_KEYS
+        var right = Node(this.leaf)
+        right.keys = this.keys[mid + 1:]
+        right.rows = this.rows[mid + 1:]
+        var median_key = this.keys[mid]
+        var median_rows = this.rows[mid]
+        this.keys = this.keys[:mid]
+        this.rows = this.rows[:mid]
+        if (!this.leaf) {
+            right.children = this.children[mid + 1:]
+            this.children = this.children[:mid + 1]
+        }
+        if (DEBUG) { log.debug("split node ${this.id}: median ${median_key}, left ${this.id} ${this.keys}, right ${right.id} ${right.keys}") }
+        return (median_key, median_rows, right)
+    }
+}
+
+class Index {
+    // key_parts: list of 1..MAX_KEY_PARTS (start, end) pairs, 0-based, end
+    // exclusive; a line's key is the concatenation of those slices.
+    __init__(file, key_parts = DEFAULT_KEY_PARTS) {
+        if (len(key_parts) < 1 or len(key_parts) > MAX_KEY_PARTS) {
+            raise Exception("key needs 1 to ${MAX_KEY_PARTS} parts, got ${len(key_parts)}")
+        }
+        foreach (var part in key_parts) {
+            if (part[0] < 0 or part[1] <= part[0]) {
+                raise Exception("invalid key part [${part[0]}, ${part[1]})")
+            }
+        }
+        this.file = file
+        this.key_parts = key_parts
+        this.root = Node(true)
+        this.count = 0     // distinct keys
+        this.entries = 0   // (key, row) pairs
+    }
+
+    // The key of a data line: each part's slice, space-padded to its width.
+    key_of(line) {
+        var key = ""
+        foreach (var part in this.key_parts) {
+            var field = line[part[0]:part[1]]
+            key = key & field & " " * (part[1] - part[0] - len(field))
+        }
+        return key
+    }
+
+    // Adds file[row] under its key.
+    add_row(row) {
+        this.add(this.key_of(this.file[row]), row)
+    }
+
+    // Adds every row of the file.
+    build() {
+        if (DEBUG) { log.debug("build: ${len(this.file)} rows, key parts ${this.key_parts}") }
+        for (var row = 0; row < len(this.file); row = row + 1) {
+            this.add_row(row)
+        }
+    }
+
+    // Adds key -> row. A key already present gets row appended to its list.
+    add(key, row) {
+        if (DEBUG) { log.debug("add ${key} -> row ${row}") }
+        var split = this.insert(this.root, key, row)
+        if (split != nil) {
+            var new_root = Node(false)
+            new_root.keys = [split[0]]
+            new_root.rows = [split[1]]
+            new_root.children = [this.root, split[2]]
+            this.root = new_root
+            if (DEBUG) { log.debug("new root ${new_root.id}: ${new_root.keys}, height now ${this.height()}") }
+        }
+    }
+
+    // Recursive insert; returns a split tuple if node overflowed, else nil.
+    insert(node, key, row) {
+        var i = node.position(key)
+        if (i < len(node.keys) and node.keys[i] == key) {
+            node.rows[i].append(row)
+            this.entries = this.entries + 1
+            if (DEBUG) { log.debug("key ${key} exists in node ${node.id} ${node.keys}, rows now ${node.rows[i]}") }
+            return nil
+        }
+        if (node.leaf) {
+            node.keys[i:i] = [key]
+            node.rows[i:i] = [[row]]
+            this.count = this.count + 1
+            this.entries = this.entries + 1
+            if (DEBUG) { log.debug("insert ${key} into leaf ${node.id} at position ${i}: ${node.keys}") }
+        } else {
+            if (DEBUG) { log.debug("descend from node ${node.id} ${node.keys} to child ${i} (node ${node.children[i].id})") }
+            var split = this.insert(node.children[i], key, row)
+            if (split != nil) {
+                node.keys[i:i] = [split[0]]
+                node.rows[i:i] = [split[1]]
+                node.children[i + 1:i + 1] = [split[2]]
+                if (DEBUG) { log.debug("absorb median ${split[0]} into node ${node.id} at position ${i}: ${node.keys}") }
+            }
+        }
+        if (node.overfull()) {
+            return node.split()
+        }
+        return nil
+    }
+
+    // Copy of the rows for key in insertion order, or nil if absent.
+    find_rows(key) {
+        if (DEBUG) { log.debug("find ${key}") }
+        var node = this.root
+        while (true) {
+            var i = node.position(key)
+            if (i < len(node.keys) and node.keys[i] == key) {
+                if (DEBUG) { log.debug("found ${key} in node ${node.id} at position ${i}: rows ${node.rows[i]}") }
+                return node.rows[i][:]
+            }
+            if (node.leaf) {
+                if (DEBUG) { log.debug("${key} not found (reached leaf ${node.id})") }
+                return nil
+            }
+            if (DEBUG) { log.debug("descend from node ${node.id} to child ${i} (node ${node.children[i].id})") }
+            node = node.children[i]
+        }
+    }
+
+    // The file lines for key in row order, or nil if absent.
+    get(key) {
+        if (DEBUG) { log.debug("get ${key}") }
+        var rows = this.find_rows(key)
+        if (rows == nil) {
+            return nil
+        }
+        var lines = []
+        foreach (var row in rows) {
+            lines.append(this.file[row])
+        }
+        return lines
+    }
+
+    // Iterator over the file's lines in key order (equal keys in row order): foreach (var line in index.in_order()).
+    in_order() {
+        if (DEBUG) { log.debug("in_order iterator created") }
+        return InOrderIter(this)
+    }
+
+    height() {
+        var h = 1
+        var node = this.root
+        while (!node.leaf) {
+            node = node.children[0]
+            h = h + 1
+        }
+        return h
+    }
+
+    // Raises if any B-tree invariant is broken: key-count bounds, key order
+    // (within nodes and against parent separators), child counts, and all
+    // leaves at the same depth.
+    validate() {
+        if (DEBUG) { log.debug("validate: ${this.count} keys, ${this.entries} entries, height ${this.height()}") }
+        this.check(this.root, nil, nil, 1, this.height())
+        if (DEBUG) { log.debug("validate: ok") }
+    }
+
+    check(node, lo, hi, depth, leaf_depth) {
+        var n = len(node.keys)
+        if (DEBUG) { log.debug("check node ${node.id}: depth ${depth}, ${n} keys, bounds (${lo}, ${hi})") }
+        if (node != this.root and (n < MIN_KEYS or n > MAX_KEYS)) {
+            raise Exception("node has ${n} keys")
+        }
+        for (var i = 0; i < n; i = i + 1) {
+            var k = node.keys[i]
+            if ((lo != nil and k <= lo) or (hi != nil and k >= hi) or (i > 0 and k <= node.keys[i - 1])) {
+                raise Exception("key ${k} out of order")
+            }
+            if (len(node.rows[i]) == 0) {
+                raise Exception("key ${k} has no rows")
+            }
+        }
+        if (node.leaf) {
+            if (depth != leaf_depth) {
+                raise Exception("leaf at depth ${depth}, expected ${leaf_depth}")
+            }
+            return
+        }
+        if (len(node.children) != n + 1) {
+            raise Exception("node with ${n} keys has ${len(node.children)} children")
+        }
+        for (var i = 0; i <= n; i = i + 1) {
+            var child_lo = lo
+            var child_hi = hi
+            if (i > 0) {
+                child_lo = node.keys[i - 1]
+            }
+            if (i < n) {
+                child_hi = node.keys[i]
+            }
+            this.check(node.children[i], child_lo, child_hi, depth + 1, leaf_depth)
+        }
+    }
+
+    // Writes base.dat (one row per line) and base.idx:
+    //   BTREE-IDX 1 / rows R / parts s e ... / key_len K / count C entries E /
+    //   nodes N, then per node in breadth-first order (root is node 0):
+    //   "N leaf nkeys", nkeys lines of "K <key, K bytes> <rows...>",
+    //   and for internal nodes "C <child node numbers...>".
+    save(base) {
+        if (DEBUG) { log.debug("save: ${base}.dat (${len(this.file)} rows), ${base}.idx") }
+        write_text(base & ".dat", NL.join(this.file) & NL)
+
+        var parts = []
+        foreach (var part in this.key_parts) {
+            parts.append(str(part[0]))
+            parts.append(str(part[1]))
+        }
+        var out = []
+        var order = [this.root]
+        var i = 0
+        while (i < len(order)) {
+            var node = order[i]
+            var leaf = 0
+            if (node.leaf) {
+                leaf = 1
+            }
+            out.append("N ${leaf} ${len(node.keys)}")
+            for (var k = 0; k < len(node.keys); k = k + 1) {
+                var rows = []
+                foreach (var row in node.rows[k]) {
+                    rows.append(str(row))
+                }
+                out.append("K " & node.keys[k] & " " & " ".join(rows))
+            }
+            if (!node.leaf) {
+                var ids = []
+                foreach (var child in node.children) {
+                    ids.append(str(len(order)))
+                    order.append(child)
+                }
+                out.append("C " & " ".join(ids))
+            }
+            i = i + 1
+        }
+        var header = [
+            IDX_MAGIC,
+            "rows ${len(this.file)}",
+            "parts " & " ".join(parts),
+            "key_len ${this.key_len()}",
+            "count ${this.count} entries ${this.entries}",
+            "nodes ${len(order)}"
+        ]
+        write_text(base & ".idx", NL.join(header & out) & NL)
+        if (DEBUG) { log.debug("save: ${len(order)} nodes written") }
+    }
+
+    // Opens a base.dat/base.idx pair written by save().
+    static open(base) {
+        if (DEBUG) { log.debug("open: ${base}.dat, ${base}.idx") }
+        var file = split_lines(read_text(base & ".dat"))
+        var lines = split_lines(read_text(base & ".idx"))
+        if (len(lines) < 6 or lines[0] != IDX_MAGIC) {
+            raise Exception("${base}.idx: not a btree index")
+        }
+        var n_rows = parse_ints(lines[1][5:])[0]
+        if (n_rows != len(file)) {
+            raise Exception("${base}.dat has ${len(file)} rows, index expects ${n_rows}")
+        }
+        var ints = parse_ints(lines[2][6:])
+        var parts = []
+        for (var p = 0; p < len(ints); p = p + 2) {
+            parts.append((ints[p], ints[p + 1]))
+        }
+        var index = Index(file, parts)
+        var key_len = parse_ints(lines[3][8:])[0]
+        if (key_len != index.key_len()) {
+            raise Exception("${base}.idx: key_len ${key_len} does not match its parts")
+        }
+        var counts = re.split(" ", lines[4])
+        index.count = int(counts[1])
+        index.entries = int(counts[3])
+
+        var nodes = []
+        var n_nodes = parse_ints(lines[5][6:])[0]
+        for (var n = 0; n < n_nodes; n = n + 1) {
+            nodes.append(Node(true))
+        }
+        var node = nil
+        var next = 0
+        for (var l = 6; l < len(lines); l = l + 1) {
+            var line = lines[l]
+            if (line[:2] == "N ") {
+                node = nodes[next]
+                next = next + 1
+                node.leaf = parse_ints(line[2:])[0] == 1
+            } else if (line[:2] == "K ") {
+                node.keys.append(line[2:2 + key_len])
+                node.rows.append(parse_ints(line[3 + key_len:]))
+            } else if (line[:2] == "C ") {
+                foreach (var id in parse_ints(line[2:])) {
+                    node.children.append(nodes[id])
+                }
+            } else {
+                raise Exception("${base}.idx line ${l + 1}: unrecognised record")
+            }
+        }
+        if (next != n_nodes) {
+            raise Exception("${base}.idx: ${next} of ${n_nodes} nodes present")
+        }
+        index.root = nodes[0]
+        if (DEBUG) { log.debug("open: ${n_nodes} nodes, ${index.count} keys, ${index.entries} entries") }
+        return index
+    }
+
+    // Width of every key: the sum of the part widths.
+    key_len() {
+        var n = 0
+        foreach (var part in this.key_parts) {
+            n = n + part[1] - part[0]
+        }
+        return n
+    }
+
+    dump() {
+        this.dump_node(this.root, "")
+    }
+
+    dump_node(node, indent) {
+        print indent & " ".join(node.keys)
+        if (!node.leaf) {
+            foreach (var child in node.children) {
+                this.dump_node(child, indent & "    ")
+            }
+        }
+    }
+}
+
+// In-order traversal with an explicit stack of (node, next key position)
+// frames, so it's lazy and uses O(height) memory. pending holds the current
+// key's rows; pending_i is the next one to return.
+class InOrderIter {
+    __init__(index) {
+        this.index = index
+        this.nodes = []
+        this.positions = []
+        this.pending = []
+        this.pending_i = 0
+    }
+
+    __iter__() {
+        if (DEBUG) { log.debug("in_order: start at root ${this.index.root.id}") }
+        this.nodes.clear()
+        this.positions.clear()
+        this.pending = []
+        this.pending_i = 0
+        this.push_left(this.index.root)
+        return this
+    }
+
+    // Pushes node and its leftmost descendants down to a leaf.
+    push_left(node) {
+        while (true) {
+            this.nodes.append(node)
+            this.positions.append(0)
+            if (DEBUG) { log.debug("in_order: push node ${node.id}, stack depth ${len(this.nodes)}") }
+            if (node.leaf) {
+                return
+            }
+            node = node.children[0]
+        }
+    }
+
+    __next__() {
+        if (this.pending_i < len(this.pending)) {
+            var row = this.pending[this.pending_i]
+            this.pending_i = this.pending_i + 1
+            if (DEBUG) { log.debug("in_order: yield duplicate row ${row}") }
+            return this.index.file[row]
+        }
+        while (len(this.nodes) > 0) {
+            var top = len(this.nodes) - 1
+            var node = this.nodes[top]
+            var i = this.positions[top]
+            if (i < len(node.keys)) {
+                this.positions[top] = i + 1
+                if (!node.leaf) {
+                    this.push_left(node.children[i + 1])
+                }
+                this.pending = node.rows[i]
+                this.pending_i = 1
+                if (DEBUG) { log.debug("in_order: yield ${node.keys[i]} (rows ${node.rows[i]}) from node ${node.id}") }
+                return this.index.file[this.pending[0]]
+            }
+            if (DEBUG) { log.debug("in_order: pop node ${node.id}") }
+            this.nodes.remove(top)
+            this.positions.remove(top)
+        }
+        if (DEBUG) { log.debug("in_order: done") }
+        return nil
+    }
+}
+
+// --- demo ------------------------------------------------------------------
+
+const USAGE = "usage: btree.lox <file> [start end]... | btree.lox --load <base>"
+
+// sys.args()[0] is this script's path; the arguments follow it.
+var argv = sys.args()
+if (len(argv) < 2) {
+    raise Exception(USAGE)
+}
+var load_only = argv[1] == "--load"
+var base = nil
+if (load_only) {
+    if (len(argv) != 3) {
+        raise Exception(USAGE)
+    }
+    base = argv[2]
+    if (!os.exists(base & ".dat") or !os.exists(base & ".idx")) {
+        raise Exception("--load: ${base}.dat/.idx not found")
+    }
+} else {
+    // Build the index from the text file and save it as a .dat/.idx pair
+    // beside it; the output below comes from the reopened copy.
+    var path = argv[1]
+    if (len(argv) % 2 != 0 or "--load" in argv) {
+        raise Exception(USAGE)
+    }
+    var key_parts = DEFAULT_KEY_PARTS
+    if (len(argv) > 2) {
+        key_parts = []
+        for (var i = 2; i < len(argv); i = i + 2) {
+            key_parts.append((int(argv[i]), int(argv[i + 1])))
+        }
+    }
+    if (!os.isfile(path)) {
+        raise Exception("${path}: file not found")
+    }
+    base = os.splitext(path)[0]
+    if (path == base & ".dat" or path == base & ".idx") {
+        raise Exception("${path}: input would be overwritten by the saved index")
+    }
+    var index = Index(data_lines(read_lines(path)), key_parts)
+    index.build()
+    index.validate()
+    index.save(base)
+}
+var db = Index.open(base)
+db.validate()
+
+foreach (var line in db.in_order()) {
+    print line
+}
