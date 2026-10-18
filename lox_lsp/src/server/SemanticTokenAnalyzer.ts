@@ -357,7 +357,7 @@ export class SemanticTokenAnalyzer implements Visitor<void> {
             this.tokens.push({
                 start: name.start,
                 end: name.end,
-                type: "variable",
+                type: importfromstmt.isTypeOnly ? "class" : "variable",
             });
         }
     }

@@ -65,6 +65,26 @@ describe("Parser", () => {
         assert.deepEqual(pretty, ["(+ 1 2)", "(* 3 4)"]);
     });
 
+    it("should parse type-only from-imports, with `type` contextual", () => {
+        const parser = new Parser(new Scanner("from game import type Game, Score; from m import type;").scanTokens(), {
+            error: (token: TokenPosition, message: string) => {
+                assert.fail(`[line ${token.line}] Error: ${message}`);
+            },
+            warn: (token: TokenPosition, message: string) => {
+                assert.fail(`[line ${token.line}] Warning: ${message}`);
+            },
+            runtimeError: (error: RuntimeError) => {
+                assert.fail(error.message);
+            },
+        });
+        const program = parser.parse();
+
+        assert.ok(program !== null);
+        const pretty = program.map((stmt) => stmt.visit(new PrettyPrinter()));
+
+        assert.deepEqual(pretty, ["(from game import type Game Score)", "(from m import type)"]);
+    });
+
     it("should parse variable declarations", () => {
         const parser = new Parser(new Scanner("var a = 1; print a;").scanTokens(), {
             error: (token: TokenPosition, message: string) => {

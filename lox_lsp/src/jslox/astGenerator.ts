@@ -50,7 +50,7 @@ const grammar: Record<string, Array<string>> = {
     "TryStmt Stmt": ["Stmt block", "Array<ExceptClause> clauses", "Stmt|null finallyBlock"],
     "RaiseStmt Stmt": ["Token keyword", "Expr expression"],
     "ImportStmt Stmt": ["Array<ImportName> names"],
-    "ImportFromStmt Stmt": ["Token module", "Array<Token> names", "boolean isStar"],
+    "ImportFromStmt Stmt": ["Token module", "Array<Token> names", "boolean isStar", "boolean isTypeOnly"],
     "BreakpointStmt Stmt": ["Token keyword"],
     "UnpackStmt Stmt": ["Array<Token> names", "Expr value"],
 };

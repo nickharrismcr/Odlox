@@ -439,7 +439,12 @@ export class ImportStmt implements Stmt {
 }
 
 export class ImportFromStmt implements Stmt {
-    constructor(readonly module: Token, readonly names: Array<Token>, readonly isStar: boolean) {}
+    constructor(
+        readonly module: Token,
+        readonly names: Array<Token>,
+        readonly isStar: boolean,
+        readonly isTypeOnly: boolean
+    ) {}
 
     visit<R>(visitor: Visitor<R>): R {
         return visitor.visitImportFromStmt(this);

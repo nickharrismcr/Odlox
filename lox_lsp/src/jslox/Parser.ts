@@ -437,14 +437,25 @@ export class Parser {
         return new ImportStmt(names);
     }
 
-    // from name import a, b, c   |   from name import *
+    // from name import a, b, c   |   from name import *   |   from name import type A, B
     private importFromStatement(): Stmt {
         const module = this.consume("IDENTIFIER", "Expect module name.");
         this.consume("IMPORT", "Expect 'import' after module name.");
 
-        if (this.match("STAR")) {
+        // `type` is contextual: special only when another name follows.
+        let isTypeOnly = false;
+        if (
+            this.current?.type === "IDENTIFIER" &&
+            this.current.lexeme === "type" &&
+            this.peekAhead(1).type === "IDENTIFIER"
+        ) {
+            this.advance();
+            isTypeOnly = true;
+        }
+
+        if (!isTypeOnly && this.match("STAR")) {
             this.consumeTerminator("Expect terminator after import statement.");
-            return new ImportFromStmt(module, [], true);
+            return new ImportFromStmt(module, [], true, false);
         }
 
         const names: Array<Token> = [this.consume("IDENTIFIER", "Expect imported name.")];
@@ -452,7 +463,7 @@ export class Parser {
             names.push(this.consume("IDENTIFIER", "Expect imported name."));
         }
         this.consumeTerminator("Expect terminator after import statement.");
-        return new ImportFromStmt(module, names, false);
+        return new ImportFromStmt(module, names, false, isTypeOnly);
     }
 
     private breakpointStatement(): Stmt {

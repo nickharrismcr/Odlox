@@ -257,7 +257,8 @@ export class PrettyPrinter implements Visitor<string> {
 
     visitImportFromStmt(importfromstmt: ImportFromStmt): string {
         const names = importfromstmt.isStar ? "*" : importfromstmt.names.map((n) => n.lexeme).join(" ");
-        return `(from ${importfromstmt.module.lexeme} import ${names})`;
+        const typeOnly = importfromstmt.isTypeOnly ? "type " : "";
+        return `(from ${importfromstmt.module.lexeme} import ${typeOnly}${names})`;
     }
 
     visitBreakpointStmt(breakpointstmt: BreakpointStmt): string {
