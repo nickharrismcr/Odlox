@@ -45,7 +45,7 @@ Type_Kind :: enum {
 	Texture,
 	Render_Texture,
 	Shader,
-	Camera3D, // not Camera -- lox_examples/defender has its own Lox `class Camera` (a 2D scroll camera, world/camera.lox); primitive_kind is consulted before tc.classes in type_from_expr, so a same-named primitive would permanently shadow it
+	Camera3D, // not Camera -- lox_examples/defender has its own Lox `class Camera` (world/camera.lox); classes now take precedence over native object names anyway (native_object_kind)
 	Batch,
 	Batch2D,
 	Batch_Instanced,
@@ -93,8 +93,9 @@ string_type :: proc() -> ^Type {return new_clone(Type{kind = .String})}
 // still-unrecognized names (a typo, a name that was never a class)
 // synthesize Dynamic.
 
+// Core value type names are reserved; a class can't shadow them.
 @(private = "file")
-primitive_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
+core_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
 	switch name {
 	case "int":
 		return .Int, true
@@ -110,6 +111,15 @@ primitive_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
 		return .Vec3, true
 	case "vec4":
 		return .Vec4, true
+	}
+	return .Dynamic, false
+}
+
+// Native object type names apply only when no class of that name is
+// declared or imported (e.g. a user `class Sound` wins over native Sound).
+@(private = "file")
+native_object_kind :: proc(name: string) -> (kind: Type_Kind, ok: bool) {
+	switch name {
 	case "Window":
 		return .Window, true
 	case "Image":
@@ -157,11 +167,14 @@ type_from_expr :: proc(tc: ^Type_Checker, te: ^Type_Expr) -> ^Type {
 	switch te.kind {
 	case .Named:
 		name := lexeme(te.name)
-		if kind, ok := primitive_kind(name); ok {
+		if kind, ok := core_kind(name); ok {
 			return new_clone(Type{kind = kind})
 		}
 		if ct, ok := tc.classes[name]; ok {
 			return new_clone(Type{kind = .Class, class_type = ct})
+		}
+		if kind, ok := native_object_kind(name); ok {
+			return new_clone(Type{kind = kind})
 		}
 		// A from-imported class is registered into tc.classes directly, up
 		// front, by typecheck_register_imported_classes (typecheck_stmt.
@@ -230,8 +243,9 @@ types_compatible :: proc(expected, actual: ^Type) -> bool {
 		// unrelated classes with identically-shaped methods are still
 		// incompatible (nominal, not structural) -- the design doc's own
 		// "cost of nominal types" example, verified as intentional.
+		// A forward placeholder's ancestry is unknown, so it can't be ruled out.
 		for c := actual.class_type; c != nil; c = c.superclass {
-			if c == expected.class_type {
+			if same_class(c, expected.class_type) || c.forward {
 				return true
 			}
 		}
@@ -246,6 +260,19 @@ types_compatible :: proc(expected, actual: ^Type) -> bool {
 // literal element unification), where the question is "are these actually
 // the same type", not "does a value of one type fit where the other is
 // expected".
+// same_class: each compilation builds its own Class_Type objects, so the
+// same declared class can reach one check through two pointers (e.g. a
+// module's own class vs. that class in a cached signature).
+same_class :: proc(a, b: ^Class_Type) -> bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.origin != "" && a.origin == b.origin && a.name == b.name
+}
+
 types_equal :: proc(a, b: ^Type) -> bool {
 	if a == nil || b == nil {
 		return a == b
@@ -273,7 +300,7 @@ types_equal :: proc(a, b: ^Type) -> bool {
 		// proc's only caller) asks "are these provably the exact same
 		// type", not "does a value of one fit where the other is
 		// expected", so no subclass-substitutability allowance.
-		return a.class_type == b.class_type
+		return same_class(a.class_type, b.class_type)
 	}
 	return true
 }

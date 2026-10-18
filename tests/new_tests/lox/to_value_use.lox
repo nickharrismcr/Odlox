@@ -1,0 +1,3 @@
+from to_game import type Game
+
+print Game()

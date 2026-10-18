@@ -1,0 +1,9 @@
+// Fixture for test_type_only_imports.py (see to_game.lox).
+from to_game import type Game
+
+func points(g: Game) -> int {
+    if (g == nil) {
+        return 0
+    }
+    return 1
+}

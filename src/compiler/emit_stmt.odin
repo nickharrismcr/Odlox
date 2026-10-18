@@ -573,6 +573,9 @@ emit_import :: proc(em: ^Emitter, v: ^Stmt_Import) {
 
 @(private = "file")
 emit_from_import :: proc(em: ^Emitter, v: ^Stmt_From_Import) {
+	if v.type_only {
+		return // checker-only: the module is never loaded by this statement
+	}
 	line := v.token.line
 	module_const := core.chunk_add_constant(current_chunk(em), core.make_interned_string_value(lexeme(v.module)))
 

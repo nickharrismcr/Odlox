@@ -500,6 +500,7 @@ Stmt_From_Import :: struct {
 	using base: Node_Base,
 	module:     Token,
 	wildcard:   bool, // `from mod import *`
+	type_only:  bool, // `from mod import type A, B` -- checker-only, emits nothing
 	names:      []From_Import_Name, // meaningful only if !wildcard
 }
 

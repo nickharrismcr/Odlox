@@ -102,7 +102,9 @@ typecheck_stmt :: proc(tc: ^Type_Checker, s: Stmt) {
 			record_inferred_type(tc, false, item.declared_slot, t)
 		}
 	case ^Stmt_From_Import:
-		if !v.wildcard {
+		if v.type_only {
+			// no runtime binding -- classes were registered in pass 0
+		} else if !v.wildcard {
 			typecheck_from_import(tc, v)
 		} else if _, found := resolve_module_signature(tc, lexeme(v.module)); !found {
 			// A native/builtin module (no .lox source, same condition
@@ -150,6 +152,12 @@ typecheck_register_imported_classes :: proc(tc: ^Type_Checker, stmts: []Stmt) {
 			name := lexeme(n.name)
 			if ct, has_class := sig.classes[name]; has_class {
 				tc.classes[name] = ct
+			} else if v.type_only && !sig.partial {
+				if _, exported := sig.vars[name]; exported {
+					diagnose(tc, n.name, fmt.tprintf("'%s' in module '%s' is not a class", name, lexeme(v.module)))
+				} else {
+					diagnose(tc, n.name, fmt.tprintf("module '%s' has no export '%s'", lexeme(v.module), name))
+				}
 			}
 		}
 	}
@@ -190,7 +198,7 @@ typecheck_from_import :: proc(tc: ^Type_Checker, v: ^Stmt_From_Import) {
 		if found {
 			if vt, ok := sig.vars[name]; ok {
 				t = vt
-			} else {
+			} else if !sig.partial {
 				diagnose(tc, n.name, fmt.tprintf("module '%s' has no export '%s'", module_name, name))
 			}
 		}

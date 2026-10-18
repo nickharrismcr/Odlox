@@ -581,7 +581,15 @@ from_import_statement :: proc(p: ^Parser) -> Stmt {
 	module := p.previous
 	consume(p, .Import, "Expect 'import' after module name.")
 
-	if match(p, .Star) {
+	// `type` is contextual: special only when another name follows, so
+	// `from m import type` still imports a name called `type`.
+	type_only := false
+	if check(p, .Identifier) && lexeme(p.current) == "type" && peek_token(p.scn).type == .Identifier {
+		advance(p)
+		type_only = true
+	}
+
+	if !type_only && match(p, .Star) {
 		// Not consume_eol -- see from_import_statement's own comment on
 		// why the scanner's Eol-suppression heuristic means there is
 		// structurally no Eol token here to require.
@@ -600,5 +608,5 @@ from_import_statement :: proc(p: ^Parser) -> Stmt {
 		error(p, "Too many imported names.")
 	}
 	consume_eol(p, "Expect newline after import.")
-	return new_clone(Stmt_From_Import{base = Node_Base{token = tok}, module = module, names = names[:]})
+	return new_clone(Stmt_From_Import{base = Node_Base{token = tok}, module = module, names = names[:], type_only = type_only})
 }

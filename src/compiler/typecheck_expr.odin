@@ -725,7 +725,9 @@ typecheck_module_property :: proc(tc: ^Type_Checker, v: ^Expr_Property, sig: ^Mo
 	switch v.kind {
 	case .Get:
 		if !found {
-			diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			if !sig.partial {
+				diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			}
 			return dynamic_type()
 		}
 		return member_type
@@ -736,7 +738,9 @@ typecheck_module_property :: proc(tc: ^Type_Checker, v: ^Expr_Property, sig: ^Mo
 		return compound_result_type(tc, v.token, v.compound_op, member_type, value_type)
 	case .Invoke:
 		if !found {
-			diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			if !sig.partial {
+				diagnose(tc, v.name, fmt.tprintf("module '%s' has no export '%s'", sig.name, name))
+			}
 			return dynamic_type()
 		}
 		if member_type.kind == .Class {

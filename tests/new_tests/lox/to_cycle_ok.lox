@@ -1,0 +1,6 @@
+import to_game
+
+var g = to_game.Game()
+g.tick()
+g.tick()
+print g.score

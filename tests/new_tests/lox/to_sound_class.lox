@@ -1,0 +1,10 @@
+class Sound {}
+
+func label(s: Sound) -> string {
+    if (s == nil) {
+        return "none"
+    }
+    return "sound"
+}
+print label(Sound())
+print label(3)

@@ -57,7 +57,7 @@ Compile :: proc(
 		return nil, false
 	}
 
-	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
+	diagnostics, _ := typecheck_program(stmts[:], resolve_module, resolve_module_ctx, canonical_source_path(filename))
 	print_type_diagnostics(diagnostics, filename) // always printed, warnings by default
 	if StrictTypes && len(diagnostics) > 0 {
 		return nil, false

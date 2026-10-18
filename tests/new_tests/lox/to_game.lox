@@ -1,0 +1,13 @@
+// Fixture for test_type_only_imports.py: to_game imports to_actor, and
+// to_actor type-imports Game back from here -- a cycle a plain import
+// can't express.
+import to_actor
+
+class Game {
+    __init__() {
+        this.score = 0
+    }
+    tick() {
+        this.score = this.score + to_actor.points(this)
+    }
+}

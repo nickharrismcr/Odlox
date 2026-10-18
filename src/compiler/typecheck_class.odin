@@ -10,6 +10,8 @@ package compiler
 // whether, for a forward superclass reference) that class is declared.
 Class_Type :: struct {
 	name:              string,
+	origin:            string, // canonical path of the declaring source file ("" for REPL/tests) -- with name, the class's identity across separate compilations (see same_class, types.odin)
+	forward:           bool, // a placeholder for a class in a module whose signature is still being computed (an import cycle) -- members and ancestry unknown, see make_forward_signature
 	fields:            map[string]^Type, // open: a name never found here is Dynamic with no diagnostic (Instance_Object.fields genuinely accepts arbitrary runtime writes) -- see harvest_init_field_types for how a name gets in here at all
 	methods:           map[string]^Type, // closed *unless* methods_uncertain (see below): a miss on Expr_Property's .Invoke (or a plain .Get naming a method) *is* a diagnostic -- flattened to include every inherited method too (see flatten_class), so no superclass walk is ever needed at a call site
 	static_methods:    map[string]^Type, // NOT flattened -- do_inherit (vm/properties.odin) only ever copies .methods at runtime, never statics
@@ -52,6 +54,7 @@ typecheck_collect_class_signatures :: proc(tc: ^Type_Checker, stmts: []Stmt) {
 		tc.classes[name] = new_clone(
 			Class_Type{
 				name = name,
+				origin = tc.origin,
 				fields = make(map[string]^Type),
 				methods = make(map[string]^Type),
 				static_methods = make(map[string]^Type),

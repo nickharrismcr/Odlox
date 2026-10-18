@@ -1,0 +1,6 @@
+from to_noisy import type Thing
+
+func f(t: Thing) {
+    print t
+}
+print "done"

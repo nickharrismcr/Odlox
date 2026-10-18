@@ -1,5 +1,8 @@
 package compiler
 
+import "core:path/filepath"
+import "core:strings"
+
 // Cross-module type checking: what a module statically exports, and how
 // a Type_Checker asks for another module's signature. The single-file
 // checker (typecheck.odin/typecheck_expr.odin/typecheck_stmt.odin/
@@ -21,6 +24,7 @@ Module_Signature :: struct {
 	name:    string,
 	vars:    map[string]^Type,
 	classes: map[string]^Class_Type,
+	partial: bool, // a forward signature (see make_forward_signature): class names only, so a missing name is not diagnosed
 }
 
 // Resolve_Module_Proc is how a Type_Checker reaches another module's
@@ -111,6 +115,78 @@ Typecheck_Module_Signature :: proc(
 		return nil, nil, false
 	}
 
-	diags, tc := typecheck_program(stmts[:], resolve_module, resolve_module_ctx)
+	diags, tc := typecheck_program(stmts[:], resolve_module, resolve_module_ctx, canonical_source_path(filename))
 	return build_module_signature(name, globals, tc), diags, true
+}
+
+// canonical_source_path makes one file's path comparable however it was
+// spelled (relative entry script vs. a resolver-joined module path):
+// absolute, cleaned, forward slashes, and case-folded on Windows.
+canonical_source_path :: proc(filename: string) -> string {
+	if filename == "" || filename == "__repl__" {
+		return ""
+	}
+	abs, err := filepath.abs(filename, context.temp_allocator)
+	if err != nil {
+		abs = filename
+	}
+	cleaned, _ := filepath.clean(abs, context.temp_allocator)
+	slashed, _ := strings.replace_all(cleaned, "\\", "/", context.temp_allocator)
+	when ODIN_OS == .Windows {
+		return strings.to_lower(slashed)
+	} else {
+		return strings.clone(slashed)
+	}
+}
+
+// Forward_Signature builds the signature handed back for a module whose own
+// signature is still being computed (an import cycle reached it again):
+// parse only, one placeholder Class_Type per top-level class. Placeholders
+// carry the real origin, so same_class matches them to the real classes.
+Forward_Signature :: proc(name, source, filename: string) -> (^Module_Signature, bool) {
+	scn := tokenize(source)
+	defer destroy_scanner(&scn)
+
+	p := Parser{scn = &scn, filename = filename}
+	advance(&p)
+
+	stmts: [dynamic]Stmt
+	for !match(&p, .Eof) {
+		s := declaration(&p)
+		if s != nil {
+			append(&stmts, s)
+		}
+	}
+	if p.had_error {
+		return nil, false
+	}
+
+	sig := new(Module_Signature)
+	sig.name = name
+	sig.partial = true
+	sig.vars = make(map[string]^Type)
+	sig.classes = make(map[string]^Class_Type)
+	origin := canonical_source_path(filename)
+	for s in stmts {
+		decl, is_class := s.(^Stmt_Class_Decl)
+		if !is_class {
+			continue
+		}
+		class_name := lexeme(decl.name)
+		ct := new_clone(
+			Class_Type {
+				name = class_name,
+				origin = origin,
+				forward = true,
+				methods_uncertain = true,
+				fields = make(map[string]^Type),
+				methods = make(map[string]^Type),
+				static_methods = make(map[string]^Type),
+				overrides = make(map[string]^Type),
+			},
+		)
+		sig.classes[class_name] = ct
+		sig.vars[class_name] = new_clone(Type{kind = .Class, class_type = ct})
+	}
+	return sig, true
 }

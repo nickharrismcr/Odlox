@@ -64,12 +64,6 @@ resolve_module_for_typecheck :: proc(ctx: rawptr, name: string) -> (^compiler.Mo
 		// through.
 		return nil, false
 	}
-	if r.in_progress[name] {
-		return nil, false
-	}
-	r.in_progress[name] = true
-	defer delete_key(&r.in_progress, name)
-
 	filename := strings.concatenate({name, ".lox"})
 	defer delete(filename)
 
@@ -84,6 +78,15 @@ resolve_module_for_typecheck :: proc(ctx: rawptr, name: string) -> (^compiler.Mo
 		return nil, false
 	}
 	defer delete(data)
+
+	// A cycle: this module's signature is already being computed further up
+	// the stack. Hand back class placeholders (not cached) so a type-only
+	// import of one of its classes still resolves.
+	if r.in_progress[name] {
+		return compiler.Forward_Signature(name, string(data), path)
+	}
+	r.in_progress[name] = true
+	defer delete_key(&r.in_progress, name)
 
 	// Diagnostics discipline: this lookup is memoized and shared across
 	// every importer of this module, so its own warnings must never be

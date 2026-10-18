@@ -224,6 +224,8 @@ Resolver :: struct {
 	globals_declared:     map[string]bool,
 	global_count:         int,
 	global_names_by_slot: [dynamic]string,
+
+	type_only_names: map[string]bool, // names bound only by `from m import type ...` -- no runtime binding exists
 }
 
 @(private = "file")
@@ -490,7 +492,11 @@ resolve_variable_rs :: proc(rs: ^Resolver, name: Token) -> Var_Ref {
 	if upvalue := resolve_upvalue_rs(rs, rs.scope, name); upvalue != -1 {
 		return Var_Ref{kind = .Upvalue, slot = upvalue}
 	}
-	return Var_Ref{kind = .Global, slot = global_slot_rs(rs, lexeme(name))}
+	global_name := lexeme(name)
+	if rs.type_only_names[global_name] && !rs.globals_declared[global_name] {
+		resolve_error(rs, name, fmt.tprintf("'%s' is imported for type annotations only.", global_name))
+	}
+	return Var_Ref{kind = .Global, slot = global_slot_rs(rs, global_name)}
 }
 
 // -----------------------------------------------------------------------
@@ -1017,6 +1023,12 @@ resolve_import :: proc(rs: ^Resolver, v: ^Stmt_Import) {
 @(private = "file")
 resolve_from_import :: proc(rs: ^Resolver, v: ^Stmt_From_Import) {
 	if v.wildcard {
+		return
+	}
+	if v.type_only {
+		for n in v.names {
+			rs.type_only_names[lexeme(n.name)] = true
+		}
 		return
 	}
 	for &n in v.names {

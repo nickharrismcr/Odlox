@@ -1,0 +1,4 @@
+// Fixture for test_type_only_imports.py: prints when loaded.
+print "to_noisy loaded"
+
+class Thing {}

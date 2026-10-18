@@ -1,0 +1,3 @@
+import to_actor
+
+print to_actor.points(5)

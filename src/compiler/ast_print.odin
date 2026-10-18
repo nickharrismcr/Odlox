@@ -339,6 +339,9 @@ print_stmt :: proc(sb: ^strings.Builder, s: Stmt, indent: int) {
 		strings.write_string(sb, "(from-import ")
 		strings.write_string(sb, lexeme(v.module))
 		strings.write_string(sb, " ")
+		if v.type_only {
+			strings.write_string(sb, "type ")
+		}
 		if v.wildcard {
 			strings.write_string(sb, "*")
 		} else {

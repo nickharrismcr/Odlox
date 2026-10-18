@@ -1,6 +1,7 @@
 #+feature dynamic-literals
 package compiler
 
+import "core:strings"
 import "core:testing"
 
 // Direct Type_Checker tests: warnings-only diagnostics against known-good/
@@ -1132,4 +1133,114 @@ test_typecheck_string_method_accepts_correct_types :: proc(t: ^testing.T) {
 test_typecheck_native_list_return_type_is_indexable_without_crashing :: proc(t: ^testing.T) {
 	_, diags := parse_resolve_typecheck(t, "import sys\nprint sys.args()[0]")
 	testing.expectf(t, len(diags) == 0, "expected zero diagnostics, got %v", diags)
+}
+
+// -----------------------------------------------------------------------
+// Type-only imports (`from m import type A`), cross-compilation class
+// identity, forward placeholders, and class-vs-native type-name precedence.
+
+@(private = "file")
+any_diag_contains :: proc(diags: []Type_Diagnostic, text: string) -> bool {
+	for d in diags {
+		if strings.contains(d.message, text) {
+			return true
+		}
+	}
+	return false
+}
+
+@(private = "file")
+parse_only :: proc(t: ^testing.T, source: string) -> []Stmt {
+	scn := tokenize(source)
+	p := Parser{scn = &scn, filename = "test.lox"}
+	advance(&p)
+	list: [dynamic]Stmt
+	for !match(&p, .Eof) {
+		s := declaration(&p)
+		if s != nil {
+			append(&list, s)
+		}
+	}
+	testing.expectf(t, !p.had_error, "expected %q to parse without error", source)
+	return list[:]
+}
+
+@(test)
+test_parse_type_only_from_import :: proc(t: ^testing.T) {
+	stmts := parse_only(t, "from m import type A, B\n")
+	v, ok := stmts[0].(^Stmt_From_Import)
+	testing.expect(t, ok && v.type_only && len(v.names) == 2, "expected a type-only from-import of two names")
+
+	// `type` alone is an ordinary imported name.
+	stmts = parse_only(t, "from m import type\n")
+	v, ok = stmts[0].(^Stmt_From_Import)
+	testing.expect(t, ok && !v.type_only && len(v.names) == 1 && lexeme(v.names[0].name) == "type", "expected a plain import of a name called 'type'")
+}
+
+@(test)
+test_resolve_type_only_name_used_as_value_is_error :: proc(t: ^testing.T) {
+	_, had_error := resolve_program(parse_only(t, "from m import type A\nprint A\n"))
+	testing.expect(t, had_error, "expected a type-only name used as a value to be a resolve error")
+
+	_, had_error = resolve_program(parse_only(t, "from m import type A\nfunc f(a: A) {}\n"))
+	testing.expect(t, !had_error, "expected annotation-only use to resolve cleanly")
+}
+
+@(test)
+test_typecheck_type_only_import_checks_annotation :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"shapes" = "class Circle {}\nclass Square {}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "from shapes import type Circle\nfrom shapes import Square\nfunc f(c: Circle) {}\nf(Square())\n", reg)
+	testing.expectf(t, len(diags) == 1 && any_diag_contains(diags, "expected Circle, got Square"), "expected one Circle/Square mismatch, got %v", diags)
+
+	_, diags = parse_resolve_typecheck_with_resolver(t, "from shapes import type Circle\nfunc f(c: Circle) {}\nfunc g(c: Circle) { f(c) }\n", reg)
+	testing.expectf(t, len(diags) == 0, "expected no diagnostics, got %v", diags)
+}
+
+@(test)
+test_typecheck_type_only_import_of_non_class_or_missing_name :: proc(t: ^testing.T) {
+	reg := make_fake_registry(t, map[string]string{"m" = "func helper() {}\nclass K {}\n"})
+	_, diags := parse_resolve_typecheck_with_resolver(t, "from m import type helper, missing, K\n", reg)
+	testing.expectf(t, len(diags) == 2, "expected two diagnostics, got %v", diags)
+	testing.expectf(t, any_diag_contains(diags, "'helper' in module 'm' is not a class"), "expected not-a-class, got %v", diags)
+	testing.expectf(t, any_diag_contains(diags, "has no export 'missing'"), "expected no-export, got %v", diags)
+}
+
+@(test)
+test_same_class_matches_by_origin_and_name :: proc(t: ^testing.T) {
+	a := Class_Type{name = "Game", origin = "/x/game.lox"}
+	b := Class_Type{name = "Game", origin = "/x/game.lox"}
+	c := Class_Type{name = "Game", origin = "/y/game.lox"}
+	d := Class_Type{name = "Game"}
+	e := Class_Type{name = "Game"}
+	testing.expect(t, same_class(&a, &b), "same origin and name must match")
+	testing.expect(t, !same_class(&a, &c), "different origins must not match")
+	testing.expect(t, !same_class(&d, &e), "empty origins compare by pointer only")
+}
+
+@(test)
+test_forward_placeholder_matches_real_class_and_suppresses_member_checks :: proc(t: ^testing.T) {
+	full, _, ok := Typecheck_Module_Signature("m", "class P {}\n", "m.lox")
+	testing.expect(t, ok, "expected module to typecheck")
+	fwd, fok := Forward_Signature("m", "class P {}\n", "m.lox")
+	testing.expect(t, fok && fwd.partial, "expected a partial forward signature")
+	testing.expect(t, same_class(full.classes["P"], fwd.classes["P"]), "forward placeholder must match the real class")
+
+	reg := new(Fake_Module_Registry)
+	reg.modules = make(map[string]^Module_Signature)
+	reg.modules["m"] = fwd
+	source := "from m import type P\nimport m\nclass Q {}\nfunc g(q: Q) {}\nfunc h(p: P) {\np.anything()\ng(p)\n}\nm.not_known()\n"
+	_, diags := parse_resolve_typecheck_with_resolver(t, source, reg)
+	testing.expectf(t, len(diags) == 0, "expected no diagnostics through a forward placeholder, got %v", diags)
+}
+
+@(test)
+test_class_name_takes_precedence_over_native_type_name :: proc(t: ^testing.T) {
+	_, diags := parse_resolve_typecheck(t, "class Sound {}\nfunc f(s: Sound) {}\nf(Sound())\n")
+	testing.expectf(t, len(diags) == 0, "expected the user class Sound to be the annotation's type, got %v", diags)
+
+	_, diags = parse_resolve_typecheck(t, "func f(s: Sound) {}\nf(1)\n")
+	testing.expectf(t, len(diags) == 1 && any_diag_contains(diags, "expected Sound, got int"), "expected native Sound without a class, got %v", diags)
+
+	_, diags = parse_resolve_typecheck(t, "class int {}\nfunc f(x: int) {}\nf(1)\n")
+	testing.expectf(t, len(diags) == 0, "expected core type names to stay reserved, got %v", diags)
 }
