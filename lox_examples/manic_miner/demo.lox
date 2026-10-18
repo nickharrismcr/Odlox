@@ -4,6 +4,7 @@ import assets
 import cavern as cavern_module
 import spectrum_attr
 import game as game_module
+from game_sound import type Sound
 
 //
 // @file demo.lox
@@ -125,7 +126,7 @@ func enter_next_cavern(d: Demo) {
 }
 
 class Demo {
-    __init__(sound) {
+    __init__(sound: Sound) {
         this.sound = sound
         this.disp = display.Display()
         this.font = assets.SpriteAssets()

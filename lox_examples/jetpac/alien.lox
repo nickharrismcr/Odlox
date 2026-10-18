@@ -3,6 +3,8 @@ from game_sprite import Sprite
 from jetman import Jetman
 from platform import Platforms
 from laser import LaserPool
+from game_sound import type Sound
+from game import type Game, Score
 
 // @file alien.lox
 // @brief A fixed pool of 6 alien slots, allocated once and reused. Each
@@ -106,7 +108,7 @@ func alien_near_jetman(alien: Alien, jetman: Jetman) -> bool {
 }
 
 class Alien < Sprite {
-    __init__(sound) {
+    __init__(sound: Sound) {
         super.__init__()
         this.sound = sound
         this.frames = len(METEOR_FRAMES)

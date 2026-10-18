@@ -1,5 +1,6 @@
 from gfx import *
 import font
+from game import type Game
 
 // @file hud.lox
 // @brief Score and lives row, drawn along the top strip (rows 0-7) --

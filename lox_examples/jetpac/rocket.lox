@@ -5,6 +5,8 @@ import alien as alien_module
 from jetman import Jetman
 from display import Display
 from assets import SpriteAssets
+from game_sound import type Sound
+from game import type Game
 
 // @file rocket.lox
 // @brief The Rocket: modules (1..3), fuel (0..6), takeoff/landing, and
@@ -89,7 +91,7 @@ func near_jetman(rocket: Rocket, jetman: Jetman) -> bool {
 }
 
 class Rocket {
-    __init__(static_data: Dict, sound) {
+    __init__(static_data: Dict, sound: Sound) {
         var d = static_data["default_rocket"]
         this.sound = sound
         this.x = float(d["x"])

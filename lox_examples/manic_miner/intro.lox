@@ -3,6 +3,7 @@ import display
 import assets
 import json
 import spectrum_attr
+from game_sound import type Sound
 
 //
 // @file intro.lox
@@ -93,7 +94,7 @@ func attr_byte_colours(byte: int) -> Dict[string, float] {
 }
 
 class Intro {
-    __init__(sound) {
+    __init__(sound: Sound) {
         this.sound = sound
         this.disp = display.Display()
         this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))

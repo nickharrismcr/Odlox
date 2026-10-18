@@ -6,6 +6,7 @@ from cavern import Cavern
 from willy_controller import Controller
 from display import Display
 from assets import SpriteAssets
+from game_sound import type Sound
 
 // @file willy.lox
 // @brief Miner Willy: movement, jump, and tile/item/guardian collision
@@ -82,7 +83,7 @@ class WalkCycle {
 }
 
 class Willy < Sprite {
-    __init__(sound) {
+    __init__(sound: Sound) {
         super.__init__()
         this.sound = sound
         this.type = "player"

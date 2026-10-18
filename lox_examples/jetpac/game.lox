@@ -12,6 +12,7 @@ import explosion as explosion_module
 import spawner as spawner_module
 import hud
 import json
+from game_sound import type Sound
 
 // @file game.lox
 // @brief Owns one Jetpac play session: platforms/Jetman/Rocket/items/
@@ -49,7 +50,7 @@ class Score {
 }
 
 class Game {
-    __init__(sound) {
+    __init__(sound: Sound) {
         this.sound = sound
         this.disp = display.Display()
         this.disp.clear(encode_rgba(0, 0, 0), encode_rgba(0, 0, 0))

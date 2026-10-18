@@ -6,6 +6,7 @@ import willy as willy_module
 import willy_controller
 import spectrum_attr
 import font
+from game_sound import type Sound
 
 //
 // @file game.lox
@@ -408,7 +409,7 @@ func state_game_over_done(g: Game, win: Window) {
 }
 
 class Game {
-    __init__(cavern_index: int,target_fps: int,sound) {
+    __init__(cavern_index: int,target_fps: int,sound: Sound) {
         this.sound = sound
         this.disp = display.Display()
         this.font = assets.SpriteAssets()

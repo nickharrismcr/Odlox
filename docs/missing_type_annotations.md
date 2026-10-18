@@ -1,7 +1,7 @@
 # Missing type annotations in lox_examples/
 
-802 function/method/lambda definitions across 88 files; **62** still have a gap
-(42 unannotated parameters, 20 value-returning definitions with no `-> T`), down from 601
+802 function/method/lambda definitions across 88 files; **53** still have a gap
+(33 unannotated parameters, 20 value-returning definitions with no `-> T`), down from 601
 (1046 parameters, 172 returns). Every remaining gap is a value the annotation syntax cannot
 name; each is listed below under the reason.
 
@@ -48,29 +48,12 @@ Returned closures and callback parameters.
   `SpriteAssets.get` (return)
 - jetpac/display.lox: L160, manic_miner/display.lox: L153 `Display.blit_sprite` (`sprite`)
 - manic_miner/cavern.lox: L374 `Cavern.guardian_hit` (`willy_img`)
-- manic_miner/willy.lox: L175 `draw_footprint` (`img`)
-
-### The `Sound` class
-
-jetpac/game_sound.lox and manic_miner/game_sound.lox each declare `class Sound`, but `Sound`
-resolves to the native sound type, which takes precedence over class names.
-
-- jetpac: alien.lox L109, game.lox L52, item.lox L74, jetman.lox L66, rocket.lox L92 (`sound`)
-- manic_miner: demo.lox L128, game.lox L411, intro.lox L96, willy.lox L85 (`sound`)
+- manic_miner/willy.lox: L176 `draw_footprint` (`img`)
 
 ### Game or Demo
 
 manic_miner/game.lox's HUD helpers are called with both a `Game` and a `Demo` (from
 demo.lox), and the two classes share no superclass.
 
-- manic_miner/game.lox: L100 `draw_name_row`, L108 `draw_score_row`, L119 `draw_oxygen_row_background`,
-  L133 `draw_oxygen_bar_fill`, L164 `draw_static_hud`, L174 `draw_lives` (`g`)
-
-## Unresolved class annotations
-
-Some annotations name a class that cannot be imported without creating an import cycle (the
-runtime rejects circular imports). The name is written for documentation; the checker treats it
-as dynamic.
-
-- jetpac: `Game` and `Score` (game.lox imports every other jetpac module), used in alien.lox,
-  hud.lox, rocket.lox, spawner.lox; `Rocket` in item.lox (rocket.lox imports item).
+- manic_miner/game.lox: L101 `draw_name_row`, L109 `draw_score_row`, L120 `draw_oxygen_row_background`,
+  L134 `draw_oxygen_bar_fill`, L165 `draw_static_hud`, L175 `draw_lives` (`g`)

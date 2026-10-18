@@ -4,6 +4,7 @@ from jetman_controller import Controller
 from platform import Platforms
 from display import Display
 from assets import SpriteAssets
+from game_sound import type Sound
 
 // @file jetman.lox
 // @brief Jetman: fly/walk states and physics, derived from
@@ -63,7 +64,7 @@ func accel_or_flip(vel: int, want_this_dir: bool, max_vel: int) -> Dict {
 }
 
 class Jetman < Sprite {
-    __init__(sound) {
+    __init__(sound: Sound) {
         super.__init__()
         this.sound = sound
         this.frames = 1
