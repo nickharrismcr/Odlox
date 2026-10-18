@@ -587,7 +587,13 @@ print add(1, "two")
 <tr><td>Class name</td><td>Any declared class is itself a valid type: <code>func adopt(a: Animal) { … }</code></td></tr>
 </tbody>
 </table>
-<p>Recognised primitive names are <code>int</code>, <code>float</code>, <code>string</code>, and <code>bool</code>; any other identifier is looked up against the classes declared in the same file, plus any class reached via <code>from mod import ClassName</code> (see "Cross-module usage" below).</p>
+<p>A type name resolves in this order:</p>
+<ol>
+<li>The core names <code>int</code>, <code>float</code>, <code>string</code>, <code>bool</code>, <code>vec2</code>, <code>vec3</code>, and <code>vec4</code>. These are reserved; a class can't shadow them.</li>
+<li>A class declared in the same file, or reached via <code>from mod import ClassName</code> or <code>from mod import type ClassName</code> (see "Cross-module usage" and "Type-only imports" below).</li>
+<li>A native object type: <code>Window</code>, <code>Image</code>, <code>Texture</code>, <code>RenderTexture</code>, <code>Shader</code>, <code>Camera3D</code>, <code>Batch</code>, <code>Batch2D</code>, <code>BatchInstanced</code>, <code>Light</code>, <code>Sound</code>, <code>Music</code>, <code>Socket</code>, <code>Process</code>, <code>Box2DWorld</code>, <code>PhysicsWorld</code>, <code>Pattern</code>, <code>Match</code>. A class of the same name takes precedence, so a script's own <code>class Sound</code> is what <code>s: Sound</code> means there.</li>
+</ol>
+<p>Any other name is treated as fully dynamic.</p>
 <h3>Gradual typing: annotated sites are checked, everything else stays dynamic</h3>
 <p>An <strong>unannotated</strong> site is never checked, no matter what flows through it — this is what keeps annotations opt-in rather than an all-or-nothing switch. <code>var x = 1</code> may be freely reassigned to a string, a list, anything, with no warning, exactly as today. Only a site that was actually given a <code>: Type</code> is held to that promise:</p>
 <pre><code class="lox">var a = 1        // unannotated -- inferred, but the inference is never enforced
@@ -607,6 +613,37 @@ b = "now a string"
 <li>Method overrides in a subclass, checked against the superclass's own signature (<code>__init__</code> is exempt — a constructor is never called polymorphically, so a subclass's own constructor may take entirely different parameters).</li>
 <li>A subclass instance satisfies a superclass-typed parameter (ordinary substitutability) — but two unrelated classes with identically-shaped methods are still incompatible with each other, since class types are nominal, not structural.</li>
 <li>Cross-module usage, when running a script normally (<code>odlox script.lox</code> or the REPL): a <code>from mod import name</code> binding and a namespace-style <code>import mod; mod.name(...)</code> call are both checked against the real signature of <code>mod</code>'s own exports — argument types, an unknown export (<code>module 'mod' has no export 'name'</code>), and a class used as a superclass across the import all get the same checking as a same-file class, including its inherited methods.</li>
+</ul>
+<h3>Type-only imports</h3>
+<p><code>from mod import type A, B</code> binds class names for annotations only. The type checker resolves them through <code>mod</code>'s signature exactly like an ordinary from-import, but the statement emits no code: <code>mod</code> is not loaded by it, and <code>A</code>/<code>B</code> have no runtime value. This lets two modules refer to each other's classes in annotations without a circular import, which fails at runtime:</p>
+<pre><code class="lox">// game.lox
+import alien
+
+class Game {
+    __init__() { this.score = 0 }
+    tick() { alien.attack(this) }
+}
+
+// alien.lox -- `import game` here would make a cycle
+from game import type Game
+
+func attack(g: Game) {
+    g.score = g.score + 1
+}
+
+// main.lox
+import game
+import alien
+var g = game.Game()
+g.tick()
+alien.attack("player one")
+// [main.lox:7] Warning at '"player one"': argument 1: expected Game, got string
+//     alien.attack("player one")</code></pre>
+<ul>
+<li>Using a type-only name as a value (calling it, printing it, using it as a superclass) is a compile error: <code>'Game' is imported for type annotations only.</code></li>
+<li>Each name must be a class exported by the module; anything else is diagnosed (<code>'helper' in module 'mod' is not a class</code>, or <code>module 'mod' has no export 'name'</code>).</li>
+<li><code>type</code> is only special when another name follows it, so <code>from mod import type</code> still imports a name called <code>type</code>. A statement is either all type-only or ordinary; <code>import type *</code> isn't accepted.</li>
+<li>Inside a cycle, a module's signature can be needed while it is still being computed. Its classes are then seen as placeholders: they match the real class, but their methods and ancestry aren't checked at that point.</li>
 </ul>
 <h3>What's deliberately not checked</h3>
 <p>A uniform list/dict literal infers a real element type, checked structurally through <code>List[…]</code>/<code>Dict[…, …]</code> to any nesting depth (<code>List[List[int]]</code> included) — but a <em>mixed</em>-element literal (e.g. <code>[1, "two", 3]</code>) degrades its element type to fully dynamic rather than flagging the mismatch, matching this feature's "never over-tighten" rule. Argument <em>count</em> is never checked (only positions both the call and the declaration have), so default parameters and <code>*rest</code> are unaffected. <code>static</code> class variables (as opposed to instance fields) aren't type-tracked. There's no separate field-annotation syntax (<code>this.x: int</code>) — a field's type always comes from how <code>__init__</code> assigns it. Cross-module checking (see above) needs a real module resolver, which only <code>odlox script.lox</code> and the REPL build; <code>--compile-only</code> has no VM to build one from, so under it every cross-module name — an annotation, a superclass, a namespace member — degrades to fully dynamic with no warning either way, the same as a bare parse/type check always did.</p>
@@ -673,6 +710,7 @@ import random, colour as clr     // multiple, with alias</code></pre>
 <pre><code class="lox">from math import sin, cos, PI
 from colour import *
 from gfx import window, batch     // native built-in module</code></pre>
+<p><code>from mod import type A, B</code> imports class names for type annotations only and loads nothing at runtime — see <a href="#type-annotations">Type-only imports</a>.</p>
 <p>Resolving <code>import foo</code> to a file tries, in order: <code>$LOX_PATH/modules/foo.lox</code> (the standard library); <code>foo.lox</code> alongside the top-level script being run; then <code>foo.lox</code> in any subdirectory of that script's own directory, searched recursively — so a project's own modules can be grouped into subfolders without changing how they're imported. Built-in modules are registered natively and need only be imported, not resolved from disk: <a href="#mod-sys">sys</a>, <a href="#mod-os">os</a>, <a href="#mod-inspect">inspect</a>, <a href="#mod-colour-utils">colour_utils</a>, <a href="#mod-gfx">gfx</a> (window, batch, texture, shader, camera, …), <a href="#mod-physics">physics</a> (physics_world), <a href="#box2d">box2d</a> (box2d.world), and <a href="#sound">sound</a>.</p>
 
 <!-- ==================== NUMBERS ==================== -->
