@@ -1,4 +1,6 @@
 from gfx import *
+from display import Display
+from assets import SpriteAssets
 
 // @file game_sprite.lox
 // @brief A drawable, animated sprite: erase-then-draw save-under
@@ -47,7 +49,7 @@ class Sprite {
     // tick, so a fresh draw isn't wiped by a later clear. last_x/last_y
     // already record the actual top-left blit_sprite() position (see
     // draw()), not this.x/this.y directly.
-    clear(disp) {
+    clear(disp: Display) {
         if (this.last_x != nil) {
             disp.blit_sprite(this.blank, this.last_x, this.last_y, this.erase_ink, this.erase_paper)
         }
@@ -61,7 +63,7 @@ class Sprite {
     // ScreenPosOnePixelAbove; the row data itself is also bottom-first,
     // see skool.lox's header and extract_jetpac.lox's reverse_rows()).
     // clear() must already have run this tick -- draw() doesn't erase.
-    draw(disp, lib) {
+    draw(disp: Display, lib: SpriteAssets) {
         var name = this.image_list[this.frame]
         var img = lib.get(name)
 

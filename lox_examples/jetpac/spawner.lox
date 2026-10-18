@@ -29,7 +29,7 @@ const METEOR_X_SPEED_MAX = 1.4
 const ALIEN_COLOUR_BASE = 2
 const ALIEN_COLOUR_COUNT = 4
 
-func alien_colour(slot) {
+func alien_colour(slot: int) -> float {
     var d = spectrum_attr.decode_attribute(ALIEN_COLOUR_BASE + slot % ALIEN_COLOUR_COUNT)
     return spectrum_attr.colour_to_rgba(d["ink"], d["bright"])
 }
@@ -39,7 +39,7 @@ class Spawner {
         this.timer = 0
     }
 
-    tick(g) {
+    tick(g: Game) {
         this.timer = (this.timer + 1) % 256
 
         if (!g.rocket_item.is_active() and (255 - this.timer) % 16 == 0) {
@@ -68,7 +68,7 @@ const METEOR_SPAWN_Y_MAX = 192.0
 // ALIEN_TYPES), entering from the left edge (travelling right) or the
 // right edge (travelling left) at a random height, coloured by its own
 // pool slot index.
-func spawn_alien_if_free(g) {
+func spawn_alien_if_free(g: Game) {
     for (var i = 0; i < len(g.aliens); i = i + 1) {
         var a = g.aliens[i]
         if (!a.is_active()) {

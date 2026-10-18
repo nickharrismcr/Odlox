@@ -1,5 +1,9 @@
 from gfx import *
 from game_sprite import Sprite
+from jetman_controller import Controller
+from platform import Platforms
+from display import Display
+from assets import SpriteAssets
 
 // @file jetman.lox
 // @brief Jetman: fly/walk states and physics, derived from
@@ -29,7 +33,7 @@ const SCREEN_W = 256.0
 // Jetman's X position wraps mod 256 -- a free side effect of it being a
 // single 8-bit byte on real hardware (JetmanFlyHorizontal never clamps
 // it), not a deliberate design choice this port re-derives.
-func wrap_x(x) {
+func wrap_x(x: float) -> float {
     var w = x % SCREEN_W
     if (w < 0.0) {
         w = w + SCREEN_W
@@ -43,7 +47,7 @@ func wrap_x(x) {
 // -- same shape as JetmanVelIncX/JetmanDirFlipX (and their Y-axis
 // equivalents), so a direction change decelerates smoothly rather than
 // snapping straight to the opposite facing.
-func accel_or_flip(vel, want_this_dir, max_vel) {
+func accel_or_flip(vel: int, want_this_dir: bool, max_vel: int) -> Dict {
     if (want_this_dir) {
         var nv = vel + ACCEL_STEP
         if (nv > max_vel) {
@@ -79,7 +83,7 @@ class Jetman < Sprite {
     // used both for the initial spawn and every respawn after death.
     // default_jetman's own motion=1 (bit0 "flying", bit7 "fly up") is
     // why Jetman starts airborne rather than standing.
-    spawn(static_data) {
+    spawn(static_data: Dict) {
         var d = static_data["default_jetman"]
         this.x = float(d["x"])
         this.y = float(d["y"])
@@ -98,7 +102,7 @@ class Jetman < Sprite {
     // with Sprite's own per-frame bookkeeping. launched_this_tick is
     // reset here (not by state_walk itself) so it's a clean one-tick
     // pulse regardless of which state runs this call.
-    step(input, platforms) {
+    step(input: Controller, platforms: Platforms) {
         this.launched_this_tick = false
         var f = this.update_func
         f(this, input, platforms)
@@ -151,7 +155,7 @@ class Jetman < Sprite {
     // header offset (0 for right-facing, +8 for the narrower
     // left-facing ones -- see assets.lox's get_x_offset()). Both are
     // needed together; dropping either one breaks a direction.
-    draw(disp, lib) {
+    draw(disp: Display, lib: SpriteAssets) {
         var name = current_sprite_name(this)
         this.image_list = [name]
         this.frame = 0
@@ -172,12 +176,12 @@ class Jetman < Sprite {
 // naturally as x advances by WALK_STEP each tick. The flying pose's own
 // 4 shifts are clean re-shifted copies with no leg movement, so flying
 // only ever uses shift0.
-func walk_shift(j) {
+func walk_shift(j: Jetman) -> int {
     var shift = int(j.x) % 8
     return int(shift / 2) * 2
 }
 
-func current_sprite_name(j) {
+func current_sprite_name(j: Jetman) -> string {
     if (j.update_func == state_walk) {
         var dir = "right"
         if (j.facing_left) {
@@ -192,16 +196,16 @@ func current_sprite_name(j) {
     return format("jetman_fly_%s_shift0", dir)
 }
 
-func enter_fly(j) {
+func enter_fly(j: Jetman) {
     j.update_func = state_fly
 }
 
-func enter_walk(j) {
+func enter_walk(j: Jetman) {
     j.update_func = state_walk
     j.vel_x = 0
 }
 
-func enter_dying(j) {
+func enter_dying(j: Jetman) {
     j.dead = true
     j.update_func = state_dying
 }
@@ -210,7 +214,7 @@ func enter_dying(j) {
 // direction, brakes toward zero (then flips facing) on a direction
 // change, and drag-decelerates to a stop with no input held. Position
 // wraps at the screen edges (see wrap_x).
-func fly_horizontal(j, input) {
+func fly_horizontal(j: Jetman, input: Controller) {
     if (!input.left and !input.right) {
         var nv = j.vel_x - ACCEL_STEP
         if (nv < 0) {
@@ -245,7 +249,7 @@ func fly_horizontal(j, input) {
 // bound deliberately here). No SFX here: SfxThrusters ($67B6, despite
 // its name) is only ever used for the Rocket's own flame, never
 // Jetman's personal thrust.
-func fly_vertical(j, input) {
+func fly_vertical(j: Jetman, input: Controller) {
     if (input.hover) {
         j.vel_y = 0
         return
@@ -276,7 +280,7 @@ func fly_vertical(j, input) {
     }
 }
 
-func state_fly(j, input, platforms) {
+func state_fly(j: Jetman, input: Controller, platforms: Platforms) {
     var old_y = j.y
     fly_horizontal(j, input)
     fly_vertical(j, input)
@@ -302,7 +306,7 @@ func state_fly(j, input, platforms) {
 // JetmanWalk's unconditional inc/dec), then checks THRUST -- held, or
 // no longer supported underfoot (walked off an edge) -- to launch back
 // into flight (jetmanLeavePlatform's small hop off the surface).
-func state_walk(j, input, platforms) {
+func state_walk(j: Jetman, input: Controller, platforms: Platforms) {
     if (input.right) {
         j.x = wrap_x(j.x + WALK_STEP)
         j.facing_left = false
@@ -330,10 +334,10 @@ func state_walk(j, input, platforms) {
 
 // Frozen while dead -- the owning Game drives death timing and calls
 // spawn() again once it's done.
-func state_dying(j, input, platforms) {
+func state_dying(j: Jetman, input: Controller, platforms: Platforms) {
 }
 
 // Frozen while boarding the rocket -- rocket.lox's own state_landing
 // calls spawn() again once it lands back on the pad.
-func state_boarding(j, input, platforms) {
+func state_boarding(j: Jetman, input: Controller, platforms: Platforms) {
 }

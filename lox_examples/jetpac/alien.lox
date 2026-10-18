@@ -1,5 +1,8 @@
 from gfx import *
 from game_sprite import Sprite
+from jetman import Jetman
+from platform import Platforms
+from laser import LaserPool
 
 // @file alien.lox
 // @brief A fixed pool of 6 alien slots, allocated once and reused. Each
@@ -82,7 +85,7 @@ const JET_FIGHTER_STEP_Y = 2.0
 const JET_FIGHTER_KILL_Y = 40.0  // $28
 const JET_FIGHTER_WHITE = encode_rgba(255, 255, 255)  // colour set to $47 on diving, $63E7
 
-func wrap_x(x) {
+func wrap_x(x: float) -> float {
     var w = x % SCREEN_W
     if (w < 0.0) {
         w = w + SCREEN_W
@@ -90,7 +93,7 @@ func wrap_x(x) {
     return w
 }
 
-func alien_near_jetman(alien, jetman) -> bool {
+func alien_near_jetman(alien: Alien, jetman: Jetman) -> bool {
     var dx = alien.x - jetman.x
     if (dx < 0.0) {
         dx = -dx
@@ -128,7 +131,7 @@ class Alien < Sprite {
         return this.active
     }
 
-    step(jetman, platforms, lasers, score, explosions) {
+    step(jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
         var f = this.update_func
         f(this, jetman, platforms, lasers, score, explosions)
     }
@@ -137,7 +140,7 @@ class Alien < Sprite {
 // Plain deactivation, no score/sound/explosion -- RocketModulesReset
 // ($6624), called the instant Jetman boards a launching rocket, just
 // zeroes every alien slot's first byte directly; not a kill.
-func hide(alien) {
+func hide(alien: Alien) {
     alien.active = false
     alien.update_func = state_idle
 }
@@ -147,7 +150,7 @@ func hide(alien) {
 // (silent, no explosion -- see jetfighter_self_destruct) and every
 // type's own contact-with-Jetman path (explodes but scores 0 -- see
 // contact_kill).
-func kill_alien(alien, explosions, score, points) {
+func kill_alien(alien: Alien, explosions: Game, score: Score, points: int) {
     alien.active = false
     alien.update_func = state_idle
     if (points > 0) {
@@ -161,7 +164,7 @@ func kill_alien(alien, explosions, score, points) {
 // with no points on bare contact; standard arcade convention (and the
 // point of touching Jetman to an alien at all) is that it costs him too,
 // so this port kills both.
-func contact_kill(alien, jetman, explosions, score) {
+func contact_kill(alien: Alien, jetman: Jetman, explosions: Game, score: Score) {
     kill_alien(alien, explosions, score, 0)
     jetman.kill()
 }
@@ -170,7 +173,7 @@ func contact_kill(alien, jetman, explosions, score) {
 // AlienCollisionAnimSfx entirely -- no explosion sprite, and its
 // "exploding" sound is actually SfxThrusters reused, not the alien death
 // cue (the ROM's own comment on $6450 calls this out directly).
-func jetfighter_self_destruct(alien, explosions, score) {
+func jetfighter_self_destruct(alien: Alien, explosions: Game, score: Score) {
     alien.active = false
     alien.update_func = state_idle
     score.add(JET_FIGHTER_SCORE)
@@ -182,7 +185,7 @@ func jetfighter_self_destruct(alien, explosions, score) {
 // other at the same height, rather than bouncing back), then
 // laser/platform/Jetman collision in that order. Reused unmodified for
 // Space Craft (level 6), which only differs in sprite.
-func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
+func state_meteor(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
     alien.x = wrap_x(alien.x + alien.vx)
     alien.y = alien.y + alien.vy
@@ -216,7 +219,7 @@ func state_meteor(alien, jetman, platforms, lasers, score, explosions) {
 // platform or bumping its underside just flips the vertical direction,
 // hitting a side flips the horizontal one, same as the top-of-screen
 // bound flips it back down.
-func state_squidgy(alien, jetman, platforms, lasers, score, explosions) {
+func state_squidgy(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
 
     var result = platforms.collide(alien.x, alien.y, alien.y + alien.vy, 16)
@@ -252,7 +255,7 @@ func state_squidgy(alien, jetman, platforms, lasers, score, explosions) {
 // vertical burst kicks in occasionally and runs alongside it for a
 // random duration, then stops, leaving the horizontal cruise as the only
 // movement again. No platform-kill.
-func state_sphere(alien, jetman, platforms, lasers, score, explosions) {
+func state_sphere(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
 
     var dy = 0.0
@@ -308,7 +311,7 @@ func state_sphere(alien, jetman, platforms, lasers, score, explosions) {
 // accelerates while climbing and decelerates while falling, flipping
 // direction at the top-of-screen bound and again once its fall speed
 // decays to zero. No platform-kill.
-func state_crossed_ship(alien, jetman, platforms, lasers, score, explosions) {
+func state_crossed_ship(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
 
     var result = platforms.collide(alien.x, alien.y, alien.y + alien.vy, 16)
@@ -355,7 +358,7 @@ func state_crossed_ship(alien, jetman, platforms, lasers, score, explosions) {
 // decelerates/reverses once it's passed, capped at UFO_MAX_SPEED. No
 // platform-kill -- hitting a platform's side just reverses horizontal
 // speed, same as the top-of-screen bound reversing vertical speed.
-func state_ufo(alien, jetman, platforms, lasers, score, explosions) {
+func state_ufo(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
 
     if (jetman.x > alien.x) {
@@ -419,7 +422,7 @@ func state_ufo(alien, jetman, platforms, lasers, score, explosions) {
 // (scores, but no explosion) on lifetime expiry, a laser hit, crossing
 // the top-of-screen bound, or any platform contact; only a direct hit on
 // Jetman explodes normally, for no score.
-func state_jetfighter(alien, jetman, platforms, lasers, score, explosions) {
+func state_jetfighter(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
     alien.advance_frame()
 
     var dx = 0.0
@@ -477,7 +480,7 @@ func state_jetfighter(alien, jetman, platforms, lasers, score, explosions) {
     }
 }
 
-func state_idle(alien, jetman, platforms, lasers, score, explosions) {
+func state_idle(alien: Alien, jetman: Jetman, platforms: Platforms, lasers: LaserPool, score: Score, explosions: Game) {
 }
 
 // Per-level type table (item_level_object_types $6A2D, indexed by
@@ -499,7 +502,7 @@ const ALIEN_TYPES = [
 // drift); vx's sign seeds the initial facing/direction for every type
 // that starts with one, vy is only used verbatim by Meteor/Space Craft
 // (every other type has its own fixed step or starts at rest).
-func spawn_alien(alien, x, y, vx, vy, colour, level) -> bool {
+func spawn_alien(alien: Alien, x: float, y: float, vx: float, vy: float, colour: float, level: int) -> bool {
     if (alien.active) {
         return false
     }

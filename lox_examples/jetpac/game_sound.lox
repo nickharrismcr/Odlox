@@ -45,7 +45,7 @@ class Sound {
     // SfxThrusters: pitch = ((y>>4)&0x7F)|0x40 -- bucketed by the same
     // linear mapping extract_sfx.lox's thrust_pitch() used to generate
     // the 8 samples, so this just inverts that bucketing back from y.
-    thrust(y) {
+    thrust(y: float) {
         var bucket = int(y * THRUST_BUCKETS / 192)
         if (bucket < 0) {
             bucket = 0

@@ -1,5 +1,7 @@
 from gfx import *
 import spectrum_attr
+from display import Display
+from assets import SpriteAssets
 
 // @file platform.lox
 // @brief The 4 static platforms: tile-row draw, mirroring DrawPlatforms
@@ -28,7 +30,7 @@ const LAND_TOLERANCE = 3
 // gives a visual span of [120, 152) but a collision zone of (101, 155)
 // -- 19px wider on the left than the art, 4px on the right). Matching
 // the drawn tiles instead makes collision agree with what's on screen.
-func platform_span(rec) {
+func platform_span(rec: Dict) -> Dict {
     var width = rec["width"]
     var left_x = rec["x"] - int(width / 4) * 4 + 16
     var middle_count = int(width / 4) - 4
@@ -44,7 +46,7 @@ func platform_span(rec) {
     }
 }
 
-func platform_colours(attr) {
+func platform_colours(attr: int) -> Dict[string, float] {
     var d = spectrum_attr.decode_attribute(attr)
     return {
         "ink": spectrum_attr.colour_to_rgba(d["ink"], d["bright"]),
@@ -53,7 +55,7 @@ func platform_colours(attr) {
 }
 
 class Platforms {
-    __init__(static_data) {
+    __init__(static_data: Dict) {
         this.records = []
         foreach (var rec in static_data["platforms"]) {
             this.records.append(platform_span(rec))
@@ -66,7 +68,7 @@ class Platforms {
     // back underneath before this tick's own sprites draw on top (see
     // game.lox's tick(), and Display.blit_sprite's own or_blit param
     // for entities that intentionally rest on a platform).
-    draw(disp, lib) {
+    draw(disp: Display, lib: SpriteAssets) {
         foreach (var rec in this.records) {
             if (rec["attr"] == 0) {
                 continue  // colour-0 record: a disabled/unused platform slot
@@ -96,7 +98,7 @@ class Platforms {
     // in the last LAND_TOLERANCE px of the reach zone (flying up into
     // the underside); blocked_x anywhere else inside the zone (hit the
     // platform's side, like a wall).
-    collide(x, old_y, new_y, height) {
+    collide(x: float, old_y: float, new_y: float, height: int) -> Dict {
         var result = {"landed": false, "snap_y": new_y, "blocked_x": false, "head_bump": false}
         foreach (var rec in this.records) {
             if (rec["attr"] == 0) {
@@ -125,7 +127,7 @@ class Platforms {
     // reads a non-empty screen byte at its new position, which for a
     // beam flying at a fixed Y is effectively "did it fly into a
     // platform's own row".
-    blocks_point(x, y) -> bool {
+    blocks_point(x: int, y: int) -> bool {
         foreach (var rec in this.records) {
             if (rec["attr"] == 0) {
                 continue

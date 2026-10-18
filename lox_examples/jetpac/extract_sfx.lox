@@ -50,13 +50,13 @@ const CUES = [
 const THRUST_DURATION = 16
 const THRUST_BUCKETS = 8
 
-func thrust_pitch(bucket) {
+func thrust_pitch(bucket: int) -> int {
     var y = int(bucket * 192 / THRUST_BUCKETS)
     var shifted = int(y / 16) % 128  // rrca x4 then and $7F
     return shifted + 64              // or $40
 }
 
-func build_thrust_cues() {
+func build_thrust_cues() -> List[Dict] {
     var cues = []
     for (var i = 0; i < THRUST_BUCKETS; i = i + 1) {
         cues.append({"name": format("thrust_%d", i), "kind": "tone", "pitch": thrust_pitch(i), "cycles": THRUST_DURATION, "src": "SfxThrusters $67B6"})
@@ -64,7 +64,7 @@ func build_thrust_cues() {
     return cues
 }
 
-func ensure_dir(path) {
+func ensure_dir(path: string) {
     if (!os.exists(path)) {
         os.mkdir(path)
     }

@@ -1,6 +1,8 @@
 from gfx import *
 from game_sprite import Sprite
 import spectrum_attr
+from jetman import Jetman
+from platform import Platforms
 
 // @file item.lox
 // @brief One class for rocket modules, fuel pods and collectibles,
@@ -51,12 +53,12 @@ const COLLECTIBLE_COLOUR_ATTR = {
 const RANDOM_COLOUR_MIN = 65  // $41
 const RANDOM_COLOUR_MAX = 71  // $47
 
-func attr_colour(attr) {
+func attr_colour(attr: int) -> float {
     var d = spectrum_attr.decode_attribute(attr)
     return spectrum_attr.colour_to_rgba(d["ink"], d["bright"])
 }
 
-func near_jetman(item, jetman) -> bool {
+func near_jetman(item: Item, jetman: Jetman) -> bool {
     var dx = item.x - jetman.x
     if (dx < 0.0) {
         dx = -dx
@@ -87,7 +89,7 @@ class Item < Sprite {
 
     // Dispatches through update_func -- named step() to match every
     // other actor class's own convention.
-    step(jetman, rocket, platforms, score) {
+    step(jetman: Jetman, rocket: Rocket, platforms: Platforms, score: Score) {
         var f = this.update_func
         f(this, jetman, rocket, platforms, score)
     }
@@ -104,7 +106,7 @@ class Item < Sprite {
 // slot only becomes available for its *other* job (fuel pod /
 // collectible respectively) once its module is delivered, since
 // delivery despawns the same Item instance those functions reuse.
-func init_module(item, key, sprite, static_data) {
+func init_module(item: Item, key: string, sprite: string, static_data: Dict) {
     var d = static_data[key]
     item.kind = "module"
     item.image_list = [sprite]
@@ -127,7 +129,7 @@ func init_module(item, key, sprite, static_data) {
 // ($65DB) random-column routine ItemNewCollectible uses below --
 // default_fuel_pod's own "x" field is just the ROM's zeroed RAM
 // template value before ItemNewFuelPod ever runs, not a real position.
-func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
+func spawn_fuel_pod(item: Item, jetman: Jetman, rocket: Rocket, static_data: Dict) -> bool {
     if (jetman.is_hidden() or item.active or rocket.fuel >= FUEL_PODS_NEEDED) {
         return false
     }
@@ -150,7 +152,7 @@ func spawn_fuel_pod(item, jetman, rocket, static_data) -> bool {
 // random -- the ROM instead cycles by player level, out of scope for a
 // level-1-only port) at a random drop column from
 // data/jetpac_static.json's item_drop_columns.
-func spawn_collectible(item, jetman, static_data) -> bool {
+func spawn_collectible(item: Item, jetman: Jetman, static_data: Dict) -> bool {
     if (jetman.is_hidden() or item.active) {
         return false
     }
@@ -177,7 +179,7 @@ func spawn_collectible(item, jetman, static_data) -> bool {
 // The top module is one of the two pre-seeded module Items (see
 // init_module()'s own header) -- distinguished from the middle one (and
 // from a later fuel pod reusing the same slot) by its sprite name.
-func is_top_module(item) -> bool {
+func is_top_module(item: Item) -> bool {
     return item.kind == "module" and item.image_list[0] == "rocket_u1_top"
 }
 
@@ -191,7 +193,7 @@ func is_top_module(item) -> bool {
 // count, not which piece was actually carried, so nothing else stops
 // the top module from completing the whole 3-segment stack on its own
 // if collected first.
-func state_falling(item, jetman, rocket, platforms, score) {
+func state_falling(item: Item, jetman: Jetman, rocket: Rocket, platforms: Platforms, score: Score) {
     var result = platforms.collide(item.x, item.y, item.y + FALL_STEP, 1)
     if (result["landed"]) {
         // Snap to the platform's own surface -- without this, the item
@@ -225,7 +227,7 @@ func state_falling(item, jetman, rocket, platforms, score) {
 
 // Carried: follows Jetman's feet; once within CARRY_SNAP_DX of the
 // rocket's own X, locks X to the rocket's and starts docking.
-func state_carried(item, jetman, rocket, platforms, score) {
+func state_carried(item: Item, jetman: Jetman, rocket: Rocket, platforms: Platforms, score: Score) {
     item.x = jetman.x
     item.y = jetman.y
 
@@ -241,7 +243,7 @@ func state_carried(item, jetman, rocket, platforms, score) {
 
 // Docking: slides down to the module/fuel dock Y, then attaches to the
 // rocket and despawns.
-func state_docking(item, jetman, rocket, platforms, score) {
+func state_docking(item: Item, jetman: Jetman, rocket: Rocket, platforms: Platforms, score: Score) {
     var target = MODULE_DOCK_Y
     if (item.kind == "fuel") {
         target = FUEL_DOCK_Y
@@ -261,5 +263,5 @@ func state_docking(item, jetman, rocket, platforms, score) {
 }
 
 // Inactive slot -- spawn_fuel_pod/spawn_collectible reactivate it.
-func state_idle(item, jetman, rocket, platforms, score) {
+func state_idle(item: Item, jetman: Jetman, rocket: Rocket, platforms: Platforms, score: Score) {
 }

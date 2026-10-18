@@ -25,7 +25,7 @@ const HEX_DIGITS = {
 
 // Parses a "$hh"/"$hhhh"/bare-hex lowercase token -- this dialect's
 // int() has no base argument.
-func parse_hex(token) {
+func parse_hex(token: string) -> int {
     var start = 0
     if (len(token) > 0 and token[0] == "$") {
         start = 1
@@ -59,12 +59,12 @@ var QUOTED_TEXT_PAT = re.compile('"([^"]*)"')
 // Strips a trailing "; comment" (skool data lines carry these, and a
 // comment can itself contain "$xx"-shaped text -- e.g. "; Frequency is
 // $0C or $0D" -- which would otherwise be mistaken for extra byte data).
-func strip_comment(s) {
+func strip_comment(s: string) -> string {
     var parts = re.split(";", s, 1)
     return parts[0]
 }
 
-func store_defb(sk, addr, content) {
+func store_defb(sk: Skool, addr: int, content: string) {
     var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
     for (var i = 0; i < len(tokens); i = i + 1) {
         sk.mem[addr + i] = parse_hex(tokens[i])
@@ -72,7 +72,7 @@ func store_defb(sk, addr, content) {
 }
 
 // Little-endian: low byte first.
-func store_defw(sk, addr, content) {
+func store_defw(sk: Skool, addr: int, content: string) {
     var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
     for (var i = 0; i < len(tokens); i = i + 1) {
         var w = parse_hex(tokens[i])
@@ -81,7 +81,7 @@ func store_defw(sk, addr, content) {
     }
 }
 
-func store_defs(sk, addr, content) {
+func store_defs(sk: Skool, addr: int, content: string) {
     var tokens = HEX_TOKEN_PAT.findall(strip_comment(content))
     var count = parse_hex(tokens[0])
     for (var i = 0; i < count; i = i + 1) {
@@ -92,7 +92,7 @@ func store_defs(sk, addr, content) {
 // defm never carries a trailing comment in jetpac.skool, but extracting
 // the quoted span directly (rather than stripping on ";") is correct
 // either way, since anything after the closing quote is simply ignored.
-func store_defm(sk, addr, content) {
+func store_defm(sk: Skool, addr: int, content: string) {
     var m = QUOTED_TEXT_PAT.match(content)
     if (m == nil) {
         return
@@ -108,7 +108,7 @@ func store_defm(sk, addr, content) {
 // $76c5) and clears the list. addr_to_label keeps the first label seen
 // for a given address, so a table walk can name entries by their
 // original symbolic name.
-func apply_pending_labels(sk, addr, pending_labels) {
+func apply_pending_labels(sk: Skool, addr: int, pending_labels: List[string]) {
     foreach (var name in pending_labels) {
         sk.labels[name] = addr
         var key = str(addr)
@@ -119,7 +119,7 @@ func apply_pending_labels(sk, addr, pending_labels) {
     pending_labels.clear()
 }
 
-func parse_line(sk, line, pending_labels) {
+func parse_line(sk: Skool, line: string, pending_labels: List[string]) {
     if (len(line) == 0) {
         return
     }
@@ -160,7 +160,7 @@ func parse_line(sk, line, pending_labels) {
     }
 }
 
-func parse_file(sk, path) {
+func parse_file(sk: Skool, path: string) {
     var f = os.open(path, "r")
     var pending_labels = []
     try {
@@ -178,7 +178,7 @@ class Skool {
     // (-1): a read of an address the disassembly never defined raises
     // instead of yielding a plausible zero, which is the failure mode
     // that would otherwise produce a silently blank sprite.
-    __init__(path) {
+    __init__(path: string) {
         this.mem = []
         for (var i = 0; i < MEM_SIZE; i = i + 1) {
             this.mem.append(UNSET)
@@ -188,7 +188,7 @@ class Skool {
         parse_file(this, path)
     }
 
-    byte(addr) {
+    byte(addr: int) -> int {
         var v = this.mem[addr]
         if (v == UNSET) {
             raise Exception(format("Skool.byte: address %d was never disassembled", addr))
@@ -196,7 +196,7 @@ class Skool {
         return v
     }
 
-    bytes(addr, count) {
+    bytes(addr: int, count: int) -> List[int] {
         var out = []
         for (var i = 0; i < count; i = i + 1) {
             out.append(this.byte(addr + i))
@@ -204,11 +204,11 @@ class Skool {
         return out
     }
 
-    word(addr) {
+    word(addr: int) -> int {
         return this.byte(addr) + this.byte(addr + 1) * 256
     }
 
-    addr_of(label) {
+    addr_of(label: string) -> int {
         var a = this.labels.get(label, nil)
         if (a == nil) {
             raise Exception(format("Skool.addr_of: no such label '%s'", label))
@@ -216,14 +216,14 @@ class Skool {
         return a
     }
 
-    bytes_at_label(label, count) {
+    bytes_at_label(label: string, count: int) -> List[int] {
         return this.bytes(this.addr_of(label), count)
     }
 
     // The first label recorded at addr, or nil if none was ever
     // assigned there -- used to name sprite-table entries by their
     // original symbolic name rather than a hardcoded address.
-    label_at(addr) {
+    label_at(addr: int) -> string? {
         return this.addr_to_label.get(str(addr), nil)
     }
 }

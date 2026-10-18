@@ -21,7 +21,7 @@ const EXPLOSION_TICKS_PER_FRAME = 4
 // bright) and never anything else.
 const COLOUR_ATTRS = [66, 67, 70, 71]
 
-func explosion_colours() {
+func explosion_colours() -> List[float] {
     var out = []
     foreach (var attr in COLOUR_ATTRS) {
         var d = spectrum_attr.decode_attribute(attr)
@@ -32,7 +32,7 @@ func explosion_colours() {
 
 var EXPLOSION_COLOURS = explosion_colours()
 
-func random_explosion_colour() {
+func random_explosion_colour() -> float {
     return EXPLOSION_COLOURS[int(rand() * len(EXPLOSION_COLOURS))]
 }
 
@@ -47,7 +47,7 @@ class Explosion < Sprite {
         this.step_index = 0
     }
 
-    spawn(x, y) {
+    spawn(x: float, y: float) {
         this.x = x
         this.y = y
         this.step_index = 0

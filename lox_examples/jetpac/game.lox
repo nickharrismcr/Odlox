@@ -43,7 +43,7 @@ class Score {
         this.total = 0
     }
 
-    add(points) {
+    add(points: int) {
         this.total = this.total + points
     }
 }
@@ -104,7 +104,7 @@ class Game {
     // Finds an inactive explosion slot and starts it at (x, y) --
     // silently drops the explosion if all EXPLOSION_COUNT slots are
     // busy, which in practice never happens at this scale.
-    spawn_explosion(x, y) {
+    spawn_explosion(x: float, y: float) {
         foreach (var e in this.explosions) {
             if (!e.is_active()) {
                 e.spawn(x, y)
@@ -121,7 +121,7 @@ class Game {
         return this.is_game_over()
     }
 
-    tick(win) {
+    tick(win: Window) {
         this.sound.update()
         this.controller.update(win)
 
@@ -197,7 +197,7 @@ class Game {
 // lives run out) -- alien.lox's Alien.step() takes `g` as its
 // "explosions" argument (see spawn_explosion() above) purely so it can
 // call this on a kill; it never reads any other Game field.
-func step_death(g) {
+func step_death(g: Game) {
     if (!g.jetman.is_dead()) {
         return
     }

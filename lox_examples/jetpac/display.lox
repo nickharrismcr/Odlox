@@ -105,7 +105,7 @@ class Display {
 
     // Sets every cell's paper to `paper` and ink to `ink`, and clears the
     // bitmap -- a fresh blank display in one colour, e.g. at cavern load.
-    clear(ink, paper) {
+    clear(ink: float, paper: float) {
         this.bitmap.clear(0.0)
         this.attr_ink.clear(ink)
         this.attr_paper.clear(paper)
@@ -114,11 +114,11 @@ class Display {
 
     // Plots one bitmap pixel: BIT_SET if bit != 0.0, else clear. Colour
     // resolution happens later, on the GPU, in upload()/draw().
-    plot(x, y, bit) {
+    plot(x: int, y: int, bit: float) {
         this.bitmap.set(x, y, bit != 0.0 ? BIT_SET : 0.0)
     }
 
-    get_pixel(x, y) -> float {
+    get_pixel(x: int, y: int) -> float {
         return this.bitmap.get(x, y) != 0.0 ? 1.0 : 0.0
     }
 
@@ -126,7 +126,7 @@ class Display {
     // flash" primitive (see Willy's death sequence: cycles ink across
     // every cell on screen without redrawing a single sprite). The
     // bitmap itself is untouched.
-    set_attr(cx, cy, ink, paper) {
+    set_attr(cx: int, cy: int, ink: float, paper: float) {
         this.attr_ink.set(cx, cy, ink)
         this.attr_paper.set(cx, cy, paper)
         this.attr_dirty = true
@@ -141,7 +141,7 @@ class Display {
 
     // One flash tick: recolours every cell's ink. Paper stays black
     // (set by begin_flash()) for the rest of the flash.
-    flash_ink(ink) {
+    flash_ink(ink: float) {
         this.attr_ink.clear(ink)
         this.attr_dirty = true
     }
@@ -157,7 +157,7 @@ class Display {
     // sprites have real transparent gaps between struts/legs); most
     // callers (including this same sprite's own clear()) want the
     // default force-write instead, so background gets properly erased.
-    blit_sprite(sprite, x, y, ink, paper, reverse: bool = false, or_blit: bool = false) {
+    blit_sprite(sprite, x: int, y: int, ink: float, paper: float, reverse: bool = false, or_blit: bool = false) {
         var sw = sprite.width()
         var sh = sprite.height()
         for (var sy = 0; sy < sh; sy = sy + 1) {
@@ -194,7 +194,7 @@ class Display {
     // Rotates a width-pixel row at (x, y) circularly left by `amount`
     // positions (RLC on real hardware) -- e.g. the conveyor animation.
     // Reads/writes through plot(), so re-plotting stays idempotent.
-    rotate_row_left(x, y, width, amount) {
+    rotate_row_left(x: int, y: int, width: int, amount: int) {
         var old = []
         for (var i = 0; i < width; i = i + 1) {
             old.append(this.bitmap.get(x + i, y))
@@ -205,7 +205,7 @@ class Display {
     }
 
     // As rotate_row_left, but rotating right (RRC on real hardware).
-    rotate_row_right(x, y, width, amount) {
+    rotate_row_right(x: int, y: int, width: int, amount: int) {
         var old = []
         for (var i = 0; i < width; i = i + 1) {
             old.append(this.bitmap.get(x + i, y))
@@ -220,7 +220,7 @@ class Display {
     // discarding the bottom row and blanking the top -- the
     // crumbling-floor animation. A shift, not a wraparound: after
     // `height` calls the block is blank regardless of its start.
-    shift_rows_down(x, y, width, height) {
+    shift_rows_down(x: int, y: int, width: int, height: int) {
         for (var row = height - 1; row > 0; row = row - 1) {
             for (var col = 0; col < width; col = col + 1) {
                 this.plot(x + col, y + row, this.bitmap.get(x + col, y + row - 1))
@@ -231,11 +231,11 @@ class Display {
         }
     }
 
-    get_ink(cx, cy) -> float {
+    get_ink(cx: int, cy: int) -> float {
         return this.attr_ink.get(cx, cy)
     }
 
-    get_paper(cx, cy) -> float {
+    get_paper(cx: int, cy: int) -> float {
         return this.attr_paper.get(cx, cy)
     }
 
@@ -255,7 +255,7 @@ class Display {
     // draws rt scaled to (w, h) at (x, y). Negative source heights
     // compensate for render textures' bottom-up storage (see
     // game_of_life.lox's identical use of this).
-    draw(win, x, y, w, h) {
+    draw(win: Window, x: int, y: int, w: int, h: int) {
         win.begin_texture_mode(this.rt)
         win.begin_shader_mode(this.composite)
         // set_value_texture() resolves against whichever shader program

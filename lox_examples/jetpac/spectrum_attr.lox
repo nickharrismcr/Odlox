@@ -8,7 +8,7 @@ from gfx import *
 // Colour component bits, no native bitwise ops in this Lox dialect:
 // blue = value % 2, red = (value / 2) % 2, green = (value / 4) % 2
 // (e.g. 3 = magenta = R1G0B1, 6 = yellow = R1G1B0).
-func colour_to_rgba(value, bright) {
+func colour_to_rgba(value: int, bright: bool) -> float {
     var level = 205
     if (bright) {
         level = 255
@@ -29,7 +29,7 @@ func colour_to_rgba(value, bright) {
 // Returns {"ink": 0-7, "paper": 0-7, "bright": bool} for a raw Spectrum
 // attribute byte -- bright applies to both ink and paper together on
 // real hardware, so it's one shared flag, not per-colour.
-func decode_attribute(byte) {
+func decode_attribute(byte: int) -> Dict {
     var ink = byte % 8
     var paper = int(byte / 8) % 8
     var bright = int(byte / 64) % 2 != 0

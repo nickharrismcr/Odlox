@@ -16,7 +16,7 @@ const KEYBINDS_PATH = "data/keybinds.json"
 // key outside that set. Falls back to KEY_NULL (never down) for an
 // unrecognised name rather than erroring, so a typo in the config
 // disables that one action instead of crashing the game.
-func key_const(win, name) {
+func key_const(win: Window, name: string) -> int {
     if (name == "A") { return win.KEY_A }
     if (name == "B") { return win.KEY_B }
     if (name == "C") { return win.KEY_C }
@@ -72,7 +72,7 @@ class Controller {
         this.fire_key = nil
     }
 
-    load_keys(win) {
+    load_keys(win: Window) {
         var cfg = json.load(KEYBINDS_PATH)
         this.left_key = key_const(win, cfg["left"])
         this.right_key = key_const(win, cfg["right"])
@@ -82,7 +82,7 @@ class Controller {
         this.keys_loaded = true
     }
 
-    update(win) {
+    update(win: Window) {
         if (!this.keys_loaded) {
             this.load_keys(win)
         }

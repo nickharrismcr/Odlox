@@ -1,6 +1,10 @@
 from gfx import *
 import spectrum_attr
 import jetman as jetman_module
+from jetman import Jetman
+from display import Display
+from assets import SpriteAssets
+from platform import Platforms
 
 // @file laser.lox
 // @brief LaserPool: 4 preallocated beam slots. A beam is a **rigid
@@ -70,7 +74,7 @@ const HIT_DY = 12.0
 // laser_beam_colours' own 4 raw attribute bytes, decoded once.
 const COLOUR_ATTRS = [71, 67, 67, 69]
 
-func beam_colours() {
+func beam_colours() -> List[float] {
     var out = []
     foreach (var attr in COLOUR_ATTRS) {
         var d = spectrum_attr.decode_attribute(attr)
@@ -83,7 +87,7 @@ var BEAM_COLOURS = beam_colours()
 
 // Every mark in the ensemble, as [near, far) distance-from-front pairs
 // (near < far), built once. Order doesn't matter for drawing.
-func build_marks() {
+func build_marks() -> List[List[float]] {
     var marks = []
     marks.append([0.0, SOLID_LEN])
     var off = SOLID_LEN
@@ -101,19 +105,19 @@ func build_marks() {
 
 var MARKS = build_marks()
 
-func rand_range(lo, hi) {
+func rand_range(lo: float, hi: float) -> float {
     return lo + rand() * (hi - lo)
 }
 
 // Display.plot()/set_attr() don't bounds-check (unlike blit_sprite,
 // which clips its own loop), so every plot here needs its own guard.
-func plot_clamped(disp, x, y, v) {
+func plot_clamped(disp: Display, x: int, y: int, v: float) {
     if (x >= 0 and x < SCREEN_W and y >= 0 and y < SCREEN_H) {
         disp.plot(x, y, v)
     }
 }
 
-func new_beam() {
+func new_beam() -> Dict {
     return {
         "active": false,
         "y": 0.0,
@@ -144,7 +148,7 @@ class LaserPool {
     // from the right edge (this.x + the current sprite's own width)
     // instead (confirmed against LaserBeamInit/LaserBeamShootRight,
     // $6F70/$6FB6).
-    fire(jetman, lib) {
+    fire(jetman: Jetman, lib: SpriteAssets) {
         for (var i = 0; i < MAX_BEAMS; i = i + 1) {
             var b = this.beams[i]
             if (!b["active"]) {
@@ -169,7 +173,7 @@ class LaserPool {
         }
     }
 
-    clear(disp) {
+    clear(disp: Display) {
         foreach (var b in this.beams) {
             if (b["last_lo"] == nil) {
                 continue
@@ -185,7 +189,7 @@ class LaserPool {
     // Advances the front a fixed step, deactivating the beam outright
     // the instant it hits something, leaves the screen, or its own
     // random max-range countdown runs out.
-    update(platforms) {
+    update(platforms: Platforms) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
                 continue
@@ -207,7 +211,7 @@ class LaserPool {
         }
     }
 
-    draw(disp) {
+    draw(disp: Display) {
         foreach (var b in this.beams) {
             if (!b["active"]) {
                 continue
@@ -270,7 +274,7 @@ class LaserPool {
 
     // Consumes and returns true for the first active beam whose front
     // (tip) is within the asymmetric hit window of (x, y).
-    check_hit(x, y) -> bool {
+    check_hit(x: float, y: float) -> bool {
         foreach (var b in this.beams) {
             if (!b["active"]) {
                 continue
