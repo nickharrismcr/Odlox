@@ -227,22 +227,22 @@ void main() {
 // vector-plus-vector (that's `++`, see arithmetic.odin) -- 3d_shapes_mem_
 // shader.lox builds vec3 results component-wise for the same reason, so
 // this follows the same pattern rather than relying on `++`.
-func vec3_add(a, b) {
+func vec3_add(a: vec3, b: vec3) -> vec3 {
     return vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 }
-func vec3_sub(a, b) {
+func vec3_sub(a: vec3, b: vec3) -> vec3 {
     return vec3(a.x - b.x, a.y - b.y, a.z - b.z)
 }
-func vec3_scale(v, s) {
+func vec3_scale(v: vec3, s: float) -> vec3 {
     return vec3(v.x * s, v.y * s, v.z * s)
 }
-func vec3_cross(a, b) {
+func vec3_cross(a: vec3, b: vec3) -> vec3 {
     return vec3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
 }
-func vec3_length(v) {
+func vec3_length(v: vec3) -> float {
     return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z)
 }
-func vec3_normalize(v) {
+func vec3_normalize(v: vec3) -> vec3 {
     var len = vec3_length(v)
     return vec3(v.x / len, v.y / len, v.z / len)
 }
@@ -308,7 +308,7 @@ var max_iterations_loc = mandelbox_shader.get_location("max_iterations")
 // APPROX_FRACTAL_RADIUS, stands in for distance to the fractal's surface. Linearly
 // interpolated between MIN_ITERATIONS (at DETAIL_FAR_DIST or beyond) and MAX_ITERATIONS
 // (at DETAIL_NEAR_DIST or closer), called once per frame so detail ramps up smoothly.
-func update_detail_level(cam_pos) {
+func update_detail_level(cam_pos: vec3) -> float {
     var dist_to_surface = vec3_length(cam_pos) - APPROX_FRACTAL_RADIUS
     var detail_t = (DETAIL_FAR_DIST - dist_to_surface) / (DETAIL_FAR_DIST - DETAIL_NEAR_DIST)
     detail_t = math.max(0.0, math.min(1.0, detail_t))

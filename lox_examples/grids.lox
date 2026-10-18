@@ -7,8 +7,8 @@ import colour
 import math; 
 
 class Siner {
-    __init__(min,max,rate) {
-        this.x = 0
+    __init__(min: int,max: int,rate: int) {
+        this.x = 0.0
         this.rate = rate
         this.min = min
         this.max = max
@@ -21,13 +21,13 @@ class Siner {
         } 
         this.x = math.sin(this.c / 100.0) * (this.max - this.min) / 2 + (this.max + this.min) / 2
     }
-    get() {
+    get() -> float {
         return this.x
     }
 }
 
 class Bouncer {
-    __init__(min,max,dx) {
+    __init__(min: int,max: int,dx: int) {
         this.x= random.integer(min, max)
         this.dx = dx
         this.min=min
@@ -44,13 +44,13 @@ class Bouncer {
             this.dx = -this.dx
         }
     }
-    copy() {
+    copy() -> Bouncer {
         return Bouncer(this.min, this.max, this.dx)
     }
-    get() {
+    get() -> int {
         return this.x
     }
-    set(value) {
+    set(value: int) {
         this.x = value
     }
 }
@@ -68,7 +68,7 @@ class ColourShift {
         this.b.update()
        
     }
-    get() {
+    get() -> vec4 {
         return vec4(this.r.get(), this.g.get(), this.b.get(), 255)
     }
 
@@ -82,7 +82,7 @@ win.init()
 win.toggle_fullscreen()
 
 class Grid {
-    __init__(cx, cy, size, cells, angle, col,speed) {
+    __init__(cx: int, cy: int, size: float, cells: int, angle: float, col: vec4,speed: int) {
         this.cx = cx
         this.cy = cy
         this.size = size
@@ -92,10 +92,10 @@ class Grid {
         this.c = 0
         this.speed = speed
     }
-    copy() {
+    copy() -> Grid {
         return Grid(this.cx, this.cy, this.size, this.cells , this.angle, vec4(this.col.x, this.col.y, this.col.z, this.col.w), this.speed)
     }
-    update(x,y,size) {
+    update(x: int,y: int,size: float) {
         
         this.c = this.c + 1
         if (this.c > 100000) {
@@ -106,7 +106,7 @@ class Grid {
         this.cy = y
         this.size = size
     }
-    draw(scale=1.0) {
+    draw(scale: float=1.0) {
         n = this.cells 
         sz=this.size*scale 
         a=this.angle
@@ -138,7 +138,7 @@ class Grid {
     }
 }
 
-func enumerate(list) {
+func enumerate(list: List) -> List[List] {
     var result = []
     for (var i = 0; i < len(list); i = i + 1) {
         result.append((i, list[i]))

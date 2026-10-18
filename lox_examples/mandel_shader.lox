@@ -163,7 +163,7 @@ void main() {
 // with hi exactly representable in float32 and lo holding the remainder, giving ~48 bits
 // of precision once both round-trip through float32 on upload. Veltkamp's algorithm:
 // splitter = 2^29 + 1 isolates the top 24 bits of a 53-bit double's mantissa.
-func split_double(a) {
+func split_double(a: float) -> vec2 {
     var SPLITTER = 536870913.0;
     var t = a * SPLITTER;
     var hi = t - (t - a);

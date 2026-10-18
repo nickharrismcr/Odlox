@@ -35,7 +35,7 @@ foreach (i in range(COLOR_TABLE_SIZE)) {
     colorTable.append(vec4(rgb.x, rgb.y, rgb.z, 255))
 }
 
-func heightToColor(height) {
+func heightToColor(height: float) -> vec4 {
     normalizedHeight = (height + WAVE_HEIGHT) / (2.0 * WAVE_HEIGHT)
     if (normalizedHeight < 0) normalizedHeight = 0
     if (normalizedHeight > 1) normalizedHeight = 1

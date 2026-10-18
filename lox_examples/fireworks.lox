@@ -6,6 +6,7 @@ import random;
 import colour;
 from math import * 
 import particle_sys;
+from particle_sys import Particle;
 
 MIN_PARTICLES=20
 MAX_PARTICLES=100
@@ -14,7 +15,7 @@ MAX_DELAY= 30
 
  
 // particle update function
-func move(particle) {
+func move(particle: Particle) {
     var dpos = particle.dpos;
     dpos.x = dpos.x * 0.98;
     dpos.y = dpos.y + 0.1;  //gravity
@@ -24,7 +25,7 @@ func move(particle) {
 }
 
 // return a particle initialisation closure
-func init(col1,col2) {
+func init(col1: vec4,col2: vec4) {
 
     // Capped at 300 (was 1000): steady-state concurrent particle count is roughly
     // (spawn rate) x (avg lifetime), so an unbounded lifemax let long-lived stragglers
@@ -35,7 +36,7 @@ func init(col1,col2) {
     var cols=[col1,col2]; // built once per emitter, captured by the closure
 
     // anonymous closure over lifemax/speedmax/sizemax/cols
-    return func(particle) {
+    return func(particle: Particle) {
         particle.dpos = vec2(1,1); // Initial velocity
         var angle = random.float(0, 2 * PI); // Random angle
         particle.dpos = rotate2d(particle.dpos, angle); // Rotate the initial velocity
@@ -47,11 +48,11 @@ func init(col1,col2) {
     };
 }
 
-func random_vec_2D(xmin,xmax,ymin,ymax) {
+func random_vec_2D(xmin: int,xmax: int,ymin: int,ymax: int) -> vec2 {
   return vec2(random.integer(xmin,xmax),random.integer(ymin,ymax))
 }
 
-func queue_random_emitter(width,height,delay){
+func queue_random_emitter(width: int,height: int,delay: int){
     var pos=random_vec_2D(200,width-200,0,height/2);
     var pcols=colour.primary_colours();
     var ecol1 = pcols[random.choice(pcols.keys())];
@@ -60,7 +61,7 @@ func queue_random_emitter(width,height,delay){
     emitters.queue(particle_sys.Emitter(pos, init(ecol1,ecol2), move), random.integer(MIN_PARTICLES, MAX_PARTICLES), delay); 
 }
 STARS=300
-func make_stars(){
+func make_stars() -> List[List]{
     var stars=[];
     for ( var i = 0; i < STARS ; i=i+1 ){
         var pos=random_vec_2D(0,width,0,height);
@@ -71,7 +72,7 @@ func make_stars(){
     return stars;
 }
 
-func update_stars(stars, batch) {
+func update_stars(stars: List[List], batch: Batch2D) {
     foreach (var s in stars) {
 
         if (random.integer(0,1000) < 4) {

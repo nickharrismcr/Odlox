@@ -4,18 +4,18 @@ import math
 import colour as col 
 import inspect
 
-func ceil(x) {
+func ceil(x: float) -> int {
     var ix = int(x)
     return x > float(ix) ? ix + 1 : ix
 }
 
-func floor(x) {
+func floor(x: float) -> int {
     var ix = int(x)
     return x < float(ix) ? ix - 1 : ix
 }
 
 class Line {
-    __init__(pos, col, width, height, angle, margin) {
+    __init__(pos: vec2, col: vec4, width: int, height: int, angle: float, margin: int) {
         this.margin = margin
         this.pos = vec2(margin + rn.integer(0, width - 2 * margin),margin + rn.integer(0, height - 2 * margin))
         this.dr=1.03 
@@ -64,13 +64,13 @@ class Line {
             this.dspeed = -this.dspeed
         }         
     }
-    draw(frame) {
+    draw(frame: RenderTexture) {
         frame.line_ex(this.pos.x, this.pos.y, this.lastp.x, this.lastp.y, this.thickness, this.col)
     }
 }
 
 class Tile {
-    __init__(width, height, lines, margin) {
+    __init__(width: int, height: int, lines: List[Line], margin: int) {
         this.width = width
         this.height = height
         this.rotation = 0.0
@@ -89,19 +89,19 @@ class Tile {
             line.draw(this.texture)
         }
     }
-    move(pos) {
+    move(pos: vec2) {
         this.pos = vec2(pos.x, pos.y)
     }
-    clear(col) {
+    clear(col: vec4) {
         this.texture.clear(col)
     }
-    draw(win) {
+    draw(win: Window) {
         win.draw_render_texture_ex(this.texture, this.pos.x, this.pos.y, this.rotation, this.scale, vec4(255, 255, 255, 255))
     }
 }
 
 class Tiler {
-    __init__(scale, speed) {
+    __init__(scale: float, speed: vec2) {
         this.tile = nil
         this.offset = vec2(0, 0) // scrolling offset in pixels
         this.scale = scale
@@ -111,13 +111,13 @@ class Tiler {
         this.target_angle = this.scroll_angle
         this.hash_seed = rn.float(0.0, 1000.0) // per-layer tile_hash seed
     }
-    add(tile) {
+    add(tile: Tile) {
         this.tile = tile
         this.tile.scale = this.scale
         this.tiles_w = ceil(W / (this.tile.width * this.scale)) + 2
         this.tiles_h = ceil(H / (this.tile.height * this.scale)) + 2
     }
-    set_speed(vec2speed) {
+    set_speed(vec2speed: vec2) {
         this.scroll_speed = math.sqrt(vec2speed.x * vec2speed.x + vec2speed.y * vec2speed.y)
         this.target_angle = math.atan2(vec2speed.y, vec2speed.x)
     }
@@ -135,7 +135,7 @@ class Tiler {
         this.offset = this.offset ++ this.speed 
  
     }
-    draw(win) {
+    draw(win: Window) {
         var tw = this.tile.width * this.scale
         var th = this.tile.height * this.scale
         var itw = int(tw)
@@ -175,12 +175,12 @@ SKIP_PROBABILITY = 0.6 // fraction of grid cells left empty per layer
 
 // Deterministic sin/fract hash -> [0, 1): same (i, j, seed) always gives
 // the same result, unlike rn.* which advances a shared random stream.
-func tile_hash(i, j, seed) {
+func tile_hash(i: int, j: int, seed: float) -> float {
     var v = math.sin(float(i) * 12.9898 + float(j) * 78.233 + seed) * 43758.5453
     return v - floor(v)
 }
 
-func make_lines(n, width, height, alpha,margin) {
+func make_lines(n: int, width: int, height: int, alpha: int,margin: int) -> List[Line] {
     var lines = []
    
     for (var i = 0; i < n; i = i + 1) {
@@ -192,7 +192,7 @@ func make_lines(n, width, height, alpha,margin) {
     return lines
 }
 
-func get_tilers()
+func get_tilers() -> List[Tiler]
 {
     var margin =1  // adjust as needed for inner square size
     tilers= [] 
@@ -211,7 +211,7 @@ func get_tilers()
     return tilers
 }
 
-func clear_tilers(tilers) {
+func clear_tilers(tilers: List[Tiler]) {
     margin = 1
     for (i = 0; i < len(tilers); i = i + 1) {
         t = tilers[i]

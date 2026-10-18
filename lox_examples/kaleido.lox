@@ -10,7 +10,7 @@ const TRANSPARENT = vec4(0,0,0,0)  // reused every frame by draw_segment's rt.cl
 
 // --- TextureSampler class ---
 class TextureSampler {
-    __init__(tex, sampleWidth, sampleHeight) {
+    __init__(tex: Texture, sampleWidth: float, sampleHeight: int) {
         this.tex = tex
         this.TextureWidth = tex.width()
         this.TextureHeight = tex.height()
@@ -46,7 +46,7 @@ class TextureSampler {
 
 // --- Pen: a bouncing brush that paints onto the live canvas, same movement scheme as tile_planes.lox's Line ---
 class Pen {
-    __init__(width, height, margin) {
+    __init__(width: int, height: int, margin: int) {
         this.margin = margin
         this.width = width
         this.height = height
@@ -100,7 +100,7 @@ class Pen {
         }
     }
 
-    draw(canvas) {
+    draw(canvas: RenderTexture) {
         canvas.line_ex(this.lastp.x, this.lastp.y, this.pos.x, this.pos.y, this.thickness, this.col)
     }
 }

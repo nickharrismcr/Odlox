@@ -60,7 +60,7 @@ DIRECTION_NAMES= {
 
 
 // Add this function before the main program
-func createColoredTextures(count) {
+func createColoredTextures(count: int) -> List[RenderTexture] {
     textures = []
     
     for (i = 0; i < count; i = i + 1) {
@@ -111,7 +111,7 @@ func createColoredTextures(count) {
     return textures
 }
 
-func even(value) {
+func even(value: int) -> int {
     value = int(value)
     // Ensure value is even
     return value % 2 == 1 ? value - 1 : value
@@ -129,7 +129,7 @@ class Batches {
             this.sizes.append(size)  // Store size for each batch
         }
     }
-    get_random_batch() {
+    get_random_batch() -> List {
         // Get a random batch and its size
         which = random.integer(0, MAX_COLOURS - 1)  // Randomly select a texture
         return (this.batches[which], this.sizes[which])  // Return batch and size
@@ -143,7 +143,7 @@ class Batches {
         }
     }   
  
-    draw(cam){
+    draw(cam: Camera3D){
         // Draw all batches
         foreach (batch in this.batches) {
          
@@ -154,12 +154,12 @@ class Batches {
 
 // Cube class - represents a single textured cube instance
 class Cube {
-    __init__(position) {
+    __init__(position: vec3) {
         this.position = vec3(position.x, position.y, position.z)
     }
-    add_to_batch(batch) {  
+    add_to_batch(batch: BatchInstanced) {  
        
-        return batch.add(this.position, vec3(1,0,0), 0.0 )
+        batch.add(this.position, vec3(1,0,0), 0.0 )
     }
 }
 
@@ -167,7 +167,7 @@ class Cube {
 
 // Stack class - a vertical stack of CompositeCubes
 class Stack {
-    __init__(gridX, gridZ, height, cubeBatches) {
+    __init__(gridX: int, gridZ: int, height: int, cubeBatches: Batches) {
         this.gridX = gridX
         this.gridZ = gridZ
         this.height = height
@@ -193,7 +193,7 @@ class Stack {
 
 // Grid class - manages the city layout with stacks and streets
 class Grid {
-    __init__(size, cubeBatch) {
+    __init__(size: int, cubeBatch: Batches) {
         this.size = size
         this.stacks = []
           // Create stacks only at odd grid positions (leaving even positions as streets)
@@ -210,7 +210,7 @@ class Grid {
     
     
       // Check if a grid position is valid for camera movement (even positions = streets)
-    isValidStreetPosition(gridX, gridZ) {
+    isValidStreetPosition(gridX: int, gridZ: int) -> bool {
         validX = (gridX >= 0 and gridX < this.size)
         validZ = (gridZ >= 0 and gridZ < this.size)
         evenX = (gridX % 2 == 0)
@@ -218,7 +218,7 @@ class Grid {
         return (validX and validZ and evenX and evenZ)
     }
       // Check if position is at grid boundary (will hit boundary in next move)
-    isAtBoundary(gridX, gridZ) {
+    isAtBoundary(gridX: int, gridZ: int) -> bool {
         // Return true if the grid position is on the boundary (first or last row/col)
         print ("isAtBoundary?",gridX,gridZ, this.size)
         if (gridX <= 2 or gridX >= this.size - 2) {
@@ -233,7 +233,7 @@ class Grid {
 
 // Controller class - manages camera movement through the city
 class Controller {
-    __init__(grid) {
+    __init__(grid: Grid) {
         this.grid = grid
        
         this.direction = NORTH
@@ -262,7 +262,7 @@ class Controller {
         this.nextTarget()
     }
     
-    gridToWorld(gridPos) {
+    gridToWorld(gridPos: vec3) -> vec3 {
         // Convert grid coordinates to world coordinates
         halfSize = int(this.grid.size / 2)
         wx = (gridPos.x - halfSize) * STACK_SPACING
@@ -270,7 +270,7 @@ class Controller {
         return vec3(wx, 0, wz)
     }
 
-    distance_to_edge(gridPos, direction) {
+    distance_to_edge(gridPos: vec3, direction: int) -> float {
         // Calculate distance to edge of grid in current direction
         // Streets are at even positions from 2 to (grid.size - 3)
         
@@ -283,7 +283,7 @@ class Controller {
         } else if (direction == WEST) {
             return gridPos.x - 2
         }
-        return 0
+        return 0.0
     }
     
     nextTarget() {
@@ -398,11 +398,11 @@ class Controller {
 
  
 
-    directionToAngle(direction) {
+    directionToAngle(direction: int) -> float {
         return DIRECTIONS[direction]
     }
 
-    getCamera() {
+    getCamera() -> Camera3D {
         // Simple camera pointing in current direction with gentler vertical movement
         camY = 8* CAMERA_HEIGHT + math.sin(this.frameCount * 0.005) * 8.0  // Slower, smaller oscillation
         

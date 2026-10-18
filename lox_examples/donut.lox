@@ -51,7 +51,7 @@ for (var i = 0.0; i < 6.28; i += 0.02) {
 }
 const I_COUNT = len(sin_i)
 
-func render_frame(A, B) {
+func render_frame(A: float, B: float) {
     const e = _sin(A)
     const g = _cos(A)
     const m = _cos(B)

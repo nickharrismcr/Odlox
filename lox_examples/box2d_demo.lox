@@ -36,7 +36,7 @@ var WORLD_H = 0.0
 // gravity is zero so the axis convention doesn't matter physically.
 // offset_x shifts into the scene's half of the split screen (0 for the left
 // panel, HALF_W for the right).
-func to_screen(pos, offset_x) {
+func to_screen(pos: vec2, offset_x: int) -> vec2 {
     return vec2(offset_x + pos.x * SCALE, HEIGHT - pos.y * SCALE)
 }
 
@@ -47,7 +47,7 @@ const SCENE1_COUNT = 500
 const SCENE1_KILLER_COUNT = 40
 
 class Scene1 {
-    __init__(offset_x) {
+    __init__(offset_x: int) {
         this.offset_x = offset_x
         this.world = box2d.world(vec2(0.0, 0.0))
         this.ids = []
@@ -137,11 +137,11 @@ class Scene1 {
     }
 
     // Every non-killer ball has been despawned.
-    regular_remaining() {
+    regular_remaining() -> int {
         return len(this.ids) - len(this.killer_ids)
     }
 
-    draw(win) {
+    draw(win: Window) {
         i = 0
         foreach (var id in this.ids) {
             pos = to_screen(this.world.get_position(id), this.offset_x)
@@ -166,7 +166,7 @@ const SCENE2_BALL_RADIUS_MAX = 10.0 / SCALE
 const KILL_Y = -2.0
 
 class Scene2 {
-    __init__(offset_x) {
+    __init__(offset_x: int) {
         this.offset_x = offset_x
         this.world = box2d.world(vec2(0.0, -10.0))
         this.ids = []
@@ -191,7 +191,7 @@ class Scene2 {
         this.world.add_box(vec2(-wall_t / 2, WORLD_H / 2), vec2(wall_t / 2, WORLD_H / 2 + wall_t), 0.0, STATIC, 1.0, 0.4, 0.2)
     }
 
-    add_ramp(cx, cy, half_len, angle) {
+    add_ramp(cx: float, cy: float, half_len: float, angle: float) -> List {
         id = this.world.add_box(vec2(cx, cy), vec2(half_len, 0.12), angle, STATIC, 1.0, 0.4, 0.2)
         return [id, half_len]
     }
@@ -233,11 +233,11 @@ class Scene2 {
     }
 
     // Finished spawning and every ball has fallen off screen.
-    is_done() {
+    is_done() -> bool {
         return this.spawned >= SCENE2_TOTAL and len(this.ids) == 0
     }
 
-    draw(win) {
+    draw(win: Window) {
         // Ramps, drawn as thick red lines along their real long axis
         // (they're thin boxes -- a line is visually indistinguishable
         // and much simpler than a rotated-rectangle draw call).
@@ -276,12 +276,12 @@ HALF_W = WIDTH / 2
 WORLD_W = HALF_W / SCALE
 WORLD_H = HEIGHT / SCALE
 
-s1 = Scene1(0.0)
+s1 = Scene1(0)
 s2 = Scene2(HALF_W)
 
 while (!win.should_close()) {
     if (win.key_pressed(win.KEY_R)) {
-        s1 = Scene1(0.0)
+        s1 = Scene1(0)
         s2 = Scene2(HALF_W)
     }
 
@@ -289,7 +289,7 @@ while (!win.should_close()) {
     if (s1.regular_remaining() <= 0) {
         // All non-killer balls are gone -- this used to switch to scene 2;
         // now it just rebuilds the left panel in place.
-        s1 = Scene1(0.0)
+        s1 = Scene1(0)
     }
 
     s2.step()

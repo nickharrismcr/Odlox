@@ -374,7 +374,7 @@ void main() {
 }
 "
 
-func load_step(src) {
+func load_step(src: string) -> Shader {
     var s = shader()
     s.load_from_memory(vertex_shader_src, src)
     if (!s.is_valid()) {
@@ -398,7 +398,7 @@ var quadlife_display = load_step(quadlife_display_src)
 
 // resolution is fixed for the whole run, so set once per shader here
 // rather than every frame.
-func set_resolution(s) {
+func set_resolution(s: Shader) {
     var loc = s.get_location("resolution")
     s.set_value_vec2(loc, vec2(cols, rows))
 }
@@ -414,13 +414,13 @@ set_resolution(quadlife_step)
 // directly), or vec4(byte, 0, 0, 255) for a multi-state rule's "state
 // `byte`" (read back as byte / 255 by that rule's own shaders).
 
-func set_wrapped_px(rt, x, y, col) {
+func set_wrapped_px(rt: RenderTexture, x: int, y: int, col: vec4) {
     var wx = ((x % cols) + cols) % cols
     var wy = ((y % rows) + rows) % rows
     rt.pixel(wx, wy, col)
 }
 
-func draw_random_line(rt, value_fn) {
+func draw_random_line(rt: RenderTexture, value_fn) {
     var x0 = random.integer(0, cols - 1)
     var y0 = random.integer(0, rows - 1)
     var length = random.integer(cols / 8, cols / 2)
@@ -441,7 +441,7 @@ func draw_random_line(rt, value_fn) {
     }
 }
 
-func draw_random_box(rt, value_fn) {
+func draw_random_box(rt: RenderTexture, value_fn) {
     var x0 = random.integer(0, cols - 1)
     var y0 = random.integer(0, rows - 1)
     var w = random.integer(cols / 12, cols / 4)
@@ -457,7 +457,7 @@ func draw_random_box(rt, value_fn) {
     }
 }
 
-func draw_random_block(rt, value_fn) {
+func draw_random_block(rt: RenderTexture, value_fn) {
     var x0 = random.integer(0, cols - 1)
     var y0 = random.integer(0, rows - 1)
     var w = random.integer(cols / 20, cols / 6)
@@ -470,7 +470,7 @@ func draw_random_block(rt, value_fn) {
     }
 }
 
-func randomise_with(rt, value_fn) {
+func randomise_with(rt: RenderTexture, value_fn) {
     rt.clear(colour.BLACK)
     for (var i = 0; i < NUM_LINES; i = i + 1) {
         draw_random_line(rt, value_fn)
@@ -483,19 +483,19 @@ func randomise_with(rt, value_fn) {
     }
 }
 
-func randomise(rt) {
-    randomise_with(rt, func () { return colour.WHITE })
+func randomise(rt: RenderTexture) {
+    randomise_with(rt, func () -> vec4 { return colour.WHITE })
 }
 
 // Generations/Brian's Brain read state as byte/255 (see their step
 // shaders), so "state 1" must seed as byte 1, not colour.WHITE (byte
 // 255, which decodes as state 255 and instantly wraps to dead).
-func randomise_multistate(rt) {
-    randomise_with(rt, func () { return vec4(1, 0, 0, 255) })
+func randomise_multistate(rt: RenderTexture) {
+    randomise_with(rt, func () -> vec4 { return vec4(1, 0, 0, 255) })
 }
 
-func randomise_immigration(rt) {
-    randomise_with(rt, func () {
+func randomise_immigration(rt: RenderTexture) {
+    randomise_with(rt, func () -> vec4 {
         if (random.integer(0, 1) == 0) {
             return vec4(1, 0, 0, 255)
         }
@@ -503,8 +503,8 @@ func randomise_immigration(rt) {
     })
 }
 
-func randomise_quadlife(rt) {
-    randomise_with(rt, func () {
+func randomise_quadlife(rt: RenderTexture) {
+    randomise_with(rt, func () -> vec4 {
         return vec4(random.integer(1, 4), 0, 0, 255)
     })
 }
@@ -514,7 +514,7 @@ func randomise_quadlife(rt) {
 // the raw white/black texture with tint_colour instead), and a
 // randomiser. Mirrors game_of_life.lox's own Strategy class.
 class Strategy {
-    __init__(name, step_shader, birth_mask, survival_mask, display_shader, tint_colour, randomise_fn) {
+    __init__(name: string, step_shader: Shader?, birth_mask: float?, survival_mask: float?, display_shader: Shader?, tint_colour: vec4?, randomise_fn) {
         this.name = name
         this.step_shader = step_shader
         this.birth_mask = birth_mask
@@ -543,7 +543,7 @@ var strategy = strategies[0]
 var generation = 0
 var auto_switch = true
 
-func activate_strategy(index) {
+func activate_strategy(index: int) {
     strategy_index = index
     strategy = strategies[strategy_index]
     if (strategy.step_shader == nil) {

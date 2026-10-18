@@ -42,7 +42,7 @@ const IDX_MAGIC = "BTREE-IDX 1"
 
 // os.write turns a backslash-n pair into a newline, so saved text stores every
 // backslash as backslash-b; read_text reverses it.
-func write_text(path, text) {
+func write_text(path: string, text: string) {
     var fp = os.open(path, "w")
     try {
         os.write(fp, text.replace(BS, BS & "b"))
@@ -51,14 +51,14 @@ func write_text(path, text) {
     }
 }
 
-func read_text(path) {
+func read_text(path: string) -> string {
     return os.read_all(path).replace(BS & "b", BS)
 }
 
 // Lines of text without newlines. re.split (native; the literal "\n" is the
 // regex for a newline) leaves an empty piece after a final newline, which is
 // dropped.
-func split_lines(text) {
+func split_lines(text: string) -> List[string] {
     var lines = re.split("\n", text)
     if (lines[len(lines) - 1] == "") {
         lines.remove(len(lines) - 1)
@@ -66,12 +66,12 @@ func split_lines(text) {
     return lines
 }
 
-func read_lines(path) {
+func read_lines(path: string) -> List[string] {
     return split_lines(os.read_all(path))
 }
 
 // Lines that are neither blank nor start with a space or tab.
-func data_lines(lines) {
+func data_lines(lines: List[string]) -> List[string] {
     var kept = []
     foreach (var line in lines) {
         if (line != "" and line[0] != " " and line[0] != TAB) {
@@ -83,7 +83,7 @@ func data_lines(lines) {
 }
 
 // Space-separated ints -> list.
-func parse_ints(text) {
+func parse_ints(text: string) -> List[int] {
     var ints = []
     foreach (var field in re.split(" ", text)) {
         if (field != "") {
@@ -99,7 +99,7 @@ func parse_ints(text) {
 class Node {
     static next_id = 0
 
-    __init__(leaf) {
+    __init__(leaf: bool) {
         this.id = Node.next_id
         Node.next_id = Node.next_id + 1
         this.leaf = leaf
@@ -109,7 +109,7 @@ class Node {
     }
 
     // Index of the first key >= key (len(keys) if all are smaller).
-    position(key) {
+    position(key: string) -> int {
         var i = 0
         while (i < len(this.keys) and this.keys[i] < key) {
             i = i + 1
@@ -117,14 +117,14 @@ class Node {
         return i
     }
 
-    overfull() {
+    overfull() -> bool {
         return len(this.keys) > MAX_KEYS
     }
 
     // Splits an overfull (MAX_KEYS + 1) node into this (left) and a new right
     // sibling of MIN_KEYS keys each. Returns (median_key, median_rows, right)
     // for the parent to absorb.
-    split() {
+    split() -> List {
         var mid = MIN_KEYS
         var right = Node(this.leaf)
         right.keys = this.keys[mid + 1:]
@@ -145,7 +145,7 @@ class Node {
 class Index {
     // key_parts: list of 1..MAX_KEY_PARTS (start, end) pairs, 0-based, end
     // exclusive; a line's key is the concatenation of those slices.
-    __init__(file, key_parts = DEFAULT_KEY_PARTS) {
+    __init__(file: List[string], key_parts: List[List[int]] = DEFAULT_KEY_PARTS) {
         if (len(key_parts) < 1 or len(key_parts) > MAX_KEY_PARTS) {
             raise Exception("key needs 1 to ${MAX_KEY_PARTS} parts, got ${len(key_parts)}")
         }
@@ -162,7 +162,7 @@ class Index {
     }
 
     // The key of a data line: each part's slice, space-padded to its width.
-    key_of(line) {
+    key_of(line: string) -> string {
         var key = ""
         foreach (var part in this.key_parts) {
             var field = line[part[0]:part[1]]
@@ -172,7 +172,7 @@ class Index {
     }
 
     // Adds file[row] under its key.
-    add_row(row) {
+    add_row(row: int) {
         this.add(this.key_of(this.file[row]), row)
     }
 
@@ -185,7 +185,7 @@ class Index {
     }
 
     // Adds key -> row. A key already present gets row appended to its list.
-    add(key, row) {
+    add(key: string, row: int) {
         if (DEBUG) { log.debug("add ${key} -> row ${row}") }
         var split = this.insert(this.root, key, row)
         if (split != nil) {
@@ -199,7 +199,7 @@ class Index {
     }
 
     // Recursive insert; returns a split tuple if node overflowed, else nil.
-    insert(node, key, row) {
+    insert(node: Node, key: string, row: int) -> List? {
         var i = node.position(key)
         if (i < len(node.keys) and node.keys[i] == key) {
             node.rows[i].append(row)
@@ -230,7 +230,7 @@ class Index {
     }
 
     // Copy of the rows for key in insertion order, or nil if absent.
-    find_rows(key) {
+    find_rows(key: string) -> List[int]? {
         if (DEBUG) { log.debug("find ${key}") }
         var node = this.root
         while (true) {
@@ -249,7 +249,7 @@ class Index {
     }
 
     // The file lines for key in row order, or nil if absent.
-    get(key) {
+    get(key: string) -> List[string]? {
         if (DEBUG) { log.debug("get ${key}") }
         var rows = this.find_rows(key)
         if (rows == nil) {
@@ -263,12 +263,12 @@ class Index {
     }
 
     // Iterator over the file's lines in key order (equal keys in row order): foreach (var line in index.in_order()).
-    in_order() {
+    in_order() -> InOrderIter {
         if (DEBUG) { log.debug("in_order iterator created") }
         return InOrderIter(this)
     }
 
-    height() {
+    height() -> int {
         var h = 1
         var node = this.root
         while (!node.leaf) {
@@ -287,7 +287,7 @@ class Index {
         if (DEBUG) { log.debug("validate: ok") }
     }
 
-    check(node, lo, hi, depth, leaf_depth) {
+    check(node: Node, lo: string?, hi: string?, depth: int, leaf_depth: int) {
         var n = len(node.keys)
         if (DEBUG) { log.debug("check node ${node.id}: depth ${depth}, ${n} keys, bounds (${lo}, ${hi})") }
         if (node != this.root and (n < MIN_KEYS or n > MAX_KEYS)) {
@@ -329,7 +329,7 @@ class Index {
     //   nodes N, then per node in breadth-first order (root is node 0):
     //   "N leaf nkeys", nkeys lines of "K <key, K bytes> <rows...>",
     //   and for internal nodes "C <child node numbers...>".
-    save(base) {
+    save(base: string) {
         if (DEBUG) { log.debug("save: ${base}.dat (${len(this.file)} rows), ${base}.idx") }
         write_text(base & ".dat", NL.join(this.file) & NL)
 
@@ -378,7 +378,7 @@ class Index {
     }
 
     // Opens a base.dat/base.idx pair written by save().
-    static open(base) {
+    static open(base: string) -> Index {
         if (DEBUG) { log.debug("open: ${base}.dat, ${base}.idx") }
         var file = split_lines(read_text(base & ".dat"))
         var lines = split_lines(read_text(base & ".idx"))
@@ -436,7 +436,7 @@ class Index {
     }
 
     // Width of every key: the sum of the part widths.
-    key_len() {
+    key_len() -> int {
         var n = 0
         foreach (var part in this.key_parts) {
             n = n + part[1] - part[0]
@@ -448,7 +448,7 @@ class Index {
         this.dump_node(this.root, "")
     }
 
-    dump_node(node, indent) {
+    dump_node(node: Node, indent: string) {
         print indent & " ".join(node.keys)
         if (!node.leaf) {
             foreach (var child in node.children) {
@@ -462,7 +462,7 @@ class Index {
 // frames, so it's lazy and uses O(height) memory. pending holds the current
 // key's rows; pending_i is the next one to return.
 class InOrderIter {
-    __init__(index) {
+    __init__(index: Index) {
         this.index = index
         this.nodes = []
         this.positions = []
@@ -470,7 +470,7 @@ class InOrderIter {
         this.pending_i = 0
     }
 
-    __iter__() {
+    __iter__() -> InOrderIter {
         if (DEBUG) { log.debug("in_order: start at root ${this.index.root.id}") }
         this.nodes.clear()
         this.positions.clear()
@@ -481,7 +481,7 @@ class InOrderIter {
     }
 
     // Pushes node and its leftmost descendants down to a leaf.
-    push_left(node) {
+    push_left(node: Node) {
         while (true) {
             this.nodes.append(node)
             this.positions.append(0)
@@ -493,7 +493,7 @@ class InOrderIter {
         }
     }
 
-    __next__() {
+    __next__() -> string? {
         if (this.pending_i < len(this.pending)) {
             var row = this.pending[this.pending_i]
             this.pending_i = this.pending_i + 1

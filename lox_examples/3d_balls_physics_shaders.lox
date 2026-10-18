@@ -125,7 +125,7 @@ floor_flash_color = vec4(255, 255, 255, 255)
 // only tracks what physics_world doesn't: rendering data (size/color/shader),
 // explosion timer/state, and the position synced from the world each frame.
 class MovingObject {
-    __init__(id, size, color) {
+    __init__(id: int, size: vec3, color: vec4) {
         this.id = id                                        // Handle into physics_world
         this.pos = vec3(0, 0, 0)                            // Reassigned from world each frame (world.get_position(this.id))
         this.shadow_center = vec3(0, 0, 0)                  // Reused/mutated in add_shadow() instead of allocating a fresh vec3 every frame
@@ -141,17 +141,17 @@ class MovingObject {
     }
 
     // Calculate collision radius from size
-    get_collision_radius() {
+    get_collision_radius() -> float {
         return this.size.x
     }
 
     // Check if object should explode (timer reached zero)
-    should_explode() {
+    should_explode() -> bool {
         return this.explosion_timer <= 0 and !this.is_exploded
     }
 
     // Mark object as exploded and remove it from the physics simulation
-    explode(world) {
+    explode(world: PhysicsWorld) {
         this.is_exploded = true
         world.remove(this.id)
     }
@@ -160,7 +160,7 @@ class MovingObject {
     // check/falloff curve stay here in Lox (gameplay policy); only the
     // resulting velocity nudge goes through physics_world's add_impulse,
     // since velocities now live in the native SoA simulation.
-    apply_explosion_force(world, explosion_pos, explosion_force) {
+    apply_explosion_force(world: PhysicsWorld, explosion_pos: vec3, explosion_force: float) {
         // Skip force application for already exploded objects
         if (this.is_exploded) {
             return
@@ -206,7 +206,7 @@ class MovingObject {
     // circle (see shadow_texture setup below), tilted and positioned to
     // match whatever's directly below -- a ramp's sloped top face if the
     // ball is over one (ground_at()), otherwise the flat floor.
-    add_shadow(shadow_batch) {
+    add_shadow(shadow_batch: Batch) {
         // Don't render shadows for exploded objects
         if (this.is_exploded) {
             return

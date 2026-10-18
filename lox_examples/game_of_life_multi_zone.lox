@@ -10,6 +10,7 @@ import random
 import colour
 import math
 import gui
+from gui import Text_Input
 
 const CELL_SIZE = 1
 const BG_COLOUR = colour.BLACK
@@ -187,10 +188,10 @@ multi_zone.set_value_float(loc_overcrowd, OVERCROWD)
 var param_screen = gui.Screen()
 var param_fields = []
 
-func add_param_field(y, label_text, initial, loc, apply) {
+func add_param_field(y: int, label_text: string, initial: float, loc: int, apply) -> Text_Input {
     param_screen.add(gui.Label(10, y, label_text, 16, colour.WHITE))
     var field = param_screen.add(gui.Text_Input(150, y - 2, 70, 20, format("%g", initial), true))
-    field.on_submit = func (w, text) {
+    field.on_submit = func (w: Text_Input, text: string) {
         try {
             var v = float(text)
             apply(v)
@@ -202,13 +203,13 @@ func add_param_field(y, label_text, initial, loc, apply) {
     return field
 }
 
-add_param_field(80, "inner_r", INNER_R, loc_inner_r, func (v) { INNER_R = v })
-add_param_field(104, "outer_r", OUTER_R, loc_outer_r, func (v) { OUTER_R = v })
-add_param_field(128, "birth_lo", BIRTH_LO, loc_birth_lo, func (v) { BIRTH_LO = v })
-add_param_field(152, "birth_hi", BIRTH_HI, loc_birth_hi, func (v) { BIRTH_HI = v })
-add_param_field(176, "survive_lo", SURVIVE_LO, loc_survive_lo, func (v) { SURVIVE_LO = v })
-add_param_field(200, "survive_hi", SURVIVE_HI, loc_survive_hi, func (v) { SURVIVE_HI = v })
-add_param_field(224, "overcrowd", OVERCROWD, loc_overcrowd, func (v) { OVERCROWD = v })
+add_param_field(80, "inner_r", INNER_R, loc_inner_r, func (v: float) { INNER_R = v })
+add_param_field(104, "outer_r", OUTER_R, loc_outer_r, func (v: float) { OUTER_R = v })
+add_param_field(128, "birth_lo", BIRTH_LO, loc_birth_lo, func (v: float) { BIRTH_LO = v })
+add_param_field(152, "birth_hi", BIRTH_HI, loc_birth_hi, func (v: float) { BIRTH_HI = v })
+add_param_field(176, "survive_lo", SURVIVE_LO, loc_survive_lo, func (v: float) { SURVIVE_LO = v })
+add_param_field(200, "survive_hi", SURVIVE_HI, loc_survive_hi, func (v: float) { SURVIVE_HI = v })
+add_param_field(224, "overcrowd", OVERCROWD, loc_overcrowd, func (v: float) { OVERCROWD = v })
 
 // Seeding (CPU-side, one-time): same shape-scattering as game_of_life.lox,
 // but bulk-uploaded via draw_array_fast() instead of drawn pixel by pixel
@@ -218,7 +219,7 @@ add_param_field(224, "overcrowd", OVERCROWD, loc_overcrowd, func (v) { OVERCROWD
 var seed_arr = float_array(cols, rows)
 const WHITE_PACKED = encode_rgba(255, 255, 255)
 
-func set_wrapped_val(arr, x, y) {
+func set_wrapped_val(arr, x: int, y: int) {
     var wx = ((x % cols) + cols) % cols
     var wy = ((y % rows) + rows) % rows
     arr.set(wx, wy, WHITE_PACKED)
@@ -271,7 +272,7 @@ func draw_random_block(arr) {
     }
 }
 
-func randomise(rt) {
+func randomise(rt: RenderTexture) {
     seed_arr.clear(0.0)
     for (var i = 0; i < NUM_LINES; i = i + 1) {
         draw_random_line(seed_arr)
