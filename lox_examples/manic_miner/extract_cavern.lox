@@ -39,7 +39,7 @@ const PORTAL_SCREEN_BASE = 24576
 // ('.' off, any other char on -- assets.lox's "pixel" convention),
 // readable directly in the JSON, same spirit as the layout grid's row
 // strings. width must be a multiple of 8.
-func bytes_to_pixel_rows(data, width) {
+func bytes_to_pixel_rows(data: List[int], width: int) -> List[string] {
     var bytes_per_row = int(width / 8)
     var height = int(len(data) / bytes_per_row)
     var rows = []
@@ -63,7 +63,7 @@ func bytes_to_pixel_rows(data, width) {
     return rows
 }
 
-func read_ascii(bytes, addr, length) {
+func read_ascii(bytes: List[int], addr: int, length: int) -> string {
     var chars = []
     for (var i = 0; i < length; i = i + 1) {
         var b = sna.read_u8(bytes, addr + i)
@@ -76,7 +76,7 @@ func read_ascii(bytes, addr, length) {
 // (1 attribute byte + 8 pixel rows). Returns a list of {name, ink, paper,
 // sprite_data} for building both the Cavern's tile_names and the
 // asset-sheet entries.
-func read_tiles(bytes, addr, prefix) {
+func read_tiles(bytes: List[int], addr: int, prefix: string) -> List[Dict] {
     var tiles = []
     for (var t = 0; t < len(TILE_NAMES); t = t + 1) {
         var base = addr + t * 9
@@ -103,7 +103,7 @@ func read_tiles(bytes, addr, prefix) {
 // a terminator byte (255) in a record's first byte. Returns {"records":
 // [...], "next": addr right after the terminator (or after the last
 // record, if max_count was hit with no terminator)} for chaining into the next section.
-func read_terminated_records(bytes, addr, record_size, max_count) {
+func read_terminated_records(bytes: List[int], addr: int, record_size: int, max_count: int) -> Dict {
     var records = []
     var pos = addr
     for (var i = 0; i < max_count; i = i + 1) {
@@ -126,7 +126,7 @@ func read_terminated_records(bytes, addr, record_size, max_count) {
 // trailing terminator byte -- for a section with a fixed slot count where
 // an unused slot's first byte can legitimately be 0 or 255. Returns
 // {"records": [...], "next": addr right after the terminator byte}.
-func read_fixed_slots(bytes, addr, record_size, count) {
+func read_fixed_slots(bytes: List[int], addr: int, record_size: int, count: int) -> Dict {
     var records = []
     for (var i = 0; i < count; i = i + 1) {
         var record = []
@@ -142,8 +142,8 @@ func read_fixed_slots(bytes, addr, record_size, count) {
 // BOOT_ADDR) into global_sprites.json -- unlike everything else here,
 // not tied to any cavern index, so this runs once per invocation
 // regardless of which cavern(s) were requested.
-func extract_global_sprites(bytes, out_dir) {
-    func read_sprite16(addr, name) {
+func extract_global_sprites(bytes: List[int], out_dir: string) {
+    func read_sprite16(addr: int, name: string) -> Dict {
         var pixels = []
         for (var i = 0; i < 32; i = i + 1) {
             pixels.append(sna.read_u8(bytes, addr + i))
@@ -161,7 +161,7 @@ func extract_global_sprites(bytes, out_dir) {
     print(format("global sprites: wrote %d entries to %s", len(sprites), path))
 }
 
-func extract_one(bytes, index, out_dir) {
+func extract_one(bytes: List[int], index: int, out_dir: string) {
     var base = CAVERN_BASE + index * CAVERN_SIZE
     var prefix = format("cavern%d", index)
 
@@ -292,7 +292,7 @@ func extract_one(bytes, index, out_dir) {
     // blank slot, 255 terminates); byte1-2 = attribute-buffer address of the
     // starting cell, decoded like items/Willy; byte5-6 = min/max bound,
     // compared against byte1 to give travel range in columns, not absolute pixels.
-    func read_horizontal_guardians(addr) {
+    func read_horizontal_guardians(addr: int) -> List[Dict] {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
         foreach (var r in result["records"]) {
@@ -324,7 +324,7 @@ func extract_one(bytes, index, out_dir) {
     // byte0 = attribute/colour (255 terminates, 0 blank); byte2 = starting
     // pixel y; byte3 = x column (0-31, x = byte3*8); byte4-6 vary by cavern,
     // see is_skylab below.
-    func read_vertical_guardians(addr) {
+    func read_vertical_guardians(addr: int) -> List[Dict] {
         var result = read_terminated_records(bytes, addr, 7, 4)
         var guardians = []
         // Skylab Landing Bay's guardians fall to byte6, disintegrate, and

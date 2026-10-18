@@ -2,6 +2,10 @@ from gfx import *
 from game_sprite import Sprite
 import cavern as cavern_module
 import inspect
+from cavern import Cavern
+from willy_controller import Controller
+from display import Display
+from assets import SpriteAssets
 
 // @file willy.lox
 // @brief Miner Willy: movement, jump, and tile/item/guardian collision
@@ -26,7 +30,7 @@ const AIR_MAX = 224           // 1 unit = 1px of game.lox's oxygen bar (OXYGEN_B
 // pixels: rises 20px over 9 ticks, then symmetrically falls back.
 const JUMP_OFFSETS = [-4, -4, -3, -3, -2, -2, -1, -1, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4]
 
-func is_nasty(tile_type) -> bool {
+func is_nasty(tile_type: int) -> bool {
     if (tile_type == cavern_module.TILE_NASTY1) { return true }
     if (tile_type == cavern_module.TILE_NASTY2) { return true }
     return false
@@ -42,14 +46,14 @@ class WalkCycle {
 
     // Sets facing at spawn/respawn -- no reflection, there's no previous
     // direction to be equivalent to.
-    reset(dx) {
+    reset(dx: int) {
         this.frame = 0
         this.dx = dx
     }
 
     // Sets facing; if it's actually changing, reflects the frame in
     // place instead of advancing it -- a no-op if dx is unchanged.
-    face(dx) {
+    face(dx: int) {
         if (dx != this.dx) {
             this.frame = 3 - this.frame
             this.dx = dx
@@ -105,7 +109,7 @@ class Willy < Sprite {
 
     // (Re)spawns at room.willy_start, resetting all per-life state -- used
     // both for the initial spawn and every respawn after death.
-    spawn(room) {
+    spawn(room: Cavern) {
         var ws = room.willy_start
         this.x = ws["x"]
         this.y = ws["y"]
@@ -128,7 +132,7 @@ class Willy < Sprite {
 
     // Dispatches through update_func, like defender's Player.update() --
     // named step() to avoid colliding with Sprite's own update()/this.tick.
-    step(input, room, disp, lib) {
+    step(input: Controller, room: Cavern, disp: Display, lib: SpriteAssets) {
         var f = this.update_func
         f(this, input, room, disp, lib)
     }
@@ -137,7 +141,7 @@ class Willy < Sprite {
     // was there before (see restore_footprint()'s own comment) -- call
     // for every moving sprite before any of them draws this tick
     // (game.lox's state_running: clear phase, then move, then draw).
-    clear(disp) {
+    clear(disp: Display) {
         if (this.last_x != nil) {
             restore_footprint(this, disp)
         }
@@ -147,7 +151,7 @@ class Willy < Sprite {
     // his own colour otherwise (see draw_footprint). clear() must
     // already have run this tick -- draw() itself no longer erases
     // anything.
-    draw(disp, lib, room) {
+    draw(disp: Display, lib: SpriteAssets, room: Cavern) {
         if (this.visible) {
             var img = lib.get(this.image_list[this.anim.index()])
             snapshot_footprint(this, disp, int(this.x), int(this.y))
@@ -160,7 +164,7 @@ class Willy < Sprite {
 
 // Cuts off a jump/fall clip that's still playing into landing -- either
 // cue's own wav can run longer than the state that started it.
-func enter_walk(w) {
+func enter_walk(w: Willy) {
     w.update_func = state_walk
     w.sound.stop_jump()
     w.sound.stop_falling()
@@ -168,7 +172,7 @@ func enter_walk(w) {
 
 // OR-blits vs force-blits per attribute cell (up to 2x2), not the whole
 // sprite at once -- a straddled platform cell must keep its own pixels.
-func draw_footprint(w, room, disp, img, x, y) {
+func draw_footprint(w: Willy, room: Cavern, disp: Display, img, x: int, y: int) {
     var cx0 = int(x / 8)
     var cx1 = int((x + WILLY_WIDTH - 1) / 8)
     var cy0 = int(y / 8)
@@ -211,7 +215,7 @@ func draw_footprint(w, room, disp, img, x, y) {
 // before draw_footprint() overwrites them, so restore_footprint() can
 // restore exactly what was there. saved_ink/saved_paper are indexed
 // relative to this footprint's top-left cell, not absolute grid coords.
-func snapshot_footprint(w, disp, x, y) {
+func snapshot_footprint(w: Willy, disp: Display, x: int, y: int) {
     var cx0 = int(x / 8)
     var cy0 = int(y / 8)
     var cx1 = int((x + WILLY_WIDTH - 1) / 8)
@@ -231,7 +235,7 @@ func snapshot_footprint(w, disp, x, y) {
 
 // Restores exactly what snapshot_footprint() captured for Willy's
 // previous position (w.last_x/last_y) -- the inverse of draw_footprint().
-func restore_footprint(w, disp) {
+func restore_footprint(w: Willy, disp: Display) {
     var x = w.last_x
     var y = w.last_y
     var cx0 = int(x / 8)
@@ -252,7 +256,7 @@ func restore_footprint(w, disp) {
 
 // True if moving Willy's box by dx would NOT hit a blocking tile (probed
 // at both the top and bottom of his box at the leading edge).
-func can_move_x(w, room, dx) -> bool {
+func can_move_x(w: Willy, room: Cavern, dx: int) -> bool {
     var new_x = w.x + dx
     var probe_x = new_x
     if (dx > 0) {
@@ -265,7 +269,7 @@ func can_move_x(w, room, dx) -> bool {
 
 // Shared block-movement step for walking and jumping. Returns true if
 // dx != 0 but blocked, so state_jump can cancel into a fall.
-func handle_step_horizontal(w, room, dx) -> bool {
+func handle_step_horizontal(w: Willy, room: Cavern, dx: int) -> bool {
     if (dx == 0) {
         return false
     }
@@ -283,7 +287,7 @@ func handle_step_horizontal(w, room, dx) -> bool {
 
 // Every column Willy's box spans, as pixel x -- sweeps vertical checks
 // across his full width, not just the two edges.
-func spanned_columns(w) {
+func spanned_columns(w: Willy) -> List[int] {
     var cx0 = int((w.x + 1) / 8)
     var cx1 = int((w.x + WILLY_WIDTH - 2) / 8)
     var xs = []
@@ -295,7 +299,7 @@ func spanned_columns(w) {
 
 // True if a tile supports Willy's feet at y -- used to check he's still
 // grounded while walking, where old and new y are always the same.
-func landed(w, room, new_y) -> bool {
+func landed(w: Willy, room: Cavern, new_y: int) -> bool {
     foreach (var px in spanned_columns(w)) {
         if (room.tile_supports_landing(px, new_y + WILLY_HEIGHT)) {
             return true
@@ -307,7 +311,7 @@ func landed(w, room, new_y) -> bool {
 // True only if moving from old_y to new_y crosses down onto a supporting
 // tile's top surface -- rejects one merely reached by rising into its
 // underside, e.g. levelling with a block at the peak of a jump.
-func crossing_onto_ground(w, room, old_y, new_y) -> bool {
+func crossing_onto_ground(w: Willy, room: Cavern, old_y: int, new_y: int) -> bool {
     foreach (var px in spanned_columns(w)) {
         if (!room.tile_supports_landing(px, new_y + WILLY_HEIGHT)) {
             continue
@@ -322,7 +326,7 @@ func crossing_onto_ground(w, room, old_y, new_y) -> bool {
 
 // True if Willy's head at new_y overlaps a wall specifically (Z80
 // 35537-35546) -- a platform doesn't stop him rising through it.
-func hit_ceiling(w, room, new_y) -> bool {
+func hit_ceiling(w: Willy, room: Cavern, new_y: int) -> bool {
     foreach (var px in spanned_columns(w)) {
         if (room.tile_type_at(px, new_y) == cavern_module.TILE_WALL) {
             return true
@@ -333,13 +337,13 @@ func hit_ceiling(w, room, new_y) -> bool {
 
 // Aligns Willy's feet to the top of the row at new_y, rather than
 // leaving him overlapping it.
-func snap_to_ground(w, new_y) {
+func snap_to_ground(w: Willy, new_y: int) {
     var feet_row = int((new_y + WILLY_HEIGHT) / 8)
     w.y = feet_row * 8 - WILLY_HEIGHT
 }
 
 // -1/1 for the conveyor's belt direction.
-func conveyor_direction(room) -> int {
+func conveyor_direction(room: Cavern) -> int {
     if (room.conveyor["direction"] == 0) {
         return -1
     }
@@ -347,7 +351,7 @@ func conveyor_direction(room) -> int {
 }
 
 // Any nasty tile overlapping Willy's bounding box.
-func touching_nasty(w, room) -> bool {
+func touching_nasty(w: Willy, room: Cavern) -> bool {
     var cx0 = int(w.x / 8)
     var cx1 = int((w.x + WILLY_WIDTH - 1) / 8)
     var cy0 = int(w.y / 8)
@@ -366,7 +370,7 @@ func touching_nasty(w, room) -> bool {
 // every tick regardless of grounded/airborne state. Guardian collision
 // is pixel-perfect (room.guardian_hit()'s own sprite-vs-sprite test),
 // not a bounding-box check.
-func handle_items_and_hazards(w, room, disp, lib) {
+func handle_items_and_hazards(w: Willy, room: Cavern, disp: Display, lib: SpriteAssets) {
     room.collect_item_at(disp, lib, w.x, w.y, WILLY_WIDTH, WILLY_HEIGHT)
 
     var willy_img = lib.get(w.image_list[w.anim.index()])
@@ -381,7 +385,7 @@ func handle_items_and_hazards(w, room, disp, lib) {
 
 // Depletes room.air once every AIR_TICKS_PER_UNIT ticks; death once it
 // runs out.
-func tick_air(w) {
+func tick_air(w: Willy) {
     w.air_tick = w.air_tick + 1
     if (w.air_tick >= AIR_TICKS_PER_UNIT) {
         w.air_tick = 0
@@ -394,7 +398,7 @@ func tick_air(w) {
 
 // states
 
-func state_walk(w, input, room, disp, lib) {
+func state_walk(w: Willy, input: Controller, room: Cavern, disp: Display, lib: SpriteAssets) {
     var dx = 0
     if (input.left) {
         dx = -1
@@ -460,7 +464,7 @@ func state_walk(w, input, room, disp, lib) {
 // dropped by landing time (FALL_DEATH_HEIGHT). Single entry point for
 // both a walked-off ledge and a jump cancelled by a horizontal block,
 // so the falling cue and stop_jump() only need firing here.
-func enter_fall(w) {
+func enter_fall(w: Willy) {
     w.update_func = state_fall
     w.fall_start_y = w.y
     w.sound.stop_jump()
@@ -469,7 +473,7 @@ func enter_fall(w) {
 
 // Falling never takes input or animates -- frame just holds. Dropping
 // more than FALL_DEATH_HEIGHT before landing kills Willy.
-func state_fall(w, input, room, disp, lib) {
+func state_fall(w: Willy, input: Controller, room: Cavern, disp: Display, lib: SpriteAssets) {
     handle_items_and_hazards(w, room, disp, lib)
     if (w.dead) {
         return
@@ -491,7 +495,7 @@ func state_fall(w, input, room, disp, lib) {
 
 // dx (-1/0/1) is whatever was held the instant the jump key was
 // pressed, in state_walk -- fixed for the whole jump.
-func enter_jump(w, dx) {
+func enter_jump(w: Willy, dx: int) {
     w.update_func = state_jump
     w.jump_tick = 0
     w.jump_dx = dx
@@ -501,7 +505,7 @@ func enter_jump(w, dx) {
 // jump_dx (captured at takeoff by enter_jump) drives movement for the
 // whole jump; a wall ahead cancels straight into a fall, a ceiling above
 // only cancels horizontal movement/animation (see enter_jump).
-func state_jump(w, input, room, disp, lib) {
+func state_jump(w: Willy, input: Controller, room: Cavern, disp: Display, lib: SpriteAssets) {
     var offset = JUMP_OFFSETS[w.jump_tick]
     var new_y = w.y + offset
     var ceiling_blocked = offset < 0 and hit_ceiling(w, room, new_y)
@@ -541,7 +545,7 @@ func state_jump(w, input, room, disp, lib) {
 
 // Stops any jump/fall clip still playing -- dying can interrupt either
 // state (a nasty tile, guardian, or air-out check mid-jump/-fall).
-func enter_dying(w) {
+func enter_dying(w: Willy) {
     w.dead = true
     w.update_func = state_dying
     w.sound.stop_jump()
@@ -550,5 +554,5 @@ func enter_dying(w) {
 
 // Frozen while dead -- the owning Game drives the death-flash timing and
 // calls spawn() again once it's done.
-func state_dying(w, input, room, disp, lib) {
+func state_dying(w: Willy, input: Controller, room: Cavern, disp: Display, lib: SpriteAssets) {
 }

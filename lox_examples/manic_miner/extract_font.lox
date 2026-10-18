@@ -16,7 +16,7 @@ const FONT_CHAR_HEIGHT = 8
 // '#' on) -- same convention extract_cavern.lox's own copy of this
 // produces, so font_sprites.json reads the same way as every other
 // checked-in sprite sheet.
-func bytes_to_pixel_rows(data) {
+func bytes_to_pixel_rows(data: List[int]) -> List[string] {
     var rows = []
     for (var y = 0; y < len(data); y = y + 1) {
         var v = data[y]

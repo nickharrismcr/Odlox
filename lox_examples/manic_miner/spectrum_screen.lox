@@ -5,7 +5,7 @@
 
 // Attribute-style: addr indexes a plain 32-wide row-major grid starting
 // at base. Returns the pixel (x, y) of that 8x8 cell's top-left corner.
-func attr_addr_to_xy(addr, base) {
+func attr_addr_to_xy(addr: int, base: int) -> Dict[string, int] {
     var offset = addr - base
     var col = offset % 32
     var row = int(offset / 32)
@@ -16,7 +16,7 @@ func attr_addr_to_xy(addr, base) {
 // relocated to base. Bits MSB to LSB: Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X4 X3 X2 X1 X0
 // -- decoded via integer division/modulo (no bitwise ops in this dialect).
 // Byte-addressed: x lands on an 8px boundary; y is a true pixel row.
-func pixel_addr_to_xy(addr, base) {
+func pixel_addr_to_xy(addr: int, base: int) -> Dict[string, int] {
     var offset = addr - base
     var x_byte = offset % 32
     var shifted = int(offset / 32)          // 8 bits: Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3

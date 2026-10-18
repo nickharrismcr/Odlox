@@ -27,7 +27,7 @@ const FLASH_TOTAL_TICKS = FLASH_CYCLE_TICKS + FLASH_PAUSE_TICKS
 // art only, not the HUD -- see refresh_hud()). Shared by __init__ and
 // enter_next_cavern. Also loads willy_sprites.json for the lives-icon
 // HUD row, though Willy himself never appears.
-func load_cavern(d, cavern_index) {
+func load_cavern(d: Demo, cavern_index: int) {
     d.cavern_index = cavern_index
     d.lib = assets.SpriteAssets()
     d.lib.load(format("caverns/cavern_%d_sprites.json", cavern_index))
@@ -45,12 +45,12 @@ func load_cavern(d, cavern_index) {
 // reused directly rather than duplicated: draw_static_hud() picks up
 // d.cavern.name for the name row, so it changes automatically with the
 // cavern. Call after every load_cavern() (whose disp.clear() wipes it).
-func refresh_hud(d) {
+func refresh_hud(d: Demo) {
     game_module.draw_static_hud(d)
     game_module.draw_lives(d)
 }
 
-func enter_show(d) {
+func enter_show(d: Demo) {
     d.update_func = state_show
     d.show_tick = 0
 }
@@ -58,7 +58,7 @@ func enter_show(d) {
 // Animates the current cavern (guardians, conveyor, items) and advances
 // the background tune, exactly as game.lox's state_running does, minus
 // everything Willy-related.
-func state_show(d, win) {
+func state_show(d: Demo, win: Window) {
     d.sound.play_next_tune_note()
 
     d.cavern.clear_guardians(d.disp)
@@ -83,7 +83,7 @@ func state_show(d, win) {
     }
 }
 
-func enter_flash(d) {
+func enter_flash(d: Demo) {
     d.update_func = state_flash
     d.flash_tick = 0
 }
@@ -92,7 +92,7 @@ func enter_flash(d) {
 // black -- same effect, scoped the same way, as game.lox's
 // flash_cavern_ink(). Never touches rows 16-23, so the HUD stays visible
 // through the flash, same as game.lox's own portal flash.
-func flash_cavern_ink(d, ink) {
+func flash_cavern_ink(d: Demo, ink: float) {
     var paper = encode_rgba(0, 0, 0)
     for (var cy = 0; cy < 16; cy = cy + 1) {
         for (var cx = 0; cx < 32; cx = cx + 1) {
@@ -104,7 +104,7 @@ func flash_cavern_ink(d, ink) {
 // One ink cycle of 7 down to 1 (blue), then a pause holding on blue
 // (see FLASH_TOTAL_TICKS), then the next cavern loads and state_show
 // resumes there.
-func state_flash(d, win) {
+func state_flash(d: Demo, win: Window) {
     if (d.flash_tick < FLASH_CYCLE_TICKS) {
         var ink_index = 7 - (d.flash_tick % FLASH_CYCLE_TICKS)
         flash_cavern_ink(d, spectrum_attr.colour_to_rgba(ink_index, true))
@@ -118,7 +118,7 @@ func state_flash(d, win) {
 
 // Bumps the cavern counter (wrapping past the last cavern back to the
 // first) and starts the show state fresh in the new room.
-func enter_next_cavern(d) {
+func enter_next_cavern(d: Demo) {
     load_cavern(d, (d.cavern_index + 1) % CAVERN_COUNT)
     refresh_hud(d)
     enter_show(d)
@@ -139,7 +139,7 @@ class Demo {
         enter_show(this)
     }
 
-    tick(win) {
+    tick(win: Window) {
         this.sound.update()
         var f = this.update_func
         f(this, win)

@@ -11,7 +11,7 @@ class Controller {
         this.collect_all = false // pressed (edge, not held): auto-collect cheat -- see game.lox's ENABLE_AUTO_COLLECT_CHEAT
     }
 
-    update(win) {
+    update(win: Window) {
         this.left = win.key_down(win.KEY_Q)
         this.right = win.key_down(win.KEY_W)
         this.jump = win.key_down(win.KEY_SPACE)

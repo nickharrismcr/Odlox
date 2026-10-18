@@ -90,7 +90,7 @@ const GAME_OVER_BOOT_STEPS_PER_TICK = 2  // 2 stamps/tick -- doubles the fall sp
 const GAME_OVER_INK = encode_rgba(255, 255, 255)
 const GAME_OVER_PAPER_CYCLE = [1, 2, 3]  // spectrum_attr indices: blue, red, magenta
 
-func enter_running(g) {
+func enter_running(g: Game) {
     g.update_func = state_running
 }
 
@@ -143,7 +143,7 @@ func draw_oxygen_bar_fill(g) {
 // tracks air_remaining / willy.AIR_MAX (1 air unit = 1px); willy.air_tick
 // fills in the sub-unit fraction so the bar empties smoothly, never more
 // than a pixel per call, instead of jumping several pixels at once.
-func update_oxygen_bar(g) {
+func update_oxygen_bar(g: Game) {
     var fractional_air = g.willy.air_remaining - g.willy.air_tick / willy_module.AIR_TICKS_PER_UNIT
     var target = int(OXYGEN_BAR_WIDTH * fractional_air / willy_module.AIR_MAX)
     if (target < 0) { target = 0 }
@@ -183,7 +183,7 @@ func draw_lives(g) {
 // three phases, each completed across all sprites before the next
 // starts: clear, move (position/animation/collision), draw. Keeping
 // phases separate stops one sprite's clear from wiping another's draw.
-func state_running(g, win) {
+func state_running(g: Game, win: Window) {
     g.controller.update(win)
     g.sound.play_next_tune_note()
 
@@ -225,7 +225,7 @@ func state_running(g, win) {
     }
 }
 
-func enter_die(g, win) {
+func enter_die(g: Game, win: Window) {
     win.set_target_fps(30)
     g.update_func = state_die
     g.die_tick = 0
@@ -236,7 +236,7 @@ func enter_die(g, win) {
 // All-attribute flash (ink 7 down to 0, one tick each), then a full
 // cavern reload/redraw and a fresh Willy spawn -- or game_over once
 // lives run out.
-func state_die(g, win) {
+func state_die(g: Game, win: Window) {
     var ink_index = 7 - g.die_tick
     if ink_index < 0 { ink_index = 0 }
     var flash_colour = spectrum_attr.colour_to_rgba(ink_index, true)
@@ -262,7 +262,7 @@ func state_die(g, win) {
     enter_running(g)
 }
 
-func enter_portal(g, win) {
+func enter_portal(g: Game, win: Window) {
     win.set_target_fps(30)
     g.update_func = state_portal
     g.portal_tick = 0
@@ -273,7 +273,7 @@ func enter_portal(g, win) {
 // black, leaving the HUD rows untouched. Unlike Display.flash_ink()/
 // begin_flash() (used by state_die's death flash), which recolour the
 // whole 24-row screen including the HUD.
-func flash_cavern_ink(g, ink) {
+func flash_cavern_ink(g: Game, ink: float) {
     var paper = encode_rgba(0, 0, 0)
     for (var cy = 0; cy < 16; cy = cy + 1) {
         for (var cx = 0; cx < 32; cx = cx + 1) {
@@ -286,7 +286,7 @@ func flash_cavern_ink(g, ink) {
 // pause out to PORTAL_TOTAL_TICKS before the next cavern loads. The air
 // bar wipes to black from the right over the same span (see
 // wipe_air_bar()).
-func state_portal(g, win) {
+func state_portal(g: Game, win: Window) {
     if (g.portal_tick < PORTAL_FLASH_TICKS) {
         var ink_index = 7 - (g.portal_tick % PORTAL_FLASH_CYCLE_TICKS)
         flash_cavern_ink(g, spectrum_attr.colour_to_rgba(ink_index, true))
@@ -305,7 +305,7 @@ func state_portal(g, win) {
 // as many as g.portal_tick's fraction of PORTAL_TOTAL_TICKS calls for.
 // Redraws every already-covered column each call (at most AIR_WIPE_COLS
 // set_attr calls).
-func wipe_air_bar(g) {
+func wipe_air_bar(g: Game) {
     var covered = int(AIR_WIPE_COLS * g.portal_tick / PORTAL_TOTAL_TICKS)
     if (covered > AIR_WIPE_COLS) {
         covered = AIR_WIPE_COLS
@@ -318,7 +318,7 @@ func wipe_air_bar(g) {
 // Loads cavern_<cavern_index>'s data/sprites and redraws disp with it --
 // shared by __init__ (first cavern) and enter_next_cavern (every cavern
 // after). Caller still owns spawning Willy into the new room.
-func load_cavern(g, cavern_index) {
+func load_cavern(g: Game, cavern_index: int) {
     g.cavern_index = cavern_index
     g.lib = assets.SpriteAssets()
     g.lib.load(format("caverns/cavern_%d_sprites.json", cavern_index))
@@ -333,7 +333,7 @@ func load_cavern(g, cavern_index) {
 
 // Bumps the cavern counter (wrapping past the last cavern back to the
 // first) and starts the running state fresh in the new room.
-func enter_next_cavern(g) {
+func enter_next_cavern(g: Game) {
     load_cavern(g, (g.cavern_index + 1) % CAVERN_COUNT)
     g.willy.spawn(g.cavern)
     draw_static_hud(g)
@@ -344,7 +344,7 @@ func enter_next_cavern(g) {
 // Blanks the cavern area's bitmap and attribute cells (rows 0-15) to
 // ink/paper -- like Display.clear(), but leaves the HUD rows below
 // (16-23) untouched.
-func clear_cavern_area(g, ink, paper) {
+func clear_cavern_area(g: Game, ink: float, paper: float) {
     for (var y = 0; y < 128; y = y + 1) {
         for (var x = 0; x < 256; x = x + 1) {
             g.disp.plot(x, y, 0.0)
@@ -361,7 +361,7 @@ func clear_cavern_area(g, ink, paper) {
 // clears the cavern area and paints the game-over tableau's static
 // parts (plinth, Willy in his frame-3 pose, boot's starting frame), all
 // white on the cycle's first paper colour. state_game_over() takes over.
-func enter_game_over(g) {
+func enter_game_over(g: Game) {
     g.sound.play_game_over_swoop()
     draw_static_hud(g)
     draw_lives(g)
@@ -381,7 +381,7 @@ func enter_game_over(g) {
 // (attribute-only, never touches the bitmap), then stamps the boot
 // GAME_OVER_BOOT_STEPS_PER_TICK times, 2px lower each stamp, without
 // erasing previous stamps, until it reaches Willy (see is_game_over()).
-func state_game_over(g, win) {
+func state_game_over(g: Game, win: Window) {
     g.game_over_paper_index = (g.game_over_paper_index + 1) % len(GAME_OVER_PAPER_CYCLE)
     var paper = spectrum_attr.colour_to_rgba(GAME_OVER_PAPER_CYCLE[g.game_over_paper_index], true)
     for (var cy = 0; cy < 16; cy = cy + 1) {
@@ -404,11 +404,11 @@ func state_game_over(g, win) {
 }
 
 // Frozen -- is_game_over() tells the caller to stop calling tick().
-func state_game_over_done(g, win) {
+func state_game_over_done(g: Game, win: Window) {
 }
 
 class Game {
-    __init__(cavern_index,target_fps,sound) {
+    __init__(cavern_index: int,target_fps: int,sound) {
         this.sound = sound
         this.disp = display.Display()
         this.font = assets.SpriteAssets()
@@ -445,7 +445,7 @@ class Game {
         return this.update_func == state_portal
     }
 
-    tick(win) {
+    tick(win: Window) {
         this.sound.update()
         var f = this.update_func
         f(this, win)

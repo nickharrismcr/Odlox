@@ -58,7 +58,7 @@ const TUNE_NOTE_TABLE = [
     [50,86,87],   [50,128,203], [25,128,0],  [25,128,129], [50,128,203]
 ]
 
-func tune_total_duration() {
+func tune_total_duration() -> int {
     var total = 0
     foreach (var note in TUNE_NOTE_TABLE) {
         total = total + note[0]
@@ -76,7 +76,7 @@ const TUNE_TICKS_PER_DURATION_UNIT = TUNE_TOTAL_TICKS / tune_total_duration()
 // period byte into the 0-31 attribute column of the piano key it lights up.
 // Real hardware does this as SUB 8 / RRCA x3 / CPL / OR 0xE0, which reduces
 // to K = 31 - floor(((F - 8) mod 256) / 8) -- done here in plain arithmetic.
-func piano_key_col(freq) {
+func piano_key_col(freq: int) -> int {
     var a = freq - 8
     if (a < 0) { a = a + 256 }
     return 31 - int(a / 8)
@@ -84,7 +84,7 @@ func piano_key_col(freq) {
 
 // Decodes a raw Spectrum attribute byte into the {ink, paper} packed-rgba
 // pair Display.set_attr() takes.
-func attr_byte_colours(byte) {
+func attr_byte_colours(byte: int) -> Dict[string, float] {
     var c = spectrum_attr.decode_attribute(byte)
     return {
         "ink": spectrum_attr.colour_to_rgba(c["ink"], c["bright"]),
@@ -137,7 +137,7 @@ class Intro {
     // (tune_elapsed_ticks reaching TUNE_TOTAL_TICKS -- see
     // TUNE_LENGTH_SECONDS), same as play_intro_tune() itself no longer
     // looping, or early on ENTER.
-    tick(win) {
+    tick(win: Window) {
         this.sound.update()
         this.tick_tune_display()
         this.tune_elapsed_ticks = this.tune_elapsed_ticks + 1

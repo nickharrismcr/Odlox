@@ -24,7 +24,7 @@ const ATTR_ROWS_PER_THIRD = 8
 // interleaved pixel layout, relocated to `base` -- same address algebra
 // as spectrum_screen.pixel_addr_to_xy(), run forward (y -> byte offset).
 // Returns pixel row-strings ('.' off, '#' on), assets.lox's convention.
-func bytes_to_screen_pixel_rows(bytes, base, height) {
+func bytes_to_screen_pixel_rows(bytes: List[int], base: int, height: int) -> List[string] {
     var rows = []
     for (var y = 0; y < height; y = y + 1) {
         var third = int(y / 64)
@@ -55,7 +55,7 @@ func bytes_to_screen_pixel_rows(bytes, base, height) {
 // row-major grid, same shape as attr_addr_to_xy() assumes), decoding
 // each via spectrum_attr.decode_attribute. Returns a list of row-lists
 // of {ink, paper, bright}.
-func read_attr_rows(bytes, base, rows) {
+func read_attr_rows(bytes: List[int], base: int, rows: int) -> List[List[Dict]] {
     var grid = []
     for (var r = 0; r < rows; r = r + 1) {
         var row = []

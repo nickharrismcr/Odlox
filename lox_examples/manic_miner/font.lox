@@ -3,11 +3,14 @@
 // extract_font.lox), one glyph every 8px. Stateless -- caller owns the
 // SpriteAssets loaded from font_sprites.json and passes it in.
 
+from display import Display
+from assets import SpriteAssets
+
 // Draws text starting at (x, y), one glyph per character, 8px apart.
 // font must be a SpriteAssets loaded from font_sprites.json. A
 // character outside the ROM's 32-127 range is skipped, leaving a blank
 // column rather than raising.
-func draw_text(disp, font, text, x, y, ink, paper) {
+func draw_text(disp: Display, font: SpriteAssets, text: string, x: int, y: int, ink: float, paper: float) {
     for (var i = 0; i < len(text); i = i + 1) {
         var ch = text[i]
         if (font.has(ch)) {
@@ -19,7 +22,7 @@ func draw_text(disp, font, text, x, y, ink, paper) {
 // Trims leading/trailing ' ' characters -- extracted cavern names carry
 // inconsistent original-game padding (not always symmetric), so callers
 // that want to centre one need it stripped first.
-func strip_spaces(s) {
+func strip_spaces(s: string) -> string {
     var start = 0
     while (start < len(s) and s[start] == " ") {
         start = start + 1
@@ -33,7 +36,7 @@ func strip_spaces(s) {
 
 // Draws text horizontally centred across the full 256px display width
 // at row y, after strip_spaces().
-func draw_text_centred(disp, font, text, y, ink, paper) {
+func draw_text_centred(disp: Display, font: SpriteAssets, text: string, y: int, ink: float, paper: float) {
     var trimmed = strip_spaces(text)
     var x = int((256 - len(trimmed) * 8) / 2)
     draw_text(disp, font, trimmed, x, y, ink, paper)

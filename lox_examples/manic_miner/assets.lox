@@ -7,7 +7,7 @@ import json
 // MSB-first bytes (Spectrum ROM sprite layout), row width a multiple of 8.
 
 // Decodes a "pixel" sprite's row strings into a float_array.
-func decode_pixel_rows(rows) {
+func decode_pixel_rows(rows: List[string]) {
     var height = len(rows)
     var width = len(rows[0])
     var arr = float_array(width, height)
@@ -27,7 +27,7 @@ func decode_pixel_rows(rows) {
 
 // Decodes a "byte" sprite's flat byte list into a float_array, width_px
 // pixels wide (must be a multiple of 8).
-func decode_byte_rows(data, width_px) {
+func decode_byte_rows(data: List[int], width_px: int) {
     var bytes_per_row = int(width_px / 8)
     var height = int(len(data) / bytes_per_row)
     var arr = float_array(width_px, height)
@@ -58,7 +58,7 @@ class SpriteAssets {
 
     // Loads every sprite defined in the JSON file at `path`, adding each
     // to this asset set under its "name". Re-loading a name overwrites it.
-    load(path) {
+    load(path: string) {
         var entries = json.load(path)
         foreach (var entry in entries) {
             var name = entry["name"]
@@ -76,15 +76,15 @@ class SpriteAssets {
         }
     }
 
-    get(name) {
+    get(name: string) {
         return this.sprites[name]
     }
 
-    has(name) -> bool {
+    has(name: string) -> bool {
         return this.sprites.get(name, nil) != nil
     }
 
-    names() {
+    names() -> List[string] {
         return this.sprites.keys()
     }
 }

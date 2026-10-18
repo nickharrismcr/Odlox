@@ -2,6 +2,9 @@ from gfx import *
 import json
 import spectrum_attr
 import game_sprite
+from game_sprite import Sprite
+from display import Display
+from assets import SpriteAssets
 
 // @file cavern.lox
 // @brief One Manic Miner cavern's layout and metadata, produced by
@@ -56,7 +59,7 @@ const SKYLAB_FRAMES = 8
 // bound pair for movement_type's axis; g["x"]/g["y"] are kept separately
 // as init_x/init_y so the sprite spawns at its real start position. A
 // "skylab" vertical guardian uses crash_respawn instead of bouncing.
-func make_guardian_sprite(g, movement_type, image_list, frames) {
+func make_guardian_sprite(g: Dict, movement_type: string, image_list: List[string], frames: int) -> Sprite {
     var ink = spectrum_attr.colour_to_rgba(g["ink"], g["bright"])
     var paper = spectrum_attr.colour_to_rgba(g["paper"], g["bright"])
     var start_x = g["x"]
@@ -131,13 +134,13 @@ class Cavern {
         this.eugene_last_x = nil          // wherever draw_eugene() last drew him -- nil means "never drawn yet"
         this.eugene_last_y = nil
         this.eugene_blank = nil           // lazily sized to eugene_sprite's own dimensions, reused every clear
-        this.eugene_erase_ink = 0         // the room's own ink/paper under the last drawn position,
-        this.eugene_erase_paper = 0       // captured just before it was painted over -- see draw_eugene()
+        this.eugene_erase_ink = 0.0         // the room's own ink/paper under the last drawn position,
+        this.eugene_erase_paper = 0.0       // captured just before it was painted over -- see draw_eugene()
     }
 
     // Sets every named field present in `d` (anything absent keeps its
     // current value) -- same pattern as game_sprite.Sprite.load_from_dict.
-    load_from_dict(d) {
+    load_from_dict(d: Dict) {
         this.name = d.get("name", this.name)
         this.width = d.get("width", this.width)
         this.height = d.get("height", this.height)
@@ -188,7 +191,7 @@ class Cavern {
     // Reads a cavern JSON file (as written by extract_cavern.lox). Records
     // path so a later load(this.path) can fully reset the room (items,
     // guardians, crumbled floors).
-    load(path) {
+    load(path: string) {
         this.path = path
         this.load_from_dict(json.load(path))
     }
@@ -212,7 +215,7 @@ class Cavern {
     // Returns the asset name for the tile at grid cell (x, y). layout
     // rows are strings, one digit character (0-7) per cell, indexing
     // tile_names.
-    get_tile(x, y) {
+    get_tile(x: int, y: int) -> string {
         var index = int(this.layout[y][x])
         return this.tile_names[index]
     }
@@ -221,7 +224,7 @@ class Cavern {
     // Out-of-bounds reads as TILE_WALL (a safety floor, not a crash) since
     // the playfield is always walled in. A collapsed crumbling-floor cell
     // reads as TILE_BACKGROUND without this.layout itself being mutated.
-    tile_type_at(px, py) -> int {
+    tile_type_at(px: int, py: int) -> int {
         var cx = int(px / 8)
         var cy = int(py / 8)
         if (cx < 0 or cx >= this.width or cy < 0 or cy >= this.height) {
@@ -238,7 +241,7 @@ class Cavern {
     // tile whose paper differs from the room's background paper is a full
     // wall; one whose paper matches is a one-way platform instead (passable
     // sideways/from below, but still supports landing from above).
-    tile_blocks(px, py) -> bool {
+    tile_blocks(px: int, py: int) -> bool {
         var t = this.tile_type_at(px, py)
         if (t == TILE_BACKGROUND) {
             return false
@@ -250,7 +253,7 @@ class Cavern {
     // from above -- any non-background tile, whether tile_blocks() or
     // not, except a nasty tile: the real game explicitly excludes those
     // (Willy falls through one rather than landing on it).
-    tile_supports_landing(px, py) -> bool {
+    tile_supports_landing(px: int, py: int) -> bool {
         var t = this.tile_type_at(px, py)
         if (t == TILE_BACKGROUND) {
             return false
@@ -265,7 +268,7 @@ class Cavern {
     // tile that doesn't tile_blocks(). Willy renders in its ink while
     // overlapping one (see willy.lox's draw()) rather than his own fixed
     // colour; plain background doesn't count even though it also doesn't block.
-    tile_is_platform(px, py) -> bool {
+    tile_is_platform(px: int, py: int) -> bool {
         var t = this.tile_type_at(px, py)
         if (t == TILE_BACKGROUND) {
             return false
@@ -285,7 +288,7 @@ class Cavern {
     // cell at (px, py); each call shifts the cell's 8 pixel rows down by one.
     // After CRUMBLE_TICKS calls, the cell collapses to TILE_BACKGROUND.
     // Harmless to call on a non-crumbling or already-collapsed cell.
-    tick_crumble(disp, lib, px, py) {
+    tick_crumble(disp: Display, lib: SpriteAssets, px: int, py: int) {
         var cx = int(px / 8)
         var cy = int(py / 8)
         var key = format("%d,%d", cx, cy)
@@ -306,7 +309,7 @@ class Cavern {
     // crumbled-overlay check so a collapsed cell redraws as TILE_BACKGROUND.
     // Used to erase an item's icon after collect_item_at() (items have no
     // erase-tracking of their own, unlike game_sprite.Sprite) and to reveal a crumbled cell.
-    redraw_tile_cell(disp, lib, cx, cy) {
+    redraw_tile_cell(disp: Display, lib: SpriteAssets, cx: int, cy: int) {
         var index = this.tile_type_at(cx * 8, cy * 8)
         var tile = this.tile_colours[index]
         var img = lib.get(tile["name"])
@@ -319,7 +322,7 @@ class Cavern {
     // box as collected, erases its icon, and returns it (nil if none
     // overlap). Items are 8x8; collected ones are skipped both here and by
     // draw_items().
-    collect_item_at(disp, lib, px, py, pw, ph) {
+    collect_item_at(disp: Display, lib: SpriteAssets, px: int, py: int, pw: int, ph: int) -> Dict? {
         foreach (var item in this.items) {
             if (item.get("collected", false)) {
                 continue
@@ -339,7 +342,7 @@ class Cavern {
     // debug auto-collect cheat (see game.lox's ENABLE_AUTO_COLLECT_CHEAT),
     // same effect as walking over every item via collect_item_at() but in
     // one call.
-    collect_all_items(disp, lib) {
+    collect_all_items(disp: Display, lib: SpriteAssets) {
         foreach (var item in this.items) {
             if (item.get("collected", false)) {
                 continue
@@ -368,7 +371,7 @@ class Cavern {
     // current sprite frame for any coincident "on" pixel. Deliberately
     // doesn't read the shared display bitmap, which can't distinguish a
     // guardian's leftover ink or level geometry from Willy himself.
-    guardian_hit(lib, willy_img, wx, wy) -> bool {
+    guardian_hit(lib: SpriteAssets, willy_img, wx: int, wy: int) -> bool {
         var iwx = int(wx)
         var iwy = int(wy)
         foreach (var g in this.guardian_sprites) {
@@ -402,7 +405,7 @@ class Cavern {
     // resolving graphics through lib (a SpriteAssets loaded from this
     // cavern's *_sprites.json). tile_colours' ink/paper indices are resolved
     // to actual colours once per tile, not once per cell.
-    draw(disp, lib) {
+    draw(disp: Display, lib: SpriteAssets) {
         var resolved = []
         foreach (var tile in this.tile_colours) {
             resolved.append({
@@ -437,7 +440,7 @@ class Cavern {
     // colour -- draw() calls this once so the portal shows up on the very
     // first uploaded frame; set_portal_flash() redraws it every tick after
     // that (last, per the real game -- see set_portal_flash()).
-    draw_portal(disp, lib) {
+    draw_portal(disp: Display, lib: SpriteAssets) {
         var img = lib.get(this.portal["sprite"])
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
         var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
@@ -464,7 +467,7 @@ class Cavern {
     // call for every moving sprite before any of them draws this tick
     // (game.lox's state_running: clear phase, then move, then draw). A
     // no-op for every other cavern and before his first draw.
-    clear_eugene(disp) {
+    clear_eugene(disp: Display) {
         if (this.eugene_sprite == "" or this.eugene_last_x == nil) {
             return
         }
@@ -474,7 +477,7 @@ class Cavern {
     // Eugene's Lair only: draws Eugene at his current position, ink cycling
     // 7 down to 0 while moving downwards, plain white once static. Requires
     // clear_eugene() to already have run this tick.
-    draw_eugene(disp, lib) {
+    draw_eugene(disp: Display, lib: SpriteAssets) {
         if (this.eugene_sprite == "") {
             return
         }
@@ -502,7 +505,7 @@ class Cavern {
     // PORTAL_FLASH_TICKS ticks once all_items_collected(). Call this LAST
     // each tick, after Willy and the guardians, so the portal always shows
     // on top rather than being erased by them.
-    set_portal_flash(disp, lib, tick) {
+    set_portal_flash(disp: Display, lib: SpriteAssets, tick: int) {
         var img = lib.get(this.portal["sprite"])
         var ink = spectrum_attr.colour_to_rgba(this.portal["ink"], this.portal["bright"])
         var paper = spectrum_attr.colour_to_rgba(this.portal["paper"], this.portal["bright"])
@@ -517,7 +520,7 @@ class Cavern {
     // cycles through ITEM_INK_CYCLE once per tick, offset by index so items
     // shimmer in a staggered wave. Paper/bright come from the room tile
     // occupying the item's cell, not the item's own extracted values.
-    draw_items(disp, lib, tick) {
+    draw_items(disp: Display, lib: SpriteAssets, tick: int) {
         var img = lib.get(this.item_sprite)
         for (var i = 0; i < len(this.items); i = i + 1) {
             var item = this.items[i]
@@ -539,7 +542,7 @@ class Cavern {
     // display; no separate animation frames or state of its own. direction 0
     // rotates row 0 left and row 2 right, any other value the opposite.
     // Requires this.conveyor's tiles to already be drawn.
-    animate_conveyor(disp) {
+    animate_conveyor(disp: Display) {
         var length = this.conveyor.get("length", 0)
         if (length <= 0) {
             return
@@ -562,7 +565,7 @@ class Cavern {
     // Erases every guardian's own last-drawn position -- call for every
     // moving sprite before any of them draws this tick (game.lox's
     // state_running: clear phase, then move, then draw).
-    clear_guardians(disp) {
+    clear_guardians(disp: Display) {
         foreach (var g in this.guardian_sprites) {
             g.clear(disp)
         }
@@ -577,7 +580,7 @@ class Cavern {
 
     // Draws every guardian at its current position. clear_guardians()
     // must already have run this tick (see game_sprite.lox's Sprite).
-    draw_guardians(disp, lib) {
+    draw_guardians(disp: Display, lib: SpriteAssets) {
         foreach (var g in this.guardian_sprites) {
             g.draw(disp, lib)
         }
