@@ -26,3 +26,9 @@ dist/
 # lox_examples/jetpac/jetpac.skool), kept local only. extract_jetpac.lox
 # reads one to produce the (committed) sprite/static-data JSON.
 *.skool
+# btree.lox's local test inputs and saved .dat/.idx/output files -- only
+# the script itself is tracked.
+lox_examples/btree/*
+!lox_examples/btree/btree.lox
+# REAPER waveform peak caches, generated next to audio files.
+*.reapeaks
