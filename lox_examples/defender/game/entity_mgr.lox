@@ -17,6 +17,11 @@ import fx
 import bonus
 import math
 from npc import shortest_dx
+from config import Config
+from sprite import Sprite
+from human import Human
+from player import Player
+from camera import Camera
 
 // Smart bomb: fires twice in quick succession (BOMB_PASS_DELAY frames apart)
 // so the second pass catches swarmers released by any pod killed in the
@@ -26,7 +31,7 @@ const BOMB_FLASH_FRAMES = 8
 
 class EntityMgr {
 
-    __init__(config) {
+    __init__(config: Config) {
         this.config = config
         this.worldwidth = config.worldwidth()
         this.height = config.height
@@ -125,10 +130,10 @@ class EntityMgr {
     clear_bullets() {
         this.bullets.clear()
     }
-    get_all() {
+    get_all() -> List[Sprite] {
         return this.entities
     }
-    add_to_queue(entity,delay: int) {
+    add_to_queue(entity: Sprite,delay: int) {
         entity.mgr = this                  // set the entity's mgr so it can call back to the manager (e.g. to spawn swarmers)
         this.queue.append([entity,delay])
     }
@@ -181,7 +186,7 @@ class EntityMgr {
     }
     // Nearest unchosen human to from_x (a hunting lander's own position),
     // wrap-aware, matching the original game's behaviour.
-    pick_a_human(from_x: float) {
+    pick_a_human(from_x: float) -> Human? {
         best = nil
         best_dist = 0
         foreach (var e in this.entities) {
@@ -201,7 +206,7 @@ class EntityMgr {
 
     count_type(type: string) -> int {
 
-        func check(e) {
+        func check(e: Sprite) -> bool {
             return e.type == type
         }
         lst=functools.filter(this.entities, check)
@@ -215,7 +220,7 @@ class EntityMgr {
     // across levels (rescued or still on the ground), unlike enemies and
     // projectiles, which belong to the finished wave.
     clear_wave() {
-        func is_human(e) {
+        func is_human(e: Sprite) -> bool {
             return e.type == "human"
         }
         this.entities = functools.filter(this.entities, is_human)
@@ -390,7 +395,7 @@ class EntityMgr {
     // Player lasers destroy shootable NPCs; deadly NPCs hit the player, and ramming one
     // kills it right back. Driven by per-entity flags rather than type, so every NPC takes
     // part without special-casing. cam restricts laser damage to NPCs actually on screen.
-    check_collisions(player, cam) {
+    check_collisions(player: Player, cam: Camera) {
         if (this.frozen) {
             return
         }
@@ -441,7 +446,7 @@ class EntityMgr {
             }
         }
     }
-    draw(g,cam) {
+    draw(g: Window,cam: Camera) {
         foreach (var e in this.entities) {
             if (this.enemies_hidden and e.type != "human") {
                 continue

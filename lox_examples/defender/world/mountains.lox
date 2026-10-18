@@ -2,6 +2,8 @@
 import random
 import colour
 import math;
+from event import EventDispatcher
+from camera import Camera
 
 // per-frame terrain points perturbed while exploding: jittered, and
 // occasionally sent flying off-screen for good.
@@ -25,7 +27,7 @@ class Mountain {
     }
     // Hidden for the duration of the level-complete banner (game_controller
     // emits these via entities.events).
-    attach(events) {
+    attach(events: EventDispatcher) {
         events.on("level_finish", this.on_level_finish())
         events.on("level_start", this.on_level_start())
     }
@@ -89,7 +91,7 @@ class Mountain {
     get(x: float) -> int {
         return this.points[int(x)%len(this.points)]
     }
-    draw(win: Window,height: int,cam,width: int){
+    draw(win: Window,height: int,cam: Camera,width: int){
         if (this.hidden) {
             return
         }

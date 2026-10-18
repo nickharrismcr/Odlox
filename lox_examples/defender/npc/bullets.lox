@@ -2,6 +2,7 @@ from gfx import *
 import sprite
 import random
 import bullet
+from camera import Camera
 
 class BulletPool {
     __init__(size: int) {
@@ -30,7 +31,7 @@ class BulletPool {
         }
     }
 
-    draw(win: Window,cam) {
+    draw(win: Window,cam: Camera) {
         foreach (var b in this.bullets) {
             b.draw(win, cam)
         }

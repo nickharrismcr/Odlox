@@ -7,7 +7,7 @@ import colour
 
 class Baiter < NPC {
 
-    __init__(pos: vec2, img, wait_frames: int) {
+    __init__(pos: vec2, img: Image, wait_frames: int) {
         super.__init__(pos, img, 2, 1, 2, "baiter")   // baiter.png = 2 frames of 44x16
         this.animate(10)
         this.radar = colour.GREEN
@@ -24,34 +24,34 @@ class Baiter < NPC {
     }
 }
 
-func state_wait(e, width: int, height: int) {
+func state_wait(e: Baiter, width: int, height: int) {
     if (e.mgr.player == nil or e.counter < e.wait_frames) {
         return
     }
     enter_materialize(e)
 }
 
-func enter_materialize(e) {
+func enter_materialize(e: Baiter) {
     // pop into existence somewhere near the player
     e.x_to_player = random.integer(-500, 500)
     e.pos.y = random.integer(200, e.mgr.height - 100)
-    e.disperse = 50
+    e.disperse = 50.0
     e.visible = true
     e.draw_func = draw_dispersed
     e.update_func = state_materialize
 }
 
-func state_materialize(e, width: int, height: int) {
+func state_materialize(e: Baiter, width: int, height: int) {
     // re-anchors x to the player every frame while coalescing
     e.pos.x = e.mgr.player.pos.x + e.x_to_player
     e.disperse = e.disperse - 0.67
     if (e.disperse <= 1) {
-        e.disperse = 1
+        e.disperse = 1.0
         enter_chase(e)
     }
 }
 
-func enter_chase(e) {
+func enter_chase(e: Baiter) {
     e.draw_func = draw_normal
     e.update_func = state_chase
     e.shootable = true
@@ -59,7 +59,7 @@ func enter_chase(e) {
     e.nextthink = 0
 }
 
-func state_chase(e, width: int, height: int) {
+func state_chase(e: Baiter, width: int, height: int) {
     player = e.mgr.player
     if (player == nil) {
         return

@@ -1,4 +1,7 @@
 import colour
+from camera import Camera
+from entity_mgr import EntityMgr
+from mountains import Mountain
 
 class Radar {
     __init__(screenwidth: int, screenheight: int, worldwidth: int) {
@@ -24,7 +27,7 @@ class Radar {
         this.crosshair_colour = colour.WHITE
         this.terrain_colour = colour.TERRAIN_ORANGE
     }
-    draw(win: Window, cam, entities, mountains ) {
+    draw(win: Window, cam: Camera, entities: EntityMgr, mountains: Mountain ) {
 
         win.line(this.line1[0], this.line1[1], this.line1[2], this.line1[3], this.border_colour)
         win.line(this.line2[0], this.line2[1], this.line2[2], this.line2[3], this.border_colour)

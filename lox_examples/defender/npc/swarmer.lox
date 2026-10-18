@@ -7,7 +7,7 @@ import random
 
 class Swarmer < NPC {
 
-    __init__(pos: vec2, img) {
+    __init__(pos: vec2, img: Image) {
         super.__init__(pos, img, 1, 1, 1, "swarmer")   // swarmer.png = single 20x16 frame
         this.radar = vec4(255, 80, 0, 255)
         this.update_func = state_chase
@@ -22,7 +22,7 @@ class Swarmer < NPC {
     }
 }
 
-func state_chase(e, width: int, height: int) {
+func state_chase(e: Swarmer, width: int, height: int) {
     player = e.mgr.player
     if (player == nil) {
         return

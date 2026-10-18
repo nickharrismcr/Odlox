@@ -4,7 +4,11 @@ import colour
 import text
 import math
 from sprite import Sprite
-from player import state_play, state_safe_start
+from player import Player, state_play, state_safe_start
+from text import Font
+from config import Config
+from entity_mgr import EntityMgr
+from controller import Controller
 
 // Drives the level/game-state machine: intro -> level_start -> level ->
 // level_finish -> level_start (loops), or level_start -> ... -> game_over.
@@ -55,7 +59,7 @@ const INTRO_CONTROLS_TEXT = "Q=UP A=DOWN SPACE=REVERSE SHIFT=THRUST ENTER=FIRE B
 const INTRO_CONTROLS_MARGIN = 40  // horizontal breathing room so the line never touches the screen edges
 
 class GameController {
-    __init__(cfg, entities, ship, ship_img, smartbomb_img) {
+    __init__(cfg: Config, entities: EntityMgr, ship: Player, ship_img: Image, smartbomb_img: Image) {
         this.cfg = cfg
         this.entities = entities
         this.ship = ship
@@ -119,13 +123,13 @@ class GameController {
         return this.state == "level_start" or this.state == "level"
     }
 
-    update(win: Window, input) {
+    update(win: Window, input: Controller) {
         this.banner_cycle.update()
         f = this.update_func
         f(this, win, input)
     }
 
-    draw(win: Window, width: int, height: int, font) {
+    draw(win: Window, width: int, height: int, font: Font) {
         if (this.state == "intro") {
             this.draw_intro(win, width, height, font)
         } else if (this.state == "level_finish") {
@@ -139,7 +143,7 @@ class GameController {
         }
     }
 
-    draw_intro(win: Window, width: int, height: int, font) {
+    draw_intro(win: Window, width: int, height: int, font: Font) {
         flash_on = (this.intro_timer / INTRO_WILLIAMS_FLASH_FRAMES) % 2 == 0
         will_tint = colour.RED
         if (!flash_on) {
@@ -200,15 +204,15 @@ class GameController {
     }
 }
 
-func draw_centered(win: Window, font, s: string, cx: float, y: float, col: vec4, scale: float = 1.0) {
+func draw_centered(win: Window, font: Font, s: string, cx: float, y: float, col: vec4, scale: float = 1.0) {
     font.draw(win, s, cx - font.width(s, scale) / 2, y, col, scale)
 }
 
-func enter_intro(g) {
+func enter_intro(g: GameController) {
     g.state = "intro"
     g.update_func = state_intro
 }
-func state_intro(g, win: Window, input) {
+func state_intro(g: GameController, win: Window, input: Controller) {
     g.intro_timer = g.intro_timer + 1
     g.presents_cycle.update()
     g.hilite_cycle.update()
@@ -220,7 +224,7 @@ func state_intro(g, win: Window, input) {
     }
 }
 
-func enter_level_start(g) {
+func enter_level_start(g: GameController) {
     g.level = g.level + 1
     levels.apply_level(g.cfg, g.level)
 
@@ -252,21 +256,21 @@ func enter_level_start(g) {
     g.update_func = state_level_start
     g.entities.events.emit("level_start", nil)
 }
-func state_level_start(g, win: Window, input) {
+func state_level_start(g: GameController, win: Window, input: Controller) {
     enter_level(g)
 }
 
-func enter_level(g) {
+func enter_level(g: GameController) {
     g.state = "level"
     g.update_func = state_level
 }
-func state_level(g, win: Window, input) {
+func state_level(g: GameController, win: Window, input: Controller) {
     if (g.lives >= 0 and g.landers_killed >= g.level_landers) {
         enter_level_finish(g)
     }
 }
 
-func enter_level_finish(g) {
+func enter_level_finish(g: GameController) {
     g.entities.clear_wave()
     g.ship.visible = false
     g.banner = "ATTACK WAVE ${g.level} COMPLETED."
@@ -275,7 +279,7 @@ func enter_level_finish(g) {
     g.update_func = state_level_finish
     g.entities.events.emit("level_finish", nil)
 }
-func state_level_finish(g, win: Window, input) {
+func state_level_finish(g: GameController, win: Window, input: Controller) {
     if (g.timer > 0) {
         g.timer = g.timer - 1
         return
@@ -283,12 +287,12 @@ func state_level_finish(g, win: Window, input) {
     enter_level_start(g)
 }
 
-func enter_game_over(g) {
+func enter_game_over(g: GameController) {
     g.timer = GAME_OVER_PAUSE
     g.state = "game_over"
     g.update_func = state_game_over
 }
-func state_game_over(g, win: Window, input) {
+func state_game_over(g: GameController, win: Window, input: Controller) {
     if (g.timer > 0) {
         g.timer = g.timer - 1
         if (g.timer <= 0) {

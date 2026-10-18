@@ -3,6 +3,9 @@ import random
 import math
 import colour
 from sprite import Sprite
+from lander import Lander
+from player import Player
+from camera import Camera
 
 // Human colonist. A small state machine of swappable update functions:
 //   walking (default), grabbed (lander has it), dropping (carrier killed, falls),
@@ -12,7 +15,7 @@ from sprite import Sprite
 
 class Human < Sprite {
 
-    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int) {
+    __init__(pos: vec2, img: Image, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.type = "human"
         this.img = img
@@ -21,8 +24,8 @@ class Human < Sprite {
         this.draw_func = draw_normal
         this.dx = random.choice([-1, 1])
         this.dy = 0                  // vertical speed while dropping
-        this.disperse = 1
-        this.drop_start_y = 0
+        this.disperse = 1.0
+        this.drop_start_y = 0.0
         this.carrier = nil           // lander while grabbed, player while caught
         this.radar = colour.GRAY
         this.counter = 0
@@ -35,7 +38,7 @@ class Human < Sprite {
         this.height = this.texture.height()
     }
 
-    position() {
+    position() -> List {
         return (this.pos.x, this.pos.y)
     }
 
@@ -45,7 +48,7 @@ class Human < Sprite {
     // for grabbed/caught/dying, emits the relevant event) as state_<state>.
     // Mirrors the enter_<state>/state_<state> convention used in npc.lox,
     // lander.lox and player.lox.
-    grab(carrier) {                  // a lander latched on
+    grab(carrier: Lander) {                  // a lander latched on
         this.carrier = carrier
         this.chosen = true
         enter_grabbed(this)
@@ -54,7 +57,7 @@ class Human < Sprite {
         this.carrier = nil
         enter_dropping(this)
     }
-    catch_by(player) {               // the player scooped it up mid-fall
+    catch_by(player: Player) {               // the player scooped it up mid-fall
         this.carrier = player
         enter_caught(this)
     }
@@ -93,7 +96,7 @@ class Human < Sprite {
         }
     }
 
-    draw(win: Window,cam) {
+    draw(win: Window,cam: Camera) {
         if (!this.alive) {
             return
         }
@@ -104,14 +107,14 @@ class Human < Sprite {
 
 // --- draw functions -----------------------------------------------------------
 
-func draw_normal(e, win: Window, cam) {
+func draw_normal(e: Human, win: Window, cam: Camera) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         win.draw_texture(e.texture, spos, e.pos.y, colour.WHITE)
     }
 }
 
-func draw_dispersed(e, win: Window, cam) {
+func draw_dispersed(e: Human, win: Window, cam: Camera) {
     spos = cam.translate(e.pos.x)
     if (spos != nil) {
         e.draw_disperse(win, spos, e.pos.y, e.disperse, colour.WHITE)
@@ -120,20 +123,20 @@ func draw_dispersed(e, win: Window, cam) {
 
 // --- states -------------------------------------------------------------------
 
-func state_walk(e, width: int, height: int) {
+func state_walk(e: Human, width: int, height: int) {
     if (e.counter % 10 == 0) {
         e.pos.x = e.pos.x + e.dx
         e.pos.y = e.ground_y()
     }
 }
 
-func enter_grabbed(e) {
+func enter_grabbed(e: Human) {
     e.state = "grabbed"
     e.update_func = state_grabbed
     e.mgr.events.emit("human_grabbed", e)
 }
 
-func state_grabbed(e, width: int, height: int) {
+func state_grabbed(e: Human, width: int, height: int) {
     // hang centred below the carrier lander (sprites are top-left anchored, so
     // the lander's own centre is offset by half its width) as it lifts us
     if (e.carrier != nil) {
@@ -142,7 +145,7 @@ func state_grabbed(e, width: int, height: int) {
     }
 }
 
-func enter_dropping(e) {
+func enter_dropping(e: Human) {
     e.state = "dropping"
     e.dy = 0
     e.drop_start_y = e.pos.y
@@ -150,7 +153,7 @@ func enter_dropping(e) {
     e.mgr.events.emit("human_dropped", e)
 }
 
-func state_dropping(e, width: int, height: int) {
+func state_dropping(e: Human, width: int, height: int) {
     e.dy = e.dy + e.mgr.config.human_drop_accel     // gravity
     e.pos.y = e.pos.y + e.dy
     ground = e.ground_y()
@@ -164,13 +167,13 @@ func state_dropping(e, width: int, height: int) {
     }
 }
 
-func enter_caught(e) {
+func enter_caught(e: Human) {
     e.state = "caught"
     e.update_func = state_caught
     e.mgr.events.emit("human_caught", e)
 }
 
-func state_caught(e, width: int, height: int) {
+func state_caught(e: Human, width: int, height: int) {
     // ride below the ship until we reach the ground, then walk free
     if (e.carrier != nil) {
         e.pos.x = e.carrier.pos.x
@@ -184,17 +187,17 @@ func state_caught(e, width: int, height: int) {
 
 // Reached the ground safely, whether unaided (from dropping) or carried down
 // by the player (from caught) -- both lead here, so the outcome is shared.
-func enter_walking(e) {
+func enter_walking(e: Human) {
     e.release()                      // no longer a child of a lander/the player ship
     e.state = "walking"
     e.update_func = state_walk
     e.mgr.events.emit("human_saved", e)
 }
 
-func enter_dying(e) {
+func enter_dying(e: Human) {
     e.draw_func = draw_dispersed
     e.state = "dying"
-    e.disperse = 1
+    e.disperse = 1.0
     e.dp = vec2(0, 0)
     e.radar = nil
     e.shootable = false
@@ -203,7 +206,7 @@ func enter_dying(e) {
     e.mgr.events.emit("human_killed", e)
 }
 
-func state_dying(e, width: int, height: int) {
+func state_dying(e: Human, width: int, height: int) {
     e.disperse = e.disperse + 1.3
     if (e.disperse >= 60) {
         e.alive = false

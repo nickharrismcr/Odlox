@@ -1,10 +1,11 @@
 from sprite import Sprite
 import random
 import colour
+from camera import Camera
  
 
 class Bullet < Sprite {
-    __init__(pos: vec2, img, frames: int, start_frame: int, end_frame: int) {
+    __init__(pos: vec2, img: Image, frames: int, start_frame: int, end_frame: int) {
         super.__init__(pos, img, frames, start_frame, end_frame)
         this.animate(10)
         this.ticks_to_live = 0
@@ -12,7 +13,7 @@ class Bullet < Sprite {
         this.width = this.texture.frame_width()
         this.height = this.texture.height()
     }
-    position() {
+    position() -> List {
         return (this.x, this.y)
     }
     dead() -> bool {
@@ -38,7 +39,7 @@ class Bullet < Sprite {
             this.ticks_to_live = 0
         }   
     }
-    draw(win: Window,cam) {
+    draw(win: Window,cam: Camera) {
         if (this.dead()) {
             return;
         }

@@ -8,7 +8,7 @@ class Star {
         this.pos = pos
         this.col = col
     }
-    get(){
+    get() -> List{
         return (this.pos,this.col)
     }   
 }

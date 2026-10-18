@@ -1,5 +1,9 @@
 from gfx import *
 import colour
+from player import Player
+from camera import Camera
+from event import EventDispatcher
+from human import Human
 
 // Floating bonus-score popup, shown when a human is rescued: spawns a
 // "250"/"500" graphic (pngs/250.png, pngs/500.png -- each a 3-frame, 45x20
@@ -16,13 +20,13 @@ class Bonus {
     dead() -> bool {
         return this.life <= 0
     }
-    update(player) {
+    update(player: Player) {
         // centred horizontally on the ship
         this.pos.x = player.pos.x + player.width / 2 - this.tex.frame_width() / 2
         this.pos.y = player.pos.y + this.dy
         this.life = this.life - 1
     }
-    draw(win: Window, cam) {
+    draw(win: Window, cam: Camera) {
         spos = cam.translate(this.pos.x)
         if (spos != nil) {
             win.draw_texture(this.tex, spos, this.pos.y, colour.WHITE)
@@ -31,7 +35,7 @@ class Bonus {
 }
 
 class BonusDisplay {
-    __init__(img250, img500, life: int) {
+    __init__(img250: Image, img500: Image, life: int) {
         this.tex250 = texture(img250, 3, 1, 3)
         this.tex500 = texture(img500, 3, 1, 3)
         this.tex250.animate(6)
@@ -55,24 +59,24 @@ class BonusDisplay {
     // player scoops a falling human up (the big reward); "human_saved" fires once
     // a human reaches the ground safely, whether unaided or carried down (the
     // smaller reward).
-    attach(events) {
+    attach(events: EventDispatcher) {
         events.on("human_caught", this.on_caught())
         events.on("human_saved", this.on_saved())
     }
     on_caught() {
-        func handler(h) {
+        func handler(h: Human) {
             this.spawn(500)
         }
         return handler
     }
     on_saved() {
-        func handler(h) {
+        func handler(h: Human) {
             this.spawn(250)
         }
         return handler
     }
 
-    update(player) {
+    update(player: Player?) {
         if (player == nil) {
             return
         }
@@ -92,7 +96,7 @@ class BonusDisplay {
         }
     }
 
-    draw(win: Window, cam) {
+    draw(win: Window, cam: Camera) {
         foreach (var b in this.bonuses) {
             b.draw(win, cam)
         }

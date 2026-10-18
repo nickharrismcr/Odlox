@@ -1,6 +1,9 @@
 from gfx import *
 import text
 import colour
+from text import Font
+from event import EventDispatcher
+from sprite import Sprite
 
 // Points per kill. A mutated lander is still the same underlying entity, just
 // renamed to "mutant" on mutation, so it keeps a lander's value.
@@ -19,7 +22,7 @@ const SCORES = {
 
 class Score {
 
-    __init__(font, x: float, y: float) {
+    __init__(font: Font, x: float, y: float) {
         this.value = 0
         this.font = font
         this.x = x
@@ -30,7 +33,7 @@ class Score {
 
     // Scoring is driven by the game's own kill events rather than polled, so a
     // new NPC only needs an entry in SCORES to start scoring.
-    attach(events) {
+    attach(events: EventDispatcher) {
         foreach (var ev in SCORES.keys()) {
             events.on(ev, this.handler_for(SCORES[ev]))
         }
@@ -38,7 +41,7 @@ class Score {
 
     // Returns a listener closed over `this` and this event's point value.
     handler_for(points: int) {
-        func on_kill(entity) {
+        func on_kill(entity: Sprite) {
             this.add(points)
         }
         return on_kill

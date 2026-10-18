@@ -1,5 +1,7 @@
 import sound
 import sound_mgr
+from event import EventDispatcher
+from camera import Camera
 
 // Event -> sound-effect mapping. A mutated lander's kill event is
 // "mutant_killed" (see lander.lox's enter_die -- the entity is renamed
@@ -87,7 +89,7 @@ class GameSound {
     // off screen (intentional -- they linger as hazards), but should
     // stay silent until something on screen is actually shooting, so it
     // needs the camera to check.
-    attach(events, cam) {
+    attach(events: EventDispatcher, cam: Camera) {
         this.cam = cam
         foreach (var ev in SOUND_EVENTS.keys()) {
             events.on(ev, this.handler_for(SOUND_EVENTS[ev]))

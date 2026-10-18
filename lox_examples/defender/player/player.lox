@@ -4,6 +4,9 @@ from npc import shortest_dx
 import math
 import random
 import colour
+from controller import Controller
+from config import Config
+from camera import Camera
 
 // Thrust flame is drawn smaller than the source art and offset from the hull
 // (not flush against it).
@@ -30,7 +33,7 @@ const SAFE_START_FRAMES = 60   // 1s at 60fps
 
 class Player < Sprite {
 
-    __init__(pos: vec2, img, thrust_img, shipw_img, config) {
+    __init__(pos: vec2, img: Image, thrust_img: Image, shipw_img: Image, config: Config) {
         // ship.png is a 5-frame animation strip; thrust.png is a 2-frame flame;
         // shipw.png is an all-white ship silhouette (2 frames, same 60px frame
         // width as ship.png). Being pure white it can be tinted to any colour, so
@@ -106,7 +109,7 @@ class Player < Sprite {
         enter_die(this)
     }
 
-    handle_input(input) {
+    handle_input(input: Controller) {
         this.thrusting = false
 
         // reverse (edge-triggered): flip facing and kill speed
@@ -129,7 +132,7 @@ class Player < Sprite {
         this.vy = vy
     }
 
-    fire(input) {
+    fire(input: Controller) {
         if (input.fire and this.mgr != nil) {
             // draw_texture is top-left anchored: the nose is at the front edge
             // (front in the facing direction) and the vertical centre of the sprite.
@@ -139,23 +142,23 @@ class Player < Sprite {
         }
     }
 
-    smart_bomb(input) {
+    smart_bomb(input: Controller) {
         if (input.smart_bomb and this.mgr != nil) {
             this.mgr.trigger_smart_bomb()
         }
     }
 
-    update(input) {
+    update(input: Controller) {
         f = this.update_func
         f(this, input)
     }
 
     // Camera x that keeps the ship drawn at screen x == this.offset.
-    camera_x() {
+    camera_x() -> float {
         return this.pos.x - this.offset
     }
 
-    draw(win: Window, cam) {
+    draw(win: Window, cam: Camera) {
         if (!this.visible) {
             return
         }
@@ -218,7 +221,7 @@ class Player < Sprite {
 // that's the one frame SPACE might still be registering as having just
 // started the game (read by game_controller's intro state) rather than as a
 // "reverse" command here.
-func state_safe_start(e, input) {
+func state_safe_start(e: Player, input: Controller) {
     if (e.mgr != nil) {
         e.mgr.hide_enemies()
         e.mgr.freeze_enemies()
@@ -232,20 +235,20 @@ func state_safe_start(e, input) {
     }
 }
 
-func enter_safe_start(e) {
+func enter_safe_start(e: Player) {
     e.update_func = state_safe_start
     e.timer = SAFE_START_FRAMES
     e.visible = true
     e.flash = false
-    e.speed = 0
-    e.vx = 0
+    e.speed = 0.0
+    e.vx = 0.0
     e.dir = 1
     e.offset = e.leftoffset
     e.invuln = 0
     e.mgr.events.emit("player_start", e)
 }
 
-func state_play(e, input) {
+func state_play(e: Player, input: Controller) {
     if (input.hyperspace) {
         enter_hyperspace(e)
         return
@@ -257,7 +260,7 @@ func state_play(e, input) {
 // movement, world wrap, vertical clamp, and camera-offset easing. Used by
 // both state_play and state_safe_start (the latter counts down to state_play
 // underneath, but the player can already fly around while it does).
-func move(e, input) {
+func move(e: Player, input: Controller) {
     e.handle_input(input)
     e.fire(input)
     e.smart_bomb(input)
@@ -303,13 +306,13 @@ func move(e, input) {
 // Warp to a random spot away from the current enemies and start rematerialising.
 // Deliberately does not touch enemy visibility/freeze -- this is the player's
 // own choice to jump into danger, not a death.
-func enter_hyperspace(e) {
+func enter_hyperspace(e: Player) {
     e.pos = random_hyperspace_pos(e)
     e.update_func = state_hyperspace
     e.disperse = HYPERSPACE_DISPERSE_START
-    e.speed = 0
-    e.vx = 0
-    e.vy = 0
+    e.speed = 0.0
+    e.vx = 0.0
+    e.vy = 0.0
     e.thrusting = false
     e.lean = 0
     e.mgr.events.emit("player_hyperspace", e)
@@ -317,10 +320,10 @@ func enter_hyperspace(e) {
 
 // Coalesces the same way a materialising lander does (disperse falling to 1).
 // On arrival there's a chance of a fatal misjump.
-func state_hyperspace(e, input) {
+func state_hyperspace(e: Player, input: Controller) {
     e.disperse = e.disperse - HYPERSPACE_MATERIALISE_RATE
     if (e.disperse <= 1) {
-        e.disperse = 1
+        e.disperse = 1.0
         if (random.integer(1, e.hyperspace_death_chance) == 1) {
             enter_die(e)
         } else {
@@ -332,7 +335,7 @@ func state_hyperspace(e, input) {
 // Random world position at least HYPERSPACE_MIN_NPC_DIST from every alive,
 // non-human NPC, giving up after HYPERSPACE_MAX_ATTEMPTS and using the last
 // candidate (better than looping forever if the world is crowded).
-func random_hyperspace_pos(e) -> vec2 {
+func random_hyperspace_pos(e: Player) -> vec2 {
     x = random.integer(0, e.worldwidth)
     y = random.integer(e.top, e.bottom)
     attempts = 0
@@ -344,12 +347,12 @@ func random_hyperspace_pos(e) -> vec2 {
     return vec2(x, y)
 }
 
-func far_from_npcs(e, x, y) {
+func far_from_npcs(e: Player, x: int, y: int) -> bool {
     foreach (var other in e.mgr.get_all()) {
         if (!other.alive or other.type == "human") {
             continue
         }
-        dx = shortest_dx(x, other.pos.x, e.worldwidth)
+        dx = shortest_dx(float(x), other.pos.x, e.worldwidth)
         dy = y - other.pos.y
         if (dx * dx + dy * dy < HYPERSPACE_MIN_NPC_DIST * HYPERSPACE_MIN_NPC_DIST) {
             return false
@@ -360,12 +363,12 @@ func far_from_npcs(e, x, y) {
 
 // Frozen in place, flashing red before it blows. Enemies stay visible but
 // freeze too.
-func enter_die(e) {
+func enter_die(e: Player) {
     e.update_func = state_die
     e.timer = 120                    // 2 seconds, frozen
-    e.speed = 0
-    e.vx = 0
-    e.vy = 0
+    e.speed = 0.0
+    e.vx = 0.0
+    e.vy = 0.0
     e.thrusting = false
     e.lean = 0
     if (e.mgr != nil) {
@@ -377,7 +380,7 @@ func enter_die(e) {
     e.mgr.events.emit("player_die", e)
 }
 
-func state_die(e, input) {
+func state_die(e: Player, input: Controller) {
     e.timer = e.timer - 1
     e.flash = (e.timer / 3) % 2 == 0     // rapid alternation, ~10Hz
     if (e.timer <= 0) {
@@ -386,7 +389,7 @@ func state_die(e, input) {
 }
 
 // Ship is gone, particle burst plays. Enemies hidden as well as frozen.
-func enter_explode(e) {
+func enter_explode(e: Player) {
     e.update_func = state_explode
     e.timer = 150                    // 3 seconds before the safe-start window begins
     e.visible = false
@@ -402,7 +405,7 @@ func enter_explode(e) {
 }
 
 // Ship is gone; the particle burst plays out while we wait to respawn.
-func state_explode(e, input) {
+func state_explode(e: Player, input: Controller) {
     e.timer = e.timer - 1
     if (e.timer <= 0) {
         enter_safe_start(e)
@@ -411,7 +414,7 @@ func state_explode(e, input) {
 
 // Enemies become visible and active again; a brief blink-protected grace
 // period covers the player for a bit further into real play.
-func enter_play(e) {
+func enter_play(e: Player) {
     e.update_func = state_play
     e.invuln = 120
     if (e.mgr != nil) {

@@ -5,12 +5,14 @@
 // from pos.x extending `len` (which may be negative when firing left).
 
 import math
+from sprite import Sprite
+from laser import Laser
 
-func entity_box(e) -> List[float] {
+func entity_box(e: Sprite) -> List[float] {
     return [e.pos.x, e.pos.y, e.pos.x + e.width, e.pos.y + e.height]
 }
 
-func laser_box(l) -> List[float] {
+func laser_box(l: Laser) -> List[float] {
     x1 = l.pos.x
     x2 = l.pos.x + l.len
     if (x2 < x1) {

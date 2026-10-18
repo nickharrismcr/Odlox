@@ -2,6 +2,7 @@ from gfx import *
 import colour
 import math
 import random
+from camera import Camera
 
 // The player's laser: a horizontal beam that shoots from the ship nose in the
 // facing direction, extends across the screen, cycles colour, and expires
@@ -73,7 +74,7 @@ class Laser {
             this.active = false
         }
     }
-    draw(win: Window, cam) {
+    draw(win: Window, cam: Camera) {
         if (!this.active) {
             return
         }
@@ -133,7 +134,7 @@ class LaserPool {
             l.kill()
         }
     }
-    draw(win: Window, cam) {
+    draw(win: Window, cam: Camera) {
         foreach (var l in this.lasers) {
             l.draw(win, cam)
         }

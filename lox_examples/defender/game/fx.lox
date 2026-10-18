@@ -3,6 +3,8 @@ import random
 import math
 import particle_sys
 import colour
+from particle_sys import Particle, Emitters
+from camera import Camera
 
 // One-shot explosion bursts, built on the shared particle_sys module.
 //
@@ -10,7 +12,7 @@ import colour
 // red as they age, then fade out and die. Positions are in world coordinates,
 // so drawing translates through the camera.
 
-func explosion_init(p) {
+func explosion_init(p: Particle) {
     angle = random.float(0, 2 * math.PI)
     speed = random.float(1.0, 14.0)          // wide spread: some fast, some slow
     p.dpos = vec2(math.cos(angle) * speed, math.sin(angle) * speed)
@@ -19,7 +21,7 @@ func explosion_init(p) {
     p.col = colour.WHITE     // white-hot at birth
 }
 
-func explosion_update(p) {
+func explosion_update(p: Particle) {
     // float() matters here: age and life are ints, and int/int truncates to 0.
     t = float(p.age) / float(p.life)          // 0 .. 1 over the particle's life
 
@@ -38,13 +40,13 @@ func explosion_update(p) {
 // Queue a one-shot burst at world (x, y). Once its particles die, particle_sys
 // drops the emitter automatically. Uses square particles for a chunky,
 // pixel-debris look.
-func explosion(emitters, x: float, y: float, count: int) {
+func explosion(emitters: Emitters, x: float, y: float, count: int) {
     em = particle_sys.Emitter(vec2(x, y), explosion_init, explosion_update)
     em.shape = "square"
     emitters.queue(em, count, 0)
 }
 
-func draw(emitters, win: Window, cam) {
+func draw(emitters: Emitters, win: Window, cam: Camera) {
     win.begin_blend_mode("BLEND_ADD")
     foreach (var e in emitters.get()) {
         square = e.shape == "square"
